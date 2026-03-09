@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://avatars.githubusercontent.com/u/262526870?s=200" alt="EVOT" />
+  <img src="https://github.com/user-attachments/assets/d241ce05-ea15-4932-bec8-f8705f39dbba" alt="bendclaw" />
 </p>
 
 <p align="center">
@@ -124,7 +124,8 @@ Learnings accumulate across all agents. Errors from recent runs are surfaced so 
 
 All endpoints served from `/v1`.
 
-### Agents
+<details>
+<summary>Agents</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -132,14 +133,20 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}` | GET/DELETE | Get or delete agent |
 | `/v1/agents/{agent_id}/setup` | POST | Create agent database |
 
-### Sessions
+</details>
+
+<details>
+<summary>Sessions</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/v1/agents/{agent_id}/sessions` | GET/POST | List or create sessions |
 | `/v1/agents/{agent_id}/sessions/{session_id}` | GET/PUT/DELETE | Session CRUD |
 
-### Runs
+</details>
+
+<details>
+<summary>Runs</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -150,7 +157,10 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/runs/{run_id}/events` | GET | List run events |
 | `/v1/agents/{agent_id}/sessions/{session_id}/runs` | GET | Runs for session |
 
-### Memories
+</details>
+
+<details>
+<summary>Memories</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -158,7 +168,10 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/memories/{memory_id}` | GET/DELETE | Get or delete memory |
 | `/v1/agents/{agent_id}/memories/search` | POST | Search memories |
 
-### Learnings
+</details>
+
+<details>
+<summary>Learnings</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -166,14 +179,20 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/learnings/{learning_id}` | DELETE | Delete learning |
 | `/v1/agents/{agent_id}/learnings/search` | POST | Search learnings |
 
-### Skills
+</details>
+
+<details>
+<summary>Skills</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/v1/agents/{agent_id}/skills` | GET/POST | List or create skills |
 | `/v1/agents/{agent_id}/skills/{skill_name}` | GET/DELETE | Get or delete skill |
 
-### Config
+</details>
+
+<details>
+<summary>Config</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -182,7 +201,10 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/config/versions/{version}` | GET | Get version |
 | `/v1/agents/{agent_id}/config/rollback` | POST | Roll back config |
 
-### Traces
+</details>
+
+<details>
+<summary>Traces</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -191,7 +213,10 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/traces/{trace_id}` | GET | Get trace |
 | `/v1/agents/{agent_id}/traces/{trace_id}/spans` | GET | List spans |
 
-### Usage
+</details>
+
+<details>
+<summary>Usage</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -199,14 +224,20 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/usage/daily` | GET | Daily usage |
 | `/v1/usage/summary` | GET | Global usage |
 
-### Variables
+</details>
+
+<details>
+<summary>Variables</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/v1/agents/{agent_id}/variables` | GET/POST | List or create variables |
 | `/v1/agents/{agent_id}/variables/{var_id}` | GET/PUT/DELETE | Variable CRUD |
 
-### Tasks
+</details>
+
+<details>
+<summary>Tasks</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -214,18 +245,26 @@ All endpoints served from `/v1`.
 | `/v1/agents/{agent_id}/tasks/{task_id}` | PUT/DELETE | Update or delete task |
 | `/v1/agents/{agent_id}/tasks/{task_id}/toggle` | POST | Toggle task |
 
-### Feedback
+</details>
+
+<details>
+<summary>Feedback</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/v1/agents/{agent_id}/feedback` | GET/POST | List or create feedback |
 | `/v1/agents/{agent_id}/feedback/{feedback_id}` | DELETE | Delete feedback |
 
-### Health
+</details>
+
+<details>
+<summary>Health</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/health` | GET | Health check |
+
+</details>
 
 ---
 

@@ -1,0 +1,305 @@
+//! Tests for [`SkillRemoveTool`].
+
+use std::sync::Arc;
+
+use bendclaw::kernel::skills::repository::SkillRepository;
+use bendclaw::kernel::skills::skill::Skill;
+use bendclaw::kernel::tools::skill::SkillRemoveTool;
+use bendclaw::kernel::tools::Tool;
+use serde_json::json;
+
+use crate::mocks::context::test_tool_context;
+use crate::mocks::skill::MockSkillCatalog;
+use crate::mocks::skill::MockSkillStore;
+
+fn make_tool() -> (SkillRemoveTool, Arc<MockSkillStore>) {
+    let store = Arc::new(MockSkillStore::new());
+    let store_clone = store.clone();
+    let factory = Arc::new(FixedStoreFactory(store_clone));
+    let catalog = Arc::new(MockSkillCatalog::new());
+    let tool = SkillRemoveTool::new(factory, catalog);
+    (tool, store)
+}
+
+struct FixedStoreFactory(Arc<MockSkillStore>);
+
+impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FixedStoreFactory {
+    fn for_agent(
+        &self,
+        _agent_id: &str,
+    ) -> bendclaw::base::Result<Arc<dyn bendclaw::kernel::skills::repository::SkillRepository>>
+    {
+        Ok(self.0.clone())
+    }
+}
+
+fn make_skill(name: &str) -> Skill {
+    Skill {
+        name: name.to_string(),
+        version: "1.0.0".to_string(),
+        description: "test".to_string(),
+        scope: Default::default(),
+        source: Default::default(),
+        agent_id: None,
+        user_id: None,
+        timeout: 30,
+        executable: false,
+        parameters: vec![],
+        content: "body".to_string(),
+        files: vec![],
+        requires: None,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Success cases
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn remove_existing_skill_succeeds() {
+    let (tool, store) = make_tool();
+    let ctx = test_tool_context();
+    store.save(&make_skill("my-skill")).await.unwrap();
+    assert!(store.contains("my-skill"));
+
+    let result = tool
+        .execute_with_context(json!({"name": "my-skill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(result.success, "got: {:?}", result.error);
+    assert!(!store.contains("my-skill"));
+}
+
+#[tokio::test]
+async fn remove_nonexistent_skill_succeeds() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "no-such-skill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(result.success);
+}
+
+#[tokio::test]
+async fn remove_is_idempotent() {
+    let (tool, store) = make_tool();
+    let ctx = test_tool_context();
+    store.save(&make_skill("my-skill")).await.unwrap();
+
+    let _ = tool
+        .execute_with_context(json!({"name": "my-skill"}), &ctx)
+        .await
+        .unwrap();
+    let result = tool
+        .execute_with_context(json!({"name": "my-skill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(result.success);
+    assert!(!store.contains("my-skill"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Validation errors
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn remove_rejects_path_traversal_name() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "../evil"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+    assert!(result.error.unwrap().contains("skill name"));
+}
+
+#[tokio::test]
+async fn remove_rejects_empty_name() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": ""}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+}
+
+#[tokio::test]
+async fn remove_rejects_single_char_name() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "a"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+}
+
+#[tokio::test]
+async fn remove_rejects_uppercase_name() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "MySkill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+}
+
+#[tokio::test]
+async fn remove_rejects_reserved_name() {
+    let (tool, _) = make_tool();
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "shell"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Factory / store error paths
+// ═══════════════════════════════════════════════════════════════════════════════
+
+struct FailingStoreFactory;
+
+impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingStoreFactory {
+    fn for_agent(
+        &self,
+        _agent_id: &str,
+    ) -> bendclaw::base::Result<Arc<dyn bendclaw::kernel::skills::repository::SkillRepository>>
+    {
+        Err(bendclaw::base::ErrorCode::internal("store unavailable"))
+    }
+}
+
+#[tokio::test]
+async fn remove_returns_error_when_factory_fails() {
+    let catalog = Arc::new(MockSkillCatalog::new());
+    let tool = SkillRemoveTool::new(Arc::new(FailingStoreFactory), catalog);
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "my-skill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+    assert!(result
+        .error
+        .unwrap()
+        .contains("failed to access agent store"));
+}
+
+struct FailingRemoveStore;
+
+#[async_trait::async_trait]
+impl SkillRepository for FailingRemoveStore {
+    async fn list(&self) -> bendclaw::base::Result<Vec<bendclaw::kernel::skills::skill::Skill>> {
+        Ok(vec![])
+    }
+    async fn get(
+        &self,
+        _name: &str,
+    ) -> bendclaw::base::Result<Option<bendclaw::kernel::skills::skill::Skill>> {
+        Ok(None)
+    }
+    async fn save(
+        &self,
+        _skill: &bendclaw::kernel::skills::skill::Skill,
+    ) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
+    async fn remove(
+        &self,
+        _name: &str,
+        _agent_id: Option<&str>,
+        _user_id: Option<&str>,
+    ) -> bendclaw::base::Result<()> {
+        Err(bendclaw::base::ErrorCode::internal("remove failed"))
+    }
+    async fn checksums(&self) -> bendclaw::base::Result<std::collections::HashMap<String, String>> {
+        Ok(std::collections::HashMap::new())
+    }
+}
+
+struct FailingRemoveFactory;
+
+impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingRemoveFactory {
+    fn for_agent(
+        &self,
+        _agent_id: &str,
+    ) -> bendclaw::base::Result<Arc<dyn bendclaw::kernel::skills::repository::SkillRepository>>
+    {
+        Ok(Arc::new(FailingRemoveStore))
+    }
+}
+
+#[tokio::test]
+async fn remove_returns_error_when_store_remove_fails() {
+    let catalog = Arc::new(MockSkillCatalog::new());
+    let tool = SkillRemoveTool::new(Arc::new(FailingRemoveFactory), catalog);
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({"name": "my-skill"}), &ctx)
+        .await
+        .unwrap();
+    assert!(!result.success);
+    assert!(result.error.unwrap().contains("failed to remove skill"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// summarize
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn summarize_returns_name() {
+    use bendclaw::kernel::tools::OperationClassifier;
+    let store = Arc::new(MockSkillStore::new());
+    let factory = Arc::new(FixedStoreFactory(store));
+    let catalog = Arc::new(MockSkillCatalog::new());
+    let tool = SkillRemoveTool::new(factory, catalog);
+    assert_eq!(tool.summarize(&json!({"name": "my-skill"})), "my-skill");
+}
+
+#[test]
+fn summarize_returns_unknown_when_name_missing() {
+    use bendclaw::kernel::tools::OperationClassifier;
+    let store = Arc::new(MockSkillStore::new());
+    let factory = Arc::new(FixedStoreFactory(store));
+    let catalog = Arc::new(MockSkillCatalog::new());
+    let tool = SkillRemoveTool::new(factory, catalog);
+    assert_eq!(tool.summarize(&json!({})), "unknown");
+}
+
+// ── Tool trait metadata ──
+
+#[test]
+fn remove_tool_name() {
+    use bendclaw::kernel::tools::Tool;
+    let (tool, _) = make_tool();
+    assert_eq!(tool.name(), "remove_skill");
+}
+
+#[test]
+fn remove_tool_description() {
+    use bendclaw::kernel::tools::Tool;
+    let (tool, _) = make_tool();
+    assert!(!tool.description().is_empty());
+}
+
+#[test]
+fn remove_tool_schema_has_name_field() {
+    use bendclaw::kernel::tools::Tool;
+    let (tool, _) = make_tool();
+    let schema = tool.parameters_schema();
+    assert!(schema["properties"]["name"].is_object());
+}
+
+#[test]
+fn remove_tool_op_type() {
+    use bendclaw::kernel::tools::OperationClassifier;
+    use bendclaw::kernel::OpType;
+    let (tool, _) = make_tool();
+    assert_eq!(tool.op_type(), OpType::SkillRun);
+}

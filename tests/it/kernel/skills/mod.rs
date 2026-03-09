@@ -1,0 +1,14 @@
+mod catalog;
+mod catalog_mock;
+mod catalog_test;
+mod checksum;
+mod executor;
+mod loader;
+mod manifest;
+mod mirror;
+mod sanitizer;
+mod schema;
+mod scope;
+mod skill;
+mod sync_policy;
+mod validate;

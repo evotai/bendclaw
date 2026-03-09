@@ -1,0 +1,9 @@
+[store]
+dir = "target/nextest"
+
+[profile.default]
+test-threads = 4
+retries = 0
+fail-fast = false
+status-level = "pass"
+final-status-level = "fail"

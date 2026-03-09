@@ -1,0 +1,11 @@
+/target
+.env
+*.swp
+*.swo
+.DS_Store
+prompts/
+.claude/
+.factory/
+workspace/
+coverage/
+.idea/

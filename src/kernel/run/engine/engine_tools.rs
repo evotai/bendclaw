@@ -1,0 +1,309 @@
+use std::collections::HashMap;
+
+use super::engine::Engine;
+use crate::kernel::run::dispatcher::DispatchOutcome;
+use crate::kernel::run::dispatcher::ParsedToolCall;
+use crate::kernel::run::dispatcher::ToolCallResult;
+use crate::kernel::run::event::Event;
+use crate::kernel::run::run_loop::RunLoopState;
+use crate::kernel::tools::id::CHECKPOINT_MEMORY_TOOLS;
+use crate::kernel::trace::SpanMeta;
+use crate::kernel::trace::TraceSpan;
+use crate::kernel::Message;
+use crate::kernel::OperationMeta;
+use crate::llm::message::ToolCall;
+use crate::observability::server_log;
+
+impl Engine {
+    pub(super) async fn dispatch_tools(&mut self, tool_calls: &[ToolCall], state: &RunLoopState) {
+        let parsed_calls = self.dispatcher.parse_calls(tool_calls);
+        let spans = self.emit_tool_starts(&parsed_calls).await;
+        let results = self
+            .dispatcher
+            .execute_calls(&parsed_calls, state.deadline())
+            .await;
+        self.apply_tool_results(results, &spans).await;
+
+        let invoked: Vec<String> = parsed_calls.iter().map(|p| p.call.name.clone()).collect();
+        self.ctx.tool_view.note_invoked_batch(&invoked);
+        self.ctx.tool_view.advance();
+    }
+
+    async fn emit_tool_starts(
+        &mut self,
+        parsed_calls: &[ParsedToolCall],
+    ) -> HashMap<String, TraceSpan> {
+        let mut spans = HashMap::new();
+        for p in parsed_calls {
+            tracing::debug!(tool = %p.call.name, tool_call_id = %p.call.id, arguments = %p.arguments, "tool call started");
+            let span = self
+                .trace
+                .start_span(
+                    p.kind.as_str(),
+                    &p.call.name,
+                    &self.loop_span_id,
+                    "",
+                    &SpanMeta::ToolStarted {
+                        tool_call_id: p.call.id.clone(),
+                        arguments: p.arguments.clone(),
+                    }
+                    .to_json(),
+                    "tool/skill execution started",
+                )
+                .await;
+            spans.insert(p.call.id.clone(), span);
+            self.ctx.messages.push(Message::operation_event(
+                p.kind.as_str(),
+                &p.call.name,
+                "started",
+                serde_json::json!({"tool_call_id": p.call.id, "arguments": p.arguments}),
+            ));
+            self.emit(Event::ToolStart {
+                tool_call_id: p.call.id.clone(),
+                name: p.call.name.clone(),
+                arguments: p.arguments.clone(),
+            })
+            .await;
+            server_log::info(
+                &server_log::ServerCtx::new(
+                    &self.ctx.trace_id,
+                    &self.ctx.run_id,
+                    &self.ctx.session_id,
+                    &self.ctx.agent_id,
+                    self.iteration.load(std::sync::atomic::Ordering::Relaxed),
+                ),
+                "tool",
+                "started",
+                server_log::ServerFields::default()
+                    .bytes(p.arguments.to_string().len() as u64)
+                    .detail("tool_call_id", p.call.id.clone())
+                    .detail("tool_name", p.call.name.clone())
+                    .detail("tool_kind", p.kind.as_str())
+                    .detail("arguments", p.arguments.clone()),
+            );
+            let turn = self.iteration.load(std::sync::atomic::Ordering::Relaxed);
+            let mut payload = self.audit_payload(turn);
+            payload.insert(
+                "tool_call_id".to_string(),
+                serde_json::json!(p.call.id.clone()),
+            );
+            payload.insert(
+                "tool_name".to_string(),
+                serde_json::json!(p.call.name.clone()),
+            );
+            payload.insert(
+                "arguments".to_string(),
+                serde_json::json!(p.arguments.clone()),
+            );
+            self.emit_audit("tool.started", payload).await;
+        }
+        spans
+    }
+
+    async fn apply_tool_results(
+        &mut self,
+        results: Vec<DispatchOutcome>,
+        spans: &HashMap<String, TraceSpan>,
+    ) {
+        for outcome in results {
+            let p = &outcome.parsed;
+            let meta = outcome.result.operation().clone();
+            let (output, success, error_text) = match &outcome.result {
+                ToolCallResult::Success(out, _) => (out.clone(), true, None),
+                ToolCallResult::ToolError(msg, _) | ToolCallResult::InfraError(msg, _) => {
+                    if matches!(&outcome.result, ToolCallResult::InfraError(..)) {
+                        tracing::error!(tool = %p.call.name, error = %msg, "tool infrastructure error");
+                    }
+                    (format!("Error: {msg}"), false, Some(msg.clone()))
+                }
+            };
+
+            tracing::debug!(tool = %p.call.name, tool_call_id = %p.call.id, success, output = %output, "tool call completed");
+
+            if let Some(span) = spans.get(&p.call.id) {
+                self.record_tool_span(span, p, &meta, success, error_text.as_deref())
+                    .await;
+            }
+
+            self.emit(Event::ToolEnd {
+                tool_call_id: p.call.id.clone(),
+                name: p.call.name.clone(),
+                success,
+                output: output.clone(),
+                operation: meta.clone(),
+            })
+            .await;
+            if success {
+                server_log::info(
+                    &server_log::ServerCtx::new(
+                        &self.ctx.trace_id,
+                        &self.ctx.run_id,
+                        &self.ctx.session_id,
+                        &self.ctx.agent_id,
+                        self.iteration.load(std::sync::atomic::Ordering::Relaxed),
+                    ),
+                    "tool",
+                    "completed",
+                    server_log::ServerFields::default()
+                        .elapsed_ms(meta.duration_ms)
+                        .bytes(output.len() as u64)
+                        .detail("tool_call_id", p.call.id.clone())
+                        .detail("tool_name", p.call.name.clone())
+                        .detail("tool_kind", p.kind.as_str())
+                        .detail("success", success)
+                        .detail("output", output.clone())
+                        .detail("operation", meta.clone()),
+                );
+            } else {
+                server_log::error(
+                    &server_log::ServerCtx::new(
+                        &self.ctx.trace_id,
+                        &self.ctx.run_id,
+                        &self.ctx.session_id,
+                        &self.ctx.agent_id,
+                        self.iteration.load(std::sync::atomic::Ordering::Relaxed),
+                    ),
+                    "tool",
+                    "failed",
+                    server_log::ServerFields::default()
+                        .elapsed_ms(meta.duration_ms)
+                        .bytes(output.len() as u64)
+                        .detail("tool_call_id", p.call.id.clone())
+                        .detail("tool_name", p.call.name.clone())
+                        .detail("tool_kind", p.kind.as_str())
+                        .detail("success", success)
+                        .detail("output", output.clone())
+                        .detail("error", error_text.clone())
+                        .detail("operation", meta.clone()),
+                );
+            }
+            let turn = self.iteration.load(std::sync::atomic::Ordering::Relaxed);
+            let mut payload = self.audit_payload(turn);
+            payload.insert(
+                "tool_call_id".to_string(),
+                serde_json::json!(p.call.id.clone()),
+            );
+            payload.insert(
+                "tool_name".to_string(),
+                serde_json::json!(p.call.name.clone()),
+            );
+            payload.insert("success".to_string(), serde_json::json!(success));
+            payload.insert("output".to_string(), serde_json::json!(output.clone()));
+            payload.insert("error".to_string(), serde_json::json!(error_text));
+            payload.insert("operation".to_string(), serde_json::json!(meta.clone()));
+            self.emit_audit(
+                if success {
+                    "tool.completed"
+                } else {
+                    "tool.failed"
+                },
+                payload,
+            )
+            .await;
+            self.ctx.messages.push(Message::tool_result_with_operation(
+                &p.call.id,
+                &p.call.name,
+                &output,
+                success,
+                meta,
+            ));
+        }
+    }
+
+    async fn record_tool_span(
+        &mut self,
+        span: &TraceSpan,
+        p: &ParsedToolCall,
+        meta: &OperationMeta,
+        success: bool,
+        error_text: Option<&str>,
+    ) {
+        if success {
+            span.complete(
+                meta.duration_ms,
+                0,
+                0,
+                0,
+                0,
+                0.0,
+                &SpanMeta::ToolCompleted {
+                    tool_call_id: p.call.id.clone(),
+                    duration_ms: meta.duration_ms,
+                    impact: meta.impact.clone(),
+                    summary: meta.summary.clone(),
+                }
+                .to_json(),
+                "tool/skill execution completed",
+            )
+            .await;
+            self.ctx.messages.push(Message::operation_event(
+                p.kind.as_str(),
+                &p.call.name,
+                "completed",
+                serde_json::json!({"tool_call_id": p.call.id, "duration_ms": meta.duration_ms}),
+            ));
+        } else {
+            let err = error_text.unwrap_or_default();
+            span.fail(
+                meta.duration_ms,
+                "tool_error",
+                err,
+                &SpanMeta::ToolFailed {
+                    tool_call_id: p.call.id.clone(),
+                    duration_ms: meta.duration_ms,
+                    error: err.to_string(),
+                    impact: meta.impact.clone(),
+                    summary: meta.summary.clone(),
+                }
+                .to_json(),
+                "tool/skill execution failed",
+            )
+            .await;
+            self.ctx.messages.push(Message::operation_event(
+                p.kind.as_str(),
+                &p.call.name,
+                "failed",
+                serde_json::json!({"tool_call_id": p.call.id, "duration_ms": meta.duration_ms, "error": err}),
+            ));
+        }
+    }
+
+    pub(super) fn abort_tool_results(&mut self, tool_calls: &[ToolCall]) {
+        for tc in tool_calls {
+            self.ctx
+                .messages
+                .push(Message::tool_result(&tc.id, &tc.name, "aborted", false));
+        }
+    }
+
+    pub(super) async fn try_compact(&mut self, state: &mut RunLoopState) {
+        let memory_tools = self
+            .dispatcher
+            .memory_tool_schemas(&CHECKPOINT_MEMORY_TOOLS);
+        if let Some(info) = self
+            .compactor
+            .compact(
+                &mut self.ctx.messages,
+                state.max_context_tokens(),
+                &memory_tools,
+            )
+            .await
+        {
+            state.add_token_usage(&info.token_usage);
+            state.apply_checkpoint_usage(info.checkpoint_usage.as_ref());
+            if let Some(cp) = &info.checkpoint_usage {
+                self.emit(Event::CheckpointDone {
+                    prompt_tokens: cp.prompt_tokens,
+                    completion_tokens: cp.completion_tokens,
+                })
+                .await;
+            }
+            self.emit(Event::CompactionDone {
+                messages_before: info.messages_before,
+                messages_after: info.messages_after,
+                summary_len: info.summary_len,
+            })
+            .await;
+        }
+    }
+}

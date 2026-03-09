@@ -1,0 +1,82 @@
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
+use std::time::Instant;
+
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+
+use crate::kernel::run::compactor::Compactor;
+use crate::kernel::run::context::Context;
+use crate::kernel::run::dispatcher::ToolDispatcher;
+use crate::kernel::run::event::Event;
+use crate::kernel::run::run_loop::AbortPolicy;
+use crate::kernel::trace::Trace;
+use crate::kernel::trace::TraceRecorder;
+use crate::observability::audit;
+use crate::observability::server_log;
+
+pub(super) const EVENT_CAPACITY: usize = 128;
+
+pub(crate) struct Engine {
+    pub(super) ctx: Context,
+    pub(super) compactor: Compactor,
+    pub(super) dispatcher: ToolDispatcher,
+    pub(super) start_time: Instant,
+    pub(super) cancel: CancellationToken,
+    pub(super) iteration: Arc<AtomicU32>,
+    pub(super) tx: mpsc::Sender<Event>,
+    pub(super) trace: Trace,
+    pub(super) abort_policy: AbortPolicy,
+    pub(super) loop_span_id: String,
+}
+
+impl Engine {
+    pub fn new(
+        ctx: Context,
+        dispatcher: ToolDispatcher,
+        compactor: Compactor,
+        cancel: CancellationToken,
+        iteration: Arc<AtomicU32>,
+        trace_recorder: TraceRecorder,
+    ) -> (Self, mpsc::Receiver<Event>) {
+        let (tx, rx) = mpsc::channel(EVENT_CAPACITY);
+        let engine = Self {
+            abort_policy: AbortPolicy::new(ctx.max_iterations),
+            ctx,
+            compactor,
+            dispatcher,
+            start_time: Instant::now(),
+            cancel,
+            iteration,
+            tx,
+            trace: Trace::new(trace_recorder),
+            loop_span_id: String::new(),
+        };
+        (engine, rx)
+    }
+    pub(super) fn ops_ctx(&self, turn: u32) -> server_log::ServerCtx<'_> {
+        server_log::ServerCtx::new(
+            &self.ctx.trace_id,
+            &self.ctx.run_id,
+            &self.ctx.session_id,
+            &self.ctx.agent_id,
+            turn,
+        )
+    }
+
+    pub(super) fn audit_payload(&self, turn: u32) -> serde_json::Map<String, serde_json::Value> {
+        audit::base_payload(&self.ops_ctx(turn))
+    }
+
+    pub(super) async fn emit_audit(
+        &self,
+        name: &str,
+        payload: serde_json::Map<String, serde_json::Value>,
+    ) {
+        self.emit(audit::event_from_map(name, payload)).await;
+    }
+
+    pub(super) async fn emit(&self, event: Event) {
+        let _ = self.tx.send(event).await;
+    }
+}

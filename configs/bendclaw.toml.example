@@ -1,0 +1,48 @@
+# BendClaw service configuration.
+# Copy this file to bendclaw.toml and adjust as needed.
+# Usage: bendclaw --config bendclaw.toml
+
+[server]
+bind_addr = "127.0.0.1:8787"
+
+[storage]
+db_prefix = "bendclaw_"
+
+# Databend Cloud API connection.
+# API token: https://app.databend.com/<org>/developer/api-token
+databend_api_base_url = "https://api.databend.com/v1"
+databend_api_token = ""
+databend_warehouse = "default"
+
+[log]
+level = "info"
+format = "text"    # "text" or "json"
+
+# ── LLM providers ────────────────────────────────────────────────────────────
+#
+# Supported providers: "openai", "anthropic"
+# For others (e.g., deepseek, ollama), use OpenAI-compatible provider with base_url.
+#
+# Requests are routed to the highest-weight available provider.
+#
+# [[llm.providers]]
+# name = "openai-gpt-5.2"
+# provider = "openai"
+# base_url = "https://api.openai.com/v1"
+# api_key = ""
+# model = "gpt-5.2"
+# weight = 100
+# temperature = 0.7
+# input_price = 0.40     # USD per 1M input tokens
+# output_price = 1.60    # USD per 1M output tokens
+
+# ── Sandbox ─────────────────────────────────────────────────────────────────
+#
+# Skill execution sandbox environment settings.
+#
+[sandbox]
+provider = "boxlite"
+image = "python:slim"
+cpus = 2
+memory_mib = 1024
+workspace = "./workspace"

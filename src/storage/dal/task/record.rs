@@ -1,0 +1,17 @@
+use serde::Deserialize;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRecord {
+    pub id: String,
+    pub agentos_id: String,
+    pub name: String,
+    pub cron_expr: String,
+    pub prompt: String,
+    pub enabled: bool,
+    pub status: String,
+    pub last_run_at: String,
+    pub next_run_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}

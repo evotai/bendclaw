@@ -1,17 +1,177 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which semver part to bump'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      base_tag:
+        description: 'Optional base tag (e.g. v1.2.3). Defaults to latest release tag'
+        type: string
+        required: false
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: bendclaw
 
 jobs:
+  create_release:
+    name: Create tag and prerelease (draft)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      version: ${{ steps.next.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+      previous: ${{ steps.next.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.ref_name }}
+
+      - name: Configure git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Determine next version
+        id: next
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_TAG="${{ inputs.base_tag }}"
+          if [ -z "${BASE_TAG}" ]; then
+            BASE_TAG="$(
+              gh release list --limit 100 --json tagName --jq '.[].tagName' \
+                | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' \
+                | sort -V \
+                | tail -n 1 \
+                || true
+            )"
+          fi
+          if [ -z "${BASE_TAG}" ]; then
+            BASE_TAG="$(
+              git for-each-ref --sort=-version:refname --format='%(refname:strip=2)' refs/tags \
+                | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' \
+                | head -n 1 \
+                || true
+            )"
+          fi
+          BASE_TAG="$(printf '%s' "${BASE_TAG}" | tr -d '\r' | xargs)"
+          if [ -z "${BASE_TAG}" ]; then
+            echo "No base tag found, starting from v0.0.0"
+            BASE_TAG="v0.0.0"
+          fi
+
+          if ! [[ "${BASE_TAG}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "Base tag is not a stable semver tag: ${BASE_TAG}" >&2
+            exit 1
+          fi
+
+          BASE_VERSION="${BASE_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_VERSION}"
+
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+            *) echo "Unknown bump: ${{ inputs.bump }}" >&2; exit 1 ;;
+          esac
+
+          NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          NEXT_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${NEXT_TAG}" >/dev/null 2>&1; then
+            echo "Tag already exists on remote: ${NEXT_TAG}" >&2
+            exit 1
+          fi
+          if gh release view "${NEXT_TAG}" >/dev/null 2>&1; then
+            echo "Release already exists: ${NEXT_TAG}" >&2
+            exit 1
+          fi
+
+          echo "previous=${BASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${NEXT_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${NEXT_VERSION}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Capture release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Tag (annotated)
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -a "${{ steps.next.outputs.tag }}" "${{ steps.meta.outputs.sha }}" -m "${{ steps.next.outputs.tag }}"
+
+      - name: Push tag
+        if: github.ref_name == 'main'
+        shell: bash
+        run: git push origin "refs/tags/${{ steps.next.outputs.tag }}"
+
+      - name: Create prerelease (draft)
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.next.outputs.tag }}"
+          PREV="${{ steps.next.outputs.previous }}"
+          SHA="$(git rev-parse HEAD)"
+
+          {
+            echo "Previous: ${PREV}"
+            echo "Tag: ${TAG}"
+            echo "SHA: ${SHA}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          NOTES_ARGS=()
+          if [ "${PREV}" != "v0.0.0" ]; then
+            NOTES_ARGS+=(--notes-start-tag "${PREV}")
+          fi
+
+          gh release create "${TAG}" \
+            --verify-tag \
+            --target "${SHA}" \
+            --generate-notes \
+            "${NOTES_ARGS[@]}" \
+            --prerelease \
+            --draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Note (non-main)
+        if: github.ref_name != 'main'
+        shell: bash
+        run: |
+          {
+            echo "Ref: ${GITHUB_REF_NAME}"
+            echo ""
+            echo "This run did not push/tag/release because it is not running from main."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    needs: create_release
+    if: github.ref_name == 'main'
     strategy:
       matrix:
         include:
@@ -25,17 +185,40 @@ jobs:
             os: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-rust
         with:
-          targets: ${{ matrix.target }}
+          fetch-depth: 0
+          fetch-tags: true
+          ref: refs/tags/${{ needs.create_release.outputs.tag }}
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup show
+          rustup target add ${{ matrix.target }}
+
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
 
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Set version in Cargo.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create_release.outputs.version }}"
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -43,28 +226,34 @@ jobs:
       - name: Package
         shell: bash
         run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
           mkdir -p distro/{bin,configs}
           cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} distro/bin/
-          cp scripts/distribution/configs/* distro/configs/
-          tar -C distro -czf ${{ env.BINARY_NAME }}-${{ github.ref_name }}-${{ matrix.target }}.tar.gz bin configs
+          cp configs/bendclaw.toml.example distro/configs/
+          tar -C distro -czf ${{ env.BINARY_NAME }}-${TAG}-${{ matrix.target }}.tar.gz bin configs
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-${{ matrix.target }}
-          path: ${{ env.BINARY_NAME }}-*.tar.gz
+      - name: Upload artifact to release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
+          gh release upload "${TAG}" ${{ env.BINARY_NAME }}-${TAG}-${{ matrix.target }}.tar.gz --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release:
-    name: Release
-    needs: build
+  finalize_release:
+    name: Publish prerelease (undraft)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    needs: [create_release, build]
+    if: github.ref_name == 'main' && needs.build.result == 'success'
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: ${{ env.BINARY_NAME }}-*.tar.gz
+      - name: Publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
+          echo "Publishing prerelease: ${TAG}"
+          gh release edit "${TAG}" --draft=false --prerelease --repo "${GITHUB_REPOSITORY}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

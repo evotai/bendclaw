@@ -159,7 +159,7 @@ mod action {
 
 fn dummy_tool() -> Result<DatabendTool, Box<dyn std::error::Error>> {
     let pool =
-        bendclaw::storage::Pool::new("https://api.databend.com/v1", "test-token", "default")?;
+        bendclaw::storage::Pool::new("https://app.databend.com/v1.1", "test-token", "default")?;
     Ok(DatabendTool::new(pool))
 }
 

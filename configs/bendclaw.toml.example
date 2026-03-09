@@ -10,7 +10,7 @@ db_prefix = "bendclaw_"
 
 # Databend Cloud API connection.
 # API token: https://app.databend.com/<org>/developer/api-token
-databend_api_base_url = "https://api.databend.com/v1"
+databend_api_base_url = "https://app.databend.com/v1.1"
 databend_api_token = ""
 databend_warehouse = "default"
 

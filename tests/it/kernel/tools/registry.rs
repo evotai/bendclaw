@@ -10,8 +10,9 @@ use crate::mocks::skill::NoopSkillStore;
 
 fn make_registry() -> ToolRegistry {
     let factory = Arc::new(FixedStoreFactory);
-    let pool = bendclaw::storage::Pool::new("https://api.databend.com/v1", "test-token", "default")
-        .unwrap_or_else(|_| panic!("pool"));
+    let pool =
+        bendclaw::storage::Pool::new("https://app.databend.com/v1.1", "test-token", "default")
+            .unwrap_or_else(|_| panic!("pool"));
     let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
         Arc::new(MockLLMProvider::with_text("ok"));
     let storage = Arc::new(bendclaw::kernel::agent_store::AgentStore::new(

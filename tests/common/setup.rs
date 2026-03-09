@@ -222,7 +222,7 @@ pub async fn cleanup_prefix(prefix: &str) -> anyhow::Result<()> {
 pub fn require_api_config() -> anyhow::Result<(String, String, String)> {
     initialize_test_env()?;
     let base_url = std::env::var("BENDCLAW_STORAGE_DATABEND_API_BASE_URL")
-        .unwrap_or_else(|_| "https://api.databend.com/v1".to_string());
+        .unwrap_or_else(|_| "https://app.databend.com/v1.1".to_string());
     let token =
         std::env::var("BENDCLAW_STORAGE_DATABEND_API_TOKEN").unwrap_or_else(|_| String::new());
     let warehouse = std::env::var("BENDCLAW_STORAGE_DATABEND_WAREHOUSE")

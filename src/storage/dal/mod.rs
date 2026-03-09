@@ -7,6 +7,7 @@ pub mod run;
 pub mod run_event;
 pub mod session;
 pub mod task;
+pub mod task_history;
 pub mod trace;
 pub mod usage;
 pub mod variable;

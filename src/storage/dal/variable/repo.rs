@@ -17,19 +17,25 @@ impl RowMapper for VariableMapper {
     type Entity = VariableRecord;
 
     fn columns(&self) -> &str {
-        "id, key, value, secret, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, key, value, secret, TO_VARCHAR(last_used_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> VariableRecord {
         let secret_str: String = sql::col(row, 3);
         let secret = matches!(secret_str.as_str(), "1" | "true");
+        let last_used: String = sql::col(row, 4);
         VariableRecord {
             id: sql::col(row, 0),
             key: sql::col(row, 1),
             value: sql::col(row, 2),
             secret,
-            created_at: sql::col(row, 4),
-            updated_at: sql::col(row, 5),
+            last_used_at: if last_used.is_empty() {
+                None
+            } else {
+                Some(last_used)
+            },
+            created_at: sql::col(row, 5),
+            updated_at: sql::col(row, 6),
         }
     }
 }
@@ -113,6 +119,23 @@ impl VariableRepo {
             repo_error(
                 REPO,
                 "delete",
+                serde_json::json!({"variable_id": id}),
+                error,
+            );
+        }
+        result
+    }
+
+    pub async fn touch_last_used(&self, id: &str) -> Result<()> {
+        let sql = format!(
+            "UPDATE variables SET last_used_at=NOW() WHERE id='{}'",
+            sql::escape(id)
+        );
+        let result = self.table.pool().exec(&sql).await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "touch_last_used",
                 serde_json::json!({"variable_id": id}),
                 error,
             );

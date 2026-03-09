@@ -306,6 +306,10 @@ pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Route
             "/v1/agents/{agent_id}/tasks/{task_id}/toggle",
             post(v1::tasks::toggle_task),
         )
+        .route(
+            "/v1/agents/{agent_id}/tasks/{task_id}/history",
+            get(v1::tasks::list_task_history),
+        )
         // Feedback
         .route(
             "/v1/agents/{agent_id}/feedback",

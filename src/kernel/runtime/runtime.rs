@@ -26,6 +26,7 @@ pub struct Runtime {
     pub(crate) status: RwLock<RuntimeStatus>,
     pub(crate) sync_cancel: tokio_util::sync::CancellationToken,
     pub(crate) sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub(crate) scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 pub(crate) struct RuntimeParts {
@@ -37,6 +38,7 @@ pub(crate) struct RuntimeParts {
     pub status: RwLock<RuntimeStatus>,
     pub sync_cancel: tokio_util::sync::CancellationToken,
     pub sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Runtime {
@@ -61,6 +63,7 @@ impl Runtime {
             status: parts.status,
             sync_cancel: parts.sync_cancel,
             sync_handle: parts.sync_handle,
+            scheduler_handle: parts.scheduler_handle,
         }
     }
 

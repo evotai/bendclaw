@@ -12,6 +12,7 @@ use crate::service::state::AppState;
 use crate::service::v1::common::ListQuery;
 use crate::service::v1::common::Paginated;
 use crate::storage::dal::task::TaskRecord;
+use crate::storage::dal::task_history::TaskHistoryRecord;
 
 #[derive(Serialize)]
 pub struct TaskResponse {
@@ -22,8 +23,16 @@ pub struct TaskResponse {
     pub prompt: String,
     pub enabled: bool,
     pub status: String,
+    pub schedule_kind: String,
+    pub every_seconds: Option<i32>,
+    pub at_time: Option<String>,
+    pub tz: Option<String>,
+    pub webhook_url: Option<String>,
+    pub last_error: Option<String>,
+    pub delete_after_run: bool,
+    pub run_count: i32,
     pub last_run_at: String,
-    pub next_run_at: String,
+    pub next_run_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -37,6 +46,14 @@ fn to_response(r: TaskRecord) -> TaskResponse {
         prompt: r.prompt,
         enabled: r.enabled,
         status: r.status,
+        schedule_kind: r.schedule_kind,
+        every_seconds: r.every_seconds,
+        at_time: r.at_time,
+        tz: r.tz,
+        webhook_url: r.webhook_url,
+        last_error: r.last_error,
+        delete_after_run: r.delete_after_run,
+        run_count: r.run_count,
         last_run_at: r.last_run_at,
         next_run_at: r.next_run_at,
         created_at: r.created_at,
@@ -50,6 +67,18 @@ pub struct CreateTaskRequest {
     pub name: String,
     pub cron_expr: String,
     pub prompt: String,
+    #[serde(default = "default_schedule_kind")]
+    pub schedule_kind: String,
+    pub every_seconds: Option<i32>,
+    pub at_time: Option<String>,
+    pub tz: Option<String>,
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub delete_after_run: bool,
+}
+
+fn default_schedule_kind() -> String {
+    "cron".to_string()
 }
 
 #[derive(Deserialize)]
@@ -58,6 +87,51 @@ pub struct UpdateTaskRequest {
     pub cron_expr: Option<String>,
     pub prompt: Option<String>,
     pub enabled: Option<bool>,
+    pub schedule_kind: Option<String>,
+    pub every_seconds: Option<Option<i32>>,
+    pub at_time: Option<Option<String>>,
+    pub tz: Option<Option<String>>,
+    pub webhook_url: Option<Option<String>>,
+    pub delete_after_run: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub struct TaskHistoryResponse {
+    pub id: String,
+    pub task_id: String,
+    pub run_id: Option<String>,
+    pub task_name: String,
+    pub schedule_kind: String,
+    pub cron_expr: Option<String>,
+    pub prompt: String,
+    pub status: String,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub webhook_url: Option<String>,
+    pub webhook_status: Option<String>,
+    pub webhook_error: Option<String>,
+    pub created_at: String,
+}
+
+fn to_history_response(r: TaskHistoryRecord) -> TaskHistoryResponse {
+    TaskHistoryResponse {
+        id: r.id,
+        task_id: r.task_id,
+        run_id: r.run_id,
+        task_name: r.task_name,
+        schedule_kind: r.schedule_kind,
+        cron_expr: r.cron_expr,
+        prompt: r.prompt,
+        status: r.status,
+        output: r.output,
+        error: r.error,
+        duration_ms: r.duration_ms,
+        webhook_url: r.webhook_url,
+        webhook_status: r.webhook_status,
+        webhook_error: r.webhook_error,
+        created_at: r.created_at,
+    }
 }
 
 pub async fn list_tasks(
@@ -110,4 +184,18 @@ pub async fn toggle_task(
 ) -> Result<Json<TaskResponse>> {
     let record = service::toggle_task(&state, &agent_id, &task_id).await?;
     Ok(Json(to_response(record)))
+}
+
+pub async fn list_task_history(
+    State(state): State<AppState>,
+    _ctx: RequestContext,
+    Path((agent_id, task_id)): Path<(String, String)>,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Paginated<TaskHistoryResponse>>> {
+    let (records, total) = service::list_task_history(&state, &agent_id, &task_id, &q).await?;
+    Ok(Json(Paginated::new(
+        records.into_iter().map(to_history_response).collect(),
+        &q,
+        total,
+    )))
 }

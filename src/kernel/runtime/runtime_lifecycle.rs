@@ -31,6 +31,11 @@ impl Runtime {
             let _ = handle.await;
         }
 
+        let sched_handle = self.scheduler_handle.write().take();
+        if let Some(handle) = sched_handle {
+            let _ = handle.await;
+        }
+
         *self.status.write() = RuntimeStatus::Stopped;
         tracing::info!(
             elapsed_ms = t0.elapsed().as_millis() as u64,

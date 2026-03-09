@@ -26,6 +26,7 @@ const AGENT_MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0011_variables.sql"),
     include_str!("../../migrations/0012_tasks.sql"),
     include_str!("../../migrations/0013_feedback.sql"),
+    include_str!("../../migrations/0014_task_history.sql"),
 ];
 
 /// Run root migrations against the pool's current database.

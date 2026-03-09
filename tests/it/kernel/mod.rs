@@ -1,6 +1,7 @@
 mod agent_store;
 mod run;
 mod runtime;
+mod scheduler;
 mod session;
 mod skills;
 mod tools;

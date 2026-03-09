@@ -18,6 +18,7 @@ pub struct VariableResponse {
     pub key: String,
     pub value: String,
     pub secret: bool,
+    pub last_used_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -99,6 +100,7 @@ fn to_response(r: crate::storage::dal::variable::VariableRecord) -> VariableResp
             r.value
         },
         secret: r.secret,
+        last_used_at: r.last_used_at,
         created_at: r.created_at,
         updated_at: r.updated_at,
     }

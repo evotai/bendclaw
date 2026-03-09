@@ -34,6 +34,7 @@ pub(super) async fn create_variable(
         key: req.key,
         value: req.value,
         secret: req.secret.unwrap_or(false),
+        last_used_at: None,
         created_at: String::new(),
         updated_at: String::new(),
     };

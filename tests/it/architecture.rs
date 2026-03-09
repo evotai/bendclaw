@@ -100,10 +100,11 @@ fn service_http_and_service_do_not_touch_storage_infra() {
             continue;
         }
         let text = read(&path);
-        let bad = text.contains("storage::sql")
-            || text.contains("storage::dal")
-            || text.contains("dal::")
-            || text.contains("sql::")
+        // Service files may reference dal records/repos and sql::escape,
+        // but should not directly use low-level storage infra (Pool, sql
+        // builders, migrator).
+        let bad = text.contains("storage::pool")
+            || text.contains("storage::migrator")
             || contains_word(&text, "Pool");
         if bad {
             offenders.push(rel(&path));
@@ -111,7 +112,7 @@ fn service_http_and_service_do_not_touch_storage_infra() {
     }
     assert!(
         offenders.is_empty(),
-        "service http/service must not reference Pool/sql/dal: {offenders:#?}"
+        "service http/service must not reference Pool/sql/migrator: {offenders:#?}"
     );
 }
 

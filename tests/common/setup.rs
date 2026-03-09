@@ -251,6 +251,10 @@ const ALL_MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0008_skills_skill_files.sql"),
     include_str!("../../migrations/0009_traces_spans.sql"),
     include_str!("../../migrations/0010_usage.sql"),
+    include_str!("../../migrations/0011_variables.sql"),
+    include_str!("../../migrations/0012_tasks.sql"),
+    include_str!("../../migrations/0013_feedback.sql"),
+    include_str!("../../migrations/0014_task_history.sql"),
 ];
 
 async fn run_migration(pool: &Pool, sql: &str) -> anyhow::Result<()> {

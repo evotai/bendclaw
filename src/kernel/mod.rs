@@ -1,6 +1,7 @@
 pub mod agent_store;
 pub mod run;
 pub mod runtime;
+pub mod scheduler;
 pub mod session;
 pub mod skills;
 pub mod tools;

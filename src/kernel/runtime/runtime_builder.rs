@@ -156,6 +156,12 @@ async fn construct(
 
     let sessions = Arc::new(SessionManager::new());
 
+    let scheduler_handle = crate::kernel::scheduler::TaskScheduler::spawn(
+        databases.clone(),
+        sync_cancel.clone(),
+        reqwest::Client::new(),
+    );
+
     Ok(Arc::new(Runtime::from_parts(RuntimeParts {
         sessions,
         config,
@@ -165,6 +171,7 @@ async fn construct(
         status: RwLock::new(RuntimeStatus::Ready),
         sync_cancel,
         sync_handle: RwLock::new(Some(sync_handle)),
+        scheduler_handle: RwLock::new(Some(scheduler_handle)),
     })))
 }
 

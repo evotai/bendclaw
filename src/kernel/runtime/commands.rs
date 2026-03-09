@@ -479,6 +479,7 @@ impl Runtime {
         self.agent_store(agent_id)?.config_get(agent_id).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_config(
         &self,
         agent_id: &str,

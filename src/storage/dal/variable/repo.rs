@@ -84,6 +84,10 @@ impl VariableRepo {
         result
     }
 
+    pub async fn list_all(&self) -> Result<Vec<VariableRecord>> {
+        self.list(1000).await
+    }
+
     pub async fn get(&self, id: &str) -> Result<Option<VariableRecord>> {
         let result = self.table.get(&[Where("id", SqlVal::Str(id))]).await;
         if let Err(error) = &result {

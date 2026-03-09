@@ -144,8 +144,17 @@ impl Workspace {
     }
 
     /// Execute a shell command string with idle-timeout streaming.
-    pub async fn exec(&self, shell_command: &str) -> CommandOutput {
+    ///
+    /// Optional `extra` env vars are layered on top of the base env (safe_vars + user_env).
+    pub async fn exec(
+        &self,
+        shell_command: &str,
+        extra: &HashMap<String, String>,
+    ) -> CommandOutput {
         let mut cmd = self.command("sh");
+        for (k, v) in extra {
+            cmd.env(k, v);
+        }
         cmd.arg("-c").arg(shell_command);
         self.run_with_idle_timeout(cmd).await
     }

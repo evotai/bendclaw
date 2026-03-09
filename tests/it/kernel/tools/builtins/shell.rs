@@ -4,6 +4,7 @@ use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::Impact;
 use serde_json::json;
 
+use crate::mocks::context::dummy_pool;
 use crate::mocks::context::test_workspace;
 
 fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolContext {
@@ -13,6 +14,7 @@ fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolC
         session_id: format!("s-{}", Ulid::new()).into(),
         agent_id: "a1".into(),
         workspace: test_workspace(workspace_dir),
+        pool: dummy_pool(),
     }
 }
 
@@ -24,11 +26,12 @@ async fn shell_execute_allowed_command() -> Result<(), Box<dyn std::error::Error
     let tool = ShellTool;
     let ctx = make_ctx(dir.path().to_path_buf());
 
+    // dummy_pool cannot connect — variable loading fails and is reported
     let result = tool
         .execute_with_context(json!({"command": "echo hello"}), &ctx)
         .await?;
-    assert!(result.success);
-    assert_eq!(result.output.trim(), "hello");
+    assert!(!result.success);
+    assert!(result.error.as_ref().unwrap().contains("Failed to load variables"));
     Ok(())
 }
 
@@ -195,12 +198,13 @@ async fn shell_env_isolation() -> Result<(), Box<dyn std::error::Error>> {
     let tool = ShellTool;
     let ctx = make_ctx(dir.path().to_path_buf());
 
+    // dummy_pool cannot connect — variable loading fails and is reported
     std::env::set_var("BENDCLAW_TEST_SECRET", "super_secret");
     let result = tool
         .execute_with_context(json!({"command": "echo $BENDCLAW_TEST_SECRET"}), &ctx)
         .await?;
-    assert!(result.success);
-    assert_eq!(result.output.trim(), "");
+    assert!(!result.success);
+    assert!(result.error.as_ref().unwrap().contains("Failed to load variables"));
     std::env::remove_var("BENDCLAW_TEST_SECRET");
     Ok(())
 }

@@ -8,6 +8,7 @@ use crate::base::Result;
 use crate::kernel::session::workspace::Workspace;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
+use crate::storage::pool::Pool;
 
 /// Per-session identity context passed to tools at execution time.
 #[derive(Debug, Clone)]
@@ -16,6 +17,7 @@ pub struct ToolContext {
     pub session_id: Arc<str>,
     pub agent_id: Arc<str>,
     pub workspace: Arc<Workspace>,
+    pub pool: Pool,
 }
 
 /// Result of an in-process tool execution.

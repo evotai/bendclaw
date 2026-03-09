@@ -137,7 +137,7 @@ fn command_sets_current_dir() {
 async fn exec_echo() {
     let dir = tempfile::tempdir().unwrap();
     let ws = test_ws(dir.path().to_path_buf());
-    let output = ws.exec("echo hello").await;
+    let output = ws.exec("echo hello", &HashMap::new()).await;
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.stdout.trim(), "hello");
     assert!(output.stderr.is_empty());
@@ -147,7 +147,7 @@ async fn exec_echo() {
 async fn exec_nonzero_exit() {
     let dir = tempfile::tempdir().unwrap();
     let ws = test_ws(dir.path().to_path_buf());
-    let output = ws.exec("exit 42").await;
+    let output = ws.exec("exit 42", &HashMap::new()).await;
     assert_eq!(output.exit_code, 42);
 }
 
@@ -156,7 +156,9 @@ async fn exec_env_isolation() {
     let dir = tempfile::tempdir().unwrap();
     let ws = test_ws(dir.path().to_path_buf());
     std::env::set_var("BENDCLAW_WS_TEST_SECRET", "leaked");
-    let output = ws.exec("echo $BENDCLAW_WS_TEST_SECRET").await;
+    let output = ws
+        .exec("echo $BENDCLAW_WS_TEST_SECRET", &HashMap::new())
+        .await;
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.stdout.trim(), "");
     std::env::remove_var("BENDCLAW_WS_TEST_SECRET");
@@ -175,7 +177,7 @@ async fn exec_user_env_visible() {
         1_048_576,
         Arc::new(SandboxResolver),
     );
-    let output = ws.exec("echo $GREETING").await;
+    let output = ws.exec("echo $GREETING", &HashMap::new()).await;
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.stdout.trim(), "hi_there");
 }
@@ -191,7 +193,7 @@ async fn exec_idle_timeout() {
         1_048_576,
         Arc::new(SandboxResolver),
     );
-    let output = ws.exec("sleep 10").await;
+    let output = ws.exec("sleep 10", &HashMap::new()).await;
     assert_eq!(output.exit_code, -1);
     assert!(output.stderr.contains("idle timeout"));
 }
@@ -256,4 +258,72 @@ fn open_resolver_relative_path() {
     let ws = test_ws_open(dir.path().to_path_buf());
     let resolved = ws.resolve_safe_path("foo.txt");
     assert_eq!(resolved, Some(dir.path().join("foo.txt")));
+}
+
+// ── exec with extra env ──
+
+#[tokio::test]
+async fn exec_with_env_injects_extra_vars() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = test_ws(dir.path().to_path_buf());
+    let mut extra = HashMap::new();
+    extra.insert("MY_VAR".into(), "injected_value".into());
+    let output = ws.exec("echo $MY_VAR", &extra).await;
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout.trim(), "injected_value");
+}
+
+#[tokio::test]
+async fn exec_with_env_empty_map_same_as_exec() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = test_ws(dir.path().to_path_buf());
+    let extra = HashMap::new();
+    let output = ws.exec("echo hello", &extra).await;
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout.trim(), "hello");
+}
+
+#[tokio::test]
+async fn exec_with_env_does_not_leak_host_env() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = test_ws(dir.path().to_path_buf());
+    std::env::set_var("BENDCLAW_EXEC_ENV_TEST", "leaked");
+    let mut extra = HashMap::new();
+    extra.insert("SAFE_VAR".into(), "ok".into());
+    let output = ws.exec("echo $BENDCLAW_EXEC_ENV_TEST", &extra).await;
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout.trim(), "");
+    std::env::remove_var("BENDCLAW_EXEC_ENV_TEST");
+}
+
+#[tokio::test]
+async fn exec_with_env_multiple_vars() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = test_ws(dir.path().to_path_buf());
+    let mut extra = HashMap::new();
+    extra.insert("A".into(), "1".into());
+    extra.insert("B".into(), "2".into());
+    let output = ws.exec("echo ${A}_${B}", &extra).await;
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout.trim(), "1_2");
+}
+
+#[tokio::test]
+async fn exec_with_env_overrides_user_env() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut user_env = HashMap::new();
+    user_env.insert("CONFLICT".into(), "original".into());
+    let ws = Workspace::new(
+        dir.path().to_path_buf(),
+        vec!["PATH".into()],
+        user_env,
+        Duration::from_secs(5),
+        1_048_576,
+        Arc::new(SandboxResolver),
+    );
+    let mut extra = HashMap::new();
+    extra.insert("CONFLICT".into(), "overridden".into());
+    let output = ws.exec("echo $CONFLICT", &extra).await;
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout.trim(), "overridden");
 }

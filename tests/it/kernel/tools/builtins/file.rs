@@ -4,6 +4,7 @@ use bendclaw::kernel::tools::file::FileWriteTool;
 use bendclaw::kernel::tools::Tool;
 use serde_json::json;
 
+use crate::mocks::context::dummy_pool;
 use crate::mocks::context::test_workspace;
 
 fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolContext {
@@ -13,6 +14,7 @@ fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolC
         session_id: format!("s-{}", Ulid::new()).into(),
         agent_id: "a1".into(),
         workspace: test_workspace(workspace_dir),
+        pool: dummy_pool(),
     }
 }
 

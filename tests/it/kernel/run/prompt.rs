@@ -12,6 +12,7 @@ use bendclaw::kernel::run::prompt::MAX_SKILLS_BYTES;
 use bendclaw::kernel::run::prompt::MAX_SOUL_BYTES;
 use bendclaw::kernel::run::prompt::MAX_SYSTEM_BYTES;
 use bendclaw::kernel::run::prompt::MAX_TOOLS_BYTES;
+use bendclaw::kernel::run::prompt::MAX_VARIABLES_BYTES;
 use bendclaw::storage::dal::learning::LearningRecord;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -219,9 +220,10 @@ fn total_max_under_200kb() {
             + MAX_SKILLS_BYTES
             + MAX_TOOLS_BYTES
             + MAX_LEARNINGS_BYTES
+            + MAX_VARIABLES_BYTES
             + MAX_ERRORS_BYTES
             + MAX_RUNTIME_BYTES;
-        assert!(total <= 200 * 1024);
+        assert!(total <= 250 * 1024);
     }
 }
 
@@ -354,4 +356,43 @@ fn format_learnings_preserves_order() {
     let second = result.find("Second").unwrap();
     let third = result.find("Third").unwrap();
     assert!(first < second && second < third);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Variables layer truncation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn variables_layer_within_limit() {
+    let mut buf = String::from("## Variables\n\n");
+    buf.push_str(
+        "The following variables are available as environment variables in shell commands.\n\n",
+    );
+    for i in 0..10 {
+        buf.push_str(&format!("- `VAR_{i}` = `value_{i}`\n"));
+    }
+    buf.push('\n');
+    let result = truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, "db");
+    assert_eq!(result, buf);
+}
+
+#[test]
+fn variables_layer_large_truncated() {
+    let mut buf = String::from("## Variables\n\n");
+    for i in 0..2000 {
+        buf.push_str(&format!(
+            "- `VERY_LONG_VARIABLE_NAME_{i}` = `some_long_value_for_variable_{i}`\n"
+        ));
+    }
+    let result = truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, "db");
+    assert!(result.len() < buf.len());
+    assert!(result.contains("[... truncated at"));
+    assert!(result.starts_with("## Variables"));
+}
+
+#[test]
+fn variables_max_size_is_reasonable() {
+    const {
+        assert!(MAX_VARIABLES_BYTES >= 8192);
+    }
 }

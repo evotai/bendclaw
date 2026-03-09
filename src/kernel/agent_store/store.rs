@@ -27,6 +27,8 @@ use crate::storage::dal::trace::repo::SpanRepo;
 use crate::storage::dal::trace::repo::TraceRepo;
 use crate::storage::dal::usage::repo::UsageRepo;
 use crate::storage::dal::usage::types::CostSummary;
+use crate::storage::dal::variable::VariableRecord;
+use crate::storage::dal::variable::VariableRepo;
 use crate::storage::pool::Pool;
 
 pub struct AgentStore {
@@ -345,6 +347,13 @@ impl AgentStore {
 
     pub async fn config_delete_env_var(&self, agent_id: &str, key: &str) -> Result<()> {
         self.config.delete_env_var(agent_id, key).await
+    }
+
+    // ── Variables ──────────────────────────────────────────────────────────
+
+    pub async fn variable_list(&self) -> Result<Vec<VariableRecord>> {
+        let repo = VariableRepo::new(self.pool.clone());
+        repo.list_all().await
     }
 
     // ── Usage ─────────────────────────────────────────────────────────────

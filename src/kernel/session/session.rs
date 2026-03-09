@@ -317,6 +317,7 @@ impl Session {
                 session_id: self.id.as_str().into(),
                 agent_id: self.agent_id.clone(),
                 workspace: self.res.workspace.clone(),
+                pool: self.res.storage.pool().clone(),
             },
             cancel.clone(),
         );

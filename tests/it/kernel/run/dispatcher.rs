@@ -146,6 +146,7 @@ fn dispatcher(
             workspace: crate::mocks::context::test_workspace(
                 std::env::temp_dir().join("bendclaw-test-dispatcher"),
             ),
+            pool: crate::mocks::context::dummy_pool(),
         },
         cancel,
     )
@@ -206,6 +207,7 @@ fn parse_calls_classifies_tool_vs_skill_and_parses_arguments() {
             workspace: crate::mocks::context::test_workspace(
                 std::env::temp_dir().join("bendclaw-test-dispatcher2"),
             ),
+            pool: crate::mocks::context::dummy_pool(),
         },
         CancellationToken::new(),
     );

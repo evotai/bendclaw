@@ -21,6 +21,7 @@ pub const MAX_SKILLS_BYTES: usize = 32_768;
 pub const MAX_TOOLS_BYTES: usize = 32_768;
 pub const MAX_LEARNINGS_BYTES: usize = 32_768;
 pub const MAX_ERRORS_BYTES: usize = 8_192;
+pub const MAX_VARIABLES_BYTES: usize = 16_384;
 pub const MAX_RUNTIME_BYTES: usize = 4_096;
 
 /// Truncate content to `max_bytes` on a char boundary.
@@ -63,7 +64,7 @@ pub fn truncate_layer(layer: &str, content: &str, max_bytes: usize, source: &str
 /// Uses a builder pattern with `Arc` dependencies (no lifetimes).
 ///
 /// Layer order:
-///   Identity → Soul → System Prompt → Skills → Tools → Learnings → Recent Errors → Runtime
+///   Identity → Soul → System Prompt → Skills → Tools → Learnings → Variables → Recent Errors → Runtime
 pub struct PromptBuilder {
     storage: Arc<AgentStore>,
     skills: Arc<dyn SkillCatalog>,
@@ -161,7 +162,7 @@ impl PromptBuilder {
         let mut prompt = String::with_capacity(4096);
 
         // 1. Identity
-        tracing::debug!("prompt step 1/8: loading identity layer");
+        tracing::debug!("prompt step 1/9: loading identity layer");
         let identity = self.identity.as_deref().or_else(|| {
             let c = config.as_ref()?;
             if c.identity.is_empty() {
@@ -184,7 +185,7 @@ impl PromptBuilder {
         }
 
         // 2. Soul
-        tracing::debug!("prompt step 2/8: loading soul layer");
+        tracing::debug!("prompt step 2/9: loading soul layer");
         let soul = self.soul.as_deref().or_else(|| {
             let c = config.as_ref()?;
             if c.soul.is_empty() {
@@ -208,7 +209,7 @@ impl PromptBuilder {
         }
 
         // 3. System Prompt (from DB)
-        tracing::debug!("prompt step 3/8: loading system prompt layer");
+        tracing::debug!("prompt step 3/9: loading system prompt layer");
         let system = config
             .as_ref()
             .map(|c| c.system_prompt.as_str())
@@ -222,23 +223,27 @@ impl PromptBuilder {
         }
 
         // 4. Skills (metadata only)
-        tracing::debug!("prompt step 4/8: loading skills layer");
+        tracing::debug!("prompt step 4/9: loading skills layer");
         self.append_skills(&mut prompt, agent_id, user_id);
 
         // 5. Tools (compact list)
-        tracing::debug!("prompt step 5/8: loading tools layer");
+        tracing::debug!("prompt step 5/9: loading tools layer");
         self.append_tools(&mut prompt);
 
         // 6. Learnings
-        tracing::debug!("prompt step 6/8: loading learnings layer");
+        tracing::debug!("prompt step 6/9: loading learnings layer");
         self.append_learnings(&mut prompt, agent_id).await;
 
-        // 7. Recent Errors
-        tracing::debug!("prompt step 7/8: loading recent errors layer");
+        // 7. Variables
+        tracing::debug!("prompt step 7/9: loading variables layer");
+        self.append_variables(&mut prompt).await;
+
+        // 8. Recent Errors
+        tracing::debug!("prompt step 8/9: loading recent errors layer");
         self.append_recent_errors(&mut prompt, session_id).await;
 
-        // 8. Runtime
-        tracing::debug!("prompt step 8/8: loading runtime layer");
+        // 9. Runtime
+        tracing::debug!("prompt step 9/9: loading runtime layer");
         self.append_runtime(&mut prompt);
 
         tracing::info!(
@@ -366,6 +371,43 @@ impl PromptBuilder {
             let buf = truncate_layer("learnings", &buf, MAX_LEARNINGS_BYTES, src);
             prompt.push_str(&buf);
         }
+    }
+
+    async fn append_variables(&self, prompt: &mut String) {
+        tracing::info!("variables: querying db");
+        let records = match self.storage.variable_list().await {
+            Ok(r) if !r.is_empty() => r,
+            Ok(_) => {
+                tracing::info!("variables: no records found — skipped");
+                return;
+            }
+            Err(e) => {
+                tracing::info!(error = %e, "variables: db query failed — skipped");
+                return;
+            }
+        };
+
+        tracing::info!(count = records.len(), "variables: loaded from db");
+
+        let mut buf = String::from("## Variables\n\n");
+        buf.push_str(
+            "The following variables are available as environment variables in shell commands.\n\n",
+        );
+        for v in &records {
+            if v.secret {
+                let _ = writeln!(
+                    buf,
+                    "- `{}`: [SECRET] (available as env var `${}`)",
+                    v.key, v.key
+                );
+            } else {
+                let _ = writeln!(buf, "- `{}` = `{}`", v.key, v.value);
+            }
+        }
+        buf.push('\n');
+
+        let buf = truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, "db");
+        prompt.push_str(&buf);
     }
 
     fn append_runtime(&self, prompt: &mut String) {

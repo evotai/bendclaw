@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -9,6 +11,7 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
+use crate::storage::dal::variable::VariableRepo;
 
 /// Execute a shell command in the session workspace directory.
 /// Zero-field struct — workspace is obtained from `ctx` at execution time.
@@ -99,13 +102,39 @@ impl Tool for ShellTool {
             None => return Ok(ToolResult::error("Missing 'command' parameter")),
         };
 
-        let output = ctx.workspace.exec(command).await;
+        // Load variables and build extra env map
+        let repo = VariableRepo::new(ctx.pool.clone());
+        let variables = match repo.list_all().await {
+            Ok(v) => v,
+            Err(e) => {
+                return Ok(ToolResult::error(format!("Failed to load variables: {e}")));
+            }
+        };
+
+        let extra: HashMap<String, String> = variables
+            .iter()
+            .map(|v| (v.key.clone(), v.value.clone()))
+            .collect();
+
+        let output = ctx.workspace.exec(command, &extra).await;
+
+        // Fire-and-forget: update last_used_at for all variables
+        if !variables.is_empty() {
+            let pool = ctx.pool.clone();
+            tokio::spawn(async move {
+                let repo = VariableRepo::new(pool);
+                for v in &variables {
+                    let _ = repo.touch_last_used(&v.id).await;
+                }
+            });
+        }
 
         tracing::info!(
             command,
             exit_code = output.exit_code,
             stdout_len = output.stdout.len(),
             stderr_len = output.stderr.len(),
+            variable_count = extra.len(),
             "shell command executed"
         );
 

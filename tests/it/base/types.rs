@@ -1,3 +1,5 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::kernel::new_id;
 use bendclaw::kernel::sanitize_agent_id;
 use bendclaw::kernel::Content;
@@ -18,18 +20,20 @@ fn role_display_all_variants() {
 }
 
 #[test]
-fn role_serde_roundtrip() {
+fn role_serde_roundtrip() -> Result<()> {
     for role in [Role::System, Role::User, Role::Assistant, Role::Tool] {
-        let json = serde_json::to_string(&role).unwrap();
-        let back: Role = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&role)?;
+        let back: Role = serde_json::from_str(&json)?;
         assert_eq!(back, role);
     }
+    Ok(())
 }
 
 #[test]
-fn role_serde_rename_lowercase() {
-    let json = serde_json::to_string(&Role::Assistant).unwrap();
+fn role_serde_rename_lowercase() -> Result<()> {
+    let json = serde_json::to_string(&Role::Assistant)?;
     assert_eq!(json, "\"assistant\"");
+    Ok(())
 }
 
 // ── Content ──
@@ -41,15 +45,16 @@ fn text_constructor_and_as_text() {
 }
 
 #[test]
-fn image_constructor() {
+fn image_constructor() -> Result<()> {
     let c = Content::image("base64data", "image/png");
     match &c {
         Content::Image { data, mime_type } => {
             assert_eq!(data, "base64data");
             assert_eq!(mime_type, "image/png");
         }
-        _ => panic!("expected Image variant"),
+        _ => bail!("expected Image variant"),
     }
+    Ok(())
 }
 
 #[test]
@@ -59,42 +64,46 @@ fn image_as_text_is_empty() {
 }
 
 #[test]
-fn content_serde_roundtrip_text() {
+fn content_serde_roundtrip_text() -> Result<()> {
     let c = Content::text("hello world");
-    let json = serde_json::to_string(&c).unwrap();
-    let back: Content = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&c)?;
+    let back: Content = serde_json::from_str(&json)?;
     assert_eq!(back.as_text(), "hello world");
+    Ok(())
 }
 
 #[test]
-fn content_serde_roundtrip_image() {
+fn content_serde_roundtrip_image() -> Result<()> {
     let c = Content::image("abc", "image/png");
-    let json = serde_json::to_string(&c).unwrap();
-    let back: Content = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&c)?;
+    let back: Content = serde_json::from_str(&json)?;
     assert_eq!(back.as_text(), "");
     assert!(json.contains("\"type\":\"image\""));
+    Ok(())
 }
 
 #[test]
-fn content_serde_tagged_type_field() {
-    let json = serde_json::to_string(&Content::text("x")).unwrap();
+fn content_serde_tagged_type_field() -> Result<()> {
+    let json = serde_json::to_string(&Content::text("x"))?;
     assert!(json.contains("\"type\":\"text\""));
+    Ok(())
 }
 
 // ── ToolCall ──
 
 #[test]
-fn tool_call_serde_roundtrip() {
+fn tool_call_serde_roundtrip() -> Result<()> {
     let tc = ToolCall {
         id: "tc1".into(),
         name: "shell".into(),
         arguments: r#"{"cmd":"ls"}"#.into(),
     };
-    let json = serde_json::to_string(&tc).unwrap();
-    let back: ToolCall = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&tc)?;
+    let back: ToolCall = serde_json::from_str(&json)?;
     assert_eq!(back.id, "tc1");
     assert_eq!(back.name, "shell");
     assert_eq!(back.arguments, r#"{"cmd":"ls"}"#);
+    Ok(())
 }
 
 #[test]
@@ -142,51 +151,57 @@ fn error_source_display_internal() {
 }
 
 #[test]
-fn error_source_serde_roundtrip_llm() {
+fn error_source_serde_roundtrip_llm() -> Result<()> {
     let src = ErrorSource::Llm;
-    let json = serde_json::to_string(&src).unwrap();
+    let json = serde_json::to_string(&src)?;
     assert_eq!(json, "\"llm\"");
-    let back: ErrorSource = serde_json::from_str(&json).unwrap();
+    let back: ErrorSource = serde_json::from_str(&json)?;
     assert_eq!(back, src);
+    Ok(())
 }
 
 #[test]
-fn error_source_serde_roundtrip_tool() {
+fn error_source_serde_roundtrip_tool() -> Result<()> {
     let src = ErrorSource::Tool("shell".into());
-    let json = serde_json::to_string(&src).unwrap();
+    let json = serde_json::to_string(&src)?;
     assert_eq!(json, "\"tool:shell\"");
-    let back: ErrorSource = serde_json::from_str(&json).unwrap();
+    let back: ErrorSource = serde_json::from_str(&json)?;
     assert_eq!(back, src);
+    Ok(())
 }
 
 #[test]
-fn error_source_serde_roundtrip_skill() {
+fn error_source_serde_roundtrip_skill() -> Result<()> {
     let src = ErrorSource::Skill("my-skill".into());
-    let json = serde_json::to_string(&src).unwrap();
-    let back: ErrorSource = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&src)?;
+    let back: ErrorSource = serde_json::from_str(&json)?;
     assert_eq!(back, src);
+    Ok(())
 }
 
 #[test]
-fn error_source_serde_roundtrip_sandbox() {
+fn error_source_serde_roundtrip_sandbox() -> Result<()> {
     let src = ErrorSource::Sandbox;
-    let json = serde_json::to_string(&src).unwrap();
-    let back: ErrorSource = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&src)?;
+    let back: ErrorSource = serde_json::from_str(&json)?;
     assert_eq!(back, src);
+    Ok(())
 }
 
 #[test]
-fn error_source_serde_roundtrip_internal() {
+fn error_source_serde_roundtrip_internal() -> Result<()> {
     let src = ErrorSource::Internal;
-    let json = serde_json::to_string(&src).unwrap();
-    let back: ErrorSource = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&src)?;
+    let back: ErrorSource = serde_json::from_str(&json)?;
     assert_eq!(back, src);
+    Ok(())
 }
 
 #[test]
-fn error_source_deserialize_unknown_falls_back_to_internal() {
-    let back: ErrorSource = serde_json::from_str("\"something_unknown\"").unwrap();
+fn error_source_deserialize_unknown_falls_back_to_internal() -> Result<()> {
+    let back: ErrorSource = serde_json::from_str("\"something_unknown\"")?;
     assert_eq!(back, ErrorSource::Internal);
+    Ok(())
 }
 
 // ── Impact ──
@@ -199,12 +214,13 @@ fn impact_display_all_variants() {
 }
 
 #[test]
-fn impact_serde_roundtrip() {
+fn impact_serde_roundtrip() -> Result<()> {
     for impact in [Impact::Low, Impact::Medium, Impact::High] {
-        let json = serde_json::to_string(&impact).unwrap();
-        let back: Impact = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&impact)?;
+        let back: Impact = serde_json::from_str(&json)?;
         assert_eq!(back, impact);
     }
+    Ok(())
 }
 
 #[test]
@@ -234,11 +250,12 @@ fn op_type_display_all_variants() {
 }
 
 #[test]
-fn op_type_serde_roundtrip() {
+fn op_type_serde_roundtrip() -> Result<()> {
     let op = OpType::Execute;
-    let json = serde_json::to_string(&op).unwrap();
-    let back: OpType = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&op)?;
+    let back: OpType = serde_json::from_str(&json)?;
     assert_eq!(back, op);
+    Ok(())
 }
 
 #[test]

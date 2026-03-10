@@ -1,0 +1,6 @@
+{
+  "turns": [
+    { "type": "tool_call", "name": "shell", "arguments": "{\"command\":\"echo hello\"}" },
+    { "type": "text", "content": "Command executed successfully." }
+  ]
+}

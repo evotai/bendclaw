@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::llm::message::CacheControl;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::message::Content;
@@ -15,12 +17,13 @@ fn role_display() {
 }
 
 #[test]
-fn role_serde_roundtrip() {
+fn role_serde_roundtrip() -> Result<()> {
     let role = Role::Assistant;
-    let json = serde_json::to_string(&role).unwrap();
+    let json = serde_json::to_string(&role)?;
     assert_eq!(json, r#""assistant""#);
-    let parsed: Role = serde_json::from_str(&json).unwrap();
+    let parsed: Role = serde_json::from_str(&json)?;
     assert_eq!(parsed, role);
+    Ok(())
 }
 
 // ── Content ──
@@ -38,25 +41,27 @@ fn content_image_as_text_is_empty() {
 }
 
 #[test]
-fn content_serde_roundtrip_text() {
+fn content_serde_roundtrip_text() -> anyhow::Result<()> {
     let c = Content::text("hello");
-    let json = serde_json::to_string(&c).unwrap();
-    let parsed: Content = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&c)?;
+    let parsed: Content = serde_json::from_str(&json)?;
     assert_eq!(parsed.as_text(), "hello");
+    Ok(())
 }
 
 #[test]
-fn content_serde_roundtrip_image() {
+fn content_serde_roundtrip_image() -> anyhow::Result<()> {
     let c = Content::image("data123", "image/jpeg");
-    let json = serde_json::to_string(&c).unwrap();
-    let parsed: Content = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&c)?;
+    let parsed: Content = serde_json::from_str(&json)?;
     match parsed {
         Content::Image { data, mime_type } => {
             assert_eq!(data, "data123");
             assert_eq!(mime_type, "image/jpeg");
         }
-        _ => panic!("expected Image"),
+        _ => anyhow::bail!("expected Image"),
     }
+    Ok(())
 }
 
 // ── ChatMessage constructors ──
@@ -160,15 +165,16 @@ fn chat_message_text_skips_images() {
 // ── ToolCall serde ──
 
 #[test]
-fn tool_call_serde_roundtrip() {
+fn tool_call_serde_roundtrip() -> anyhow::Result<()> {
     let tc = ToolCall {
         id: "tc_001".into(),
         name: "file_read".into(),
         arguments: r#"{"path":"a.rs"}"#.into(),
     };
-    let json = serde_json::to_string(&tc).unwrap();
-    let parsed: ToolCall = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&tc)?;
+    let parsed: ToolCall = serde_json::from_str(&json)?;
     assert_eq!(parsed.id, "tc_001");
     assert_eq!(parsed.name, "file_read");
     assert_eq!(parsed.arguments, r#"{"path":"a.rs"}"#);
+    Ok(())
 }

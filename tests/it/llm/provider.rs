@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::llm::provider::mask_api_key;
 use bendclaw::llm::provider::LLMResponse;
 use bendclaw::llm::tool::FunctionDef;
@@ -60,22 +61,24 @@ fn tool_schema_new() {
 }
 
 #[test]
-fn tool_schema_serde_roundtrip() {
+fn tool_schema_serde_roundtrip() -> Result<()> {
     let schema = ToolSchema::new("test", "desc", serde_json::json!({"type": "object"}));
-    let json = serde_json::to_string(&schema).unwrap();
-    let back: ToolSchema = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&schema)?;
+    let back: ToolSchema = serde_json::from_str(&json)?;
     assert_eq!(back.function.name, "test");
     assert_eq!(back.schema_type, "function");
+    Ok(())
 }
 
 #[test]
-fn function_def_serde_roundtrip() {
+fn function_def_serde_roundtrip() -> Result<()> {
     let def = FunctionDef {
         name: "fn1".into(),
         description: "does stuff".into(),
         parameters: serde_json::json!({}),
     };
-    let json = serde_json::to_string(&def).unwrap();
-    let back: FunctionDef = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&def)?;
+    let back: FunctionDef = serde_json::from_str(&json)?;
     assert_eq!(back.name, "fn1");
+    Ok(())
 }

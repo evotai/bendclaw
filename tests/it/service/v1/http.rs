@@ -20,7 +20,6 @@ async fn health_check_returns_ok() -> Result<()> {
     let json = json_body(resp).await?;
     assert!(json["status"].is_string());
     assert!(json["checks"]["service"]["ok"].as_bool().unwrap_or(false));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -44,7 +43,6 @@ async fn setup_agent_creates_database() -> Result<()> {
     let body = json_body(resp).await?;
     assert_eq!(body["ok"], true);
     assert!(body["database"].as_str().is_some());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -68,6 +66,5 @@ async fn missing_auth_headers_return_401() -> Result<()> {
         .as_str()
         .context("missing error message for missing user header")?;
     assert!(err.contains("x-user-id"));
-    ctx.teardown().await;
     Ok(())
 }

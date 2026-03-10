@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -56,8 +57,8 @@ async fn create_and_get_channel_account() -> Result<()> {
     let created = create_channel_account(&app, &agent_id, &user, "telegram", &user).await?;
     assert_eq!(created["channel_type"], "telegram");
     assert_eq!(created["enabled"], true);
-    assert!(!created["id"].as_str().unwrap().is_empty());
-    let account_id = created["id"].as_str().unwrap().to_string();
+    assert!(!created["id"].as_str().context("missing id")?.is_empty());
+    let account_id = created["id"].as_str().context("missing id")?.to_string();
 
     // GET by id
     let resp = app
@@ -76,7 +77,6 @@ async fn create_and_get_channel_account() -> Result<()> {
     assert_eq!(got["id"], account_id.as_str());
     assert_eq!(got["channel_type"], "telegram");
     assert_eq!(got["config"]["token"], "***");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -104,10 +104,9 @@ async fn list_channel_accounts() -> Result<()> {
     let status = resp.status();
     let body = json_body(resp).await?;
     assert_eq!(status, StatusCode::OK, "list accounts failed: {body}");
-    let accounts = body.as_array().expect("expected JSON array");
+    let accounts = body.as_array().context("expected JSON array")?;
     assert!(!accounts.is_empty(), "expected at least one account");
     assert_eq!(accounts[0]["channel_type"], "telegram");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -122,7 +121,7 @@ async fn delete_channel_account() -> Result<()> {
     setup_agent(&app, &agent_id, &user).await?;
 
     let created = create_channel_account(&app, &agent_id, &user, "telegram", &user).await?;
-    let account_id = created["id"].as_str().unwrap().to_string();
+    let account_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp = app
         .clone()
@@ -139,7 +138,6 @@ async fn delete_channel_account() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body, serde_json::json!({}));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -175,7 +173,6 @@ async fn create_account_with_custom_account_id() -> Result<()> {
     let created = json_body(resp).await?;
     assert_eq!(created["external_account_id"], "my-github-bot");
     assert_eq!(created["enabled"], false);
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -199,14 +196,13 @@ async fn list_messages_requires_filter() -> Result<()> {
         )
         .await?;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── Request / Response serde tests ──
 
 #[test]
-fn create_request_all_fields() {
+fn create_request_all_fields() -> anyhow::Result<()> {
     let r: bendclaw::service::v1::channels::http::CreateChannelAccountRequest =
         serde_json::from_str(
             r#"{
@@ -216,28 +212,29 @@ fn create_request_all_fields() {
                 "config": {"bot_token": "abc"},
                 "enabled": false
             }"#,
-        )
-        .unwrap();
+        )?;
     assert_eq!(r.channel_type, "telegram");
     assert_eq!(r.user_id, "u1");
     assert_eq!(r.external_account_id.as_deref(), Some("custom-id"));
     assert_eq!(r.config["bot_token"], "abc");
     assert_eq!(r.enabled, Some(false));
+    Ok(())
 }
 
 #[test]
-fn create_request_minimal() {
+fn create_request_minimal() -> anyhow::Result<()> {
     let r: bendclaw::service::v1::channels::http::CreateChannelAccountRequest =
-        serde_json::from_str(r#"{"channel_type": "feishu", "user_id": "u2"}"#).unwrap();
+        serde_json::from_str(r#"{"channel_type": "feishu", "user_id": "u2"}"#)?;
     assert_eq!(r.channel_type, "feishu");
     assert_eq!(r.user_id, "u2");
     assert!(r.external_account_id.is_none());
     assert!(r.config.is_object());
     assert!(r.enabled.is_none());
+    Ok(())
 }
 
 #[test]
-fn account_view_serializes_all_fields() {
+fn account_view_serializes_all_fields() -> anyhow::Result<()> {
     let r = bendclaw::service::v1::channels::http::ChannelAccountView {
         id: "ca_1".into(),
         channel_type: "telegram".into(),
@@ -249,17 +246,18 @@ fn account_view_serializes_all_fields() {
         created_at: "2024-01-01T00:00:00Z".into(),
         updated_at: "2024-01-02T00:00:00Z".into(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["id"], "ca_1");
     assert_eq!(v["channel_type"], "telegram");
     assert_eq!(v["external_account_id"], "acc_1");
     assert_eq!(v["agent_id"], "agent_1");
     assert_eq!(v["config"]["token"], "t");
     assert_eq!(v["enabled"], true);
+    Ok(())
 }
 
 #[test]
-fn message_response_serializes_all_fields() {
+fn message_response_serializes_all_fields() -> anyhow::Result<()> {
     let r = bendclaw::service::v1::channels::http::ChannelMessageResponse {
         id: "cm_1".into(),
         channel_type: "telegram".into(),
@@ -273,11 +271,12 @@ fn message_response_serializes_all_fields() {
         run_id: "run_1".into(),
         created_at: "2024-01-01T00:00:00Z".into(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["id"], "cm_1");
     assert_eq!(v["direction"], "inbound");
     assert_eq!(v["text"], "hello");
     assert_eq!(v["platform_message_id"], "tg_123");
+    Ok(())
 }
 
 #[test]
@@ -290,17 +289,19 @@ fn messages_query_defaults() {
 }
 
 #[test]
-fn messages_query_with_session_id() {
+fn messages_query_with_session_id() -> anyhow::Result<()> {
     let q: bendclaw::service::v1::channels::http::MessagesQuery =
-        serde_json::from_str(r#"{"session_id": "sess_1", "limit": 50}"#).unwrap();
+        serde_json::from_str(r#"{"session_id": "sess_1", "limit": 50}"#)?;
     assert_eq!(q.session_id.as_deref(), Some("sess_1"));
     assert_eq!(q.limit, Some(50));
+    Ok(())
 }
 
 #[test]
-fn messages_query_with_chat_filter() {
+fn messages_query_with_chat_filter() -> anyhow::Result<()> {
     let q: bendclaw::service::v1::channels::http::MessagesQuery =
-        serde_json::from_str(r#"{"channel_type": "telegram", "chat_id": "chat_42"}"#).unwrap();
+        serde_json::from_str(r#"{"channel_type": "telegram", "chat_id": "chat_42"}"#)?;
     assert_eq!(q.channel_type.as_deref(), Some("telegram"));
     assert_eq!(q.chat_id.as_deref(), Some("chat_42"));
+    Ok(())
 }

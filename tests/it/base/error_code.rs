@@ -1,3 +1,5 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::base::OptionExt;
 use bendclaw::base::ResultExt;
 use bendclaw::kernel::ErrorCode;
@@ -89,10 +91,13 @@ fn error_code_display() {
 }
 
 #[test]
-fn error_code_from_serde_json() {
-    let err: serde_json::Error = serde_json::from_str::<String>("invalid").unwrap_err();
+fn error_code_from_serde_json() -> Result<()> {
+    let Err(err) = serde_json::from_str::<String>("invalid") else {
+        bail!("expected serde_json error");
+    };
     let ec: ErrorCode = err.into();
     assert_eq!(ec.code, ErrorCode::INTERNAL);
+    Ok(())
 }
 
 #[test]
@@ -164,42 +169,55 @@ fn error_code_invalid_input() {
 }
 
 #[test]
-fn result_ext_with_context_ok() {
+fn result_ext_with_context_ok() -> Result<()> {
     let r: std::result::Result<i32, ErrorCode> = Ok(42);
-    let r2 = r.with_context(|| "ctx".into());
-    assert_eq!(r2.unwrap(), 42);
+    let val = r.with_context(|| "ctx".into()).map_err(|e| anyhow::anyhow!("{e}"))?;
+    assert_eq!(val, 42);
+    Ok(())
 }
 
 #[test]
-fn result_ext_with_context_err() {
+fn result_ext_with_context_err() -> Result<()> {
     let r: std::result::Result<i32, ErrorCode> = Err(ErrorCode::internal("base"));
-    let r2 = r.with_context(|| "added context".into());
-    let e = r2.unwrap_err();
+    let Err(e) = r.with_context(|| "added context".into()) else {
+        bail!("expected error");
+    };
     assert!(!e.stacks.is_empty());
+    Ok(())
 }
 
 #[test]
-fn option_ext_ok_or_not_found_some() {
+fn option_ext_ok_or_not_found_some() -> Result<()> {
     let o: Option<i32> = Some(42);
-    assert_eq!(o.ok_or_not_found(|| "missing".into()).unwrap(), 42);
+    let val = o.ok_or_not_found(|| "missing".into()).map_err(|e| anyhow::anyhow!("{e}"))?;
+    assert_eq!(val, 42);
+    Ok(())
 }
 
 #[test]
-fn option_ext_ok_or_not_found_none() {
+fn option_ext_ok_or_not_found_none() -> Result<()> {
     let o: Option<i32> = None;
-    let e = o.ok_or_not_found(|| "missing".into()).unwrap_err();
+    let Err(e) = o.ok_or_not_found(|| "missing".into()) else {
+        bail!("expected error");
+    };
     assert_eq!(e.code, ErrorCode::NOT_FOUND);
+    Ok(())
 }
 
 #[test]
-fn option_ext_ok_or_error_some() {
+fn option_ext_ok_or_error_some() -> Result<()> {
     let o: Option<i32> = Some(1);
-    assert_eq!(o.ok_or_error(|| ErrorCode::internal("x")).unwrap(), 1);
+    let val = o.ok_or_error(|| ErrorCode::internal("x")).map_err(|e| anyhow::anyhow!("{e}"))?;
+    assert_eq!(val, 1);
+    Ok(())
 }
 
 #[test]
-fn option_ext_ok_or_error_none() {
+fn option_ext_ok_or_error_none() -> Result<()> {
     let o: Option<i32> = None;
-    let e = o.ok_or_error(|| ErrorCode::timeout("slow")).unwrap_err();
+    let Err(e) = o.ok_or_error(|| ErrorCode::timeout("slow")) else {
+        bail!("expected error");
+    };
     assert_eq!(e.code, ErrorCode::TIMEOUT);
+    Ok(())
 }

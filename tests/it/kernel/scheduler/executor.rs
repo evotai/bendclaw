@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::kernel::scheduler::executor::compute_next_run;
 use chrono::NaiveDateTime;
 use chrono::Utc;
@@ -5,37 +7,45 @@ use chrono::Utc;
 // ── schedule_kind = "every" ──
 
 #[test]
-fn compute_next_run_every_with_seconds() {
+fn compute_next_run_every_with_seconds() -> Result<()> {
     let before = Utc::now();
     let result = compute_next_run("every", "", Some(300));
     assert!(result.is_some());
-    let ts =
-        NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S").unwrap();
+    let ts = NaiveDateTime::parse_from_str(
+        result.as_deref().context("expected Some")?,
+        "%Y-%m-%d %H:%M:%S",
+    )?;
     let diff = ts.and_utc() - before;
-    // Should be ~300 seconds in the future (allow 1s tolerance)
     assert!(diff.num_seconds() >= 299 && diff.num_seconds() <= 301);
+    Ok(())
 }
 
 #[test]
-fn compute_next_run_every_defaults_to_60() {
+fn compute_next_run_every_defaults_to_60() -> Result<()> {
     let before = Utc::now();
     let result = compute_next_run("every", "", None);
     assert!(result.is_some());
-    let ts =
-        NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S").unwrap();
+    let ts = NaiveDateTime::parse_from_str(
+        result.as_deref().context("expected Some")?,
+        "%Y-%m-%d %H:%M:%S",
+    )?;
     let diff = ts.and_utc() - before;
     assert!(diff.num_seconds() >= 59 && diff.num_seconds() <= 61);
+    Ok(())
 }
 
 #[test]
-fn compute_next_run_every_custom_interval() {
+fn compute_next_run_every_custom_interval() -> Result<()> {
     let before = Utc::now();
     let result = compute_next_run("every", "", Some(15));
     assert!(result.is_some());
-    let ts =
-        NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S").unwrap();
+    let ts = NaiveDateTime::parse_from_str(
+        result.as_deref().context("expected Some")?,
+        "%Y-%m-%d %H:%M:%S",
+    )?;
     let diff = ts.and_utc() - before;
     assert!(diff.num_seconds() >= 14 && diff.num_seconds() <= 16);
+    Ok(())
 }
 
 // ── schedule_kind = "at" ──
@@ -55,21 +65,22 @@ fn compute_next_run_at_ignores_every_seconds() {
 // ── schedule_kind = "cron" ──
 
 #[test]
-fn compute_next_run_cron_returns_timestamp() {
-    // "0 0 9 * * *" = every day at 09:00:00 (cron crate uses 6-field format)
+fn compute_next_run_cron_returns_timestamp() -> Result<()> {
     let result = compute_next_run("cron", "0 0 9 * * *", None);
     assert!(result.is_some());
-    let ts =
-        NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S").unwrap();
+    let ts = NaiveDateTime::parse_from_str(
+        result.as_deref().context("expected Some")?,
+        "%Y-%m-%d %H:%M:%S",
+    )?;
     assert!(ts.and_utc() > Utc::now());
+    Ok(())
 }
 
 #[test]
 fn compute_next_run_cron_ignores_every_seconds() {
     let result = compute_next_run("cron", "0 0 9 * * *", Some(300));
     assert!(result.is_some());
-    // Should be a timestamp, not contain "300"
-    assert!(!result.as_deref().unwrap().contains("300"));
+    assert!(!result.as_deref().map_or(false, |s| s.contains("300")));
 }
 
 #[test]

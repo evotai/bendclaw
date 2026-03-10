@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::sync::Arc;
 
 use bendclaw::kernel::run::compactor::Compactor;
@@ -216,7 +217,7 @@ async fn compaction_failure_guard_skips_after_three_failures_and_can_return_chec
 // ── CompactionResult fields ───────────────────────────────────────────────────
 
 #[tokio::test]
-async fn compaction_result_messages_before_matches_input_len() {
+async fn compaction_result_messages_before_matches_input_len() -> Result<()> {
     let llm = Arc::new(MockLLMProvider::with_text("summary text"));
     let checkpoint = Arc::new(CheckpointConfig {
         enabled: false,
@@ -233,12 +234,16 @@ async fn compaction_result_messages_before_matches_input_len() {
     ];
     let before = messages.len();
 
-    let res = compactor.compact(&mut messages, 256, &[]).await.unwrap();
+    let res = compactor
+        .compact(&mut messages, 256, &[])
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     assert_eq!(res.messages_before, before);
+    Ok(())
 }
 
 #[tokio::test]
-async fn compaction_result_duration_ms_is_set() {
+async fn compaction_result_duration_ms_is_set() -> Result<()> {
     let llm = Arc::new(MockLLMProvider::with_text("summary text"));
     let checkpoint = Arc::new(CheckpointConfig {
         enabled: false,
@@ -254,14 +259,18 @@ async fn compaction_result_duration_ms_is_set() {
         Message::user(big),
     ];
 
-    let res = compactor.compact(&mut messages, 256, &[]).await.unwrap();
+    let res = compactor
+        .compact(&mut messages, 256, &[])
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     // duration_ms is a u64 derived from elapsed time; just verify it's present (not a sentinel)
     // We can't assert an exact value, but it must be a valid u64 (always true).
     let _ = res.duration_ms;
+    Ok(())
 }
 
 #[tokio::test]
-async fn compaction_result_token_usage_has_nonzero_tokens_when_summary_produced() {
+async fn compaction_result_token_usage_has_nonzero_tokens_when_summary_produced() -> Result<()> {
     let llm = Arc::new(MockLLMProvider::with_text("condensed summary text"));
     let checkpoint = Arc::new(CheckpointConfig {
         enabled: false,
@@ -277,7 +286,10 @@ async fn compaction_result_token_usage_has_nonzero_tokens_when_summary_produced(
         Message::user(big),
     ];
 
-    let res = compactor.compact(&mut messages, 256, &[]).await.unwrap();
+    let res = compactor
+        .compact(&mut messages, 256, &[])
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     // MockLLMProvider returns usage; when a summary was produced token_usage should be non-zero
     if res.summary_len > 0 {
         assert!(
@@ -285,10 +297,11 @@ async fn compaction_result_token_usage_has_nonzero_tokens_when_summary_produced(
             "expected non-zero token_usage when summary was produced"
         );
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn compaction_result_messages_after_less_than_before_on_success() {
+async fn compaction_result_messages_after_less_than_before_on_success() -> Result<()> {
     let llm = Arc::new(MockLLMProvider::with_text("summary"));
     let checkpoint = Arc::new(CheckpointConfig {
         enabled: false,
@@ -304,7 +317,11 @@ async fn compaction_result_messages_after_less_than_before_on_success() {
         Message::user(big),
     ];
 
-    let res = compactor.compact(&mut messages, 256, &[]).await.unwrap();
+    let res = compactor
+        .compact(&mut messages, 256, &[])
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     assert!(res.messages_after < res.messages_before);
     assert_eq!(res.messages_after, messages.len());
+    Ok(())
 }

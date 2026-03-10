@@ -1,21 +1,24 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::kernel::run::ContentBlock;
 use bendclaw::kernel::run::Reason;
 use bendclaw::kernel::run::Usage;
 use bendclaw::llm::usage::TokenUsage;
 
 #[test]
-fn content_block_serde_roundtrip() {
+fn content_block_serde_roundtrip() -> Result<()> {
     let b = ContentBlock::text("test");
-    let json = serde_json::to_string(&b).unwrap();
-    let back: ContentBlock = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&b)?;
+    let back: ContentBlock = serde_json::from_str(&json)?;
     match back {
         ContentBlock::Text { text } => assert_eq!(text, "test"),
-        _ => panic!("expected Text"),
+        _ => bail!("expected Text"),
     }
+    Ok(())
 }
 
 #[test]
-fn reason_serde_roundtrip() {
+fn reason_serde_roundtrip() -> Result<()> {
     for reason in [
         Reason::EndTurn,
         Reason::MaxIterations,
@@ -23,10 +26,11 @@ fn reason_serde_roundtrip() {
         Reason::Aborted,
         Reason::Error,
     ] {
-        let json = serde_json::to_string(&reason).unwrap();
-        let back: Reason = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&reason)?;
+        let back: Reason = serde_json::from_str(&json)?;
         assert_eq!(back, reason);
     }
+    Ok(())
 }
 
 #[test]
@@ -125,38 +129,36 @@ fn result_aborted() {
 }
 
 #[test]
-fn content_block_thinking_serde_roundtrip() {
+fn content_block_thinking_serde_roundtrip() -> Result<()> {
     let b = ContentBlock::thinking("deep thought");
-    let json = serde_json::to_string(&b).unwrap();
-    let back: ContentBlock = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&b)?;
+    let back: ContentBlock = serde_json::from_str(&json)?;
     match back {
         ContentBlock::Thinking { thinking } => assert_eq!(thinking, "deep thought"),
-        _ => panic!("expected Thinking"),
+        _ => bail!("expected Thinking"),
     }
+    Ok(())
 }
 
 #[test]
-fn content_block_constructors_accept_string_and_str() {
-    // &str
+fn content_block_constructors_accept_string_and_str() -> Result<()> {
     match ContentBlock::text("hello") {
         ContentBlock::Text { text } => assert_eq!(text, "hello"),
-        _ => panic!("expected Text"),
+        _ => bail!("expected Text"),
     }
-    // String
     match ContentBlock::text(String::from("world")) {
         ContentBlock::Text { text } => assert_eq!(text, "world"),
-        _ => panic!("expected Text"),
+        _ => bail!("expected Text"),
     }
-    // &str
     match ContentBlock::thinking("reason") {
         ContentBlock::Thinking { thinking } => assert_eq!(thinking, "reason"),
-        _ => panic!("expected Thinking"),
+        _ => bail!("expected Thinking"),
     }
-    // String
     match ContentBlock::thinking(String::from("logic")) {
         ContentBlock::Thinking { thinking } => assert_eq!(thinking, "logic"),
-        _ => panic!("expected Thinking"),
+        _ => bail!("expected Thinking"),
     }
+    Ok(())
 }
 
 #[test]
@@ -179,7 +181,6 @@ fn reason_display_all_variants() {
 
 #[test]
 fn usage_merge_ttft_keeps_first_nonzero() {
-    // First merge: ttft_ms picked up from other.
     let mut a = Usage::default();
     let b = Usage {
         ttft_ms: 42,
@@ -188,7 +189,6 @@ fn usage_merge_ttft_keeps_first_nonzero() {
     a.merge(&b);
     assert_eq!(a.ttft_ms, 42);
 
-    // Second merge: ttft_ms already set, should NOT be overwritten.
     let c = Usage {
         ttft_ms: 99,
         ..Usage::default()
@@ -239,7 +239,6 @@ fn usage_add_accumulates_multiple_calls() {
     assert_eq!(u.total_tokens, 30);
     assert_eq!(u.cache_read_tokens, 4);
     assert_eq!(u.cache_write_tokens, 2);
-    // reasoning_tokens and ttft_ms are untouched by add.
     assert_eq!(u.reasoning_tokens, 0);
     assert_eq!(u.ttft_ms, 0);
 }
@@ -288,7 +287,7 @@ fn result_text_thinking_only_returns_empty() {
 }
 
 #[test]
-fn usage_serde_roundtrip() {
+fn usage_serde_roundtrip() -> Result<()> {
     let u = Usage {
         prompt_tokens: 100,
         completion_tokens: 50,
@@ -298,8 +297,8 @@ fn usage_serde_roundtrip() {
         cache_write_tokens: 10,
         ttft_ms: 123,
     };
-    let json = serde_json::to_string(&u).unwrap();
-    let back: Usage = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&u)?;
+    let back: Usage = serde_json::from_str(&json)?;
     assert_eq!(back.prompt_tokens, 100);
     assert_eq!(back.completion_tokens, 50);
     assert_eq!(back.reasoning_tokens, 30);
@@ -307,10 +306,11 @@ fn usage_serde_roundtrip() {
     assert_eq!(back.cache_read_tokens, 40);
     assert_eq!(back.cache_write_tokens, 10);
     assert_eq!(back.ttft_ms, 123);
+    Ok(())
 }
 
 #[test]
-fn result_serde_roundtrip() {
+fn result_serde_roundtrip() -> Result<()> {
     let r = bendclaw::kernel::run::Result {
         content: vec![ContentBlock::thinking("hmm"), ContentBlock::text("answer")],
         iterations: 3,
@@ -326,13 +326,14 @@ fn result_serde_roundtrip() {
         stop_reason: Reason::MaxIterations,
         messages: vec![],
     };
-    let json = serde_json::to_string(&r).unwrap();
-    let back: bendclaw::kernel::run::Result = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&r)?;
+    let back: bendclaw::kernel::run::Result = serde_json::from_str(&json)?;
     assert_eq!(back.text(), "answer");
     assert_eq!(back.iterations, 3);
     assert_eq!(back.stop_reason, Reason::MaxIterations);
     assert_eq!(back.usage.prompt_tokens, 10);
     assert_eq!(back.usage.ttft_ms, 50);
+    Ok(())
 }
 
 // ── ModelRole ──
@@ -361,42 +362,48 @@ fn model_role_display_all_variants() {
 }
 
 #[test]
-fn model_role_serde_roundtrip_reasoning() {
-    let json = serde_json::to_string(&ModelRole::Reasoning).unwrap();
-    let back: ModelRole = serde_json::from_str(&json).unwrap();
+fn model_role_serde_roundtrip_reasoning() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Reasoning)?;
+    let back: ModelRole = serde_json::from_str(&json)?;
     assert_eq!(back, ModelRole::Reasoning);
+    Ok(())
 }
 
 #[test]
-fn model_role_serde_roundtrip_compaction() {
-    let json = serde_json::to_string(&ModelRole::Compaction).unwrap();
-    let back: ModelRole = serde_json::from_str(&json).unwrap();
+fn model_role_serde_roundtrip_compaction() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Compaction)?;
+    let back: ModelRole = serde_json::from_str(&json)?;
     assert_eq!(back, ModelRole::Compaction);
+    Ok(())
 }
 
 #[test]
-fn model_role_serde_roundtrip_checkpoint() {
-    let json = serde_json::to_string(&ModelRole::Checkpoint).unwrap();
-    let back: ModelRole = serde_json::from_str(&json).unwrap();
+fn model_role_serde_roundtrip_checkpoint() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Checkpoint)?;
+    let back: ModelRole = serde_json::from_str(&json)?;
     assert_eq!(back, ModelRole::Checkpoint);
+    Ok(())
 }
 
 #[test]
-fn model_role_serde_lowercase_reasoning() {
-    let json = serde_json::to_string(&ModelRole::Reasoning).unwrap();
+fn model_role_serde_lowercase_reasoning() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Reasoning)?;
     assert_eq!(json, "\"reasoning\"");
+    Ok(())
 }
 
 #[test]
-fn model_role_serde_lowercase_compaction() {
-    let json = serde_json::to_string(&ModelRole::Compaction).unwrap();
+fn model_role_serde_lowercase_compaction() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Compaction)?;
     assert_eq!(json, "\"compaction\"");
+    Ok(())
 }
 
 #[test]
-fn model_role_serde_lowercase_checkpoint() {
-    let json = serde_json::to_string(&ModelRole::Checkpoint).unwrap();
+fn model_role_serde_lowercase_checkpoint() -> Result<()> {
+    let json = serde_json::to_string(&ModelRole::Checkpoint)?;
     assert_eq!(json, "\"checkpoint\"");
+    Ok(())
 }
 
 #[test]
@@ -422,16 +429,17 @@ fn cost_summary_default_all_zeros() {
 }
 
 #[test]
-fn cost_summary_serde_roundtrip() {
+fn cost_summary_serde_roundtrip() -> Result<()> {
     let s = CostSummary::default();
-    let json = serde_json::to_string(&s).unwrap();
-    let back: CostSummary = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&s)?;
+    let back: CostSummary = serde_json::from_str(&json)?;
     assert_eq!(back.total_prompt_tokens, 0);
     assert_eq!(back.record_count, 0);
+    Ok(())
 }
 
 #[test]
-fn cost_summary_serde_with_values() {
+fn cost_summary_serde_with_values() -> Result<()> {
     let s = CostSummary {
         total_prompt_tokens: 1000,
         total_completion_tokens: 500,
@@ -442,8 +450,8 @@ fn cost_summary_serde_with_values() {
         total_cache_read_tokens: 300,
         total_cache_write_tokens: 100,
     };
-    let json = serde_json::to_string(&s).unwrap();
-    let back: CostSummary = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&s)?;
+    let back: CostSummary = serde_json::from_str(&json)?;
     assert_eq!(back.total_prompt_tokens, 1000);
     assert_eq!(back.total_completion_tokens, 500);
     assert_eq!(back.total_reasoning_tokens, 200);
@@ -452,34 +460,37 @@ fn cost_summary_serde_with_values() {
     assert_eq!(back.total_cache_read_tokens, 300);
     assert_eq!(back.total_cache_write_tokens, 100);
     assert!((back.total_cost - 0.042).abs() < f64::EPSILON);
+    Ok(())
 }
 
 // ── UsageScope ──
 
 #[test]
-fn usage_scope_user_variant() {
+fn usage_scope_user_variant() -> Result<()> {
     let scope = UsageScope::User {
         user_id: "u1".into(),
     };
     match scope {
         UsageScope::User { user_id } => assert_eq!(user_id, "u1"),
-        _ => panic!("expected User variant"),
+        _ => bail!("expected User variant"),
     }
+    Ok(())
 }
 
 #[test]
-fn usage_scope_agent_total_variant() {
+fn usage_scope_agent_total_variant() -> Result<()> {
     let scope = UsageScope::AgentTotal {
         agent_id: "a1".into(),
     };
     match scope {
         UsageScope::AgentTotal { agent_id } => assert_eq!(agent_id, "a1"),
-        _ => panic!("expected AgentTotal variant"),
+        _ => bail!("expected AgentTotal variant"),
     }
+    Ok(())
 }
 
 #[test]
-fn usage_scope_agent_daily_variant() {
+fn usage_scope_agent_daily_variant() -> Result<()> {
     let scope = UsageScope::AgentDaily {
         agent_id: "a2".into(),
         day: "2026-03-05".into(),
@@ -489,8 +500,9 @@ fn usage_scope_agent_daily_variant() {
             assert_eq!(agent_id, "a2");
             assert_eq!(day, "2026-03-05");
         }
-        _ => panic!("expected AgentDaily variant"),
+        _ => bail!("expected AgentDaily variant"),
     }
+    Ok(())
 }
 
 // ── UsageEvent ──

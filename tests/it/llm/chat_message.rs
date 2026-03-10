@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::Content;
 use bendclaw::kernel::Role;
 use bendclaw::llm::message::CacheControl;
@@ -71,19 +72,21 @@ fn chat_message_default() {
 }
 
 #[test]
-fn chat_message_serde_roundtrip() {
+fn chat_message_serde_roundtrip() -> Result<()> {
     let m = ChatMessage::system("test").with_cache_control();
-    let json = serde_json::to_string(&m).unwrap();
-    let back: ChatMessage = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: ChatMessage = serde_json::from_str(&json)?;
     assert_eq!(back.role, Role::System);
     assert_eq!(back.text(), "test");
     assert_eq!(back.cache_control, Some(CacheControl::Ephemeral));
+    Ok(())
 }
 
 #[test]
-fn cache_control_serde_roundtrip() {
+fn cache_control_serde_roundtrip() -> Result<()> {
     let cc = CacheControl::Ephemeral;
-    let json = serde_json::to_string(&cc).unwrap();
-    let back: CacheControl = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&cc)?;
+    let back: CacheControl = serde_json::from_str(&json)?;
     assert_eq!(back, CacheControl::Ephemeral);
+    Ok(())
 }

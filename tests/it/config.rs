@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use bendclaw::config::BendClawConfig;
 
 #[test]
@@ -54,8 +55,8 @@ fn load_nonexistent_file_fails() {
 }
 
 #[test]
-fn load_valid_toml() {
-    let dir = tempfile::tempdir().unwrap();
+fn load_valid_toml() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
     let path = dir.path().join("test.toml");
     std::fs::write(
         &path,
@@ -68,9 +69,8 @@ databend_api_base_url = "https://test.databend.com"
 databend_api_token = "my-token"
 databend_warehouse = "wh1"
 "#,
-    )
-    .unwrap();
-    let cfg = BendClawConfig::load(path.to_str().unwrap()).unwrap();
+    )?;
+    let cfg = BendClawConfig::load(path.to_str().context("non-UTF8 path")?)?;
     assert_eq!(cfg.server.bind_addr, "0.0.0.0:9000");
     if std::env::var("BENDCLAW_STORAGE_DATABEND_API_BASE_URL").is_err() {
         assert_eq!(
@@ -80,21 +80,23 @@ databend_warehouse = "wh1"
         assert_eq!(cfg.storage.databend_api_token, "my-token");
         assert_eq!(cfg.storage.databend_warehouse, "wh1");
     }
+    Ok(())
 }
 
 #[test]
-fn serde_roundtrip() {
+fn serde_roundtrip() -> anyhow::Result<()> {
     let mut cfg = BendClawConfig::default();
     cfg.storage.databend_api_base_url = "https://app.databend.com".into();
     cfg.storage.databend_api_token = "tok".into();
-    let toml_str = toml::to_string(&cfg).unwrap();
-    let back: BendClawConfig = toml::from_str(&toml_str).unwrap();
+    let toml_str = toml::to_string(&cfg)?;
+    let back: BendClawConfig = toml::from_str(&toml_str)?;
     assert_eq!(
         back.storage.databend_api_base_url,
         "https://app.databend.com"
     );
     assert_eq!(back.storage.databend_api_token, "tok");
     assert_eq!(back.server.bind_addr, "127.0.0.1:8787");
+    Ok(())
 }
 
 #[test]

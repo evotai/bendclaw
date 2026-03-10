@@ -10,13 +10,19 @@ use axum::http::StatusCode;
 use serde_json::Value;
 use tower::ServiceExt;
 
+use crate::common::assertions::assert_event_present;
+use crate::common::assertions::assert_events_present;
+use crate::common::assertions::assert_output_eq;
+use crate::common::assertions::assert_runs_count;
+use crate::common::assertions::assert_session_exists;
+use crate::common::assertions::assert_session_not_exists;
+use crate::common::assertions::assert_tool_call_count;
 use crate::common::setup::chat;
 use crate::common::setup::json_body;
 use crate::common::setup::setup_agent;
 use crate::common::setup::uid;
 use crate::common::setup::TestContext;
 use crate::mocks::llm::MockLLMProvider;
-use crate::mocks::llm::MockTurn;
 
 async fn get_runs(
     app: &axum::Router,
@@ -96,43 +102,32 @@ async fn update_config(app: &axum::Router, agent_id: &str, user: &str, body: Val
 
 #[tokio::test]
 async fn e2e_tool_call_persists_full_message_chain() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::new(vec![
-        MockTurn::ToolCall {
-            name: "shell".into(),
-            arguments: r#"{"command":"echo hello"}"#.into(),
-        },
-        MockTurn::Text("Command executed successfully.".into()),
-    ]));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_single")?)).await?;
     let agent_id = uid("e2e-tc");
     let user = uid("user");
     let session_id = uid("session");
 
     setup_agent(&app, &agent_id, &user).await?;
     let resp = chat(&app, &agent_id, &session_id, &user, "run echo hello").await?;
-    assert_eq!(resp["ok"], true);
-    assert_eq!(resp["message"], "Command executed successfully.");
+    assert_output_eq(&resp, "Command executed successfully.")?;
 
     let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
-    assert_eq!(runs.len(), 1);
+    assert_runs_count(&runs, 1)?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
     assert_eq!(runs[0]["input"], "run echo hello");
-    assert_eq!(runs[0]["output"], "Command executed successfully.");
 
     let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("missing run events")?;
-    assert!(events.iter().any(|e| e["event"] == "ToolStart"));
-    assert!(events.iter().any(|e| e["event"] == "ToolEnd"));
-    ctx.teardown().await;
+    assert_event_present(events, "ToolStart")?;
+    assert_event_present(events, "ToolEnd")?;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_multi_turn_accumulates_history() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("reply"));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("text_only")?)).await?;
     let agent_id = uid("e2e-mt");
     let user = uid("user");
     let session_id = uid("session");
@@ -140,40 +135,26 @@ async fn e2e_multi_turn_accumulates_history() -> Result<()> {
     setup_agent(&app, &agent_id, &user).await?;
 
     chat(&app, &agent_id, &session_id, &user, "first question").await?;
-    assert_eq!(
-        get_runs(&app, &agent_id, &session_id, &user).await?.len(),
-        1
-    );
+    assert_runs_count(&get_runs(&app, &agent_id, &session_id, &user).await?, 1)?;
 
     chat(&app, &agent_id, &session_id, &user, "second question").await?;
-    assert_eq!(
-        get_runs(&app, &agent_id, &session_id, &user).await?.len(),
-        2
-    );
+    assert_runs_count(&get_runs(&app, &agent_id, &session_id, &user).await?, 2)?;
 
     chat(&app, &agent_id, &session_id, &user, "third question").await?;
     let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
-    assert_eq!(runs.len(), 3);
+    assert_runs_count(&runs, 3)?;
 
     let inputs: Vec<&str> = runs.iter().filter_map(|r| r["input"].as_str()).collect();
     assert!(inputs.contains(&"first question"));
     assert!(inputs.contains(&"second question"));
     assert!(inputs.contains(&"third question"));
-    ctx.teardown().await;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_audit_trail_records_all_messages() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::new(vec![
-        MockTurn::ToolCall {
-            name: "shell".into(),
-            arguments: r#"{"command":"ls"}"#.into(),
-        },
-        MockTurn::Text("Listed files.".into()),
-    ]));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_single")?)).await?;
     let agent_id = uid("e2e-audit");
     let user = uid("user");
     let session_id = uid("session");
@@ -186,22 +167,16 @@ async fn e2e_audit_trail_records_all_messages() -> Result<()> {
     let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
-    assert!(
-        events.len() >= 6,
-        "expected enough events, got {}",
-        events.len()
-    );
-    assert!(events.iter().any(|e| e["event"] == "ReasonStart"));
-    assert!(events.iter().any(|e| e["event"] == "ToolEnd"));
-    ctx.teardown().await;
+    assert!(events.len() >= 6, "expected enough events, got {}", events.len());
+    assert_event_present(events, "ReasonStart")?;
+    assert_event_present(events, "ToolEnd")?;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_phase1_audit_events_are_persisted() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("audit ok"));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("audit_trail")?)).await?;
     let agent_id = uid("e2e-phase1");
     let user = uid("user");
     let session_id = uid("session");
@@ -214,7 +189,7 @@ async fn e2e_phase1_audit_events_are_persisted() -> Result<()> {
     let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
-    for name in [
+    assert_events_present(events, &[
         "run.started",
         "prompt.built",
         "turn.started",
@@ -222,22 +197,14 @@ async fn e2e_phase1_audit_events_are_persisted() -> Result<()> {
         "llm.response",
         "turn.completed",
         "run.completed",
-    ] {
-        assert!(
-            events.iter().any(|e| e["event"] == name),
-            "missing audit event: {name}"
-        );
-    }
-
-    ctx.teardown().await;
+    ])?;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_session_lifecycle() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("ok"));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("text_only")?)).await?;
     let agent_id = uid("e2e-ses");
     let user = uid("user");
     let session_id = uid("session");
@@ -245,71 +212,47 @@ async fn e2e_session_lifecycle() -> Result<()> {
     setup_agent(&app, &agent_id, &user).await?;
 
     let before = get_sessions(&app, &agent_id, &user).await?;
-    assert!(!before.iter().any(|s| s["id"].as_str() == Some(&session_id)));
+    assert_session_not_exists(&before, &session_id)?;
 
     chat(&app, &agent_id, &session_id, &user, "hello world").await?;
 
     let after = get_sessions(&app, &agent_id, &user).await?;
-    let session = after
-        .iter()
-        .find(|s| s["id"].as_str() == Some(&session_id))
-        .context("session not found")?;
+    assert_session_exists(&after, &session_id)?;
+    let session = after.iter().find(|s| s["id"].as_str() == Some(&session_id)).context("session not found")?;
     assert_eq!(session["title"], "hello world");
 
     chat(&app, &agent_id, &session_id, &user, "follow up").await?;
     let final_sessions = get_sessions(&app, &agent_id, &user).await?;
-    let count = final_sessions
-        .iter()
-        .filter(|s| s["id"].as_str() == Some(&session_id))
-        .count();
-    assert_eq!(count, 1);
-    ctx.teardown().await;
+    assert_eq!(final_sessions.iter().filter(|s| s["id"].as_str() == Some(&session_id)).count(), 1);
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_parallel_tool_calls_all_persisted() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::new(vec![
-        MockTurn::ToolCalls(vec![
-            ("shell".into(), r#"{"command":"echo a"}"#.into()),
-            ("shell".into(), r#"{"command":"echo b"}"#.into()),
-        ]),
-        MockTurn::Text("Both commands done.".into()),
-    ]));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_parallel")?)).await?;
     let agent_id = uid("e2e-par");
     let user = uid("user");
     let session_id = uid("session");
 
     setup_agent(&app, &agent_id, &user).await?;
     let resp = chat(&app, &agent_id, &session_id, &user, "run two commands").await?;
-    assert_eq!(resp["message"], "Both commands done.");
+    assert_output_eq(&resp, "Both commands done.")?;
 
     let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
     let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
-    let tool_start_count = events.iter().filter(|e| e["event"] == "ToolStart").count();
-    let tool_end_count = events.iter().filter(|e| e["event"] == "ToolEnd").count();
-    assert_eq!(tool_start_count, 2);
-    assert_eq!(tool_end_count, 2);
-    ctx.teardown().await;
+    assert_tool_call_count(events, 2)?;
+    assert_eq!(events.iter().filter(|e| e["event"] == "ToolEnd").count(), 2);
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_tool_call_persists_operation_events_with_structured_detail() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::new(vec![
-        MockTurn::ToolCall {
-            name: "shell".into(),
-            arguments: r#"{"command":"echo hello"}"#.into(),
-        },
-        MockTurn::Text("Command executed successfully.".into()),
-    ]));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_single")?)).await?;
     let agent_id = uid("e2e-op");
     let user = uid("user");
     let session_id = uid("session");
@@ -322,31 +265,31 @@ async fn e2e_tool_call_persists_operation_events_with_structured_detail() -> Res
     let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
-    let has_tool_started = events.iter().any(|e| {
-        e["event"] == "ToolStart"
-            && e["payload"]["type"] == "ToolStart"
-            && e["payload"]["data"]["tool_call_id"].is_string()
-            && e["payload"]["data"]["arguments"].is_object()
-    });
-    assert!(has_tool_started, "missing tool start event");
-
-    let has_tool_completed = events.iter().any(|e| {
-        e["event"] == "ToolEnd"
-            && e["payload"]["type"] == "ToolEnd"
-            && e["payload"]["data"]["tool_call_id"].is_string()
-            && e["payload"]["data"]["success"].is_boolean()
-    });
-    assert!(has_tool_completed, "missing tool end event");
-
-    ctx.teardown().await;
+    assert!(
+        events.iter().any(|e| {
+            e["event"] == "ToolStart"
+                && e["payload"]["type"] == "ToolStart"
+                && e["payload"]["data"]["tool_call_id"].is_string()
+                && e["payload"]["data"]["arguments"].is_object()
+        }),
+        "missing structured ToolStart event"
+    );
+    assert!(
+        events.iter().any(|e| {
+            e["event"] == "ToolEnd"
+                && e["payload"]["type"] == "ToolEnd"
+                && e["payload"]["data"]["tool_call_id"].is_string()
+                && e["payload"]["data"]["success"].is_boolean()
+        }),
+        "missing structured ToolEnd event"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_system_prompt_flows_through_config() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("I am a SQL expert."));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("sql_expert")?)).await?;
     let agent_id = uid("e2e-sys");
     let user = uid("user");
     let session_id = uid("session");
@@ -363,20 +306,18 @@ async fn e2e_system_prompt_flows_through_config() -> Result<()> {
     .await?;
 
     let resp = chat(&app, &agent_id, &session_id, &user, "create a users table").await?;
-    assert_eq!(resp["message"], "I am a SQL expert.");
+    assert_output_eq(&resp, "I am a SQL expert.")?;
 
     let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
-    assert_eq!(runs.len(), 1);
+    assert_runs_count(&runs, 1)?;
     assert_eq!(runs[0]["output"], "I am a SQL expert.");
-    ctx.teardown().await;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_session_isolation() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("reply"));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("text_only")?)).await?;
     let agent_id = uid("e2e-iso");
     let user = uid("user");
     let session_a = uid("ses-a");
@@ -388,20 +329,17 @@ async fn e2e_session_isolation() -> Result<()> {
 
     let runs_a = get_runs(&app, &agent_id, &session_a, &user).await?;
     let runs_b = get_runs(&app, &agent_id, &session_b, &user).await?;
-    assert_eq!(runs_a.len(), 1);
-    assert_eq!(runs_b.len(), 1);
-
+    assert_runs_count(&runs_a, 1)?;
+    assert_runs_count(&runs_b, 1)?;
     assert_eq!(runs_a[0]["input"], "message for A");
     assert_eq!(runs_b[0]["input"], "message for B");
-    ctx.teardown().await;
     Ok(())
 }
 
 #[tokio::test]
 async fn e2e_user_isolation() -> Result<()> {
-    let llm = Arc::new(MockLLMProvider::with_text("hello"));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let app = ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("text_only")?)).await?;
     let agent_id = uid("e2e-uiso");
     let user_a = uid("user-a");
     let user_b = uid("user-b");
@@ -414,27 +352,12 @@ async fn e2e_user_isolation() -> Result<()> {
 
     let sessions_a = get_sessions(&app, &agent_id, &user_a).await?;
     let sessions_b = get_sessions(&app, &agent_id, &user_b).await?;
-    assert!(sessions_a
-        .iter()
-        .any(|s| s["id"].as_str() == Some(&session_a)));
-    assert!(!sessions_a
-        .iter()
-        .any(|s| s["id"].as_str() == Some(&session_b)));
-    assert!(sessions_b
-        .iter()
-        .any(|s| s["id"].as_str() == Some(&session_b)));
-    assert!(!sessions_b
-        .iter()
-        .any(|s| s["id"].as_str() == Some(&session_a)));
+    assert_session_exists(&sessions_a, &session_a)?;
+    assert_session_not_exists(&sessions_a, &session_b)?;
+    assert_session_exists(&sessions_b, &session_b)?;
+    assert_session_not_exists(&sessions_b, &session_a)?;
 
-    assert_eq!(
-        get_runs(&app, &agent_id, &session_a, &user_a).await?.len(),
-        1
-    );
-    assert_eq!(
-        get_runs(&app, &agent_id, &session_b, &user_b).await?.len(),
-        1
-    );
-    ctx.teardown().await;
+    assert_runs_count(&get_runs(&app, &agent_id, &session_a, &user_a).await?, 1)?;
+    assert_runs_count(&get_runs(&app, &agent_id, &session_b, &user_b).await?, 1)?;
     Ok(())
 }

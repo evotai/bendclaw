@@ -222,7 +222,7 @@ impl Local {
             "expected file '{rel_path}' to exist in {skill}/ but it was absent"
         );
         let actual = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("cannot read '{rel_path}': {e}"));
+            .unwrap_or_else(|e| panic!("cannot read '{rel_path}': {e:#}"));
         assert_eq!(
             actual, expected,
             "'{rel_path}' in {skill}/ content mismatch"
@@ -241,9 +241,9 @@ impl Local {
     /// Return the mtime of a file for rewrite-detection comparisons.
     pub fn mtime(&self, skill: &str, rel_path: &str) -> SystemTime {
         std::fs::metadata(self.skill_dir(skill).join(rel_path))
-            .unwrap_or_else(|e| panic!("cannot stat '{rel_path}' in {skill}/: {e}"))
+            .unwrap_or_else(|e| panic!("cannot stat '{rel_path}' in {skill}/: {e:#}"))
             .modified()
-            .unwrap()
+            .expect("mtime not supported on this platform")
     }
 }
 

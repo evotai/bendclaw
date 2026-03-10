@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::llm::config::LLMConfig;
 use bendclaw::llm::config::ProviderEndpoint;
 use bendclaw::llm::registry::ProviderRegistry;
@@ -19,11 +21,12 @@ fn test_endpoint(name: &str, provider: &str, weight: u32) -> ProviderEndpoint {
 // ── ProviderRegistry ──
 
 #[test]
-fn registry_with_builtins_has_openai_and_anthropic() {
+fn registry_with_builtins_has_openai_and_anthropic() -> Result<()> {
     let registry = ProviderRegistry::with_builtins();
     let ep = test_endpoint("test-openai", "openai", 100);
-    let provider = registry.create(&ep).expect("provider build");
+    let provider = registry.create(&ep).context("provider build")?;
     assert_eq!(provider.default_model(), "unknown");
+    Ok(())
 }
 
 #[test]
@@ -32,19 +35,20 @@ fn registry_unknown_provider_returns_llm_request_error() {
     let ep = test_endpoint("test-unknown", "deepseek", 100);
     let result = registry.create(&ep);
     assert!(result.is_err());
-    let err = result.err().expect("expected llm_request error");
+    let err = result.unwrap_err();
     assert_eq!(err.code, bendclaw::base::ErrorCode::LLM_REQUEST);
 }
 
 #[test]
-fn registry_custom_factory() {
+fn registry_custom_factory() -> Result<()> {
     let mut registry = ProviderRegistry::new();
     registry.register("custom", |_base_url: &str, _api_key: &str| {
         std::sync::Arc::new(crate::mocks::llm::MockLLMProvider::with_text("custom"))
     });
     let ep = test_endpoint("test-custom", "custom", 100);
-    let provider = registry.create(&ep).expect("provider build");
+    let provider = registry.create(&ep).context("provider build")?;
     assert_eq!(provider.default_model(), "unknown");
+    Ok(())
 }
 
 // ── LLMConfig ──

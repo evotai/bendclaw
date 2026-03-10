@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::skills::executor::parse_skill_args;
 use bendclaw::kernel::skills::executor::SkillError;
 use bendclaw::kernel::skills::executor::SkillOutput;
@@ -21,15 +22,16 @@ fn skill_output_is_error_false() {
 }
 
 #[test]
-fn skill_output_serde_roundtrip() {
+fn skill_output_serde_roundtrip() -> Result<()> {
     let out = SkillOutput {
         data: Some(serde_json::json!({"key": "value"})),
         error: None,
     };
-    let json = serde_json::to_string(&out).unwrap();
-    let back: SkillOutput = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&out)?;
+    let back: SkillOutput = serde_json::from_str(&json)?;
     assert!(!back.is_error());
     assert!(back.data.is_some());
+    Ok(())
 }
 
 #[test]
@@ -43,16 +45,17 @@ fn skill_error_display() {
 }
 
 #[test]
-fn skill_error_serde_roundtrip() {
+fn skill_error_serde_roundtrip() -> Result<()> {
     let err = SkillError {
         skill_name: "test".into(),
         message: "bad".into(),
         exit_code: None,
     };
-    let json = serde_json::to_string(&err).unwrap();
-    let back: SkillError = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&err)?;
+    let back: SkillError = serde_json::from_str(&json)?;
     assert_eq!(back.skill_name, "test");
     assert!(back.exit_code.is_none());
+    Ok(())
 }
 
 #[test]

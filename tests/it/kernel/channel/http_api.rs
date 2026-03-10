@@ -47,10 +47,14 @@ async fn outbound_send_text_returns_error() {
 }
 
 #[tokio::test]
-async fn outbound_send_typing_is_ok() {
+async fn outbound_send_typing_is_ok() -> anyhow::Result<()> {
     let ch = HttpApiChannel::new();
     let outbound = ch.outbound();
-    outbound.send_typing(&serde_json::json!({}), "chat_1").await.unwrap();
+    outbound
+        .send_typing(&serde_json::json!({}), "chat_1")
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(())
 }
 
 #[tokio::test]

@@ -1,5 +1,6 @@
+use anyhow::Result;
 use async_trait::async_trait;
-use bendclaw::base::Result;
+use bendclaw::base::Result as BaseResult;
 use bendclaw::kernel::tools::Impact;
 use bendclaw::kernel::tools::OpType;
 use bendclaw::kernel::tools::OperationClassifier;
@@ -42,7 +43,7 @@ impl Tool for EchoTool {
         &self,
         _args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> Result<ToolResult> {
+    ) -> BaseResult<ToolResult> {
         Ok(ToolResult::ok("echo"))
     }
 }
@@ -77,13 +78,14 @@ fn tool_spec_from_trait() {
 }
 
 #[test]
-fn tool_spec_serde_roundtrip() {
+fn tool_spec_serde_roundtrip() -> Result<()> {
     let tool = EchoTool;
     let spec = tool.spec();
-    let json = serde_json::to_string(&spec).unwrap();
-    let back: ToolSpec = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&spec)?;
+    let back: ToolSpec = serde_json::from_str(&json)?;
     assert_eq!(back.name, "echo");
     assert_eq!(back.description, "echoes input");
+    Ok(())
 }
 
 #[test]
@@ -103,19 +105,21 @@ fn tool_result_error() {
 }
 
 #[test]
-fn tool_result_serde_roundtrip_ok() {
+fn tool_result_serde_roundtrip_ok() -> Result<()> {
     let r = ToolResult::ok("output");
-    let json = serde_json::to_string(&r).unwrap();
-    let back: ToolResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&r)?;
+    let back: ToolResult = serde_json::from_str(&json)?;
     assert!(back.success);
     assert_eq!(back.output, "output");
+    Ok(())
 }
 
 #[test]
-fn tool_result_serde_roundtrip_error() {
+fn tool_result_serde_roundtrip_error() -> Result<()> {
     let r = ToolResult::error("fail");
-    let json = serde_json::to_string(&r).unwrap();
-    let back: ToolResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&r)?;
+    let back: ToolResult = serde_json::from_str(&json)?;
     assert!(!back.success);
     assert_eq!(back.error.as_deref(), Some("fail"));
+    Ok(())
 }

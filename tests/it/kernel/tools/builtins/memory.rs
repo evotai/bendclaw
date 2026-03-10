@@ -9,7 +9,8 @@ use crate::mocks::context::test_tool_context;
 fn storage() -> Arc<AgentStore> {
     let (base_url, token, warehouse) =
         crate::common::setup::require_api_config().expect("API config required");
-    let pool = bendclaw::storage::Pool::new(&base_url, &token, &warehouse).expect("pool");
+    let pool = bendclaw::storage::Pool::new(&base_url, &token, &warehouse)
+        .expect("pool: static URL is always valid");
     let llm = Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
     Arc::new(AgentStore::new(pool, llm))
 }

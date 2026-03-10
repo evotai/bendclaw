@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use bendclaw::kernel::skills::repository::SkillRepository;
 use bendclaw::kernel::skills::skill::Skill;
 use bendclaw::kernel::tools::skill::SkillRemoveTool;
@@ -56,47 +57,46 @@ fn make_skill(name: &str) -> Skill {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn remove_existing_skill_succeeds() {
+async fn remove_existing_skill_succeeds() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
-    store.save(&make_skill("my-skill")).await.unwrap();
+    store.save(&make_skill("my-skill")).await?;
     assert!(store.contains("my-skill"));
 
     let result = tool
         .execute_with_context(json!({"name": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(result.success, "got: {:?}", result.error);
     assert!(!store.contains("my-skill"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_nonexistent_skill_succeeds() {
+async fn remove_nonexistent_skill_succeeds() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "no-such-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_is_idempotent() {
+async fn remove_is_idempotent() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
-    store.save(&make_skill("my-skill")).await.unwrap();
+    store.save(&make_skill("my-skill")).await?;
 
     let _ = tool
         .execute_with_context(json!({"name": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     let result = tool
         .execute_with_context(json!({"name": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(result.success);
     assert!(!store.contains("my-skill"));
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,59 +104,59 @@ async fn remove_is_idempotent() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn remove_rejects_path_traversal_name() {
+async fn remove_rejects_path_traversal_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "../evil"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("skill name"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("skill name")));
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_rejects_empty_name() {
+async fn remove_rejects_empty_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": ""}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_rejects_single_char_name() {
+async fn remove_rejects_single_char_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "a"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_rejects_uppercase_name() {
+async fn remove_rejects_uppercase_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "MySkill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn remove_rejects_reserved_name() {
+async fn remove_rejects_reserved_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "shell"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -176,19 +176,16 @@ impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingSto
 }
 
 #[tokio::test]
-async fn remove_returns_error_when_factory_fails() {
+async fn remove_returns_error_when_factory_fails() -> Result<()> {
     let catalog = Arc::new(MockSkillCatalog::new());
     let tool = SkillRemoveTool::new(Arc::new(FailingStoreFactory), catalog);
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
-    assert!(result
-        .error
-        .unwrap()
-        .contains("failed to access agent store"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("failed to access agent store")));
+    Ok(())
 }
 
 struct FailingRemoveStore;
@@ -236,16 +233,16 @@ impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingRem
 }
 
 #[tokio::test]
-async fn remove_returns_error_when_store_remove_fails() {
+async fn remove_returns_error_when_store_remove_fails() -> Result<()> {
     let catalog = Arc::new(MockSkillCatalog::new());
     let tool = SkillRemoveTool::new(Arc::new(FailingRemoveFactory), catalog);
     let ctx = test_tool_context();
     let result = tool
         .execute_with_context(json!({"name": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("failed to remove skill"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("failed to remove skill")));
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

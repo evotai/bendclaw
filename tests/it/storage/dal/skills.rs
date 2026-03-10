@@ -58,7 +58,7 @@ async fn save_and_get_roundtrip() -> Result<()> {
     let got = store
         .get(&s.name)
         .await?
-        .expect("skill must exist after save");
+        .ok_or_else(|| anyhow::anyhow!("skill must exist after save"))?;
 
     assert_eq!(got.name, s.name);
     assert_eq!(got.version, s.version);
@@ -196,7 +196,7 @@ async fn agent_skill_persists_scope_and_ownership() -> Result<()> {
     let s = make_agent_skill(&uid("sk"), "agent-1", "user-1");
 
     store.save(&s).await?;
-    let got = store.get(&s.name).await?.expect("skill must exist");
+    let got = store.get(&s.name).await?.ok_or_else(|| anyhow::anyhow!("skill must exist"))?;
 
     assert_eq!(got.scope, SkillScope::Agent);
     assert_eq!(got.source, SkillSource::Agent);

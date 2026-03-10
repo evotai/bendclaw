@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::skills::skill::Skill;
 use bendclaw::kernel::skills::skill::SkillFile;
 use bendclaw::kernel::skills::skill::SkillParameter;
@@ -33,12 +34,13 @@ fn skill_scope_default_is_global() {
 }
 
 #[test]
-fn skill_scope_serde_roundtrip() {
+fn skill_scope_serde_roundtrip() -> Result<()> {
     for scope in [SkillScope::Agent, SkillScope::User, SkillScope::Global] {
-        let json = serde_json::to_string(&scope).unwrap();
-        let back: SkillScope = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&scope)?;
+        let back: SkillScope = serde_json::from_str(&json)?;
         assert_eq!(back, scope);
     }
+    Ok(())
 }
 
 #[test]
@@ -153,7 +155,7 @@ fn compute_sha256_changes_with_version() {
 }
 
 #[test]
-fn skill_serde_roundtrip() {
+fn skill_serde_roundtrip() -> Result<()> {
     let skill = Skill {
         name: "test".into(),
         version: "1.0.0".into(),
@@ -181,14 +183,15 @@ fn skill_serde_roundtrip() {
             env: vec!["API_KEY".into()],
         }),
     };
-    let json = serde_json::to_string(&skill).unwrap();
-    let back: Skill = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&skill)?;
+    let back: Skill = serde_json::from_str(&json)?;
     assert_eq!(back.name, "test");
     assert_eq!(back.scope, SkillScope::User);
     assert_eq!(back.source, SkillSource::Hub);
     assert_eq!(back.parameters.len(), 1);
     assert_eq!(back.files.len(), 1);
     assert!(back.requires.is_some());
+    Ok(())
 }
 
 #[test]

@@ -34,7 +34,7 @@ pub fn test_workspace(dir: std::path::PathBuf) -> Arc<Workspace> {
 /// Create a dummy Pool that points to a non-existent endpoint.
 /// Suitable for tests that never actually query the database.
 pub fn dummy_pool() -> Pool {
-    Pool::new("http://localhost:0", "", "default").expect("dummy pool")
+    Pool::new("http://localhost:0", "", "default").expect("dummy pool: invalid URL is unreachable")
 }
 
 /// Build a test `Session` with tools wired up.

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -37,7 +38,7 @@ async fn create_and_list_memories() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let created = json_body(resp).await?;
     assert_eq!(created["key"], "test-key");
-    let memory_id = created["id"].as_str().unwrap().to_string();
+    let memory_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -50,9 +51,8 @@ async fn create_and_list_memories() -> Result<()> {
         .await?;
     assert_eq!(resp2.status(), StatusCode::OK);
     let list = json_body(resp2).await?;
-    let items = list["data"].as_array().unwrap();
+    let items = list["data"].as_array().context("expected data array")?;
     assert!(items.iter().any(|m| m["id"] == memory_id.as_str()));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -79,7 +79,7 @@ async fn get_memory_by_id() -> Result<()> {
         )
         .await?;
     let created = json_body(resp).await?;
-    let memory_id = created["id"].as_str().unwrap().to_string();
+    let memory_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -94,7 +94,6 @@ async fn get_memory_by_id() -> Result<()> {
     let got = json_body(resp2).await?;
     assert_eq!(got["key"], "my-key");
     assert_eq!(got["content"], "my content");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -121,7 +120,7 @@ async fn delete_memory() -> Result<()> {
         )
         .await?;
     let created = json_body(resp).await?;
-    let memory_id = created["id"].as_str().unwrap().to_string();
+    let memory_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -136,7 +135,6 @@ async fn delete_memory() -> Result<()> {
     assert_eq!(resp2.status(), StatusCode::OK);
     let body = json_body(resp2).await?;
     assert_eq!(body["deleted"], memory_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -177,14 +175,13 @@ async fn search_memories() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body.is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── MemoryResponse serde ──
 
 #[test]
-fn memory_response_serializes_fields() {
+fn memory_response_serializes_fields() -> anyhow::Result<()> {
     use bendclaw::kernel::agent_store::memory_store::MemoryScope;
     let m = bendclaw::service::v1::memories::MemoryResponse {
         id: "mem-1".into(),
@@ -195,7 +192,7 @@ fn memory_response_serializes_fields() {
         created_at: "2024-01-01T00:00:00Z".into(),
         updated_at: "2024-01-01T00:01:00Z".into(),
     };
-    let v = serde_json::to_value(&m).unwrap();
+    let v = serde_json::to_value(&m)?;
     assert_eq!(v["id"], "mem-1");
     assert_eq!(v["scope"], "user");
     assert!(v["session_id"].is_null());
@@ -203,10 +200,11 @@ fn memory_response_serializes_fields() {
     assert_eq!(v["content"], "my content");
     assert_eq!(v["created_at"], "2024-01-01T00:00:00Z");
     assert_eq!(v["updated_at"], "2024-01-01T00:01:00Z");
+    Ok(())
 }
 
 #[test]
-fn memory_response_session_scope() {
+fn memory_response_session_scope() -> anyhow::Result<()> {
     use bendclaw::kernel::agent_store::memory_store::MemoryScope;
     let m = bendclaw::service::v1::memories::MemoryResponse {
         id: "mem-2".into(),
@@ -217,13 +215,14 @@ fn memory_response_session_scope() {
         created_at: String::new(),
         updated_at: String::new(),
     };
-    let v = serde_json::to_value(&m).unwrap();
+    let v = serde_json::to_value(&m)?;
     assert_eq!(v["scope"], "session");
     assert_eq!(v["session_id"], "sess-abc");
+    Ok(())
 }
 
 #[test]
-fn memory_response_shared_scope() {
+fn memory_response_shared_scope() -> anyhow::Result<()> {
     use bendclaw::kernel::agent_store::memory_store::MemoryScope;
     let m = bendclaw::service::v1::memories::MemoryResponse {
         id: "mem-3".into(),
@@ -234,6 +233,7 @@ fn memory_response_shared_scope() {
         created_at: String::new(),
         updated_at: String::new(),
     };
-    let v = serde_json::to_value(&m).unwrap();
+    let v = serde_json::to_value(&m)?;
     assert_eq!(v["scope"], "shared");
+    Ok(())
 }

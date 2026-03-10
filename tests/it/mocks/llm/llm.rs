@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use anyhow::bail;
+use anyhow::Context as _;
 use async_trait::async_trait;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::message::ToolCall;
@@ -61,10 +63,37 @@ impl MockLLMProvider {
         }])
     }
 
+    /// Load turns from a JSON fixture file in `tests/fixtures/llm_traces/`.
+    ///
+    /// # Fixture format
+    /// ```json
+    /// { "turns": [
+    ///   { "type": "text", "content": "hello" },
+    ///   { "type": "tool_call", "name": "shell", "arguments": "{}" },
+    ///   { "type": "tool_calls", "calls": [{"name": "a", "arguments": "{}"}] }
+    /// ]}
+    /// ```
+    pub fn from_fixture(name: &str) -> anyhow::Result<Self> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/llm_traces")
+            .join(format!("{name}.json"));
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("fixture {name}.json not found at {}", path.display()))?;
+        let doc: serde_json::Value =
+            serde_json::from_str(&raw).with_context(|| format!("fixture {name}.json invalid JSON"))?;
+        let turns = doc["turns"]
+            .as_array()
+            .with_context(|| format!("fixture {name}.json missing 'turns' array"))?
+            .iter()
+            .map(|t| parse_fixture_turn(t, name))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(Self::new(turns))
+    }
+
     fn next_turn(&self) -> MockTurn {
         let mut turns = self.turns.lock();
         if turns.len() > 1 {
-            turns.pop_front().unwrap()
+            turns.pop_front().expect("len > 1 guarantees front exists")
         } else {
             turns
                 .front()
@@ -186,5 +215,46 @@ impl LLMProvider for MockLLMProvider {
         });
 
         stream
+    }
+}
+
+fn parse_fixture_turn(t: &serde_json::Value, fixture_name: &str) -> anyhow::Result<MockTurn> {
+    match t["type"].as_str().unwrap_or("") {
+        "text" => {
+            let content = t["content"]
+                .as_str()
+                .with_context(|| format!("fixture {fixture_name}: text turn missing 'content'"))?;
+            Ok(MockTurn::Text(content.to_string()))
+        }
+        "tool_call" => {
+            let name = t["name"]
+                .as_str()
+                .with_context(|| format!("fixture {fixture_name}: tool_call missing 'name'"))?;
+            let arguments = t["arguments"]
+                .as_str()
+                .with_context(|| format!("fixture {fixture_name}: tool_call missing 'arguments'"))?;
+            Ok(MockTurn::ToolCall {
+                name: name.to_string(),
+                arguments: arguments.to_string(),
+            })
+        }
+        "tool_calls" => {
+            let calls = t["calls"]
+                .as_array()
+                .with_context(|| format!("fixture {fixture_name}: tool_calls missing 'calls'"))?
+                .iter()
+                .map(|c| {
+                    let name = c["name"]
+                        .as_str()
+                        .with_context(|| format!("fixture {fixture_name}: call missing 'name'"))?;
+                    let arguments = c["arguments"]
+                        .as_str()
+                        .with_context(|| format!("fixture {fixture_name}: call missing 'arguments'"))?;
+                    Ok((name.to_string(), arguments.to_string()))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            Ok(MockTurn::ToolCalls(calls))
+        }
+        other => bail!("fixture {fixture_name}: unknown turn type {other:?}"),
     }
 }

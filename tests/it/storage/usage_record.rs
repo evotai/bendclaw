@@ -1,7 +1,8 @@
+use anyhow::Result;
 use bendclaw::storage::UsageRecord;
 
 #[test]
-fn usage_record_serde_roundtrip() {
+fn usage_record_serde_roundtrip() -> Result<()> {
     let rec = UsageRecord {
         id: "u1".into(),
         agent_id: "a1".into(),
@@ -21,9 +22,10 @@ fn usage_record_serde_roundtrip() {
         cost: 0.05,
         created_at: "2026-01-01T00:00:00Z".into(),
     };
-    let json = serde_json::to_string(&rec).unwrap();
-    let back: UsageRecord = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&rec)?;
+    let back: UsageRecord = serde_json::from_str(&json)?;
     assert_eq!(back.id, "u1");
     assert_eq!(back.total_tokens, 150);
     assert_eq!(back.cost, 0.05);
+    Ok(())
 }

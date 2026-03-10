@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::kernel::channel::dispatcher::ChannelDispatcher;
 use bendclaw::kernel::channel::InboundEvent;
 use bendclaw::kernel::channel::InboundMessage;
@@ -20,7 +22,7 @@ fn session_key_http_api() {
 // ── extract_input: Message ──
 
 #[test]
-fn extract_input_message() {
+fn extract_input_message() -> Result<()> {
     let event = InboundEvent::Message(InboundMessage {
         message_id: "msg_1".into(),
         chat_id: "chat_1".into(),
@@ -32,10 +34,11 @@ fn extract_input_message() {
     });
     let (text, reply_ctx) = ChannelDispatcher::extract_input(&event);
     assert_eq!(text, "hello agent");
-    let ctx = reply_ctx.unwrap();
+    let ctx = reply_ctx.context("expected reply_ctx")?;
     assert_eq!(ctx.chat_id, "chat_1");
     assert_eq!(ctx.reply_to_message_id.as_deref(), Some("msg_1"));
     assert!(ctx.thread_id.is_none());
+    Ok(())
 }
 
 // ── extract_input: PlatformEvent ──
@@ -53,7 +56,7 @@ fn extract_input_platform_event_string_payload() {
 }
 
 #[test]
-fn extract_input_platform_event_object_payload() {
+fn extract_input_platform_event_object_payload() -> Result<()> {
     let event = InboundEvent::PlatformEvent {
         event_type: "pull_request.opened".into(),
         payload: serde_json::json!({"number": 42, "title": "fix bug"}),
@@ -66,15 +69,16 @@ fn extract_input_platform_event_object_payload() {
     let (text, reply_ctx) = ChannelDispatcher::extract_input(&event);
     assert!(text.starts_with("[pull_request.opened] "));
     assert!(text.contains("42"));
-    let ctx = reply_ctx.unwrap();
+    let ctx = reply_ctx.context("expected reply_ctx")?;
     assert_eq!(ctx.chat_id, "pr_42");
     assert_eq!(ctx.thread_id.as_deref(), Some("42"));
+    Ok(())
 }
 
 // ── extract_input: Callback ──
 
 #[test]
-fn extract_input_callback() {
+fn extract_input_callback() -> Result<()> {
     let event = InboundEvent::Callback {
         callback_id: "cb_1".into(),
         data: "approve".into(),
@@ -86,9 +90,10 @@ fn extract_input_callback() {
     };
     let (text, reply_ctx) = ChannelDispatcher::extract_input(&event);
     assert_eq!(text, "approve");
-    let ctx = reply_ctx.unwrap();
+    let ctx = reply_ctx.context("expected reply_ctx")?;
     assert_eq!(ctx.chat_id, "chat_5");
     assert_eq!(ctx.reply_to_message_id.as_deref(), Some("msg_10"));
+    Ok(())
 }
 
 #[test]

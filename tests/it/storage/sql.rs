@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use anyhow::Result;
 use bendclaw::storage::sql::*;
 use serde_json::json;
@@ -175,8 +176,7 @@ fn test_batch_insert_builder() -> Result<()> {
         .row(&[SqlVal::Str("1"), SqlVal::Str("hello")])
         .row(&[SqlVal::Str("2"), SqlVal::Str("world")])
         .build();
-    assert!(sql.is_some());
-    let s = sql.unwrap();
+    let s = sql.context("expected Some sql")?;
     assert!(s.contains("('1', 'hello'), ('2', 'world')"));
     Ok(())
 }

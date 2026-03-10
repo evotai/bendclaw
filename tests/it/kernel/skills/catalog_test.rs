@@ -138,12 +138,12 @@ fn insert_overwrites_existing_version() -> Result<(), Box<dyn std::error::Error>
 
     let v1 = make_skill("tool", SkillScope::Global, SkillSource::Agent, None, None);
     catalog.insert(&v1);
-    assert_eq!(catalog.get("tool").unwrap().version, "1.0.0");
+    assert_eq!(catalog.get("tool").map(|s| s.version.as_str()), Some("1.0.0"));
 
     let mut v2 = v1.clone();
     v2.version = "2.0.0".to_string();
     catalog.insert(&v2);
-    assert_eq!(catalog.get("tool").unwrap().version, "2.0.0");
+    assert_eq!(catalog.get("tool").map(|s| s.version.as_str()), Some("2.0.0"));
 
     Ok(())
 }

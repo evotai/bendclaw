@@ -20,6 +20,8 @@ pub struct TestContext {
     pool: Pool,
     prefix: String,
     db_name: String,
+    /// Set to true after cleanup so Drop doesn't double-clean.
+    cleaned: std::sync::atomic::AtomicBool,
 }
 
 impl TestContext {
@@ -43,6 +45,7 @@ impl TestContext {
             pool: root,
             prefix,
             db_name,
+            cleaned: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -90,12 +93,7 @@ impl TestContext {
         &self.prefix
     }
 
-    pub async fn teardown(self) {
-        if let Err(e) = self.do_teardown().await {
-            eprintln!("teardown failed for prefix {}: {e:#}", self.prefix);
-        }
-    }
-
+    #[allow(dead_code)]
     async fn do_teardown(&self) -> anyhow::Result<()> {
         let sql = format!("SHOW DATABASES LIKE '{}%'", self.prefix);
         let rows = self.pool.query_all(&sql).await?;
@@ -110,6 +108,34 @@ impl TestContext {
             .exec(&format!("DROP DATABASE IF EXISTS `{}`", self.db_name))
             .await?;
         Ok(())
+    }
+}
+
+impl Drop for TestContext {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        if self.cleaned.load(Ordering::Relaxed) {
+            return;
+        }
+        let pool = self.pool.clone();
+        let prefix = self.prefix.clone();
+        let db_name = self.db_name.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            tokio::task::block_in_place(|| {
+                handle.block_on(async move {
+                    let sql = format!("SHOW DATABASES LIKE '{prefix}%'");
+                    if let Ok(rows) = pool.query_all(&sql).await {
+                        for row in &rows {
+                            let name: String = col(row, 0);
+                            let _ = pool.exec(&format!("DROP DATABASE IF EXISTS `{name}`")).await;
+                        }
+                    }
+                    let _ = pool
+                        .exec(&format!("DROP DATABASE IF EXISTS `{db_name}`"))
+                        .await;
+                });
+            });
+        }
     }
 }
 

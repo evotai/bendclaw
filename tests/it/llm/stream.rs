@@ -1,3 +1,5 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::stream::StreamEvent;
 use bendclaw::llm::stream::ToolCallAccumulator;
@@ -122,7 +124,7 @@ async fn stream_channel_usage_event() {
 }
 
 #[tokio::test]
-async fn stream_done_with_provider_fields() {
+async fn stream_done_with_provider_fields() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(8);
 
     tokio::spawn(async move {
@@ -146,35 +148,44 @@ async fn stream_done_with_provider_fields() {
             assert_eq!(provider.as_deref(), Some("openai"));
             assert_eq!(model.as_deref(), Some("gpt-4.1-mini"));
         }
-        _ => panic!("expected Done event"),
+        _ => bail!("expected Done event"),
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_channel_error_event() {
+async fn stream_channel_error_event() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
 
     tokio::spawn(async move {
         writer.error("something broke").await;
     });
 
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     match event {
         StreamEvent::Error(msg) => assert_eq!(msg, "something broke"),
-        _ => panic!("expected Error event"),
+        _ => bail!("expected Error event"),
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_from_error() {
+async fn stream_from_error() -> Result<()> {
     let err = bendclaw::base::ErrorCode::llm_request("test error");
     let mut stream = ResponseStream::from_error(err);
 
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     match event {
         StreamEvent::Error(msg) => assert!(msg.contains("test error")),
-        _ => panic!("expected Error event"),
+        _ => bail!("expected Error event"),
     }
+    Ok(())
 }
 
 // ── ToolCallAccumulator ──
@@ -211,7 +222,7 @@ fn accumulator_drain_filters_empty() {
 }
 
 #[test]
-fn accumulator_append_arguments() {
+fn accumulator_append_arguments() -> Result<()> {
     let mut acc = ToolCallAccumulator::new();
     let tc = acc.get_or_create(0);
     tc.id = "tc_001".into();
@@ -219,65 +230,93 @@ fn accumulator_append_arguments() {
     tc.arguments.push_str(r#"{"path"#);
     tc.arguments.push_str(r#"": "a.rs"}"#);
 
-    let found = acc.find(0).unwrap();
+    let found = acc
+        .find(0)
+        .ok_or_else(|| anyhow::anyhow!("expected entry at index 0"))?;
     assert_eq!(found.arguments, r#"{"path": "a.rs"}"#);
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_writer_text() {
+async fn stream_writer_text() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
     writer.text("hello").await;
     drop(writer);
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     assert!(matches!(event, StreamEvent::ContentDelta(s) if s == "hello"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_writer_thinking() {
+async fn stream_writer_thinking() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
     writer.thinking("hmm").await;
     drop(writer);
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     assert!(matches!(event, StreamEvent::ThinkingDelta(s) if s == "hmm"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_writer_tool_lifecycle() {
+async fn stream_writer_tool_lifecycle() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
     writer.tool_start(0, "tc1", "shell").await;
     writer.tool_delta(0, "{\"cmd\":").await;
     writer.tool_end(0, "tc1", "shell", "{\"cmd\":\"ls\"}").await;
     drop(writer);
 
-    let e1 = stream.next().await.unwrap();
+    let e1 = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected e1"))?;
     assert!(matches!(e1, StreamEvent::ToolCallStart { index: 0, .. }));
-    let e2 = stream.next().await.unwrap();
+    let e2 = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected e2"))?;
     assert!(matches!(e2, StreamEvent::ToolCallDelta { index: 0, .. }));
-    let e3 = stream.next().await.unwrap();
+    let e3 = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected e3"))?;
     assert!(matches!(e3, StreamEvent::ToolCallEnd { index: 0, .. }));
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_writer_usage() {
+async fn stream_writer_usage() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
     writer.usage(TokenUsage::new(10, 20)).await;
     drop(writer);
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     match event {
         StreamEvent::Usage(u) => {
             assert_eq!(u.prompt_tokens, 10);
             assert_eq!(u.completion_tokens, 20);
         }
-        _ => panic!("expected Usage"),
+        _ => bail!("expected Usage"),
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn stream_writer_done() {
+async fn stream_writer_done() -> Result<()> {
     let (writer, mut stream) = ResponseStream::channel(16);
     writer.done("stop").await;
     drop(writer);
-    let event = stream.next().await.unwrap();
+    let event = stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("expected event"))?;
     match event {
         StreamEvent::Done {
             finish_reason,
@@ -288,18 +327,23 @@ async fn stream_writer_done() {
             assert!(provider.is_none());
             assert!(model.is_none());
         }
-        _ => panic!("expected Done"),
+        _ => bail!("expected Done"),
     }
+    Ok(())
 }
 
 #[test]
-fn tool_call_accumulator_get_or_create() {
+fn tool_call_accumulator_get_or_create() -> Result<()> {
     let mut acc = ToolCallAccumulator::new();
     let tc = acc.get_or_create(0);
     tc.id = "tc1".into();
     tc.name = "shell".into();
     tc.arguments = "{}".into();
-    assert_eq!(acc.find(0).unwrap().name, "shell");
+    let found = acc
+        .find(0)
+        .ok_or_else(|| anyhow::anyhow!("expected entry at index 0"))?;
+    assert_eq!(found.name, "shell");
+    Ok(())
 }
 
 #[test]

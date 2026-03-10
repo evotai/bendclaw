@@ -1,3 +1,5 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::kernel::run::fmt::to_chat_messages;
 use bendclaw::kernel::session::message::MessageMetrics;
 use bendclaw::kernel::Content;
@@ -99,6 +101,7 @@ fn message_memory_has_no_role() {
     assert_eq!(m.text(), "k: v");
     assert!(m.role().is_none());
 }
+
 #[test]
 fn message_operation_event() {
     let msg = Message::operation_event(
@@ -212,34 +215,38 @@ fn to_chat_messages_converts_error_to_assistant_context() {
     assert_eq!(chat[0].role, Role::Assistant);
     assert_eq!(chat[0].text(), "[tool:shell] permission denied");
 }
+
 // ── Message serde ──
 
 #[test]
-fn message_serde_roundtrip_system() {
+fn message_serde_roundtrip_system() -> Result<()> {
     let msg = Message::system("test");
-    let json = serde_json::to_string(&msg).unwrap();
-    let parsed: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&msg)?;
+    let parsed: Message = serde_json::from_str(&json)?;
     assert_eq!(parsed.text(), "test");
+    Ok(())
 }
 
 #[test]
-fn message_serde_roundtrip_tool_result() {
+fn message_serde_roundtrip_tool_result() -> Result<()> {
     let msg = Message::tool_result("tc_001", "shell", "output", true);
-    let json = serde_json::to_string(&msg).unwrap();
-    let parsed: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&msg)?;
+    let parsed: Message = serde_json::from_str(&json)?;
     assert_eq!(parsed.text(), "output");
+    Ok(())
 }
 
 #[test]
-fn message_serde_roundtrip_error() {
+fn message_serde_roundtrip_error() -> Result<()> {
     let m = Message::error(ErrorSource::Tool("db".into()), "timeout");
-    let json = serde_json::to_string(&m).unwrap();
-    let back: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: Message = serde_json::from_str(&json)?;
     assert_eq!(back.text(), "[tool:db] timeout");
+    Ok(())
 }
 
 #[test]
-fn message_operation_event_serde_roundtrip() {
+fn message_operation_event_serde_roundtrip() -> Result<()> {
     let detail = serde_json::json!({
         "tool_call_id": "tc_001",
         "duration_ms": 12,
@@ -249,8 +256,8 @@ fn message_operation_event_serde_roundtrip() {
 
     assert_eq!(msg.text(), format!("[tool:shell] completed - {}", detail));
 
-    let json = serde_json::to_string(&msg).unwrap();
-    let decoded: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&msg)?;
+    let decoded: Message = serde_json::from_str(&json)?;
 
     match decoded {
         Message::OperationEvent {
@@ -266,8 +273,9 @@ fn message_operation_event_serde_roundtrip() {
             assert_eq!(detail["duration_ms"], 12);
             assert!(detail["error"].is_null());
         }
-        _ => panic!("expected operation event"),
+        _ => bail!("expected operation event"),
     }
+    Ok(())
 }
 
 // ── MessageMetrics ──
@@ -283,7 +291,7 @@ fn message_metrics_default() {
 }
 
 #[test]
-fn message_metrics_serde_roundtrip() {
+fn message_metrics_serde_roundtrip() -> Result<()> {
     let m = MessageMetrics {
         input_tokens: 100,
         output_tokens: 50,
@@ -291,24 +299,26 @@ fn message_metrics_serde_roundtrip() {
         ttft_ms: 150,
         duration_ms: 3000,
     };
-    let json = serde_json::to_string(&m).unwrap();
-    let back: MessageMetrics = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: MessageMetrics = serde_json::from_str(&json)?;
     assert_eq!(back.input_tokens, 100);
     assert_eq!(back.output_tokens, 50);
     assert_eq!(back.reasoning_tokens, 20);
     assert_eq!(back.ttft_ms, 150);
     assert_eq!(back.duration_ms, 3000);
+    Ok(())
 }
 
 #[test]
-fn message_metrics_skip_zero_fields() {
+fn message_metrics_skip_zero_fields() -> Result<()> {
     let m = MessageMetrics::default();
-    let json = serde_json::to_string(&m).unwrap();
+    let json = serde_json::to_string(&m)?;
     assert_eq!(json, "{}");
+    Ok(())
 }
 
 #[test]
-fn message_metrics_partial_fields() {
+fn message_metrics_partial_fields() -> Result<()> {
     let m = MessageMetrics {
         input_tokens: 10,
         output_tokens: 0,
@@ -316,10 +326,11 @@ fn message_metrics_partial_fields() {
         ttft_ms: 0,
         duration_ms: 500,
     };
-    let json = serde_json::to_string(&m).unwrap();
+    let json = serde_json::to_string(&m)?;
     assert!(json.contains("\"input_tokens\":10"));
     assert!(json.contains("\"duration_ms\":500"));
     assert!(!json.contains("\"output_tokens\""));
+    Ok(())
 }
 
 #[test]
@@ -346,29 +357,32 @@ fn assistant_with_operation_constructor() {
 }
 
 #[test]
-fn message_serde_roundtrip_memory() {
+fn message_serde_roundtrip_memory() -> Result<()> {
     let m = Message::Memory {
         operation: "store".into(),
         key: "k1".into(),
         value: "v1".into(),
     };
-    let json = serde_json::to_string(&m).unwrap();
-    let back: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: Message = serde_json::from_str(&json)?;
     assert_eq!(back.text(), "k1: v1");
+    Ok(())
 }
 
 #[test]
-fn message_serde_roundtrip_note() {
+fn message_serde_roundtrip_note() -> Result<()> {
     let m = Message::note("debug info");
-    let json = serde_json::to_string(&m).unwrap();
-    let back: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: Message = serde_json::from_str(&json)?;
     assert_eq!(back.text(), "debug info");
+    Ok(())
 }
 
 #[test]
-fn message_serde_roundtrip_compaction() {
+fn message_serde_roundtrip_compaction() -> Result<()> {
     let m = Message::compaction("summary text");
-    let json = serde_json::to_string(&m).unwrap();
-    let back: Message = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&m)?;
+    let back: Message = serde_json::from_str(&json)?;
     assert_eq!(back.text(), "summary text");
+    Ok(())
 }

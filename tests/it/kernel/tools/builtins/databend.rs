@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::tools::databend::DatabendTool;
 use bendclaw::kernel::tools::Impact;
 use bendclaw::kernel::tools::OpType;
@@ -285,13 +286,16 @@ fn tool_op_type() -> Result<(), Box<dyn std::error::Error>> {
 fn tool_schema_has_required_action() -> Result<(), Box<dyn std::error::Error>> {
     let tool = dummy_tool()?;
     let schema = tool.parameters_schema();
-    let props = schema.get("properties").unwrap();
+    let props = schema.get("properties").ok_or_else(|| anyhow::anyhow!("missing properties"))?;
     assert!(props.get("action").is_some());
     assert!(props.get("sql").is_some());
     assert!(props.get("table").is_some());
     assert!(props.get("database").is_some());
     assert!(props.get("filter").is_some());
-    let required = schema.get("required").unwrap().as_array().unwrap();
+    let required = schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .ok_or_else(|| anyhow::anyhow!("missing required array"))?;
     assert_eq!(required.len(), 1);
     assert_eq!(required[0], "action");
     Ok(())

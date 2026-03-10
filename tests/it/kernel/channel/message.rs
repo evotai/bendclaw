@@ -1,3 +1,6 @@
+use anyhow::bail;
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::kernel::channel::Direction;
 use bendclaw::kernel::channel::InboundEvent;
 use bendclaw::kernel::channel::InboundMessage;
@@ -6,7 +9,7 @@ use bendclaw::kernel::channel::ReplyContext;
 // ── InboundEvent serde roundtrip ──
 
 #[test]
-fn inbound_message_serde_roundtrip() {
+fn inbound_message_serde_roundtrip() -> Result<()> {
     let event = InboundEvent::Message(InboundMessage {
         message_id: "msg_1".into(),
         chat_id: "chat_1".into(),
@@ -16,20 +19,21 @@ fn inbound_message_serde_roundtrip() {
         attachments: vec![],
         timestamp: 1700000000,
     });
-    let json = serde_json::to_string(&event).unwrap();
-    let parsed: InboundEvent = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&event)?;
+    let parsed: InboundEvent = serde_json::from_str(&json)?;
     match parsed {
         InboundEvent::Message(msg) => {
             assert_eq!(msg.message_id, "msg_1");
             assert_eq!(msg.text, "hello agent");
             assert_eq!(msg.timestamp, 1700000000);
         }
-        _ => panic!("expected Message variant"),
+        _ => bail!("expected Message variant"),
     }
+    Ok(())
 }
 
 #[test]
-fn platform_event_serde_roundtrip() {
+fn platform_event_serde_roundtrip() -> Result<()> {
     let event = InboundEvent::PlatformEvent {
         event_type: "pull_request.opened".into(),
         payload: serde_json::json!({"number": 42}),
@@ -39,8 +43,8 @@ fn platform_event_serde_roundtrip() {
             thread_id: Some("42".into()),
         }),
     };
-    let json = serde_json::to_string(&event).unwrap();
-    let parsed: InboundEvent = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&event)?;
+    let parsed: InboundEvent = serde_json::from_str(&json)?;
     match parsed {
         InboundEvent::PlatformEvent {
             event_type,
@@ -49,22 +53,23 @@ fn platform_event_serde_roundtrip() {
         } => {
             assert_eq!(event_type, "pull_request.opened");
             assert_eq!(payload["number"], 42);
-            let ctx = reply_context.unwrap();
+            let ctx = reply_context.context("expected reply_context")?;
             assert_eq!(ctx.thread_id.as_deref(), Some("42"));
         }
-        _ => panic!("expected PlatformEvent variant"),
+        _ => bail!("expected PlatformEvent variant"),
     }
+    Ok(())
 }
 
 #[test]
-fn callback_serde_roundtrip() {
+fn callback_serde_roundtrip() -> Result<()> {
     let event = InboundEvent::Callback {
         callback_id: "cb_1".into(),
         data: "approve".into(),
         reply_context: None,
     };
-    let json = serde_json::to_string(&event).unwrap();
-    let parsed: InboundEvent = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&event)?;
+    let parsed: InboundEvent = serde_json::from_str(&json)?;
     match parsed {
         InboundEvent::Callback {
             callback_id,
@@ -75,27 +80,29 @@ fn callback_serde_roundtrip() {
             assert_eq!(data, "approve");
             assert!(reply_context.is_none());
         }
-        _ => panic!("expected Callback variant"),
+        _ => bail!("expected Callback variant"),
     }
+    Ok(())
 }
 
 #[test]
-fn platform_event_without_reply_context() {
+fn platform_event_without_reply_context() -> Result<()> {
     let event = InboundEvent::PlatformEvent {
         event_type: "push".into(),
         payload: serde_json::json!("refs/heads/main"),
         reply_context: None,
     };
-    let json = serde_json::to_string(&event).unwrap();
+    let json = serde_json::to_string(&event)?;
     // reply_context should be omitted from JSON
     assert!(!json.contains("reply_context"));
-    let parsed: InboundEvent = serde_json::from_str(&json).unwrap();
+    let parsed: InboundEvent = serde_json::from_str(&json)?;
     match parsed {
         InboundEvent::PlatformEvent { reply_context, .. } => {
             assert!(reply_context.is_none());
         }
-        _ => panic!("expected PlatformEvent"),
+        _ => bail!("expected PlatformEvent"),
     }
+    Ok(())
 }
 
 // ── Direction ──
@@ -107,12 +114,13 @@ fn direction_as_str() {
 }
 
 #[test]
-fn direction_serde_roundtrip() {
-    let json = serde_json::to_string(&Direction::Inbound).unwrap();
-    let parsed: Direction = serde_json::from_str(&json).unwrap();
+fn direction_serde_roundtrip() -> Result<()> {
+    let json = serde_json::to_string(&Direction::Inbound)?;
+    let parsed: Direction = serde_json::from_str(&json)?;
     assert_eq!(parsed, Direction::Inbound);
 
-    let json = serde_json::to_string(&Direction::Outbound).unwrap();
-    let parsed: Direction = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&Direction::Outbound)?;
+    let parsed: Direction = serde_json::from_str(&json)?;
     assert_eq!(parsed, Direction::Outbound);
+    Ok(())
 }

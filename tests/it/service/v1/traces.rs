@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -36,7 +37,6 @@ async fn list_traces_empty() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body["data"].is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -63,9 +63,8 @@ async fn traces_created_after_chat() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    let traces = body["data"].as_array().unwrap();
+    let traces = body["data"].as_array().context("expected data array")?;
     assert!(!traces.is_empty());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -93,7 +92,6 @@ async fn traces_summary() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body["trace_count"].is_number());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -124,9 +122,9 @@ async fn get_trace_by_id() -> Result<()> {
         )
         .await?;
     let body = json_body(resp).await?;
-    let traces = body["data"].as_array().unwrap();
+    let traces = body["data"].as_array().context("expected data array")?;
     assert!(!traces.is_empty());
-    let trace_id = traces[0]["trace_id"].as_str().unwrap().to_string();
+    let trace_id = traces[0]["trace_id"].as_str().context("missing trace_id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -141,7 +139,6 @@ async fn get_trace_by_id() -> Result<()> {
     let detail = json_body(resp2).await?;
     assert_eq!(detail["trace"]["trace_id"], trace_id.as_str());
     assert!(detail["spans"].is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -172,16 +169,15 @@ async fn traces_filter_by_session() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    let traces = body["data"].as_array().unwrap();
+    let traces = body["data"].as_array().context("expected data array")?;
     assert!(traces.iter().all(|t| t["session_id"] == session_a.as_str()));
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── TraceResponse serde ──
 
 #[test]
-fn trace_response_serializes_fields() {
+fn trace_response_serializes_fields() -> anyhow::Result<()> {
     let t = bendclaw::service::v1::traces::TraceResponse {
         trace_id: "tr-1".into(),
         run_id: "run-1".into(),
@@ -194,7 +190,7 @@ fn trace_response_serializes_fields() {
         total_cost: 0.005,
         created_at: "2024-01-01T00:00:00Z".into(),
     };
-    let v = serde_json::to_value(&t).unwrap();
+    let v = serde_json::to_value(&t)?;
     assert_eq!(v["trace_id"], "tr-1");
     assert_eq!(v["run_id"], "run-1");
     assert_eq!(v["session_id"], "sess-1");
@@ -204,10 +200,11 @@ fn trace_response_serializes_fields() {
     assert_eq!(v["input_tokens"], 10);
     assert_eq!(v["output_tokens"], 20);
     assert_eq!(v["created_at"], "2024-01-01T00:00:00Z");
+    Ok(())
 }
 
 #[test]
-fn trace_response_zero_cost() {
+fn trace_response_zero_cost() -> anyhow::Result<()> {
     let t = bendclaw::service::v1::traces::TraceResponse {
         trace_id: "tr-2".into(),
         run_id: "run-2".into(),
@@ -220,9 +217,10 @@ fn trace_response_zero_cost() {
         total_cost: 0.0,
         created_at: String::new(),
     };
-    let v = serde_json::to_value(&t).unwrap();
+    let v = serde_json::to_value(&t)?;
     assert_eq!(v["total_cost"], 0.0);
     assert_eq!(v["duration_ms"], 0);
+    Ok(())
 }
 
 // ── TracesQuery deserialization ──
@@ -239,7 +237,7 @@ fn traces_query_defaults() {
 }
 
 #[test]
-fn traces_query_all_filters() {
+fn traces_query_all_filters() -> anyhow::Result<()> {
     let q: bendclaw::service::v1::traces::TracesQuery = serde_json::from_str(
         r#"{
             "session_id": "sess-1",
@@ -249,29 +247,30 @@ fn traces_query_all_filters() {
             "start_time": "2024-01-01T00:00:00Z",
             "end_time": "2024-12-31T23:59:59Z"
         }"#,
-    )
-    .unwrap();
+    )?;
     assert_eq!(q.session_id.as_deref(), Some("sess-1"));
     assert_eq!(q.run_id.as_deref(), Some("run-1"));
     assert_eq!(q.user_id.as_deref(), Some("user-1"));
     assert_eq!(q.status.as_deref(), Some("completed"));
     assert_eq!(q.start_time.as_deref(), Some("2024-01-01T00:00:00Z"));
     assert_eq!(q.end_time.as_deref(), Some("2024-12-31T23:59:59Z"));
+    Ok(())
 }
 
 #[test]
-fn traces_query_partial_filters() {
+fn traces_query_partial_filters() -> anyhow::Result<()> {
     let q: bendclaw::service::v1::traces::TracesQuery =
-        serde_json::from_str(r#"{"status": "running"}"#).unwrap();
+        serde_json::from_str(r#"{"status": "running"}"#)?;
     assert_eq!(q.status.as_deref(), Some("running"));
     assert!(q.session_id.is_none());
     assert!(q.run_id.is_none());
+    Ok(())
 }
 
 // ── TraceDetailResponse serde ──
 
 #[test]
-fn trace_detail_response_serializes() {
+fn trace_detail_response_serializes() -> anyhow::Result<()> {
     let detail = bendclaw::service::v1::traces::TraceDetailResponse {
         trace: bendclaw::service::v1::traces::TraceResponse {
             trace_id: "tr-3".into(),
@@ -287,8 +286,9 @@ fn trace_detail_response_serializes() {
         },
         spans: vec![],
     };
-    let v = serde_json::to_value(&detail).unwrap();
+    let v = serde_json::to_value(&detail)?;
     assert_eq!(v["trace"]["trace_id"], "tr-3");
     assert_eq!(v["trace"]["status"], "completed");
-    assert!(v["spans"].as_array().unwrap().is_empty());
+    assert!(v["spans"].as_array().context("expected spans array")?.is_empty());
+    Ok(())
 }

@@ -35,7 +35,6 @@ async fn usage_summary_zero_for_new_agent() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body["record_count"], 0);
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -63,7 +62,6 @@ async fn usage_summary_after_chat() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body["record_count"].as_u64().unwrap_or(0) >= 1);
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -89,7 +87,6 @@ async fn usage_daily_returns_array() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body.is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -112,14 +109,13 @@ async fn global_usage_summary() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body["total_tokens"].is_number());
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── serde unit tests ──
 
 #[test]
-fn usage_summary_response_serializes_fields() {
+fn usage_summary_response_serializes_fields() -> anyhow::Result<()> {
     use bendclaw::service::v1::usage::UsageSummaryResponse;
 
     let r = UsageSummaryResponse {
@@ -132,7 +128,7 @@ fn usage_summary_response_serializes_fields() {
         total_cache_read_tokens: 10,
         total_cache_write_tokens: 20,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["total_prompt_tokens"], 100);
     assert_eq!(v["total_completion_tokens"], 200);
     assert_eq!(v["total_reasoning_tokens"], 50);
@@ -140,10 +136,11 @@ fn usage_summary_response_serializes_fields() {
     assert_eq!(v["record_count"], 5);
     assert_eq!(v["total_cache_read_tokens"], 10);
     assert_eq!(v["total_cache_write_tokens"], 20);
+    Ok(())
 }
 
 #[test]
-fn usage_summary_response_zero_values() {
+fn usage_summary_response_zero_values() -> anyhow::Result<()> {
     use bendclaw::service::v1::usage::UsageSummaryResponse;
 
     let r = UsageSummaryResponse {
@@ -156,13 +153,14 @@ fn usage_summary_response_zero_values() {
         total_cache_read_tokens: 0,
         total_cache_write_tokens: 0,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["record_count"], 0);
     assert_eq!(v["total_cost"], 0.0);
+    Ok(())
 }
 
 #[test]
-fn daily_usage_response_serializes_fields() {
+fn daily_usage_response_serializes_fields() -> anyhow::Result<()> {
     use bendclaw::service::v1::usage::DailyUsageResponse;
 
     let r = DailyUsageResponse {
@@ -173,26 +171,29 @@ fn daily_usage_response_serializes_fields() {
         cost: 0.01,
         requests: 3,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["date"], "2024-01-15");
     assert_eq!(v["prompt_tokens"], 80);
     assert_eq!(v["completion_tokens"], 120);
     assert_eq!(v["total_tokens"], 200);
     assert_eq!(v["requests"], 3);
+    Ok(())
 }
 
 #[test]
-fn daily_query_default_days_none() {
+fn daily_query_default_days_none() -> anyhow::Result<()> {
     use bendclaw::service::v1::usage::DailyQuery;
 
-    let q: DailyQuery = serde_json::from_str(r#"{}"#).unwrap();
+    let q: DailyQuery = serde_json::from_str(r#"{}"#)?;
     assert!(q.days.is_none());
+    Ok(())
 }
 
 #[test]
-fn daily_query_with_days() {
+fn daily_query_with_days() -> anyhow::Result<()> {
     use bendclaw::service::v1::usage::DailyQuery;
 
-    let q: DailyQuery = serde_json::from_str(r#"{"days": 30}"#).unwrap();
+    let q: DailyQuery = serde_json::from_str(r#"{"days": 30}"#)?;
     assert_eq!(q.days, Some(30));
+    Ok(())
 }

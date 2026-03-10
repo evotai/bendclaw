@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::run::usage::CostSummary;
 use bendclaw::kernel::run::usage::ModelRole;
 use bendclaw::kernel::run::usage::UsageEvent;
@@ -12,7 +13,7 @@ fn cost_summary_default() {
 }
 
 #[test]
-fn cost_summary_serde_roundtrip() {
+fn cost_summary_serde_roundtrip() -> Result<()> {
     let s = CostSummary {
         total_prompt_tokens: 100,
         total_completion_tokens: 50,
@@ -23,11 +24,12 @@ fn cost_summary_serde_roundtrip() {
         total_cache_read_tokens: 20,
         total_cache_write_tokens: 10,
     };
-    let json = serde_json::to_string(&s).unwrap();
-    let back: CostSummary = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&s)?;
+    let back: CostSummary = serde_json::from_str(&json)?;
     assert_eq!(back.total_tokens, 150);
     assert_eq!(back.total_cost, 0.05);
     assert_eq!(back.record_count, 3);
+    Ok(())
 }
 
 #[test]
@@ -93,20 +95,21 @@ fn model_role_default_is_reasoning() {
 }
 
 #[test]
-fn model_role_serde_roundtrip() {
+fn model_role_serde_roundtrip() -> Result<()> {
     for role in [
         ModelRole::Reasoning,
         ModelRole::Compaction,
         ModelRole::Checkpoint,
     ] {
-        let json = serde_json::to_string(&role).unwrap();
-        let back: ModelRole = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&role)?;
+        let back: ModelRole = serde_json::from_str(&json)?;
         assert_eq!(back, role);
     }
+    Ok(())
 }
 
 #[test]
-fn cost_summary_all_fields_serialize() {
+fn cost_summary_all_fields_serialize() -> Result<()> {
     let s = CostSummary {
         total_prompt_tokens: 1000,
         total_completion_tokens: 500,
@@ -117,8 +120,9 @@ fn cost_summary_all_fields_serialize() {
         total_cache_read_tokens: 300,
         total_cache_write_tokens: 100,
     };
-    let json = serde_json::to_string(&s).unwrap();
+    let json = serde_json::to_string(&s)?;
     assert!(json.contains("\"total_reasoning_tokens\":200"));
     assert!(json.contains("\"total_cache_read_tokens\":300"));
     assert!(json.contains("\"total_cache_write_tokens\":100"));
+    Ok(())
 }

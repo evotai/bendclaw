@@ -1,10 +1,12 @@
+use anyhow::Result;
 use bendclaw::storage::time::now;
 
 #[test]
-fn now_returns_recent_timestamp() {
+fn now_returns_recent_timestamp() -> anyhow::Result<()> {
     let ts = now();
-    let year = ts.format("%Y").to_string().parse::<u32>().unwrap();
+    let year = ts.format("%Y").to_string().parse::<u32>()?;
     assert!(year >= 2025);
+    Ok(())
 }
 
 #[test]

@@ -31,7 +31,7 @@ async fn shell_execute_allowed_command() -> Result<(), Box<dyn std::error::Error
         .execute_with_context(json!({"command": "echo hello"}), &ctx)
         .await?;
     assert!(!result.success);
-    assert!(result.error.as_ref().unwrap().contains("Failed to load variables"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("Failed to load variables")));
     Ok(())
 }
 
@@ -43,7 +43,7 @@ async fn shell_execute_missing_command_param() -> Result<(), Box<dyn std::error:
 
     let result = tool.execute_with_context(json!({}), &ctx).await?;
     assert!(!result.success);
-    assert!(result.error.as_ref().unwrap().contains("Missing"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("Missing")));
     Ok(())
 }
 
@@ -65,7 +65,7 @@ async fn shell_tool_name_and_schema() {
     let tool = ShellTool;
     assert_eq!(tool.name(), "shell");
     let schema = tool.parameters_schema();
-    assert!(schema.get("properties").unwrap().get("command").is_some());
+    assert!(schema.get("properties").and_then(|p| p.get("command")).is_some());
 }
 
 // ── classify_impact ──
@@ -204,7 +204,7 @@ async fn shell_env_isolation() -> Result<(), Box<dyn std::error::Error>> {
         .execute_with_context(json!({"command": "echo $BENDCLAW_TEST_SECRET"}), &ctx)
         .await?;
     assert!(!result.success);
-    assert!(result.error.as_ref().unwrap().contains("Failed to load variables"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("Failed to load variables")));
     std::env::remove_var("BENDCLAW_TEST_SECRET");
     Ok(())
 }

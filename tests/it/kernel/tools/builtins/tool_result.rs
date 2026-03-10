@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::tools::ToolResult;
 use bendclaw::kernel::tools::ToolSpec;
 
@@ -38,36 +39,39 @@ fn tool_result_error_output_is_empty() {
 }
 
 #[test]
-fn tool_result_serde_roundtrip_ok() {
+fn tool_result_serde_roundtrip_ok() -> Result<()> {
     let r = ToolResult::ok("result text");
-    let json = serde_json::to_string(&r).unwrap();
-    let back: ToolResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&r)?;
+    let back: ToolResult = serde_json::from_str(&json)?;
     assert!(back.success);
     assert_eq!(back.output, "result text");
     assert!(back.error.is_none());
+    Ok(())
 }
 
 #[test]
-fn tool_result_serde_roundtrip_error() {
+fn tool_result_serde_roundtrip_error() -> Result<()> {
     let r = ToolResult::error("failed");
-    let json = serde_json::to_string(&r).unwrap();
-    let back: ToolResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&r)?;
+    let back: ToolResult = serde_json::from_str(&json)?;
     assert!(!back.success);
     assert!(back.output.is_empty());
     assert_eq!(back.error.as_deref(), Some("failed"));
+    Ok(())
 }
 
 #[test]
-fn tool_spec_serde_roundtrip() {
+fn tool_spec_serde_roundtrip() -> Result<()> {
     let spec = ToolSpec {
         name: "my_tool".into(),
         description: "does stuff".into(),
         parameters: serde_json::json!({"type": "object", "properties": {}}),
     };
-    let json = serde_json::to_string(&spec).unwrap();
-    let back: ToolSpec = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&spec)?;
+    let back: ToolSpec = serde_json::from_str(&json)?;
     assert_eq!(back.name, "my_tool");
     assert_eq!(back.description, "does stuff");
+    Ok(())
 }
 
 #[test]

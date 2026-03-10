@@ -1,6 +1,8 @@
 //! Tests for prompt construction helpers: truncate_layer, substitute_template,
 //! format_learnings, and layer size constants.
 
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::kernel::run::prompt::format_learnings;
 use bendclaw::kernel::run::prompt::substitute_template;
 use bendclaw::kernel::run::prompt::truncate_layer;
@@ -345,17 +347,18 @@ fn substitute_null_value_uses_json_repr() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn format_learnings_preserves_order() {
+fn format_learnings_preserves_order() -> Result<()> {
     let records = vec![
         make_learning("First", "aaa"),
         make_learning("Second", "bbb"),
         make_learning("Third", "ccc"),
     ];
     let result = format_learnings(&records);
-    let first = result.find("First").unwrap();
-    let second = result.find("Second").unwrap();
-    let third = result.find("Third").unwrap();
+    let first = result.find("First").context("First not found")?;
+    let second = result.find("Second").context("Second not found")?;
+    let third = result.find("Third").context("Third not found")?;
     assert!(first < second && second < third);
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

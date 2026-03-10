@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -27,9 +29,9 @@ fn visit_rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn read(path: &Path) -> String {
+fn read(path: &Path) -> Result<String> {
     fs::read_to_string(path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+        .with_context(|| format!("failed to read {}", path.display()))
 }
 
 fn rel(path: &Path) -> String {
@@ -57,39 +59,41 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
 }
 
 #[test]
-fn storage_does_not_depend_on_kernel() {
+fn storage_does_not_depend_on_kernel() -> Result<()> {
     let root = repo_root().join("src/storage");
-    let offenders: Vec<_> = rust_files_under(&root)
-        .into_iter()
-        .filter_map(|path| {
-            let text = read(&path);
-            text.contains("kernel::").then(|| rel(&path))
-        })
-        .collect();
+    let mut offenders = Vec::new();
+    for path in rust_files_under(&root) {
+        let text = read(&path)?;
+        if text.contains("kernel::") {
+            offenders.push(rel(&path));
+        }
+    }
     assert!(
         offenders.is_empty(),
         "storage must not reference kernel: {offenders:#?}"
     );
+    Ok(())
 }
 
 #[test]
-fn llm_does_not_depend_on_kernel() {
+fn llm_does_not_depend_on_kernel() -> Result<()> {
     let root = repo_root().join("src/llm");
-    let offenders: Vec<_> = rust_files_under(&root)
-        .into_iter()
-        .filter_map(|path| {
-            let text = read(&path);
-            text.contains("kernel::").then(|| rel(&path))
-        })
-        .collect();
+    let mut offenders = Vec::new();
+    for path in rust_files_under(&root) {
+        let text = read(&path)?;
+        if text.contains("kernel::") {
+            offenders.push(rel(&path));
+        }
+    }
     assert!(
         offenders.is_empty(),
         "llm must not reference kernel: {offenders:#?}"
     );
+    Ok(())
 }
 
 #[test]
-fn service_http_and_service_do_not_touch_storage_infra() {
+fn service_http_and_service_do_not_touch_storage_infra() -> Result<()> {
     let root = repo_root().join("src/service");
     let mut offenders = Vec::new();
     for path in rust_files_under(&root) {
@@ -99,7 +103,7 @@ fn service_http_and_service_do_not_touch_storage_infra() {
         if name != "http.rs" && name != "service.rs" {
             continue;
         }
-        let text = read(&path);
+        let text = read(&path)?;
         // Service files may reference dal records/repos and sql::escape,
         // but should not directly use low-level storage infra (Pool, sql
         // builders, migrator).
@@ -114,10 +118,11 @@ fn service_http_and_service_do_not_touch_storage_infra() {
         offenders.is_empty(),
         "service http/service must not reference Pool/sql/migrator: {offenders:#?}"
     );
+    Ok(())
 }
 
 #[test]
-fn service_query_does_not_call_repo_write_methods() {
+fn service_query_does_not_call_repo_write_methods() -> Result<()> {
     let root = repo_root().join("src/service");
     let write_markers = [
         ".insert(",
@@ -132,7 +137,7 @@ fn service_query_does_not_call_repo_write_methods() {
         if path.file_name().and_then(|name| name.to_str()) != Some("query.rs") {
             continue;
         }
-        let text = read(&path);
+        let text = read(&path)?;
         if write_markers.iter().any(|marker| text.contains(marker)) {
             offenders.push(rel(&path));
         }
@@ -141,4 +146,5 @@ fn service_query_does_not_call_repo_write_methods() {
         offenders.is_empty(),
         "service query.rs must stay read-only: {offenders:#?}"
     );
+    Ok(())
 }

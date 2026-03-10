@@ -1,15 +1,18 @@
+use anyhow::bail;
+use anyhow::Result;
 use bendclaw::llm::sse::SseData;
 use bendclaw::llm::sse::SseParser;
 
 #[test]
-fn parse_json_data() {
+fn parse_json_data() -> Result<()> {
     let mut parser = SseParser::new();
     let results = parser.feed(b"data: {\"key\":\"value\"}\n\n");
     assert_eq!(results.len(), 1);
     match &results[0] {
         SseData::Json(v) => assert_eq!(v["key"], "value"),
-        _ => panic!("expected Json"),
+        _ => bail!("expected Json"),
     }
+    Ok(())
 }
 
 #[test]
@@ -59,14 +62,15 @@ fn multiple_events_in_one_chunk() {
 }
 
 #[test]
-fn invalid_json_skipped() {
+fn invalid_json_skipped() -> Result<()> {
     let mut parser = SseParser::new();
     let results = parser.feed(b"data: not-json\ndata: {\"ok\":true}\n\n");
     assert_eq!(results.len(), 1);
     match &results[0] {
         SseData::Json(v) => assert_eq!(v["ok"], true),
-        _ => panic!("expected Json"),
+        _ => bail!("expected Json"),
     }
+    Ok(())
 }
 
 #[test]

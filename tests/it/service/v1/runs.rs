@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::to_bytes;
 use axum::body::Body;
@@ -37,8 +38,7 @@ async fn list_runs_empty() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    assert!(body["data"].as_array().unwrap().is_empty());
-    ctx.teardown().await;
+    assert!(body["data"].as_array().context("expected data array")?.is_empty());
     Ok(())
 }
 
@@ -65,9 +65,8 @@ async fn run_created_after_chat() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    let runs = body["data"].as_array().unwrap();
+    let runs = body["data"].as_array().context("expected data array")?;
     assert!(!runs.is_empty());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -93,8 +92,8 @@ async fn get_run_by_id() -> Result<()> {
         )
         .await?;
     let body = json_body(resp).await?;
-    let runs = body["data"].as_array().unwrap();
-    let run_id = runs[0]["id"].as_str().unwrap().to_string();
+    let runs = body["data"].as_array().context("expected data array")?;
+    let run_id = runs[0]["id"].as_str().context("missing run id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -109,7 +108,6 @@ async fn get_run_by_id() -> Result<()> {
     let run = json_body(resp2).await?;
     assert_eq!(run["id"], run_id.as_str());
     assert_eq!(run["session_id"], session_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -135,8 +133,8 @@ async fn cancel_non_running_run_returns_ok() -> Result<()> {
         )
         .await?;
     let body = json_body(resp).await?;
-    let runs = body["data"].as_array().unwrap();
-    let run_id = runs[0]["id"].as_str().unwrap().to_string();
+    let runs = body["data"].as_array().context("expected data array")?;
+    let run_id = runs[0]["id"].as_str().context("missing run id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -151,7 +149,6 @@ async fn cancel_non_running_run_returns_ok() -> Result<()> {
     assert_eq!(resp2.status(), StatusCode::OK);
     let body = json_body(resp2).await?;
     assert_eq!(body, serde_json::json!({}));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -182,11 +179,10 @@ async fn run_with_tool_call_has_iterations() -> Result<()> {
         )
         .await?;
     let body = json_body(resp).await?;
-    let runs = body["data"].as_array().unwrap();
+    let runs = body["data"].as_array().context("expected data array")?;
     assert!(!runs.is_empty());
     let iterations: u64 = runs[0]["iterations"].as_u64().unwrap_or(0);
     assert!(iterations >= 2);
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -223,7 +219,6 @@ async fn create_run_non_stream_returns_run_response() -> Result<()> {
     assert_eq!(json["input"], "hello from create_run");
     assert_eq!(json["output"], "ok from run");
     assert_eq!(json["status"], "COMPLETED");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -262,7 +257,6 @@ async fn create_run_stream_returns_agno_style_sse() -> Result<()> {
     assert!(text.contains("event: RunContent"));
     assert!(text.contains("event: RunCompleted"));
     assert!(text.contains("\"event\":\"RunStarted\""));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -291,8 +285,7 @@ async fn list_runs_via_agno_style_endpoint() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    assert_eq!(body["data"].as_array().unwrap().len(), 1);
-    ctx.teardown().await;
+    assert_eq!(body["data"].as_array().context("expected data array")?.len(), 1);
     Ok(())
 }
 
@@ -325,7 +318,7 @@ async fn continue_non_paused_run_returns_conflict() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let created = json_body(resp).await?;
-    let run_id = created["id"].as_str().unwrap().to_string();
+    let run_id = created["id"].as_str().context("missing run id")?.to_string();
 
     let continue_body = serde_json::json!({
         "input": "continue now",
@@ -343,14 +336,13 @@ async fn continue_non_paused_run_returns_conflict() -> Result<()> {
         )
         .await?;
     assert_eq!(resp2.status(), StatusCode::CONFLICT);
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── RunResponse serde ──
 
 #[test]
-fn run_response_serializes_fields() {
+fn run_response_serializes_fields() -> anyhow::Result<()> {
     let r = bendclaw::service::v1::runs::RunResponse {
         id: "run-1".into(),
         session_id: "sess-1".into(),
@@ -366,7 +358,7 @@ fn run_response_serializes_fields() {
         updated_at: "2024-01-01T00:01:00Z".into(),
         events: None,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["id"], "run-1");
     assert_eq!(v["session_id"], "sess-1");
     assert_eq!(v["status"], "COMPLETED");
@@ -377,10 +369,11 @@ fn run_response_serializes_fields() {
     assert_eq!(v["iterations"], 3);
     assert_eq!(v["created_at"], "2024-01-01T00:00:00Z");
     assert_eq!(v["updated_at"], "2024-01-01T00:01:00Z");
+    Ok(())
 }
 
 #[test]
-fn run_response_null_metrics() {
+fn run_response_null_metrics() -> anyhow::Result<()> {
     let r = bendclaw::service::v1::runs::RunResponse {
         id: "run-2".into(),
         session_id: "sess-2".into(),
@@ -396,7 +389,8 @@ fn run_response_null_metrics() {
         updated_at: String::new(),
         events: None,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert!(v["metrics"].is_null());
     assert_eq!(v["iterations"], 0);
+    Ok(())
 }

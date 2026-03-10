@@ -1,8 +1,11 @@
+use anyhow::bail;
+use anyhow::Context as _;
+use anyhow::Result;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use bendclaw::base::Result;
+use bendclaw::base::Result as BaseResult;
 use bendclaw::kernel::channel::ChannelCapabilities;
 use bendclaw::kernel::channel::ChannelKind;
 use bendclaw::kernel::channel::ChannelOutbound;
@@ -53,7 +56,7 @@ impl ChannelPlugin for TestPlugin {
         }
     }
 
-    fn validate_config(&self, _config: &serde_json::Value) -> Result<()> {
+    fn validate_config(&self, _config: &serde_json::Value) -> BaseResult<()> {
         Ok(())
     }
 
@@ -70,16 +73,28 @@ struct NullOutbound;
 
 #[async_trait]
 impl ChannelOutbound for NullOutbound {
-    async fn send_text(&self, _: &serde_json::Value, _: &str, _: &str) -> Result<String> {
+    async fn send_text(&self, _: &serde_json::Value, _: &str, _: &str) -> BaseResult<String> {
         Ok("null_msg_id".to_string())
     }
-    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> Result<()> {
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> BaseResult<()> {
         Ok(())
     }
-    async fn edit_message(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> Result<()> {
+    async fn edit_message(
+        &self,
+        _: &serde_json::Value,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> BaseResult<()> {
         Ok(())
     }
-    async fn add_reaction(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> Result<()> {
+    async fn add_reaction(
+        &self,
+        _: &serde_json::Value,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> BaseResult<()> {
         Ok(())
     }
 }
@@ -99,13 +114,17 @@ fn register_and_list() {
 }
 
 #[test]
-fn get_registered_plugin() {
+fn get_registered_plugin() -> Result<()> {
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(TestPlugin::conversational("feishu")));
 
-    let entry = registry.get("feishu").unwrap();
+    let entry = registry.get("feishu").context("expected feishu entry")?;
     assert_eq!(entry.plugin.channel_type(), "feishu");
-    assert_eq!(entry.plugin.capabilities().channel_kind, ChannelKind::Conversational);
+    assert_eq!(
+        entry.plugin.capabilities().channel_kind,
+        ChannelKind::Conversational
+    );
+    Ok(())
 }
 
 #[test]
@@ -115,15 +134,19 @@ fn get_unknown_returns_none() {
 }
 
 #[test]
-fn register_overwrites_same_type() {
+fn register_overwrites_same_type() -> Result<()> {
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(TestPlugin::conversational("slack")));
     registry.register(Arc::new(TestPlugin::event_driven("slack")));
 
     let types = registry.list();
     assert_eq!(types.len(), 1);
-    let entry = registry.get("slack").unwrap();
-    assert_eq!(entry.plugin.capabilities().channel_kind, ChannelKind::EventDriven);
+    let entry = registry.get("slack").context("expected slack entry")?;
+    assert_eq!(
+        entry.plugin.capabilities().channel_kind,
+        ChannelKind::EventDriven
+    );
+    Ok(())
 }
 
 #[test]
@@ -145,12 +168,16 @@ fn empty_registry() {
 }
 
 #[tokio::test]
-async fn outbound_delegates_through_plugin() {
+async fn outbound_delegates_through_plugin() -> Result<()> {
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(TestPlugin::conversational("test")));
 
-    let entry = registry.get("test").unwrap();
+    let entry = registry.get("test").context("expected test entry")?;
     let outbound = entry.plugin.outbound();
-    let msg_id = outbound.send_text(&serde_json::json!({}), "chat_1", "hello").await.unwrap();
+    let msg_id = outbound
+        .send_text(&serde_json::json!({}), "chat_1", "hello")
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     assert_eq!(msg_id, "null_msg_id");
+    Ok(())
 }

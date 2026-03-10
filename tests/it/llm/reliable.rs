@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use async_trait::async_trait;
 use bendclaw::base::ErrorCode;
 use bendclaw::llm::message::ChatMessage;
@@ -117,7 +118,7 @@ impl LLMProvider for AlwaysFail {
 // ── ReliableProvider chat retries ──
 
 #[tokio::test]
-async fn reliable_retries_on_rate_limit_then_succeeds() {
+async fn reliable_retries_on_rate_limit_then_succeeds() -> Result<()> {
     let inner = Arc::new(FailThenSucceed::new(2, ErrorCode::LLM_RATE_LIMIT));
     let reliable = ReliableProvider::wrap(inner)
         .max_retries(3)
@@ -126,8 +127,9 @@ async fn reliable_retries_on_rate_limit_then_succeeds() {
     let result = reliable
         .chat("model", &[ChatMessage::user("hi")], &[], 0.7)
         .await;
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().content.unwrap(), "success");
+    let resp = result?;
+    assert_eq!(resp.content.ok_or_else(|| anyhow::anyhow!("no content"))?, "success");
+    Ok(())
 }
 
 #[tokio::test]
@@ -211,17 +213,17 @@ async fn reliable_base_backoff_clamped_to_minimum() {
 // ── Immediate success (no retries needed) ──
 
 #[tokio::test]
-async fn reliable_no_retry_on_success() {
+async fn reliable_no_retry_on_success() -> Result<()> {
     let inner = Arc::new(FailThenSucceed::new(0, ErrorCode::LLM_RATE_LIMIT));
     let reliable = ReliableProvider::wrap(inner)
         .max_retries(3)
         .base_backoff_ms(50);
 
-    let result = reliable
+    let resp = reliable
         .chat("model", &[ChatMessage::user("hi")], &[], 0.7)
-        .await;
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().content.unwrap(), "success");
+        .await?;
+    assert_eq!(resp.content.ok_or_else(|| anyhow::anyhow!("no content"))?, "success");
+    Ok(())
 }
 
 // ── Non-retryable errors: should fail immediately without retrying ──
@@ -549,7 +551,7 @@ async fn reliable_stream_error_message_includes_attempt_count() {
 // ── chat_stream retries ──
 
 #[tokio::test]
-async fn reliable_stream_retries_then_succeeds() {
+async fn reliable_stream_retries_then_succeeds() -> anyhow::Result<()> {
     use tokio_stream::StreamExt;
 
     let inner = Arc::new(FailThenSucceed::new(2, ErrorCode::LLM_RATE_LIMIT));
@@ -571,13 +573,14 @@ async fn reliable_stream_retries_then_succeeds() {
                 got_done = true;
             }
             bendclaw::llm::stream::StreamEvent::Error(msg) => {
-                panic!("unexpected error after retries: {msg}");
+                anyhow::bail!("unexpected error after retries: {msg}");
             }
             _ => {}
         }
     }
     assert!(got_text, "should have received streamed text");
     assert!(got_done, "should have received done event");
+    Ok(())
 }
 
 #[tokio::test]

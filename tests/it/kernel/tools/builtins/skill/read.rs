@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::skills::skill::Skill;
 use bendclaw::kernel::skills::skill::SkillScope;
@@ -76,59 +77,59 @@ fn summarize_missing_path_returns_unknown() {
 // ── execute ──
 
 #[tokio::test]
-async fn execute_returns_skill_content() {
+async fn execute_returns_skill_content() -> Result<()> {
     let (tool, catalog) = make_tool();
     insert_skill(&catalog, "my-skill", "## Usage\nRun with --input flag.");
     let ctx = test_tool_context();
 
     let result = tool
         .execute_with_context(json!({"path": "my-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
 
     assert!(result.success);
     assert!(result.output.contains("## Usage"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn execute_skill_not_found() {
+async fn execute_skill_not_found() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
 
     let result = tool
         .execute_with_context(json!({"path": "nonexistent"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
 
     assert!(result.success);
     assert!(result.output.contains("Skill not found"));
     assert!(result.output.contains("nonexistent"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn execute_missing_path_param() {
+async fn execute_missing_path_param() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
 
-    let result = tool.execute_with_context(json!({}), &ctx).await.unwrap();
+    let result = tool.execute_with_context(json!({}), &ctx).await?;
 
     assert!(result.success);
     assert!(result.output.contains("Skill not found"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn execute_truncates_oversized_content() {
+async fn execute_truncates_oversized_content() -> Result<()> {
     let (tool, catalog) = make_tool();
-    // 64 KiB + 1 byte triggers truncation
     let big_content = "x".repeat(64 * 1024 + 100);
     insert_skill(&catalog, "big-skill", &big_content);
     let ctx = test_tool_context();
 
     let result = tool
         .execute_with_context(json!({"path": "big-skill"}), &ctx)
-        .await
-        .unwrap();
+        .await?;
 
     assert!(result.success);
     assert!(result.output.contains("truncated"));
+    Ok(())
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -41,7 +42,7 @@ async fn create_and_list_learnings() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let created = json_body(resp).await?;
     assert_eq!(created["title"], "Rust ownership");
-    let learning_id = created["id"].as_str().unwrap().to_string();
+    let learning_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -54,9 +55,8 @@ async fn create_and_list_learnings() -> Result<()> {
         .await?;
     assert_eq!(resp2.status(), StatusCode::OK);
     let list = json_body(resp2).await?;
-    let items = list["data"].as_array().unwrap();
+    let items = list["data"].as_array().context("expected data array")?;
     assert!(items.iter().any(|l| l["id"] == learning_id.as_str()));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -83,7 +83,7 @@ async fn delete_learning() -> Result<()> {
         )
         .await?;
     let created = json_body(resp).await?;
-    let learning_id = created["id"].as_str().unwrap().to_string();
+    let learning_id = created["id"].as_str().context("missing id")?.to_string();
 
     let resp2 = app
         .clone()
@@ -98,7 +98,6 @@ async fn delete_learning() -> Result<()> {
     assert_eq!(resp2.status(), StatusCode::OK);
     let body = json_body(resp2).await?;
     assert_eq!(body["deleted"], learning_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -142,14 +141,13 @@ async fn search_learnings() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body.is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── serde unit tests ──
 
 #[test]
-fn learning_response_serializes_fields() {
+fn learning_response_serializes_fields() -> anyhow::Result<()> {
     use bendclaw::service::v1::learnings::LearningResponse;
 
     let r = LearningResponse {
@@ -164,16 +162,17 @@ fn learning_response_serializes_fields() {
         created_at: "2024-01-01T00:00:00Z".into(),
         updated_at: "2024-01-02T00:00:00Z".into(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["id"], "id1");
     assert_eq!(v["agent_id"], "agent1");
     assert_eq!(v["title"], "Rust ownership");
     assert_eq!(v["source"], "manual");
     assert_eq!(v["tags"], serde_json::json!(["rust", "ownership"]));
+    Ok(())
 }
 
 #[test]
-fn learning_response_empty_tags() {
+fn learning_response_empty_tags() -> anyhow::Result<()> {
     use bendclaw::service::v1::learnings::LearningResponse;
 
     let r = LearningResponse {
@@ -188,28 +187,30 @@ fn learning_response_empty_tags() {
         created_at: "".into(),
         updated_at: "".into(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["tags"], serde_json::json!([]));
+    Ok(())
 }
 
 #[test]
-fn create_learning_request_default_source() {
+fn create_learning_request_default_source() -> anyhow::Result<()> {
     use bendclaw::service::v1::learnings::CreateLearningRequest;
 
     let req: CreateLearningRequest =
-        serde_json::from_str(r#"{"title":"t","content":"c"}"#).unwrap();
+        serde_json::from_str(r#"{"title":"t","content":"c"}"#)?;
     assert_eq!(req.source, "manual");
     assert!(req.tags.is_empty());
     assert!(req.session_id.is_empty());
+    Ok(())
 }
 
 #[test]
-fn create_learning_request_with_tags() {
+fn create_learning_request_with_tags() -> anyhow::Result<()> {
     use bendclaw::service::v1::learnings::CreateLearningRequest;
 
     let req: CreateLearningRequest =
-        serde_json::from_str(r#"{"title":"t","content":"c","tags":["a","b"],"source":"auto"}"#)
-            .unwrap();
+        serde_json::from_str(r#"{"title":"t","content":"c","tags":["a","b"],"source":"auto"}"#)?;
     assert_eq!(req.tags, vec!["a", "b"]);
     assert_eq!(req.source, "auto");
+    Ok(())
 }

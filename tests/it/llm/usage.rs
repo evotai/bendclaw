@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::llm::usage::TokenUsage;
 use serde_json::json;
 
@@ -108,12 +109,13 @@ fn add_assign_accumulates() {
 // ── Serialization round-trip ──
 
 #[test]
-fn usage_serde_roundtrip() {
+fn usage_serde_roundtrip() -> Result<()> {
     let u = TokenUsage::new(100, 50).with_cache(25, 10);
-    let json = serde_json::to_string(&u).unwrap();
-    let u2: TokenUsage = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&u)?;
+    let u2: TokenUsage = serde_json::from_str(&json)?;
     assert_eq!(u2.prompt_tokens, 100);
     assert_eq!(u2.completion_tokens, 50);
     assert_eq!(u2.cache_read_tokens, 25);
     assert_eq!(u2.cache_write_tokens, 10);
+    Ok(())
 }

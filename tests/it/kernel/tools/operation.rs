@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::time::Duration;
 
 use bendclaw::kernel::Impact;
@@ -16,7 +17,7 @@ fn meta_new_defaults() {
 }
 
 #[test]
-fn meta_serde_roundtrip() {
+fn meta_serde_roundtrip() -> Result<()> {
     let meta = OperationMeta {
         op_type: OpType::FileRead,
         impact: Some(Impact::Low),
@@ -24,21 +25,23 @@ fn meta_serde_roundtrip() {
         duration_ms: 42,
         summary: "read config".into(),
     };
-    let json = serde_json::to_string(&meta).unwrap();
-    let back: OperationMeta = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&meta)?;
+    let back: OperationMeta = serde_json::from_str(&json)?;
     assert_eq!(back.op_type, OpType::FileRead);
     assert_eq!(back.impact, Some(Impact::Low));
     assert_eq!(back.timeout_secs, Some(30));
     assert_eq!(back.duration_ms, 42);
     assert_eq!(back.summary, "read config");
+    Ok(())
 }
 
 #[test]
-fn meta_serde_skips_none_fields() {
+fn meta_serde_skips_none_fields() -> Result<()> {
     let meta = OperationMeta::new(OpType::Reasoning);
-    let json = serde_json::to_string(&meta).unwrap();
+    let json = serde_json::to_string(&meta)?;
     assert!(!json.contains("impact"));
     assert!(!json.contains("timeout_secs"));
+    Ok(())
 }
 
 #[test]
@@ -103,12 +106,13 @@ fn impact_display() {
 }
 
 #[test]
-fn impact_serde_roundtrip() {
+fn impact_serde_roundtrip() -> Result<()> {
     for impact in [Impact::Low, Impact::Medium, Impact::High] {
-        let json = serde_json::to_string(&impact).unwrap();
-        let back: Impact = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&impact)?;
+        let back: Impact = serde_json::from_str(&json)?;
         assert_eq!(back, impact);
     }
+    Ok(())
 }
 
 // ── OpType Display ──
@@ -132,7 +136,7 @@ fn op_type_display() {
 }
 
 #[test]
-fn op_type_serde_roundtrip() {
+fn op_type_serde_roundtrip() -> Result<()> {
     for op in [
         OpType::Reasoning,
         OpType::Execute,
@@ -149,10 +153,11 @@ fn op_type_serde_roundtrip() {
         OpType::Checkpoint,
         OpType::Databend,
     ] {
-        let json = serde_json::to_string(&op).unwrap();
-        let back: OpType = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&op)?;
+        let back: OpType = serde_json::from_str(&json)?;
         assert_eq!(back, op);
     }
+    Ok(())
 }
 
 // ── OperationMeta summary ──

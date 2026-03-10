@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -34,7 +35,6 @@ async fn get_config_default() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body["agent_id"], agent_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -81,7 +81,6 @@ async fn update_and_get_config() -> Result<()> {
     let cfg = json_body(resp2).await?;
     assert_eq!(cfg["system_prompt"], "You are a helpful assistant.");
     assert_eq!(cfg["display_name"], "Test Agent");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -120,8 +119,7 @@ async fn list_config_versions() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    assert!(body["data"].as_array().unwrap().len() >= 2);
-    ctx.teardown().await;
+    assert!(body["data"].as_array().context("expected data array")?.len() >= 2);
     Ok(())
 }
 
@@ -160,7 +158,6 @@ async fn get_specific_version() -> Result<()> {
     let body = json_body(resp).await?;
     assert_eq!(body["version"], 1);
     assert_eq!(body["system_prompt"], "v1 prompt");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -226,14 +223,13 @@ async fn rollback_config() -> Result<()> {
         .await?;
     let cfg = json_body(resp2).await?;
     assert_eq!(cfg["system_prompt"], "original prompt");
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── serde unit tests ──
 
 #[test]
-fn config_response_serializes_fields() {
+fn config_response_serializes_fields() -> anyhow::Result<()> {
     use std::collections::HashMap;
 
     use bendclaw::service::v1::config::ConfigResponse;
@@ -251,15 +247,16 @@ fn config_response_serializes_fields() {
         token_limit_daily: None,
         env,
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["agent_id"], "agent1");
     assert_eq!(v["system_prompt"], "You are helpful.");
     assert_eq!(v["display_name"], "Test");
     assert_eq!(v["env"]["KEY"], "val");
+    Ok(())
 }
 
 #[test]
-fn config_response_null_meta_empty_env() {
+fn config_response_null_meta_empty_env() -> anyhow::Result<()> {
     use std::collections::HashMap;
 
     use bendclaw::service::v1::config::ConfigResponse;
@@ -275,13 +272,14 @@ fn config_response_null_meta_empty_env() {
         token_limit_daily: None,
         env: HashMap::new(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert!(v["token_limit_total"].is_null());
     assert_eq!(v["env"], serde_json::json!({}));
+    Ok(())
 }
 
 #[test]
-fn version_response_serializes_fields() {
+fn version_response_serializes_fields() -> anyhow::Result<()> {
     use bendclaw::service::v1::config::VersionResponse;
 
     let r = VersionResponse {
@@ -299,27 +297,29 @@ fn version_response_serializes_fields() {
         notes: "initial release".into(),
         created_at: "2024-01-01T00:00:00Z".into(),
     };
-    let v = serde_json::to_value(&r).unwrap();
+    let v = serde_json::to_value(&r)?;
     assert_eq!(v["id"], "vid1");
     assert_eq!(v["version"], 3);
     assert_eq!(v["label"], "stable");
     assert_eq!(v["stage"], "published");
     assert_eq!(v["notes"], "initial release");
+    Ok(())
 }
 
 #[test]
-fn rollback_request_deserializes() {
+fn rollback_request_deserializes() -> anyhow::Result<()> {
     use bendclaw::service::v1::config::RollbackRequest;
 
-    let req: RollbackRequest = serde_json::from_str(r#"{"version": 2}"#).unwrap();
+    let req: RollbackRequest = serde_json::from_str(r#"{"version": 2}"#)?;
     assert_eq!(req.version, 2);
+    Ok(())
 }
 
 #[test]
-fn update_config_request_all_optional() {
+fn update_config_request_all_optional() -> anyhow::Result<()> {
     use bendclaw::service::v1::config::UpdateConfigRequest;
 
-    let req: UpdateConfigRequest = serde_json::from_str(r#"{}"#).unwrap();
+    let req: UpdateConfigRequest = serde_json::from_str(r#"{}"#)?;
     assert!(req.system_prompt.is_none());
     assert!(req.display_name.is_none());
     assert!(req.description.is_none());
@@ -327,15 +327,17 @@ fn update_config_request_all_optional() {
     assert!(req.env.is_none());
     assert!(req.notes.is_none());
     assert!(req.label.is_none());
+    Ok(())
 }
 
 #[test]
-fn update_config_request_partial() {
+fn update_config_request_partial() -> anyhow::Result<()> {
     use bendclaw::service::v1::config::UpdateConfigRequest;
 
     let req: UpdateConfigRequest =
-        serde_json::from_str(r#"{"system_prompt":"hello","label":"v2"}"#).unwrap();
+        serde_json::from_str(r#"{"system_prompt":"hello","label":"v2"}"#)?;
     assert_eq!(req.system_prompt.as_deref(), Some("hello"));
     assert_eq!(req.label.as_deref(), Some("v2"));
     assert!(req.display_name.is_none());
+    Ok(())
 }

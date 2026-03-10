@@ -184,7 +184,7 @@ fn parse_calls_marks_tool_vs_skill_and_handles_bad_json() {
     assert!(matches!(parsed[1].kind, DispatchKind::Skill));
     assert_eq!(parsed[0].arguments["key"], "k");
     assert!(parsed[1].arguments.is_object());
-    assert!(parsed[1].arguments.as_object().unwrap().is_empty());
+    assert!(parsed[1].arguments.as_object().map_or(false, |o| o.is_empty()));
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn parse_calls_classifies_tool_vs_skill_and_parses_arguments() {
     assert_eq!(parsed[0].arguments["a"], 1);
     assert!(matches!(parsed[1].kind, DispatchKind::Skill));
     assert!(parsed[1].arguments.is_object());
-    assert!(parsed[1].arguments.as_object().unwrap().is_empty());
+    assert!(parsed[1].arguments.as_object().map_or(false, |o| o.is_empty()));
 }
 
 #[tokio::test]
@@ -276,14 +276,14 @@ async fn execute_calls_handles_tool_success_and_tool_error() -> Result<()> {
             assert_eq!(out, "done");
             assert_eq!(meta.op_type, OpType::MemoryRead);
         }
-        _ => panic!("expected success"),
+        _ => anyhow::bail!("expected success"),
     }
     match &outcomes[1].result {
         ToolCallResult::ToolError(msg, meta) => {
             assert_eq!(msg, "bad args");
             assert_eq!(meta.op_type, OpType::MemoryRead);
         }
-        _ => panic!("expected tool error"),
+        _ => anyhow::bail!("expected tool error"),
     }
 
     Ok(())
@@ -312,7 +312,7 @@ async fn execute_calls_handles_skill_success_and_errors() -> Result<()> {
             assert!(out.contains("\"ok\":true"));
             assert_eq!(meta.op_type, OpType::SkillRun);
         }
-        _ => panic!("expected skill success"),
+        _ => anyhow::bail!("expected skill success"),
     }
 
     let args = skill_exec.seen_args();
@@ -331,7 +331,7 @@ async fn execute_calls_handles_skill_success_and_errors() -> Result<()> {
         .await;
     match &out[0].result {
         ToolCallResult::ToolError(msg, _) => assert_eq!(msg, "skill rejected"),
-        _ => panic!("expected skill tool error"),
+        _ => anyhow::bail!("expected skill tool error"),
     }
 
     let d_infra_err = dispatcher(
@@ -346,7 +346,7 @@ async fn execute_calls_handles_skill_success_and_errors() -> Result<()> {
         .await;
     match &out[0].result {
         ToolCallResult::InfraError(msg, _) => assert!(msg.contains("executor down")),
-        _ => panic!("expected skill infra error"),
+        _ => anyhow::bail!("expected skill infra error"),
     }
 
     Ok(())
@@ -376,7 +376,7 @@ async fn execute_calls_timeout_and_cancel_paths() -> Result<()> {
         .await;
     match &out[0].result {
         ToolCallResult::InfraError(msg, _) => assert!(msg.contains("timed out")),
-        _ => panic!("expected timeout infra error"),
+        _ => anyhow::bail!("expected timeout infra error"),
     }
     let cancel = CancellationToken::new();
     cancel.cancel();
@@ -396,7 +396,7 @@ async fn execute_calls_timeout_and_cancel_paths() -> Result<()> {
         .await;
     match &out[0].result {
         ToolCallResult::InfraError(msg, _) => assert_eq!(msg, "cancelled"),
-        _ => panic!("expected cancellation infra error"),
+        _ => anyhow::bail!("expected cancellation infra error"),
     }
 
     Ok(())

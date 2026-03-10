@@ -34,7 +34,6 @@ async fn list_skills_empty() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body.is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -82,7 +81,6 @@ async fn create_and_get_skill() -> Result<()> {
     let got = json_body(resp2).await?;
     assert_eq!(got["name"], skill_name.as_str());
     assert_eq!(got["content"], "echo hello");
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -126,7 +124,6 @@ async fn delete_skill() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body["deleted"], skill_name.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -150,14 +147,13 @@ async fn get_skill_not_found() -> Result<()> {
         )
         .await?;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── SkillResponse serde ──
 
 #[test]
-fn skill_response_serializes_fields() {
+fn skill_response_serializes_fields() -> anyhow::Result<()> {
     let s = bendclaw::service::v1::skills::SkillResponse {
         name: "my-skill".into(),
         version: "1.0.0".into(),
@@ -166,17 +162,18 @@ fn skill_response_serializes_fields() {
         description: "does things".into(),
         executable: true,
     };
-    let v = serde_json::to_value(&s).unwrap();
+    let v = serde_json::to_value(&s)?;
     assert_eq!(v["name"], "my-skill");
     assert_eq!(v["version"], "1.0.0");
     assert_eq!(v["scope"], "agent");
     assert_eq!(v["source"], "agent");
     assert_eq!(v["description"], "does things");
     assert_eq!(v["executable"], true);
+    Ok(())
 }
 
 #[test]
-fn skill_response_non_executable() {
+fn skill_response_non_executable() -> anyhow::Result<()> {
     let s = bendclaw::service::v1::skills::SkillResponse {
         name: "read-only".into(),
         version: "0.0.1".into(),
@@ -185,13 +182,14 @@ fn skill_response_non_executable() {
         description: String::new(),
         executable: false,
     };
-    let v = serde_json::to_value(&s).unwrap();
+    let v = serde_json::to_value(&s)?;
     assert_eq!(v["executable"], false);
     assert_eq!(v["version"], "0.0.1");
+    Ok(())
 }
 
 #[test]
-fn skill_detail_response_serializes_content() {
+fn skill_detail_response_serializes_content() -> anyhow::Result<()> {
     let s = bendclaw::service::v1::skills::SkillDetailResponse {
         name: "shell".into(),
         version: "1.0.0".into(),
@@ -201,8 +199,9 @@ fn skill_detail_response_serializes_content() {
         content: "#!/bin/bash\necho hello".into(),
         executable: true,
     };
-    let v = serde_json::to_value(&s).unwrap();
+    let v = serde_json::to_value(&s)?;
     assert_eq!(v["name"], "shell");
     assert_eq!(v["content"], "#!/bin/bash\necho hello");
     assert_eq!(v["executable"], true);
+    Ok(())
 }

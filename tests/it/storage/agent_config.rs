@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
 use bendclaw::storage::AgentConfigRecord;
 
 #[test]
@@ -41,7 +42,7 @@ fn agent_config_record_token_limits_none() {
 }
 
 #[test]
-fn agent_config_record_serde_roundtrip() {
+fn agent_config_record_serde_roundtrip() -> Result<()> {
     let rec = AgentConfigRecord {
         agent_id: "a1".into(),
         system_prompt: "you are helpful".into(),
@@ -55,12 +56,13 @@ fn agent_config_record_serde_roundtrip() {
         created_at: "2026-01-01".into(),
         updated_at: "2026-01-02".into(),
     };
-    let json = serde_json::to_string(&rec).unwrap();
-    let back: AgentConfigRecord = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&rec)?;
+    let back: AgentConfigRecord = serde_json::from_str(&json)?;
     assert_eq!(back.agent_id, "a1");
     assert_eq!(back.system_prompt, "you are helpful");
     assert_eq!(back.identity, "You are a coding assistant");
     assert_eq!(back.soul, "Be concise and helpful");
     assert_eq!(back.token_limit_total, Some(1_000_000));
     assert!(back.token_limit_daily.is_none());
+    Ok(())
 }

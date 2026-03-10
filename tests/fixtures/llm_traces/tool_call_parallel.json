@@ -1,0 +1,12 @@
+{
+  "turns": [
+    {
+      "type": "tool_calls",
+      "calls": [
+        { "name": "shell", "arguments": "{\"command\":\"echo a\"}" },
+        { "name": "shell", "arguments": "{\"command\":\"echo b\"}" }
+      ]
+    },
+    { "type": "text", "content": "Both commands done." }
+  ]
+}

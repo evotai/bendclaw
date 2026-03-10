@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
+use anyhow::Result;
 use bendclaw::kernel::tools::skill::SkillCreateTool;
 use bendclaw::kernel::tools::Tool;
 use serde_json::json;
@@ -46,24 +48,25 @@ fn valid_args() -> serde_json::Value {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn create_with_py_script_succeeds() {
+async fn create_with_py_script_succeeds() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
-    let result = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
+    let result = tool.execute_with_context(valid_args(), &ctx).await?;
 
     assert!(result.success, "got: {:?}", result.error);
     assert!(result.output.contains("json-to-csv"));
 
-    let skill = store.get_skill("json-to-csv").unwrap();
+    let skill = store.get_skill("json-to-csv").context("skill not found")?;
     assert_eq!(skill.version, "0.1.0");
     assert!(skill.executable);
     assert_eq!(skill.files.len(), 1);
     assert_eq!(skill.files[0].path, "scripts/run.py");
     assert!(skill.files[0].body.contains("import json"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_with_sh_script_succeeds() {
+async fn create_with_sh_script_succeeds() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let args = json!({
@@ -74,12 +77,13 @@ async fn create_with_sh_script_succeeds() {
         "script_body": "#!/bin/bash\necho ok"
     });
 
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_with_custom_version_and_timeout() {
+async fn create_with_custom_version_and_timeout() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
     let args = json!({
@@ -92,34 +96,43 @@ async fn create_with_custom_version_and_timeout() {
         "script_body": "pass"
     });
 
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(result.success);
 
-    let skill = store.get_skill("my-tool").unwrap();
+    let skill = store.get_skill("my-tool").context("skill not found")?;
     assert_eq!(skill.version, "2.0.0");
     assert_eq!(skill.timeout, 120);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_defaults_version_to_0_1_0() {
+async fn create_defaults_version_to_0_1_0() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
-    let result = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
+    let result = tool.execute_with_context(valid_args(), &ctx).await?;
     assert!(result.success);
-    assert_eq!(store.get_skill("json-to-csv").unwrap().version, "0.1.0");
+    assert_eq!(
+        store.get_skill("json-to-csv").context("skill not found")?.version,
+        "0.1.0"
+    );
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_defaults_timeout_to_30() {
+async fn create_defaults_timeout_to_30() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
-    let result = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
+    let result = tool.execute_with_context(valid_args(), &ctx).await?;
     assert!(result.success);
-    assert_eq!(store.get_skill("json-to-csv").unwrap().timeout, 30);
+    assert_eq!(
+        store.get_skill("json-to-csv").context("skill not found")?.timeout,
+        30
+    );
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_parses_parameters_from_content() {
+async fn create_parses_parameters_from_content() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
     let args = json!({
@@ -130,15 +143,16 @@ async fn create_parses_parameters_from_content() {
         "script_body": "pass"
     });
 
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(result.success);
 
-    let skill = store.get_skill("my-tool").unwrap();
+    let skill = store.get_skill("my-tool").context("skill not found")?;
     assert_eq!(skill.parameters.len(), 2);
     assert_eq!(skill.parameters[0].name, "query");
     assert!(skill.parameters[0].required);
     assert_eq!(skill.parameters[1].name, "format");
     assert!(!skill.parameters[1].required);
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -146,43 +160,47 @@ async fn create_parses_parameters_from_content() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn create_rejects_path_traversal_name() {
+async fn create_rejects_path_traversal_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["name"] = json!("../evil");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_uppercase_name() {
+async fn create_rejects_uppercase_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["name"] = json!("MySkill");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_reserved_name() {
+async fn create_rejects_reserved_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["name"] = json!("shell");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_empty_name() {
+async fn create_rejects_empty_name() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["name"] = json!("");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -190,34 +208,37 @@ async fn create_rejects_empty_name() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn create_rejects_md_script() {
+async fn create_rejects_md_script() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["script_name"] = json!("run.md");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("extension"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("extension")));
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_rb_script() {
+async fn create_rejects_rb_script() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["script_name"] = json!("run.rb");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_js_script() {
+async fn create_rejects_js_script() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["script_name"] = json!("run.js");
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -225,25 +246,27 @@ async fn create_rejects_js_script() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn create_rejects_oversized_content() {
+async fn create_rejects_oversized_content() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["content"] = json!("x".repeat(10 * 1024 + 1));
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("content exceeds"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("content exceeds")));
+    Ok(())
 }
 
 #[tokio::test]
-async fn create_rejects_oversized_script() {
+async fn create_rejects_oversized_script() -> Result<()> {
     let (tool, _) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["script_body"] = json!("x".repeat(50 * 1024 + 1));
-    let result = tool.execute_with_context(args, &ctx).await.unwrap();
+    let result = tool.execute_with_context(args, &ctx).await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("exceeds"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("exceeds")));
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -251,14 +274,15 @@ async fn create_rejects_oversized_script() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
-async fn create_does_not_store_on_validation_failure() {
+async fn create_does_not_store_on_validation_failure() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
     let mut args = valid_args();
     args["name"] = json!("../evil");
-    let _ = tool.execute_with_context(args, &ctx).await.unwrap();
+    let _ = tool.execute_with_context(args, &ctx).await?;
     assert!(!store.contains("../evil"));
     assert!(!store.contains("evil"));
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -278,19 +302,17 @@ impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingSto
 }
 
 #[tokio::test]
-async fn create_returns_error_when_factory_fails() {
+async fn create_returns_error_when_factory_fails() -> Result<()> {
     let catalog = Arc::new(MockSkillCatalog::new());
     let tool = bendclaw::kernel::tools::skill::SkillCreateTool::new(
         Arc::new(FailingStoreFactory),
         catalog,
     );
     let ctx = crate::mocks::context::test_tool_context();
-    let result = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
+    let result = tool.execute_with_context(valid_args(), &ctx).await?;
     assert!(!result.success);
-    assert!(result
-        .error
-        .unwrap()
-        .contains("failed to access agent store"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("failed to access agent store")));
+    Ok(())
 }
 
 struct FailingSaveStore;
@@ -338,14 +360,15 @@ impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FailingSav
 }
 
 #[tokio::test]
-async fn create_returns_error_when_save_fails() {
+async fn create_returns_error_when_save_fails() -> Result<()> {
     let catalog = Arc::new(MockSkillCatalog::new());
     let tool =
         bendclaw::kernel::tools::skill::SkillCreateTool::new(Arc::new(FailingSaveFactory), catalog);
     let ctx = crate::mocks::context::test_tool_context();
-    let result = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
+    let result = tool.execute_with_context(valid_args(), &ctx).await?;
     assert!(!result.success);
-    assert!(result.error.unwrap().contains("failed to save skill"));
+    assert!(result.error.as_deref().map_or(false, |e| e.contains("failed to save skill")));
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -367,17 +390,24 @@ fn summarize_returns_unknown_when_name_missing() {
 }
 
 #[tokio::test]
-async fn create_overwrites_existing_skill() {
+async fn create_overwrites_existing_skill() -> Result<()> {
     let (tool, store) = make_tool();
     let ctx = test_tool_context();
 
-    let _ = tool.execute_with_context(valid_args(), &ctx).await.unwrap();
-    assert_eq!(store.get_skill("json-to-csv").unwrap().version, "0.1.0");
+    let _ = tool.execute_with_context(valid_args(), &ctx).await?;
+    assert_eq!(
+        store.get_skill("json-to-csv").context("skill not found")?.version,
+        "0.1.0"
+    );
 
     let mut args = valid_args();
     args["version"] = json!("2.0.0");
-    let _ = tool.execute_with_context(args, &ctx).await.unwrap();
-    assert_eq!(store.get_skill("json-to-csv").unwrap().version, "2.0.0");
+    let _ = tool.execute_with_context(args, &ctx).await?;
+    assert_eq!(
+        store.get_skill("json-to-csv").context("skill not found")?.version,
+        "2.0.0"
+    );
+    Ok(())
 }
 
 // ── Tool trait metadata ──

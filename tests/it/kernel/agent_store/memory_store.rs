@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bendclaw::kernel::agent_store::memory_store::build_search_extra_where;
 use bendclaw::kernel::agent_store::memory_store::parse_scope;
 use bendclaw::kernel::agent_store::memory_store::visibility_where;
@@ -9,7 +10,7 @@ use bendclaw::kernel::agent_store::memory_store::SearchOpts;
 // ── MemoryEntry ──
 
 #[test]
-fn memory_entry_serde_roundtrip() {
+fn memory_entry_serde_roundtrip() -> Result<()> {
     let entry = MemoryEntry {
         id: "m1".into(),
         user_id: "u1".into(),
@@ -20,11 +21,12 @@ fn memory_entry_serde_roundtrip() {
         created_at: "2026-01-01".into(),
         updated_at: "2026-01-02".into(),
     };
-    let json = serde_json::to_string(&entry).unwrap();
-    let back: MemoryEntry = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&entry)?;
+    let back: MemoryEntry = serde_json::from_str(&json)?;
     assert_eq!(back.id, "m1");
     assert_eq!(back.scope, MemoryScope::User);
     assert!(back.session_id.is_none());
+    Ok(())
 }
 
 #[test]
@@ -44,7 +46,7 @@ fn memory_entry_with_session() {
 }
 
 #[test]
-fn memory_result_serde_roundtrip() {
+fn memory_result_serde_roundtrip() -> Result<()> {
     let result = MemoryResult {
         id: "m1".into(),
         key: "pref".into(),
@@ -54,11 +56,12 @@ fn memory_result_serde_roundtrip() {
         score: 0.95,
         updated_at: "2026-01-01".into(),
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let back: MemoryResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result)?;
+    let back: MemoryResult = serde_json::from_str(&json)?;
     assert_eq!(back.key, "pref");
     assert_eq!(back.scope, MemoryScope::Shared);
     assert!((back.score - 0.95).abs() < f32::EPSILON);
+    Ok(())
 }
 
 #[test]
@@ -78,12 +81,13 @@ fn memory_scope_display_all() {
 }
 
 #[test]
-fn memory_scope_serde_roundtrip() {
+fn memory_scope_serde_roundtrip() -> Result<()> {
     for scope in [MemoryScope::User, MemoryScope::Shared, MemoryScope::Session] {
-        let json = serde_json::to_string(&scope).unwrap();
-        let back: MemoryScope = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&scope)?;
+        let back: MemoryScope = serde_json::from_str(&json)?;
         assert_eq!(back, scope);
     }
+    Ok(())
 }
 
 // ── parse_scope ──

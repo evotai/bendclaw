@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use anyhow::Result;
 use axum::body::Body;
 use axum::http::Request;
@@ -30,7 +31,6 @@ async fn list_agents_empty() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert!(body["data"].is_array());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -50,7 +50,6 @@ async fn get_agent_not_found() -> Result<()> {
         )
         .await?;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -77,7 +76,6 @@ async fn setup_and_get_agent() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body["agent_id"], agent_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -103,9 +101,8 @@ async fn list_agents_includes_setup_agent() -> Result<()> {
         .await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
-    let agents = body["data"].as_array().unwrap();
+    let agents = body["data"].as_array().context("expected data array")?;
     assert!(agents.iter().any(|a| a["agent_id"] == agent_id.as_str()));
-    ctx.teardown().await;
     Ok(())
 }
 
@@ -133,27 +130,27 @@ async fn delete_agent() -> Result<()> {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await?;
     assert_eq!(body["deleted"], agent_id.as_str());
-    ctx.teardown().await;
     Ok(())
 }
 
 // ── AgentEntry / AgentDetail serde ──
 
 #[test]
-fn agent_entry_serializes_fields() {
+fn agent_entry_serializes_fields() -> anyhow::Result<()> {
     let e = bendclaw::service::v1::agents::AgentEntry {
         agent_id: "agent-1".into(),
         display_name: "My Agent".into(),
         description: "does stuff".into(),
     };
-    let v = serde_json::to_value(&e).unwrap();
+    let v = serde_json::to_value(&e)?;
     assert_eq!(v["agent_id"], "agent-1");
     assert_eq!(v["display_name"], "My Agent");
     assert_eq!(v["description"], "does stuff");
+    Ok(())
 }
 
 #[test]
-fn agent_detail_serializes_fields() {
+fn agent_detail_serializes_fields() -> anyhow::Result<()> {
     let d = bendclaw::service::v1::agents::AgentDetail {
         agent_id: "agent-2".into(),
         display_name: "Detail Agent".into(),
@@ -164,15 +161,16 @@ fn agent_detail_serializes_fields() {
         token_limit_total: Some(100_000),
         token_limit_daily: None,
     };
-    let v = serde_json::to_value(&d).unwrap();
+    let v = serde_json::to_value(&d)?;
     assert_eq!(v["agent_id"], "agent-2");
     assert_eq!(v["system_prompt"], "You are helpful.");
     assert_eq!(v["identity"], "assistant");
     assert_eq!(v["token_limit_total"], 100_000);
+    Ok(())
 }
 
 #[test]
-fn agent_detail_empty_fields() {
+fn agent_detail_empty_fields() -> anyhow::Result<()> {
     let d = bendclaw::service::v1::agents::AgentDetail {
         agent_id: "agent-3".into(),
         display_name: String::new(),
@@ -183,6 +181,7 @@ fn agent_detail_empty_fields() {
         token_limit_total: None,
         token_limit_daily: None,
     };
-    let v = serde_json::to_value(&d).unwrap();
+    let v = serde_json::to_value(&d)?;
     assert!(v["token_limit_total"].is_null());
+    Ok(())
 }

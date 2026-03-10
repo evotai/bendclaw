@@ -43,6 +43,7 @@ pub use run_event::RunEventRepo;
 pub use session::SessionRecord;
 pub use task::TaskRecord;
 pub use task::TaskRepo;
+pub use task::TaskSchedule;
 pub use task_history::TaskHistoryRecord;
 pub use task_history::TaskHistoryRepo;
 pub use trace::AgentTraceBreakdown;

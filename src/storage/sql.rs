@@ -307,6 +307,11 @@ impl UpdateBuilder {
         self
     }
 
+    pub fn where_raw(mut self, condition: &str) -> Self {
+        self.wheres.push(condition.to_string());
+        self
+    }
+
     pub fn has_sets(&self) -> bool {
         !self.sets.is_empty()
     }

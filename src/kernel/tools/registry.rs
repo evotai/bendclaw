@@ -96,6 +96,7 @@ pub fn create_session_tools(
     skill_store_factory: Arc<dyn SkillRepositoryFactory>,
     databend_pool: crate::storage::Pool,
     channels: Arc<ChannelRegistry>,
+    instance_id: String,
 ) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
@@ -159,6 +160,36 @@ pub fn create_session_tools(
     registry.register_builtin(
         ToolId::ChannelSend,
         Arc::new(super::builtins::channel::ChannelSendTool::new(channels)),
+    );
+
+    // Task tools
+    registry.register_builtin(
+        ToolId::TaskCreate,
+        Arc::new(super::task::TaskCreateTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskList,
+        Arc::new(super::task::TaskListTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskGet,
+        Arc::new(super::task::TaskGetTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskUpdate,
+        Arc::new(super::task::TaskUpdateTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskDelete,
+        Arc::new(super::task::TaskDeleteTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskToggle,
+        Arc::new(super::task::TaskToggleTool::new(instance_id.clone())),
+    );
+    registry.register_builtin(
+        ToolId::TaskHistory,
+        Arc::new(super::task::TaskHistoryTool::new(instance_id)),
     );
 
     registry

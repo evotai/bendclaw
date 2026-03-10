@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::executor;
 use crate::kernel::runtime::Runtime;
+use crate::kernel::task::execution;
 
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 15;
 
@@ -54,21 +55,23 @@ async fn poll_once(
             }
         };
 
-        let task_repo = crate::storage::dal::task::TaskRepo::new(pool.clone());
-        let due_tasks = match task_repo.list_due(&instance_id).await {
-            Ok(tasks) => tasks,
+        let (claimed, lease_token) = match execution::claim_due_tasks(&pool, &instance_id).await {
+            Ok(result) => result,
             Err(e) => {
-                tracing::warn!(agent_id, error = %e, "failed to list due tasks");
+                tracing::warn!(agent_id, error = %e, "failed to claim due tasks");
                 continue;
             }
         };
 
-        for task in due_tasks {
+        for task in claimed {
             let runtime = runtime.clone();
             let client = http_client.clone();
             let agent_id = agent_id.clone();
+            let lease_token = lease_token.clone();
             tokio::spawn(async move {
-                if let Err(e) = executor::execute_task(&runtime, &agent_id, &task, &client).await {
+                if let Err(e) =
+                    executor::execute_task(&runtime, &agent_id, &task, &lease_token, &client).await
+                {
                     tracing::error!(
                         agent_id,
                         task_id = task.id,

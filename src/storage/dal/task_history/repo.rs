@@ -17,7 +17,7 @@ impl RowMapper for TaskHistoryMapper {
     type Entity = TaskHistoryRecord;
 
     fn columns(&self) -> &str {
-        "id, task_id, run_id, task_name, schedule_kind, cron_expr, prompt, status, output, error, duration_ms, webhook_url, webhook_status, webhook_error, TO_VARCHAR(created_at)"
+        "id, task_id, run_id, task_name, schedule_kind, cron_expr, prompt, status, output, error, duration_ms, webhook_url, webhook_status, webhook_error, executed_by_instance_id, TO_VARCHAR(created_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> TaskHistoryRecord {
@@ -36,7 +36,8 @@ impl RowMapper for TaskHistoryMapper {
             webhook_url: sql::col_opt(row, 11),
             webhook_status: sql::col_opt(row, 12),
             webhook_error: sql::col_opt(row, 13),
-            created_at: sql::col(row, 14),
+            executed_by_instance_id: sql::col_opt(row, 14),
+            created_at: sql::col(row, 15),
         }
     }
 }
@@ -85,6 +86,10 @@ impl TaskHistoryRepo {
                 (
                     "webhook_error",
                     SqlVal::str_or_null(record.webhook_error.as_deref()),
+                ),
+                (
+                    "executed_by_instance_id",
+                    SqlVal::str_or_null(record.executed_by_instance_id.as_deref()),
                 ),
                 ("created_at", SqlVal::Raw("NOW()")),
             ])

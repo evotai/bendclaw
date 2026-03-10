@@ -7,7 +7,7 @@ use bendclaw::storage::TaskRecord;
 fn make_task() -> TaskRecord {
     TaskRecord {
         id: "task-001".into(),
-        agentos_id: "os-abc12345".into(),
+        executor_instance_id: "os-abc12345".into(),
         name: "Daily report".into(),
         cron_expr: "0 9 * * *".into(),
         prompt: "Generate daily report".into(),
@@ -23,6 +23,7 @@ fn make_task() -> TaskRecord {
         run_count: 5,
         last_run_at: "2026-03-08T09:00:00Z".into(),
         next_run_at: Some("2026-03-09T09:00:00Z".into()),
+        lease_token: None,
         created_at: "2026-01-01T00:00:00Z".into(),
         updated_at: "2026-03-08T09:00:00Z".into(),
     }
@@ -34,7 +35,7 @@ fn task_record_serde_roundtrip() -> Result<()> {
     let json = serde_json::to_string(&record)?;
     let parsed: TaskRecord = serde_json::from_str(&json)?;
     assert_eq!(parsed.id, "task-001");
-    assert_eq!(parsed.agentos_id, "os-abc12345");
+    assert_eq!(parsed.executor_instance_id, "os-abc12345");
     assert_eq!(parsed.name, "Daily report");
     assert_eq!(parsed.cron_expr, "0 9 * * *");
     assert_eq!(parsed.prompt, "Generate daily report");
@@ -135,6 +136,7 @@ fn make_history() -> TaskHistoryRecord {
         webhook_url: Some("https://example.com/hook".into()),
         webhook_status: Some("ok".into()),
         webhook_error: None,
+        executed_by_instance_id: None,
         created_at: "2026-03-09T09:00:01Z".into(),
     }
 }

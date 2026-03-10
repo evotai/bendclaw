@@ -1,41 +1,32 @@
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use chrono::Utc;
-use cron::Schedule;
-
-use crate::base::new_id;
 use crate::kernel::runtime::Runtime;
+use crate::kernel::task::execution;
 use crate::storage::dal::task::TaskRecord;
-use crate::storage::dal::task::TaskRepo;
-use crate::storage::dal::task_history::TaskHistoryRecord;
-use crate::storage::dal::task_history::TaskHistoryRepo;
+use crate::storage::dal::task::TaskSchedule;
 
 const WEBHOOK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Execute a single due task: mark running, run prompt, write history,
-/// call webhook, update task state, and optionally delete if one-shot.
+/// Execute a single claimed task: run prompt, deliver webhook,
+/// then delegate to execution service for history + state update.
 pub async fn execute_task(
     runtime: &Arc<Runtime>,
     agent_id: &str,
     task: &TaskRecord,
+    lease_token: &str,
     http_client: &reqwest::Client,
 ) -> crate::base::Result<()> {
     let pool = runtime.databases().agent_pool(agent_id)?;
-    let task_repo = TaskRepo::new(pool.clone());
-    let history_repo = TaskHistoryRepo::new(pool.clone());
+    let executor_instance_id = runtime.config().instance_id.clone();
 
-    // 1. Mark as running
-    task_repo.set_running(&task.id).await?;
-
-    // 2. Execute the task prompt
+    // 1. Execute the task prompt
     let started = Instant::now();
     let (status, run_id, output, error) = run_task_prompt(runtime, agent_id, task).await;
     let duration_ms = started.elapsed().as_millis() as i32;
 
-    // 3. Webhook delivery
+    // 2. Webhook delivery
     let (webhook_status, webhook_error) = if let Some(url) = &task.webhook_url {
         deliver_webhook(
             http_client,
@@ -50,45 +41,21 @@ pub async fn execute_task(
         (None, None)
     };
 
-    // 4. Write history snapshot
-    let history = TaskHistoryRecord {
-        id: new_id(),
-        task_id: task.id.clone(),
+    // 3. Delegate to execution service for history + state update
+    execution::finish_execution(
+        &pool,
+        task,
+        lease_token,
+        &executor_instance_id,
+        &status,
         run_id,
-        task_name: task.name.clone(),
-        schedule_kind: task.schedule_kind.clone(),
-        cron_expr: if task.cron_expr.is_empty() {
-            None
-        } else {
-            Some(task.cron_expr.clone())
-        },
-        prompt: task.prompt.clone(),
-        status: status.clone(),
-        output: output.clone(),
-        error: error.clone(),
-        duration_ms: Some(duration_ms),
-        webhook_url: task.webhook_url.clone(),
+        output,
+        error,
+        duration_ms,
         webhook_status,
         webhook_error,
-        created_at: String::new(),
-    };
-    if let Err(e) = history_repo.insert(&history).await {
-        tracing::error!(task_id = task.id, error = %e, "failed to write task history");
-    }
-
-    // 5. Compute next_run_at
-    let next_run_at = compute_next_run(&task.schedule_kind, &task.cron_expr, task.every_seconds);
-
-    // 6. Update task state
-    task_repo
-        .update_after_run(&task.id, &status, error.as_deref(), next_run_at.as_deref())
-        .await?;
-
-    // 7. Auto-delete one-shot tasks
-    if task.delete_after_run && task.schedule_kind == "at" {
-        tracing::info!(task_id = task.id, "deleting one-shot task after run");
-        task_repo.delete(&task.id).await?;
-    }
+    )
+    .await?;
 
     tracing::info!(
         agent_id,
@@ -171,34 +138,12 @@ async fn deliver_webhook(
 }
 
 /// Compute the next run time based on schedule kind.
-/// Returns a concrete UTC timestamp string (e.g. "2026-03-09T10:00:00Z").
+/// Kept as a public convenience wrapper around TaskSchedule.
 pub fn compute_next_run(
     schedule_kind: &str,
     cron_expr: &str,
     every_seconds: Option<i32>,
 ) -> Option<String> {
-    match schedule_kind {
-        "every" => {
-            let secs = every_seconds.unwrap_or(60) as i64;
-            let next = Utc::now() + chrono::Duration::seconds(secs);
-            Some(next.format("%Y-%m-%d %H:%M:%S").to_string())
-        }
-        "at" => None, // one-shot, no next run
-        "cron" => {
-            if cron_expr.is_empty() {
-                return None;
-            }
-            match Schedule::from_str(cron_expr) {
-                Ok(schedule) => schedule
-                    .upcoming(Utc)
-                    .next()
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string()),
-                Err(e) => {
-                    tracing::warn!(cron_expr, error = %e, "invalid cron expression");
-                    None
-                }
-            }
-        }
-        _ => None,
-    }
+    let schedule = TaskSchedule::from_record(schedule_kind, cron_expr, every_seconds, None, None)?;
+    schedule.next_run_at()
 }

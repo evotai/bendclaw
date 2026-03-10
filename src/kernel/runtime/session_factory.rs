@@ -96,6 +96,7 @@ impl Runtime {
             skill_store_factory,
             pool.clone(),
             self.channels.clone(),
+            self.config.instance_id.clone(),
         ));
 
         let mut tools = tool_registry.tool_schemas();

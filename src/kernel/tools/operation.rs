@@ -38,6 +38,8 @@ pub enum OpType {
     Compaction,
     Checkpoint,
     Databend,
+    TaskWrite,
+    TaskRead,
 }
 
 impl fmt::Display for OpType {
@@ -57,6 +59,8 @@ impl fmt::Display for OpType {
             Self::Compaction => write!(f, "COMPACTION"),
             Self::Checkpoint => write!(f, "CHECKPOINT"),
             Self::Databend => write!(f, "DATABEND"),
+            Self::TaskWrite => write!(f, "TASK_WRITE"),
+            Self::TaskRead => write!(f, "TASK_READ"),
         }
     }
 }

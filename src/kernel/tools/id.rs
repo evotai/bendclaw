@@ -14,6 +14,13 @@ pub enum ToolId {
     Shell,
     Databend,
     ChannelSend,
+    TaskCreate,
+    TaskList,
+    TaskGet,
+    TaskUpdate,
+    TaskDelete,
+    TaskToggle,
+    TaskHistory,
 }
 
 impl ToolId {
@@ -33,6 +40,13 @@ impl ToolId {
             Self::Shell => "shell",
             Self::Databend => "databend",
             Self::ChannelSend => "channel_send",
+            Self::TaskCreate => "task_create",
+            Self::TaskList => "task_list",
+            Self::TaskGet => "task_get",
+            Self::TaskUpdate => "task_update",
+            Self::TaskDelete => "task_delete",
+            Self::TaskToggle => "task_toggle",
+            Self::TaskHistory => "task_history",
         }
     }
 }
@@ -44,7 +58,7 @@ pub const CHECKPOINT_MEMORY_TOOLS: [ToolId; 3] = [
 ];
 
 /// Reserved tool names that cannot be used as skill names.
-pub const RESERVED_TOOL_IDS: [ToolId; 14] = [
+pub const RESERVED_TOOL_IDS: [ToolId; 21] = [
     ToolId::MemoryWrite,
     ToolId::MemorySearch,
     ToolId::MemoryRead,
@@ -59,4 +73,11 @@ pub const RESERVED_TOOL_IDS: [ToolId; 14] = [
     ToolId::Shell,
     ToolId::Databend,
     ToolId::ChannelSend,
+    ToolId::TaskCreate,
+    ToolId::TaskList,
+    ToolId::TaskGet,
+    ToolId::TaskUpdate,
+    ToolId::TaskDelete,
+    ToolId::TaskToggle,
+    ToolId::TaskHistory,
 ];

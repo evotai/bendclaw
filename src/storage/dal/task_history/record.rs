@@ -17,5 +17,6 @@ pub struct TaskHistoryRecord {
     pub webhook_url: Option<String>,
     pub webhook_status: Option<String>,
     pub webhook_error: Option<String>,
+    pub executed_by_instance_id: Option<String>,
     pub created_at: String,
 }

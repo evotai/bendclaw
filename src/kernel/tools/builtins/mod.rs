@@ -4,3 +4,4 @@ pub mod file;
 pub mod memory;
 pub mod shell;
 pub mod skill;
+pub mod task;

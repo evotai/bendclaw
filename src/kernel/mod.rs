@@ -5,6 +5,7 @@ pub mod runtime;
 pub mod scheduler;
 pub mod session;
 pub mod skills;
+pub mod task;
 pub mod tools;
 pub mod trace;
 

@@ -6,6 +6,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::base::Result;
 use crate::config::WorkspaceConfig;
+use crate::kernel::channel::account::ChannelAccount;
+use crate::kernel::channel::dispatch::dispatch_inbound;
+use crate::kernel::channel::message::InboundEvent;
+use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::agent_config::CheckpointConfig;
 use crate::kernel::runtime::runtime::Runtime;
@@ -124,13 +128,6 @@ async fn construct(
     )?);
     tracing::info!(elapsed_ms = t0.elapsed().as_millis() as u64, "pool created");
 
-    let t1 = std::time::Instant::now();
-    crate::storage::migrator::run_root(&pool).await;
-    tracing::info!(
-        elapsed_ms = t1.elapsed().as_millis() as u64,
-        "migrations completed"
-    );
-
     let sync_cancel = CancellationToken::new();
 
     let skills_path = Path::new(&config.skills_dir);
@@ -155,6 +152,7 @@ async fn construct(
     );
 
     let sessions = Arc::new(SessionManager::new());
+    let channels = Arc::new(build_channel_registry());
 
     let scheduler_handle = crate::kernel::scheduler::TaskScheduler::spawn(
         databases.clone(),
@@ -162,17 +160,35 @@ async fn construct(
         reqwest::Client::new(),
     );
 
-    Ok(Arc::new(Runtime::from_parts(RuntimeParts {
-        sessions,
-        config,
-        databases,
-        llm: RwLock::new(llm),
-        skills,
-        status: RwLock::new(RuntimeStatus::Ready),
-        sync_cancel,
-        sync_handle: RwLock::new(Some(sync_handle)),
-        scheduler_handle: RwLock::new(Some(scheduler_handle)),
-    })))
+    // Use Arc::new_cyclic so the supervisor's event_handler can capture a Weak<Runtime>.
+    let runtime = Arc::new_cyclic(|weak: &std::sync::Weak<Runtime>| {
+        let weak = weak.clone();
+        let event_handler: Arc<dyn Fn(ChannelAccount, InboundEvent) + Send + Sync> =
+            Arc::new(move |account, event| {
+                if let Some(runtime) = weak.upgrade() {
+                    tokio::spawn(async move {
+                        dispatch_inbound(&runtime, account, event).await;
+                    });
+                }
+            });
+        let supervisor = Arc::new(ChannelSupervisor::new(channels.clone(), event_handler));
+
+        Runtime::from_parts(RuntimeParts {
+            sessions,
+            channels,
+            supervisor,
+            config,
+            databases,
+            llm: RwLock::new(llm),
+            skills,
+            status: RwLock::new(RuntimeStatus::Ready),
+            sync_cancel,
+            sync_handle: RwLock::new(Some(sync_handle)),
+            scheduler_handle: RwLock::new(Some(scheduler_handle)),
+        })
+    });
+
+    Ok(runtime)
 }
 
 async fn build_skill_catalog(
@@ -202,4 +218,18 @@ async fn build_skill_catalog(
     );
 
     (catalog, skill_count, sync_handle)
+}
+
+fn build_channel_registry() -> crate::kernel::channel::registry::ChannelRegistry {
+    use crate::kernel::channel::plugins::feishu::FeishuChannel;
+    use crate::kernel::channel::plugins::github::GitHubChannel;
+    use crate::kernel::channel::plugins::http_api::HttpApiChannel;
+    use crate::kernel::channel::plugins::telegram::TelegramChannel;
+
+    let mut registry = crate::kernel::channel::registry::ChannelRegistry::new();
+    registry.register(Arc::new(HttpApiChannel::new()));
+    registry.register(Arc::new(TelegramChannel::new()));
+    registry.register(Arc::new(FeishuChannel::new()));
+    registry.register(Arc::new(GitHubChannel::new()));
+    registry
 }

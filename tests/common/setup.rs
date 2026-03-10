@@ -241,20 +241,14 @@ fn col(row: &serde_json::Value, idx: usize) -> String {
 }
 
 const ALL_MIGRATIONS: &[&str] = &[
-    include_str!("../../migrations/0001_sessions.sql"),
-    include_str!("../../migrations/0002_runs.sql"),
-    include_str!("../../migrations/0003_run_events.sql"),
-    include_str!("../../migrations/0004_memories.sql"),
-    include_str!("../../migrations/0005_learnings.sql"),
-    include_str!("../../migrations/0006_agent_config.sql"),
-    include_str!("../../migrations/0007_agent_config_versions.sql"),
-    include_str!("../../migrations/0008_skills_skill_files.sql"),
-    include_str!("../../migrations/0009_traces_spans.sql"),
-    include_str!("../../migrations/0010_usage.sql"),
-    include_str!("../../migrations/0011_variables.sql"),
-    include_str!("../../migrations/0012_tasks.sql"),
-    include_str!("../../migrations/0013_feedback.sql"),
-    include_str!("../../migrations/0014_task_history.sql"),
+    include_str!("../../migrations/0001_sessions_runs.sql"),
+    include_str!("../../migrations/0002_agent.sql"),
+    include_str!("../../migrations/0003_memory.sql"),
+    include_str!("../../migrations/0004_skills.sql"),
+    include_str!("../../migrations/0005_traces.sql"),
+    include_str!("../../migrations/0006_variables_tasks.sql"),
+    include_str!("../../migrations/0007_feedback.sql"),
+    include_str!("../../migrations/0008_channels.sql"),
 ];
 
 async fn run_migration(pool: &Pool, sql: &str) -> anyhow::Result<()> {

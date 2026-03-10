@@ -272,7 +272,7 @@ impl Cluster {
             .await?;
         let agent_pool = databases.agent_pool(&agent_id)?;
         // Run skill migrations on the agent database.
-        let migration = include_str!("../../../../../migrations/0008_skills_skill_files.sql");
+        let migration = include_str!("../../../../../migrations/0004_skills.sql");
         let stmts: Vec<&str> = migration
             .split(';')
             .map(|s: &str| s.trim())

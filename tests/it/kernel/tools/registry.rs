@@ -10,9 +10,8 @@ use crate::mocks::skill::NoopSkillStore;
 
 fn make_registry() -> ToolRegistry {
     let factory = Arc::new(FixedStoreFactory);
-    let pool =
-        bendclaw::storage::Pool::new("https://app.databend.com/v1.1", "test-token", "default")
-            .expect("pool: static URL is always valid");
+    let pool = bendclaw::storage::Pool::new("https://api.databend.com/v1", "test-token", "default")
+        .expect("pool: static URL is always valid");
     let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
         Arc::new(MockLLMProvider::with_text("ok"));
     let storage = Arc::new(bendclaw::kernel::agent_store::AgentStore::new(
@@ -45,23 +44,8 @@ impl bendclaw::kernel::skills::repository::SkillRepositoryFactory for FixedStore
 #[test]
 fn session_tools_registers_all_builtins() {
     let registry = make_registry();
-    let expected = [
-        ToolId::MemoryWrite,
-        ToolId::MemorySearch,
-        ToolId::MemoryRead,
-        ToolId::MemoryDelete,
-        ToolId::MemoryList,
-        ToolId::SkillRead,
-        ToolId::SkillCreate,
-        ToolId::SkillRemove,
-        ToolId::FileRead,
-        ToolId::FileWrite,
-        ToolId::FileEdit,
-        ToolId::Shell,
-        ToolId::Databend,
-        ToolId::ChannelSend,
-    ];
-    for id in &expected {
+    let expected = ToolId::ALL;
+    for id in expected {
         assert!(
             registry.get(id.as_str()).is_some(),
             "missing tool: {}",
@@ -73,7 +57,7 @@ fn session_tools_registers_all_builtins() {
 #[test]
 fn registry_list_returns_all_names() {
     let registry = make_registry();
-    assert_eq!(registry.list().len(), 14);
+    assert_eq!(registry.list().len(), ToolId::ALL.len());
 }
 
 #[test]
@@ -86,7 +70,7 @@ fn registry_get_unknown_returns_none() {
 fn registry_tool_schemas_count() {
     let registry = make_registry();
     let schemas = registry.tool_schemas();
-    assert_eq!(schemas.len(), 14);
+    assert_eq!(schemas.len(), ToolId::ALL.len());
 }
 
 #[test]

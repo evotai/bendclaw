@@ -75,7 +75,7 @@ impl MockLLMProvider {
     /// ```
     pub fn from_fixture(name: &str) -> anyhow::Result<Self> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/llm_traces")
+            .join("../../tests/fixtures/llm_traces")
             .join(format!("{name}.json"));
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("fixture {name}.json not found at {}", path.display()))?;

@@ -126,9 +126,16 @@ impl Drop for TestContext {
         let pool = self.pool.clone();
         let prefix = self.prefix.clone();
         let db_name = self.db_name.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            tokio::task::block_in_place(|| {
-                handle.block_on(async move {
+        let _ = std::thread::Builder::new()
+            .name("bendclaw-test-cleanup".to_string())
+            .spawn(move || {
+                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                runtime.block_on(async move {
                     let sql = format!("SHOW DATABASES LIKE '{prefix}%'");
                     if let Ok(rows) = pool.query_all(&sql).await {
                         for row in &rows {
@@ -142,8 +149,12 @@ impl Drop for TestContext {
                         .exec(&format!("DROP DATABASE IF EXISTS `{db_name}`"))
                         .await;
                 });
+            })
+            .and_then(|handle| {
+                handle
+                    .join()
+                    .map_err(|_| std::io::Error::other("cleanup thread panicked"))
             });
-        }
     }
 }
 
@@ -256,7 +267,7 @@ pub async fn cleanup_prefix(prefix: &str) -> anyhow::Result<()> {
 pub fn require_api_config() -> anyhow::Result<(String, String, String)> {
     initialize_test_env()?;
     let base_url = std::env::var("BENDCLAW_STORAGE_DATABEND_API_BASE_URL")
-        .unwrap_or_else(|_| "https://app.databend.com/v1.1".to_string());
+        .unwrap_or_else(|_| "https://api.databend.com/v1".to_string());
     let token =
         std::env::var("BENDCLAW_STORAGE_DATABEND_API_TOKEN").unwrap_or_else(|_| String::new());
     let warehouse = std::env::var("BENDCLAW_STORAGE_DATABEND_WAREHOUSE")

@@ -45,10 +45,28 @@ libc = "0.2"
 
 [dev-dependencies]
 bendclaw = { path = "." }
+bendclaw-test-harness = { path = "crates/test-harness" }
 chrono = "0.4"
 fs2 = "0.4"
+insta = { version = "1", features = ["json", "yaml", "redactions"] }
 tempfile = "3"
 tower = "0.5"
+
+[[test]]
+name = "unit"
+path = "tests/unit/main.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[[test]]
+name = "contract"
+path = "tests/contract/main.rs"
 
 [build-dependencies]
 chrono = "0.4"

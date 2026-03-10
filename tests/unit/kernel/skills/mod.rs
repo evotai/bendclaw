@@ -1,0 +1,10 @@
+mod checksum;
+mod executor;
+mod loader;
+mod manifest;
+mod sanitizer;
+mod schema;
+mod scope;
+mod skill;
+mod sync_policy;
+mod validate;

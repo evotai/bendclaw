@@ -2,7 +2,7 @@
 
 DEV_CONFIG ?= $(HOME)/.bendclaw/bendclaw_dev.toml
 
-.PHONY: setup check run test dev-env test-down ci coverage
+.PHONY: setup check run test test-unit test-integration test-contract test-e2e test-all coverage snapshot-review dev-env test-down ci
 
 setup:
 	@echo "==> checking protoc..."
@@ -15,7 +15,7 @@ setup:
 	fi
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
 		echo "==> preparing boxlite runtime..."; \
-		BOXLITE_DEPS_STUB=2 cargo test --test it --no-run 2>/dev/null; \
+		BOXLITE_DEPS_STUB=2 cargo test --test unit --no-run 2>/dev/null; \
 	fi
 	@echo "==> installing git hooks..."
 	@mkdir -p .git/hooks
@@ -28,6 +28,40 @@ setup:
 check:
 	cargo fmt --all -- --check
 	cargo clippy --all-targets -- -D warnings
+
+# Fast: unit + integration + contract (no credentials needed, < 30s)
+test: test-unit test-integration test-contract
+
+test-unit:
+	cargo nextest run --test unit --no-fail-fast
+
+test-integration:
+	cargo nextest run --test integration --no-fail-fast
+
+test-contract:
+	cargo nextest run --test contract --no-fail-fast
+
+# Requires Databend credentials
+test-e2e: dev-env
+	RUST_LOG=ERROR cargo nextest run --test e2e --no-fail-fast
+
+# Everything
+test-all: test test-e2e
+
+coverage:
+	cargo install cargo-llvm-cov --locked 2>/dev/null || true
+	cargo llvm-cov nextest --test unit --test integration --test contract \
+		--ignore-run-fail --html --output-dir coverage
+	@echo "==> coverage report: coverage/html/index.html"
+
+coverage-all: dev-env
+	cargo install cargo-llvm-cov --locked 2>/dev/null || true
+	cargo llvm-cov nextest --test unit --test integration --test contract --test e2e \
+		--ignore-run-fail --html --output-dir coverage
+	@echo "==> coverage report: coverage/html/index.html"
+
+snapshot-review:
+	cargo insta review
 
 # Ensure dev config exists.
 dev-env:
@@ -45,14 +79,6 @@ dev-env:
 
 run: dev-env
 	cargo run -- --config $(DEV_CONFIG) run
-
-test: dev-env
-	RUST_LOG=ERROR cargo nextest run --test it --no-fail-fast
-
-coverage: dev-env
-	cargo install cargo-llvm-cov --locked 2>/dev/null || true
-	cargo llvm-cov nextest --test it -E 'not (test(/^service::api::/) or test(/^service::admin::/) or test(/^service::e2e::/) or test(/^service::handler::/))' --ignore-run-fail --html --output-dir coverage
-	@echo "==> coverage report: coverage/html/index.html"
 
 ci: check test
 

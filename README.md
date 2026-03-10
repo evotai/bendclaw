@@ -122,7 +122,7 @@ Learnings accumulate across all agents. Errors from recent runs are surfaced so 
 
 ## API
 
-All endpoints served from `/v1`.
+All endpoints served from `/v1`. All routes require `Authorization: Bearer <key>` except `/health` and the channel webhook endpoint.
 
 <details>
 <summary>Agents</summary>
@@ -150,10 +150,10 @@ All endpoints served from `/v1`.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/v1/agents/{agent_id}/runs` | GET/POST | List runs or start a run (SSE) |
+| `/v1/agents/{agent_id}/runs` | GET/POST | List runs or start a run (JSON or SSE) |
 | `/v1/agents/{agent_id}/runs/{run_id}` | GET | Get run with events |
-| `/v1/agents/{agent_id}/runs/{run_id}/continue` | POST | Continue paused run |
 | `/v1/agents/{agent_id}/runs/{run_id}/cancel` | POST | Cancel run |
+| `/v1/agents/{agent_id}/runs/{run_id}/continue` | POST | Continue paused run |
 | `/v1/agents/{agent_id}/runs/{run_id}/events` | GET | List run events |
 | `/v1/agents/{agent_id}/sessions/{session_id}/runs` | GET | Runs for session |
 
@@ -198,8 +198,8 @@ All endpoints served from `/v1`.
 |---|---|---|
 | `/v1/agents/{agent_id}/config` | GET/PUT | Read or update config |
 | `/v1/agents/{agent_id}/config/versions` | GET | List config versions |
-| `/v1/agents/{agent_id}/config/versions/{version}` | GET | Get version |
-| `/v1/agents/{agent_id}/config/rollback` | POST | Roll back config |
+| `/v1/agents/{agent_id}/config/versions/{version}` | GET | Get specific version |
+| `/v1/agents/{agent_id}/config/rollback` | POST | Roll back to a version |
 
 </details>
 
@@ -220,9 +220,9 @@ All endpoints served from `/v1`.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/v1/agents/{agent_id}/usage` | GET | Usage summary |
-| `/v1/agents/{agent_id}/usage/daily` | GET | Daily usage |
-| `/v1/usage/summary` | GET | Global usage |
+| `/v1/agents/{agent_id}/usage` | GET | Agent usage summary |
+| `/v1/agents/{agent_id}/usage/daily` | GET | Daily usage breakdown |
+| `/v1/usage/summary` | GET | Global usage across all agents |
 
 </details>
 
@@ -243,7 +243,8 @@ All endpoints served from `/v1`.
 |---|---|---|
 | `/v1/agents/{agent_id}/tasks` | GET/POST | List or create tasks |
 | `/v1/agents/{agent_id}/tasks/{task_id}` | PUT/DELETE | Update or delete task |
-| `/v1/agents/{agent_id}/tasks/{task_id}/toggle` | POST | Toggle task |
+| `/v1/agents/{agent_id}/tasks/{task_id}/toggle` | POST | Enable or disable task |
+| `/v1/agents/{agent_id}/tasks/{task_id}/history` | GET | Task execution history |
 
 </details>
 
@@ -258,11 +259,25 @@ All endpoints served from `/v1`.
 </details>
 
 <details>
-<summary>Health</summary>
+<summary>Channels</summary>
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/agents/{agent_id}/channels/accounts` | GET/POST | List or create channel accounts |
+| `/v1/agents/{agent_id}/channels/accounts/{account_id}` | GET/DELETE | Get or delete channel account |
+| `/v1/agents/{agent_id}/channels/messages` | GET | List channel messages |
+| `/v1/agents/{agent_id}/channels/webhook/{account_id}` | POST | Receive inbound webhook (no auth) |
+
+</details>
+
+<details>
+<summary>Stats & Health</summary>
 
 | Endpoint | Method | Description |
 |---|---|---|
 | `/health` | GET | Health check |
+| `/v1/stats/sessions` | GET | Active session stats |
+| `/v1/stats/can_suspend` | GET | Whether the instance can suspend |
 
 </details>
 

@@ -161,7 +161,7 @@ fn build_cors(auth: &AuthConfig) -> CorsLayer {
 }
 
 pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Router {
-    Router::new()
+    let authenticated_routes = Router::new()
         .route("/health", get(health_check))
         .route("/v1/agents/{agent_id}/setup", post(routes::setup_agent))
         .route("/v1/stats/sessions", get(routes::session_stats))
@@ -319,11 +319,34 @@ pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Route
             "/v1/agents/{agent_id}/feedback/{feedback_id}",
             delete(v1::feedback::delete_feedback),
         )
-        .layer(build_cors(auth))
+        // Channels
+        .route(
+            "/v1/agents/{agent_id}/channels/accounts",
+            get(v1::channels::list_accounts).post(v1::channels::create_account),
+        )
+        .route(
+            "/v1/agents/{agent_id}/channels/accounts/{account_id}",
+            get(v1::channels::get_account).delete(v1::channels::delete_account),
+        )
+        .route(
+            "/v1/agents/{agent_id}/channels/messages",
+            get(v1::channels::list_messages),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
-        ))
+        ));
+
+    // Webhook routes — no auth (external platforms can't authenticate).
+    let webhook_routes = Router::new()
+        .route(
+            "/v1/agents/{agent_id}/channels/webhook/{account_id}",
+            post(v1::channels::webhook),
+        );
+
+    authenticated_routes
+        .merge(webhook_routes)
+        .layer(build_cors(auth))
         .layer(middleware::from_fn(log_http_request))
         .layer(TraceLayer::new_for_http())
         .with_state(state)

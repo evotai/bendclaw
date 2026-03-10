@@ -65,11 +65,13 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
 
     let workspace = test_workspace(workspace_dir);
 
+    let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
     let tool_registry = Arc::new(create_session_tools(
         storage.clone(),
         skills.clone(),
         Arc::new(MockSkillStoreFactory),
         pool.clone(),
+        channels,
     ));
 
     let tools = Arc::new(tool_registry.tool_schemas());

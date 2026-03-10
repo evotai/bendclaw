@@ -1,3 +1,4 @@
+pub mod channel;
 pub mod databend;
 pub mod file;
 pub mod memory;

@@ -1,0 +1,156 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use bendclaw::base::Result;
+use bendclaw::kernel::channel::ChannelCapabilities;
+use bendclaw::kernel::channel::ChannelKind;
+use bendclaw::kernel::channel::ChannelOutbound;
+use bendclaw::kernel::channel::ChannelPlugin;
+use bendclaw::kernel::channel::ChannelRegistry;
+use bendclaw::kernel::channel::InboundKind;
+use bendclaw::kernel::channel::InboundMode;
+
+// ── TestPlugin: in-memory mock, no I/O ──
+
+pub struct TestPlugin {
+    pub type_name: String,
+    pub kind: ChannelKind,
+}
+
+impl TestPlugin {
+    pub fn conversational(name: &str) -> Self {
+        Self {
+            type_name: name.to_string(),
+            kind: ChannelKind::Conversational,
+        }
+    }
+
+    pub fn event_driven(name: &str) -> Self {
+        Self {
+            type_name: name.to_string(),
+            kind: ChannelKind::EventDriven,
+        }
+    }
+}
+
+#[async_trait]
+impl ChannelPlugin for TestPlugin {
+    fn channel_type(&self) -> &str {
+        &self.type_name
+    }
+
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            channel_kind: self.kind.clone(),
+            inbound_mode: InboundMode::Webhook,
+            supports_edit: false,
+            supports_streaming: false,
+            supports_markdown: true,
+            supports_threads: false,
+            supports_reactions: false,
+            max_message_len: 4096,
+        }
+    }
+
+    fn validate_config(&self, _config: &serde_json::Value) -> Result<()> {
+        Ok(())
+    }
+
+    fn outbound(&self) -> Arc<dyn ChannelOutbound> {
+        Arc::new(NullOutbound)
+    }
+
+    fn inbound(&self) -> InboundKind {
+        InboundKind::None
+    }
+}
+
+struct NullOutbound;
+
+#[async_trait]
+impl ChannelOutbound for NullOutbound {
+    async fn send_text(&self, _: &serde_json::Value, _: &str, _: &str) -> Result<String> {
+        Ok("null_msg_id".to_string())
+    }
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> Result<()> {
+        Ok(())
+    }
+    async fn edit_message(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> Result<()> {
+        Ok(())
+    }
+    async fn add_reaction(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+// ── Registry tests ──
+
+#[test]
+fn register_and_list() {
+    let mut registry = ChannelRegistry::new();
+    registry.register(Arc::new(TestPlugin::conversational("telegram")));
+    registry.register(Arc::new(TestPlugin::event_driven("github")));
+
+    let types = registry.list();
+    assert_eq!(types.len(), 2);
+    assert!(types.contains(&"telegram"));
+    assert!(types.contains(&"github"));
+}
+
+#[test]
+fn get_registered_plugin() {
+    let mut registry = ChannelRegistry::new();
+    registry.register(Arc::new(TestPlugin::conversational("feishu")));
+
+    let entry = registry.get("feishu").unwrap();
+    assert_eq!(entry.plugin.channel_type(), "feishu");
+    assert_eq!(entry.plugin.capabilities().channel_kind, ChannelKind::Conversational);
+}
+
+#[test]
+fn get_unknown_returns_none() {
+    let registry = ChannelRegistry::new();
+    assert!(registry.get("nonexistent").is_none());
+}
+
+#[test]
+fn register_overwrites_same_type() {
+    let mut registry = ChannelRegistry::new();
+    registry.register(Arc::new(TestPlugin::conversational("slack")));
+    registry.register(Arc::new(TestPlugin::event_driven("slack")));
+
+    let types = registry.list();
+    assert_eq!(types.len(), 1);
+    let entry = registry.get("slack").unwrap();
+    assert_eq!(entry.plugin.capabilities().channel_kind, ChannelKind::EventDriven);
+}
+
+#[test]
+fn list_is_sorted() {
+    let mut registry = ChannelRegistry::new();
+    registry.register(Arc::new(TestPlugin::conversational("telegram")));
+    registry.register(Arc::new(TestPlugin::conversational("feishu")));
+    registry.register(Arc::new(TestPlugin::event_driven("github")));
+
+    let types = registry.list();
+    assert_eq!(types, vec!["feishu", "github", "telegram"]);
+}
+
+#[test]
+fn empty_registry() {
+    let registry = ChannelRegistry::new();
+    assert!(registry.list().is_empty());
+    assert!(registry.get("anything").is_none());
+}
+
+#[tokio::test]
+async fn outbound_delegates_through_plugin() {
+    let mut registry = ChannelRegistry::new();
+    registry.register(Arc::new(TestPlugin::conversational("test")));
+
+    let entry = registry.get("test").unwrap();
+    let outbound = entry.plugin.outbound();
+    let msg_id = outbound.send_text(&serde_json::json!({}), "chat_1", "hello").await.unwrap();
+    assert_eq!(msg_id, "null_msg_id");
+}

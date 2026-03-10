@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod channels;
 pub mod common;
 pub mod config;
 pub mod http;

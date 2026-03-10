@@ -1,0 +1,121 @@
+use crate::base::Result;
+use crate::storage::pool::Pool;
+use crate::storage::sql;
+use crate::storage::sql::SqlVal;
+use crate::storage::table::DatabendTable;
+use crate::storage::table::RowMapper;
+use crate::storage::table::Where;
+
+use super::record::ChannelAccountRecord;
+
+#[derive(Clone)]
+struct Mapper;
+
+impl RowMapper for Mapper {
+    type Entity = ChannelAccountRecord;
+
+    fn columns(&self) -> &str {
+        "id, channel_type, account_id, agent_id, user_id, config, enabled, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+    }
+
+    fn parse(&self, row: &serde_json::Value) -> Self::Entity {
+        let config_raw: String = sql::col(row, 5);
+        let config = serde_json::from_str(&config_raw).unwrap_or(serde_json::Value::Null);
+        ChannelAccountRecord {
+            id: sql::col(row, 0),
+            channel_type: sql::col(row, 1),
+            account_id: sql::col(row, 2),
+            agent_id: sql::col(row, 3),
+            user_id: sql::col(row, 4),
+            config,
+            enabled: sql::col(row, 6) == "1",
+            created_at: sql::col(row, 7),
+            updated_at: sql::col(row, 8),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ChannelAccountRepo {
+    table: DatabendTable<Mapper>,
+}
+
+impl ChannelAccountRepo {
+    pub fn new(pool: Pool) -> Self {
+        Self {
+            table: DatabendTable::new(pool, "channel_accounts", Mapper),
+        }
+    }
+
+    pub async fn insert(&self, record: &ChannelAccountRecord) -> Result<()> {
+        let enabled_str = if record.enabled { "1" } else { "0" };
+        let config_str =
+            serde_json::to_string(&record.config).unwrap_or_else(|_| "{}".to_string());
+        self.table
+            .insert(&[
+                ("id", SqlVal::Str(&record.id)),
+                ("channel_type", SqlVal::Str(&record.channel_type)),
+                ("account_id", SqlVal::Str(&record.account_id)),
+                ("agent_id", SqlVal::Str(&record.agent_id)),
+                ("user_id", SqlVal::Str(&record.user_id)),
+                ("config", SqlVal::Raw(&format!("PARSE_JSON('{}')", crate::storage::sql::escape(&config_str)))),
+                ("enabled", SqlVal::Raw(enabled_str)),
+                ("created_at", SqlVal::Raw("NOW()")),
+                ("updated_at", SqlVal::Raw("NOW()")),
+            ])
+            .await
+    }
+
+    pub async fn load(&self, id: &str) -> Result<Option<ChannelAccountRecord>> {
+        self.table.get(&[Where("id", SqlVal::Str(id))]).await
+    }
+
+    pub async fn find_by_account(
+        &self,
+        channel_type: &str,
+        account_id: &str,
+    ) -> Result<Option<ChannelAccountRecord>> {
+        self.table
+            .get(&[
+                Where("channel_type", SqlVal::Str(channel_type)),
+                Where("account_id", SqlVal::Str(account_id)),
+            ])
+            .await
+    }
+
+    pub async fn list_by_agent(&self, agent_id: &str) -> Result<Vec<ChannelAccountRecord>> {
+        self.table
+            .list(
+                &[Where("agent_id", SqlVal::Str(agent_id))],
+                "created_at DESC",
+                1000,
+            )
+            .await
+    }
+
+    pub async fn list_by_type(
+        &self,
+        channel_type: &str,
+    ) -> Result<Vec<ChannelAccountRecord>> {
+        self.table
+            .list(
+                &[Where("channel_type", SqlVal::Str(channel_type))],
+                "created_at DESC",
+                1000,
+            )
+            .await
+    }
+
+    pub async fn update_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+        let val = if enabled { "1" } else { "0" };
+        let sql = format!(
+            "UPDATE channel_accounts SET enabled = {val}, updated_at = NOW() WHERE id = '{}'",
+            crate::storage::sql::escape(id)
+        );
+        self.table.pool().exec(&sql).await
+    }
+
+    pub async fn delete(&self, id: &str) -> Result<()> {
+        self.table.delete(&[Where("id", SqlVal::Str(id))]).await
+    }
+}

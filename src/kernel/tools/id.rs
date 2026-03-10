@@ -13,6 +13,7 @@ pub enum ToolId {
     FileEdit,
     Shell,
     Databend,
+    ChannelSend,
 }
 
 impl ToolId {
@@ -31,6 +32,7 @@ impl ToolId {
             Self::FileEdit => "file_edit",
             Self::Shell => "shell",
             Self::Databend => "databend",
+            Self::ChannelSend => "channel_send",
         }
     }
 }
@@ -42,7 +44,7 @@ pub const CHECKPOINT_MEMORY_TOOLS: [ToolId; 3] = [
 ];
 
 /// Reserved tool names that cannot be used as skill names.
-pub const RESERVED_TOOL_IDS: [ToolId; 13] = [
+pub const RESERVED_TOOL_IDS: [ToolId; 14] = [
     ToolId::MemoryWrite,
     ToolId::MemorySearch,
     ToolId::MemoryRead,
@@ -56,4 +58,5 @@ pub const RESERVED_TOOL_IDS: [ToolId; 13] = [
     ToolId::FileEdit,
     ToolId::Shell,
     ToolId::Databend,
+    ToolId::ChannelSend,
 ];

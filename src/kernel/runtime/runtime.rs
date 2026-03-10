@@ -3,6 +3,8 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::base::Result;
+use crate::kernel::channel::registry::ChannelRegistry;
+use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::catalog::SkillCatalog;
@@ -23,6 +25,8 @@ pub struct Runtime {
     pub(crate) llm: RwLock<Arc<dyn LLMProvider>>,
     pub(crate) skills: Arc<dyn SkillCatalog>,
     pub(crate) sessions: Arc<SessionManager>,
+    pub(crate) channels: Arc<ChannelRegistry>,
+    pub(crate) supervisor: Arc<ChannelSupervisor>,
     pub(crate) status: RwLock<RuntimeStatus>,
     pub(crate) sync_cancel: tokio_util::sync::CancellationToken,
     pub(crate) sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
@@ -35,6 +39,8 @@ pub(crate) struct RuntimeParts {
     pub llm: RwLock<Arc<dyn LLMProvider>>,
     pub skills: Arc<dyn SkillCatalog>,
     pub sessions: Arc<SessionManager>,
+    pub channels: Arc<ChannelRegistry>,
+    pub supervisor: Arc<ChannelSupervisor>,
     pub status: RwLock<RuntimeStatus>,
     pub sync_cancel: tokio_util::sync::CancellationToken,
     pub sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
@@ -60,6 +66,8 @@ impl Runtime {
             llm: parts.llm,
             skills: parts.skills,
             sessions: parts.sessions,
+            channels: parts.channels,
+            supervisor: parts.supervisor,
             status: parts.status,
             sync_cancel: parts.sync_cancel,
             sync_handle: parts.sync_handle,
@@ -108,6 +116,14 @@ impl Runtime {
 
     pub fn sessions(&self) -> &Arc<SessionManager> {
         &self.sessions
+    }
+
+    pub fn channels(&self) -> &Arc<ChannelRegistry> {
+        &self.channels
+    }
+
+    pub fn supervisor(&self) -> &Arc<ChannelSupervisor> {
+        &self.supervisor
     }
 
     pub fn model(&self) -> String {

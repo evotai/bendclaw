@@ -1,4 +1,5 @@
 pub mod agent_store;
+pub mod channel;
 pub mod run;
 pub mod runtime;
 pub mod scheduler;

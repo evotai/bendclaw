@@ -5,6 +5,7 @@ use super::Tool;
 use super::ToolId;
 use super::ToolSpec;
 use crate::kernel::agent_store::AgentStore;
+use crate::kernel::channel::registry::ChannelRegistry;
 use crate::kernel::skills::catalog::SkillCatalog;
 use crate::kernel::skills::repository::SkillRepositoryFactory;
 use crate::llm::tool::ToolSchema;
@@ -94,6 +95,7 @@ pub fn create_session_tools(
     skill_catalog: Arc<dyn SkillCatalog>,
     skill_store_factory: Arc<dyn SkillRepositoryFactory>,
     databend_pool: crate::storage::Pool,
+    channels: Arc<ChannelRegistry>,
 ) -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
@@ -151,6 +153,12 @@ pub fn create_session_tools(
     registry.register_builtin(
         ToolId::Databend,
         Arc::new(super::databend::DatabendTool::new(databend_pool)),
+    );
+
+    // Channel send tool
+    registry.register_builtin(
+        ToolId::ChannelSend,
+        Arc::new(super::builtins::channel::ChannelSendTool::new(channels)),
     );
 
     registry

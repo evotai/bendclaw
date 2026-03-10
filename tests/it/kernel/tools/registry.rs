@@ -19,7 +19,8 @@ fn make_registry() -> ToolRegistry {
         pool.clone(),
         llm,
     ));
-    create_session_tools(storage, Arc::new(NoopSkillCatalog), factory, pool)
+    let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
+    create_session_tools(storage, Arc::new(NoopSkillCatalog), factory, pool, channels)
 }
 
 struct FixedStoreFactory;
@@ -51,6 +52,7 @@ fn session_tools_registers_all_builtins() {
         ToolId::FileEdit,
         ToolId::Shell,
         ToolId::Databend,
+        ToolId::ChannelSend,
     ];
     for id in &expected {
         assert!(
@@ -64,7 +66,7 @@ fn session_tools_registers_all_builtins() {
 #[test]
 fn registry_list_returns_all_names() {
     let registry = make_registry();
-    assert_eq!(registry.list().len(), 13);
+    assert_eq!(registry.list().len(), 14);
 }
 
 #[test]
@@ -77,7 +79,7 @@ fn registry_get_unknown_returns_none() {
 fn registry_tool_schemas_count() {
     let registry = make_registry();
     let schemas = registry.tool_schemas();
-    assert_eq!(schemas.len(), 13);
+    assert_eq!(schemas.len(), 14);
 }
 
 #[test]

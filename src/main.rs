@@ -116,6 +116,11 @@ async fn cmd_run(
         auth_key: config.auth.api_key.clone(),
     };
 
+    // Resume channel receivers for existing accounts.
+    bendclaw::service::v1::channels::ChannelAccountService::new(&state)
+        .resume_all_receivers()
+        .await;
+
     let api_router = bendclaw::service::api_router(state, &config.log.level, &config.auth);
 
     let api_bind = &config.server.bind_addr;

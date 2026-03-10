@@ -88,5 +88,5 @@ fn checkpoint_memory_tools_count() {
 
 #[test]
 fn reserved_tool_ids_count() {
-    assert_eq!(bendclaw::kernel::tools::id::RESERVED_TOOL_IDS.len(), 13);
+    assert_eq!(bendclaw::kernel::tools::id::RESERVED_TOOL_IDS.len(), 14);
 }

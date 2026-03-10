@@ -1,4 +1,6 @@
 pub mod agent_config;
+pub mod channel_account;
+pub mod channel_message;
 pub mod config_version;
 pub mod feedback;
 pub mod learning;

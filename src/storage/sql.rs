@@ -124,7 +124,7 @@ where
     }
 }
 
-fn row_str<'a>(row: Option<&'a serde_json::Value>, idx: usize) -> Option<&'a str> {
+fn row_str(row: Option<&serde_json::Value>, idx: usize) -> Option<&str> {
     row.and_then(|r| r.as_array())
         .and_then(|a| a.get(idx))
         .and_then(|v| v.as_str())

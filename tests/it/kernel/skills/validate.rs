@@ -128,21 +128,7 @@ fn name_backslash_rejected() {
 
 #[test]
 fn name_all_reserved_tool_ids_rejected() {
-    let all_ids = [
-        ToolId::MemoryWrite,
-        ToolId::MemorySearch,
-        ToolId::MemoryRead,
-        ToolId::MemoryDelete,
-        ToolId::MemoryList,
-        ToolId::SkillRead,
-        ToolId::SkillCreate,
-        ToolId::SkillRemove,
-        ToolId::FileRead,
-        ToolId::FileWrite,
-        ToolId::FileEdit,
-        ToolId::Shell,
-    ];
-    for id in all_ids {
+    for id in ToolId::ALL {
         let name = id.as_str();
         // Only test names that pass the character rules (no underscores).
         // Names with underscores are already rejected by the char check.

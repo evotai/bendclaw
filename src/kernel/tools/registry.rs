@@ -146,9 +146,14 @@ pub fn create_session_tools(
     registry.register_builtin(ToolId::FileRead, Arc::new(super::file::FileReadTool));
     registry.register_builtin(ToolId::FileWrite, Arc::new(super::file::FileWriteTool));
     registry.register_builtin(ToolId::FileEdit, Arc::new(super::file::FileEditTool));
+    registry.register_builtin(ToolId::ListDir, Arc::new(super::file::ListDirTool));
 
     // Shell tool (zero-field — workspace comes from ToolContext at execution time)
     registry.register_builtin(ToolId::Shell, Arc::new(super::shell::ShellTool));
+
+    // Web tools (zero-field — API key from VariableRepo at execution time)
+    registry.register_builtin(ToolId::WebSearch, Arc::new(super::web::WebSearchTool));
+    registry.register_builtin(ToolId::WebFetch, Arc::new(super::web::WebFetchTool));
 
     // Databend tool
     registry.register_builtin(

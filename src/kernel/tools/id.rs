@@ -11,9 +11,12 @@ pub enum ToolId {
     FileRead,
     FileWrite,
     FileEdit,
+    ListDir,
     Shell,
     Databend,
     ChannelSend,
+    WebSearch,
+    WebFetch,
     TaskCreate,
     TaskList,
     TaskGet,
@@ -37,9 +40,12 @@ impl ToolId {
             Self::FileRead => "file_read",
             Self::FileWrite => "file_write",
             Self::FileEdit => "file_edit",
+            Self::ListDir => "list_dir",
             Self::Shell => "shell",
             Self::Databend => "databend",
             Self::ChannelSend => "channel_send",
+            Self::WebSearch => "web_search",
+            Self::WebFetch => "web_fetch",
             Self::TaskCreate => "task_create",
             Self::TaskList => "task_list",
             Self::TaskGet => "task_get",
@@ -57,27 +63,39 @@ pub const CHECKPOINT_MEMORY_TOOLS: [ToolId; 3] = [
     ToolId::MemoryRead,
 ];
 
-/// Reserved tool names that cannot be used as skill names.
-pub const RESERVED_TOOL_IDS: [ToolId; 21] = [
-    ToolId::MemoryWrite,
-    ToolId::MemorySearch,
-    ToolId::MemoryRead,
-    ToolId::MemoryDelete,
-    ToolId::MemoryList,
-    ToolId::SkillRead,
-    ToolId::SkillCreate,
-    ToolId::SkillRemove,
-    ToolId::FileRead,
-    ToolId::FileWrite,
-    ToolId::FileEdit,
-    ToolId::Shell,
-    ToolId::Databend,
-    ToolId::ChannelSend,
-    ToolId::TaskCreate,
-    ToolId::TaskList,
-    ToolId::TaskGet,
-    ToolId::TaskUpdate,
-    ToolId::TaskDelete,
-    ToolId::TaskToggle,
-    ToolId::TaskHistory,
-];
+impl ToolId {
+    /// Every `ToolId` variant, grouped by category.
+    pub const ALL: &[ToolId] = &[
+        // Memory
+        ToolId::MemoryWrite,
+        ToolId::MemorySearch,
+        ToolId::MemoryRead,
+        ToolId::MemoryDelete,
+        ToolId::MemoryList,
+        // Skills
+        ToolId::SkillRead,
+        ToolId::SkillCreate,
+        ToolId::SkillRemove,
+        // Files
+        ToolId::FileRead,
+        ToolId::FileWrite,
+        ToolId::FileEdit,
+        ToolId::ListDir,
+        // Shell
+        ToolId::Shell,
+        // Integrations
+        ToolId::Databend,
+        ToolId::ChannelSend,
+        // Web
+        ToolId::WebSearch,
+        ToolId::WebFetch,
+        // Tasks
+        ToolId::TaskCreate,
+        ToolId::TaskList,
+        ToolId::TaskGet,
+        ToolId::TaskUpdate,
+        ToolId::TaskDelete,
+        ToolId::TaskToggle,
+        ToolId::TaskHistory,
+    ];
+}

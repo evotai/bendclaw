@@ -1,5 +1,4 @@
 use bendclaw::kernel::tools::id::CHECKPOINT_MEMORY_TOOLS;
-use bendclaw::kernel::tools::id::RESERVED_TOOL_IDS;
 use bendclaw::kernel::tools::ToolId;
 
 #[test]
@@ -26,27 +25,14 @@ fn checkpoint_memory_tools_contents() {
 }
 
 #[test]
-fn reserved_tool_ids_contains_all_variants() {
-    let all = [
-        ToolId::MemoryWrite,
-        ToolId::MemorySearch,
-        ToolId::MemoryRead,
-        ToolId::MemoryDelete,
-        ToolId::MemoryList,
-        ToolId::SkillRead,
-        ToolId::SkillCreate,
-        ToolId::SkillRemove,
-        ToolId::FileRead,
-        ToolId::FileWrite,
-        ToolId::FileEdit,
-        ToolId::Shell,
-        ToolId::Databend,
-    ];
-    for id in all {
+fn all_variants_have_unique_str() {
+    use std::collections::HashSet;
+    let mut seen = HashSet::new();
+    for id in ToolId::ALL {
         assert!(
-            RESERVED_TOOL_IDS.contains(&id),
-            "{:?} missing from RESERVED_TOOL_IDS",
-            id
+            seen.insert(id.as_str()),
+            "duplicate as_str value: {}",
+            id.as_str()
         );
     }
 }
@@ -84,9 +70,4 @@ fn checkpoint_memory_tools_count() {
         bendclaw::kernel::tools::id::CHECKPOINT_MEMORY_TOOLS.len(),
         3
     );
-}
-
-#[test]
-fn reserved_tool_ids_count() {
-    assert_eq!(bendclaw::kernel::tools::id::RESERVED_TOOL_IDS.len(), 14);
 }

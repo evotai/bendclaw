@@ -29,6 +29,7 @@ pub enum OpType {
     Edit,
     FileRead,
     FileWrite,
+    FileList,
     MemoryWrite,
     MemoryRead,
     MemorySearch,
@@ -40,6 +41,8 @@ pub enum OpType {
     Databend,
     TaskWrite,
     TaskRead,
+    WebSearch,
+    WebFetch,
 }
 
 impl fmt::Display for OpType {
@@ -50,6 +53,7 @@ impl fmt::Display for OpType {
             Self::Edit => write!(f, "EDIT"),
             Self::FileRead => write!(f, "FILE_READ"),
             Self::FileWrite => write!(f, "FILE_WRITE"),
+            Self::FileList => write!(f, "FILE_LIST"),
             Self::MemoryWrite => write!(f, "MEMORY_WRITE"),
             Self::MemoryRead => write!(f, "MEMORY_READ"),
             Self::MemorySearch => write!(f, "MEMORY_SEARCH"),
@@ -61,6 +65,8 @@ impl fmt::Display for OpType {
             Self::Databend => write!(f, "DATABEND"),
             Self::TaskWrite => write!(f, "TASK_WRITE"),
             Self::TaskRead => write!(f, "TASK_READ"),
+            Self::WebSearch => write!(f, "WEB_SEARCH"),
+            Self::WebFetch => write!(f, "WEB_FETCH"),
         }
     }
 }

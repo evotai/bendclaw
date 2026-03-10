@@ -11,6 +11,7 @@ pub use builtins::memory;
 pub use builtins::shell;
 pub use builtins::skill;
 pub use builtins::task;
+pub use builtins::web;
 pub use id::ToolId;
 pub use operation::Impact;
 pub use operation::OpType;

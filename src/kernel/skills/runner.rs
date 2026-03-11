@@ -53,6 +53,12 @@ impl SkillRunner {
                 .map(|s| s.as_str())
                 .unwrap_or("");
 
+            if path.is_empty() {
+                return Err(ErrorCode::skill_exec(
+                    "skill_read requires --path <skill-name>",
+                ));
+            }
+
             let content = self
                 .catalog
                 .read_skill(path)
@@ -75,12 +81,14 @@ impl SkillRunner {
             )));
         }
 
-        self.preflight_check(&skill).await?;
-
+        // Check script existence before preflight to avoid wasting time on
+        // requirement checks for skills that have no runnable script.
         let script_path = self
             .catalog
             .script_path(skill_name)
             .ok_or_else(|| ErrorCode::skill_exec(format!("skill '{skill_name}' has no script")))?;
+
+        self.preflight_check(&skill).await?;
 
         let envelope = serde_json::to_string(&json!({
             "session": {

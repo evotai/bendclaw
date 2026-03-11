@@ -7,7 +7,6 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::service;
-use crate::kernel::run::event::Event;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
@@ -170,22 +169,4 @@ pub async fn list_run_events(
     Ok(Json(
         service::list_run_events_standalone(&state, &agent_id, &run_id).await?,
     ))
-}
-
-pub(super) fn should_skip_event(event: &Event) -> bool {
-    matches!(
-        event,
-        Event::Aborted { .. }
-            | Event::TurnStart { .. }
-            | Event::TurnEnd { .. }
-            | Event::ToolUpdate { .. }
-            | Event::CheckpointDone { .. }
-            | Event::AppData(_)
-            | Event::StreamDelta(
-                crate::kernel::run::event::Delta::ToolCallStart { .. }
-                    | crate::kernel::run::event::Delta::ToolCallDelta { .. }
-                    | crate::kernel::run::event::Delta::ToolCallEnd { .. }
-                    | crate::kernel::run::event::Delta::Usage(_)
-            )
-    )
 }

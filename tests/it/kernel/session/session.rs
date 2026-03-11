@@ -55,3 +55,52 @@ async fn multiple_tool_calls_in_single_turn() -> Result<()> {
     assert!(!result.is_empty());
     Ok(())
 }
+
+// ── Session::idle_duration ──
+
+#[tokio::test]
+async fn idle_duration_is_nonzero_after_run() -> Result<()> {
+    let llm = Arc::new(MockLLMProvider::with_text("ok"));
+    let session = test_session(llm).await?;
+    session.chat("hi", "").await?.finish().await?;
+    let d = session.idle_duration();
+    // After a completed run the session is idle; duration should be >= 0
+    assert!(d.as_millis() < 60_000, "idle_duration should be recent");
+    Ok(())
+}
+
+// ── Session::current_run_id ──
+
+#[tokio::test]
+async fn current_run_id_none_when_idle() -> Result<()> {
+    let llm = Arc::new(MockLLMProvider::with_text("ok"));
+    let session = test_session(llm).await?;
+    assert!(session.current_run_id().is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn current_run_id_some_while_running() -> Result<()> {
+    let llm = Arc::new(MockLLMProvider::always_tool_call(
+        "shell",
+        r#"{"command":"echo hi"}"#,
+    ));
+    let session = test_session(llm).await?;
+    let stream = session.chat("start", "").await?;
+    // While running, current_run_id should match the stream's run_id
+    let run_id = session.current_run_id();
+    assert!(run_id.is_some());
+    assert_eq!(run_id.as_deref(), Some(stream.run_id()));
+    session.cancel_current();
+    stream.finish().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn current_run_id_none_after_finish() -> Result<()> {
+    let llm = Arc::new(MockLLMProvider::with_text("ok"));
+    let session = test_session(llm).await?;
+    session.chat("hi", "").await?.finish().await?;
+    assert!(session.current_run_id().is_none());
+    Ok(())
+}

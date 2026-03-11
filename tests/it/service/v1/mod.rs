@@ -10,3 +10,4 @@ pub mod sessions;
 pub mod skills;
 pub mod traces;
 pub mod usage;
+pub mod variables;

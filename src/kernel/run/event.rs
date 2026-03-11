@@ -95,6 +95,13 @@ pub enum Event {
 }
 
 impl Event {
+    /// Returns a string name for the event variant.
+    ///
+    /// Most variants return their type name (e.g. `"Start"`, `"ToolEnd"`).
+    /// The `Audit` variant is special: it returns the *event name field* rather
+    /// than the literal string `"Audit"`, so that audit events can carry
+    /// domain-specific names like `"llm.request"` or `"run.started"` that are
+    /// stored directly in `run_events.event`.
     pub fn name(&self) -> String {
         match self {
             Self::Start => "Start".to_string(),

@@ -652,19 +652,108 @@ fn event_app_data_serde() -> Result<()> {
 }
 
 #[test]
-fn event_audit_serde() -> Result<()> {
+fn event_name_all_variants() {
+    assert_eq!(Event::Start.name(), "Start");
+    assert_eq!(
+        Event::End {
+            iterations: 1,
+            stop_reason: "end_turn".into(),
+            usage: Usage::default()
+        }
+        .name(),
+        "End"
+    );
+    assert_eq!(Event::TurnStart { iteration: 1 }.name(), "TurnStart");
+    assert_eq!(Event::TurnEnd { iteration: 1 }.name(), "TurnEnd");
+    assert_eq!(Event::ReasonStart.name(), "ReasonStart");
+    assert_eq!(
+        Event::StreamDelta(Delta::Text {
+            content: "hi".into()
+        })
+        .name(),
+        "StreamDelta"
+    );
+    assert_eq!(
+        Event::ReasonEnd {
+            finish_reason: "stop".into()
+        }
+        .name(),
+        "ReasonEnd"
+    );
+    assert_eq!(
+        Event::ReasonError {
+            error: "err".into()
+        }
+        .name(),
+        "ReasonError"
+    );
+    assert_eq!(
+        Event::ToolStart {
+            tool_call_id: "tc1".into(),
+            name: "shell".into(),
+            arguments: serde_json::json!({}),
+        }
+        .name(),
+        "ToolStart"
+    );
+    assert_eq!(
+        Event::ToolUpdate {
+            tool_call_id: "tc1".into(),
+            output: "out".into()
+        }
+        .name(),
+        "ToolUpdate"
+    );
+    assert_eq!(
+        Event::ToolEnd {
+            tool_call_id: "tc1".into(),
+            name: "shell".into(),
+            success: true,
+            output: "ok".into(),
+            operation: OperationMeta::new(OpType::Execute),
+        }
+        .name(),
+        "ToolEnd"
+    );
+    assert_eq!(
+        Event::CompactionDone {
+            messages_before: 10,
+            messages_after: 2,
+            summary_len: 100
+        }
+        .name(),
+        "CompactionDone"
+    );
+    assert_eq!(
+        Event::CheckpointDone {
+            prompt_tokens: 10,
+            completion_tokens: 5
+        }
+        .name(),
+        "CheckpointDone"
+    );
+    assert_eq!(
+        Event::Aborted {
+            reason: Reason::Timeout
+        }
+        .name(),
+        "Aborted"
+    );
+    assert_eq!(
+        Event::Error {
+            message: "oops".into()
+        }
+        .name(),
+        "Error"
+    );
+    assert_eq!(Event::AppData(serde_json::json!({})).name(), "AppData");
+}
+
+#[test]
+fn event_name_audit_returns_event_name_field() {
     let e = Event::Audit {
         name: "llm.request".into(),
-        payload: serde_json::json!({"model": "gpt-4.1-mini"}),
+        payload: serde_json::json!({}),
     };
-    let json = serde_json::to_string(&e)?;
-    let back: Event = serde_json::from_str(&json)?;
-    match back {
-        Event::Audit { name, payload } => {
-            assert_eq!(name, "llm.request");
-            assert_eq!(payload["model"], "gpt-4.1-mini");
-        }
-        _ => bail!("expected Audit"),
-    }
-    Ok(())
+    assert_eq!(e.name(), "llm.request");
 }

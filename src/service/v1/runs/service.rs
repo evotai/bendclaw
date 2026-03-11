@@ -14,6 +14,8 @@ use super::http::RunEventResponse;
 use super::http::RunResponse;
 use super::http::RunsQuery;
 use super::stream;
+use crate::kernel::run::event::Delta;
+use crate::kernel::run::event::Event;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
@@ -257,16 +259,44 @@ pub async fn execute_run(
 async fn load_run_events(repo: &RunEventRepo, run_id: &str) -> Result<Vec<RunEventResponse>> {
     let rows = repo.list_by_run(run_id, 5000).await?;
     rows.into_iter()
-        .map(|r| {
-            let payload = r.payload_json()?;
-            Ok(RunEventResponse {
+        .filter_map(|r| {
+            let event: Event = match serde_json::from_str(&r.payload) {
+                Ok(e) => e,
+                Err(_) => return None, // skip unparseable records
+            };
+            if should_skip_event(&event) {
+                return None;
+            }
+            let payload = match r.payload_json() {
+                Ok(p) => p,
+                Err(_) => return None,
+            };
+            Some(Ok(RunEventResponse {
                 seq: r.seq,
                 event: r.event,
                 payload,
                 created_at: r.created_at,
-            })
+            }))
         })
         .collect()
+}
+
+pub(super) fn should_skip_event(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Aborted { .. }
+            | Event::TurnStart { .. }
+            | Event::TurnEnd { .. }
+            | Event::ToolUpdate { .. }
+            | Event::CheckpointDone { .. }
+            | Event::AppData(_)
+            | Event::StreamDelta(
+                Delta::ToolCallStart { .. }
+                    | Delta::ToolCallDelta { .. }
+                    | Delta::ToolCallEnd { .. }
+                    | Delta::Usage(_)
+            )
+    )
 }
 
 fn to_response(record: RunRecord, events: Option<Vec<RunEventResponse>>) -> Result<RunResponse> {

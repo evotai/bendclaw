@@ -6,6 +6,7 @@ mod executor;
 mod loader;
 mod manifest;
 mod mirror;
+mod runner;
 mod sanitizer;
 mod schema;
 mod scope;

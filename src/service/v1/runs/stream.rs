@@ -1,6 +1,6 @@
 use axum::response::sse::Event as SseEvent;
 
-use super::http::should_skip_event;
+use super::service::should_skip_event;
 use crate::kernel::run::event::Delta;
 use crate::kernel::run::event::Event;
 

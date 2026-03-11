@@ -399,3 +399,211 @@ fn variables_max_size_is_reasonable() {
         assert!(MAX_VARIABLES_BYTES >= 8192);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PromptBuilder — builder setter methods
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn prompt_builder_build_with_injected_identity() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_identity("You are a test agent.")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("You are a test agent."));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_build_with_injected_soul() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_soul("Be helpful and concise.")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("Be helpful and concise."));
+    assert!(prompt.contains("## Soul"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_build_with_injected_runtime() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_runtime("Host: testhost | OS: linux (x86_64)")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("## Runtime"));
+    assert!(prompt.contains("testhost"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_build_with_injected_learnings() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_learnings("- Always check logs first\n")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("## Learnings"));
+    assert!(prompt.contains("Always check logs first"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_build_with_injected_recent_errors() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_recent_errors("- `shell`: command not found\n")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("## Recent Errors"));
+    assert!(prompt.contains("command not found"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_build_with_tools() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+    use bendclaw::llm::tool::ToolSchema;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    let tools = Arc::new(vec![
+        ToolSchema::new("shell", "Run shell commands", serde_json::json!({})),
+        ToolSchema::new("file_read", "Read files", serde_json::json!({})),
+    ]);
+
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_tools(tools)
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("## Available Tools"));
+    assert!(prompt.contains("shell"));
+    assert!(prompt.contains("file_read"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_empty_setters_skip_layers() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    // Empty strings should be ignored by the builder
+    let prompt = PromptBuilder::new(storage, skills)
+        .with_identity("")
+        .with_soul("")
+        .with_runtime("")
+        .with_learnings("")
+        .with_recent_errors("")
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    // None of the empty-string layers should appear
+    assert!(!prompt.contains("## Soul"));
+    assert!(!prompt.contains("## Learnings"));
+    assert!(!prompt.contains("## Recent Errors"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prompt_builder_runtime_falls_back_to_env() -> Result<()> {
+    use std::sync::Arc;
+
+    use bendclaw::kernel::agent_store::AgentStore;
+    use bendclaw::kernel::run::prompt::PromptBuilder;
+
+    let pool = crate::common::setup::pool().await?;
+    let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
+        Arc::new(crate::mocks::llm::MockLLMProvider::with_text("ok"));
+    let storage = Arc::new(AgentStore::new(pool, llm));
+    let skills: Arc<dyn bendclaw::kernel::skills::catalog::SkillCatalog> =
+        Arc::new(crate::mocks::skill::MockSkillCatalog::new());
+
+    // No with_runtime() call — should fall back to env-based runtime section
+    let prompt = PromptBuilder::new(storage, skills)
+        .build("nonexistent-agent", "u1", "s1")
+        .await?;
+
+    assert!(prompt.contains("## Runtime"));
+    Ok(())
+}

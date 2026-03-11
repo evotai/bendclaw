@@ -1,5 +1,6 @@
 mod compactor;
 mod dispatcher;
+mod engine;
 mod event;
 mod fmt;
 mod prompt;

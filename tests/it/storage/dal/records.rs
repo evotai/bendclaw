@@ -309,3 +309,90 @@ fn cost_summary_serde_roundtrip() -> Result<()> {
     assert_eq!(parsed.total_cache_write_tokens, 100);
     Ok(())
 }
+
+// ── RunRecord::metrics_json ──
+
+#[test]
+fn run_record_metrics_json_empty_string_returns_null() -> anyhow::Result<()> {
+    let record = make_run_record("");
+    let v = record.metrics_json()?;
+    assert!(v.is_null());
+    Ok(())
+}
+
+#[test]
+fn run_record_metrics_json_invalid_returns_error() {
+    let record = make_run_record("not-json");
+    assert!(record.metrics_json().is_err());
+}
+
+#[test]
+fn run_record_metrics_json_valid_returns_object() -> anyhow::Result<()> {
+    let record = make_run_record(r#"{"prompt_tokens":10,"total_tokens":15}"#);
+    let v = record.metrics_json()?;
+    assert!(v.is_object());
+    assert_eq!(v["prompt_tokens"], 10);
+    assert_eq!(v["total_tokens"], 15);
+    Ok(())
+}
+
+// ── RunEventRecord ──
+
+#[test]
+fn run_event_record_payload_json_valid() -> anyhow::Result<()> {
+    use bendclaw::storage::RunEventRecord;
+    let rec = RunEventRecord {
+        id: "ev-001".into(),
+        run_id: "run-1".into(),
+        session_id: "sess-1".into(),
+        agent_id: "agent-1".into(),
+        user_id: "user-1".into(),
+        seq: 1,
+        event: "llm.request".into(),
+        payload: r#"{"model":"gpt-4","tokens":100}"#.into(),
+        created_at: "2026-01-01T00:00:00Z".into(),
+    };
+    let v = rec.payload_json()?;
+    assert_eq!(v["model"], "gpt-4");
+    assert_eq!(v["tokens"], 100);
+    Ok(())
+}
+
+#[test]
+fn run_event_record_payload_json_invalid_returns_error() {
+    use bendclaw::storage::RunEventRecord;
+    let rec = RunEventRecord {
+        id: "ev-002".into(),
+        run_id: "run-1".into(),
+        session_id: "sess-1".into(),
+        agent_id: "agent-1".into(),
+        user_id: "user-1".into(),
+        seq: 2,
+        event: "bad".into(),
+        payload: "not-json".into(),
+        created_at: "2026-01-01T00:00:00Z".into(),
+    };
+    assert!(rec.payload_json().is_err());
+}
+
+#[test]
+fn run_event_record_serde_roundtrip() -> anyhow::Result<()> {
+    use bendclaw::storage::RunEventRecord;
+    let rec = RunEventRecord {
+        id: "ev-003".into(),
+        run_id: "run-2".into(),
+        session_id: "sess-2".into(),
+        agent_id: "agent-2".into(),
+        user_id: "user-2".into(),
+        seq: 5,
+        event: "tool.completed".into(),
+        payload: r#"{"tool":"shell"}"#.into(),
+        created_at: "2026-01-01T00:00:00Z".into(),
+    };
+    let json = serde_json::to_string(&rec)?;
+    let back: RunEventRecord = serde_json::from_str(&json)?;
+    assert_eq!(back.id, "ev-003");
+    assert_eq!(back.seq, 5);
+    assert_eq!(back.event, "tool.completed");
+    Ok(())
+}

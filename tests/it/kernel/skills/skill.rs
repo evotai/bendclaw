@@ -200,3 +200,159 @@ fn skill_requirements_default() {
     assert!(r.bins.is_empty());
     assert!(r.env.is_empty());
 }
+
+// ── Skill::validate_name ──
+
+#[test]
+fn validate_name_valid() {
+    assert!(Skill::validate_name("my-skill").is_ok());
+    assert!(Skill::validate_name("ab").is_ok());
+    assert!(Skill::validate_name("skill123").is_ok());
+    assert!(Skill::validate_name("a-b-c").is_ok());
+}
+
+#[test]
+fn validate_name_too_short() {
+    assert!(Skill::validate_name("a").is_err());
+}
+
+#[test]
+fn validate_name_too_long() {
+    let long = "a".repeat(65);
+    assert!(Skill::validate_name(&long).is_err());
+}
+
+#[test]
+fn validate_name_starts_with_dash() {
+    assert!(Skill::validate_name("-bad").is_err());
+}
+
+#[test]
+fn validate_name_ends_with_dash() {
+    assert!(Skill::validate_name("bad-").is_err());
+}
+
+#[test]
+fn validate_name_uppercase_rejected() {
+    assert!(Skill::validate_name("MySkill").is_err());
+}
+
+#[test]
+fn validate_name_path_traversal_rejected() {
+    assert!(Skill::validate_name("a..b").is_err());
+    assert!(Skill::validate_name("a/b").is_err());
+}
+
+#[test]
+fn validate_name_reserved_tool_name_rejected() {
+    // "shell" is a reserved ToolId name
+    assert!(Skill::validate_name("shell").is_err());
+}
+
+// ── Skill::validate_file_path ──
+
+#[test]
+fn validate_file_path_valid_script() {
+    assert!(Skill::validate_file_path("scripts/run.py").is_ok());
+    assert!(Skill::validate_file_path("scripts/run.sh").is_ok());
+}
+
+#[test]
+fn validate_file_path_valid_reference() {
+    assert!(Skill::validate_file_path("references/guide.md").is_ok());
+}
+
+#[test]
+fn validate_file_path_empty_rejected() {
+    assert!(Skill::validate_file_path("").is_err());
+}
+
+#[test]
+fn validate_file_path_absolute_rejected() {
+    assert!(Skill::validate_file_path("/etc/passwd").is_err());
+    assert!(Skill::validate_file_path("\\windows\\path").is_err());
+}
+
+#[test]
+fn validate_file_path_traversal_rejected() {
+    assert!(Skill::validate_file_path("scripts/../etc/passwd").is_err());
+}
+
+#[test]
+fn validate_file_path_bad_prefix_rejected() {
+    assert!(Skill::validate_file_path("data/file.md").is_err());
+}
+
+#[test]
+fn validate_file_path_bad_extension_rejected() {
+    assert!(Skill::validate_file_path("scripts/run.js").is_err());
+    assert!(Skill::validate_file_path("references/guide.txt").is_err());
+}
+
+// ── Skill::validate_size ──
+
+#[test]
+fn validate_size_within_limits() {
+    assert!(Skill::validate_size("small content", &[]).is_ok());
+}
+
+#[test]
+fn validate_size_content_too_large() {
+    let big = "x".repeat(10 * 1024 + 1);
+    assert!(Skill::validate_size(&big, &[]).is_err());
+}
+
+#[test]
+fn validate_size_single_file_too_large() {
+    let big_body = "x".repeat(50 * 1024 + 1);
+    let files = vec![SkillFile {
+        path: "scripts/run.py".into(),
+        body: big_body,
+    }];
+    assert!(Skill::validate_size("ok", &files).is_err());
+}
+
+#[test]
+fn validate_size_total_files_too_large() {
+    // 5 files × 41KB each = 205KB > 200KB limit
+    let body = "x".repeat(41 * 1024);
+    let files: Vec<SkillFile> = (0..5)
+        .map(|i| SkillFile {
+            path: format!("scripts/run{i}.py"),
+            body: body.clone(),
+        })
+        .collect();
+    assert!(Skill::validate_size("ok", &files).is_err());
+}
+
+// ── Skill::validate (full) ──
+
+#[test]
+fn validate_valid_skill() {
+    let skill = test_skill(SkillScope::Global, None, None);
+    assert!(skill.validate().is_ok());
+}
+
+#[test]
+fn validate_invalid_name_fails() {
+    let mut skill = test_skill(SkillScope::Global, None, None);
+    skill.name = "INVALID".into();
+    assert!(skill.validate().is_err());
+}
+
+#[test]
+fn validate_invalid_file_path_fails() {
+    let mut skill = test_skill(SkillScope::Global, None, None);
+    skill.files = vec![SkillFile {
+        path: "/absolute/path.py".into(),
+        body: "code".into(),
+    }];
+    assert!(skill.validate().is_err());
+}
+
+#[test]
+fn validate_content_too_large_fails() {
+    let mut skill = test_skill(SkillScope::Global, None, None);
+    skill.content = "x".repeat(10 * 1024 + 1);
+    assert!(skill.validate().is_err());
+}

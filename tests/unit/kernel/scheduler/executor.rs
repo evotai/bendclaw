@@ -138,55 +138,49 @@ fn validate_at_empty_err() {
     assert!(schedule.validate().is_err());
 }
 
-// ── from_record ──
+// ── serde ──
 
 #[test]
-fn from_record_cron() {
-    let s = TaskSchedule::from_record("cron", "0 0 9 * * *", None, None, Some("UTC"));
-    assert_eq!(
-        s,
-        Some(TaskSchedule::Cron {
-            expr: "0 0 9 * * *".into(),
-            tz: Some("UTC".into())
-        })
-    );
+fn schedule_serde_cron() {
+    let json = r#"{"kind":"cron","expr":"0 0 9 * * *","tz":"UTC"}"#;
+    let s: TaskSchedule = serde_json::from_str(json).expect("cron schedule");
+    assert_eq!(s, TaskSchedule::Cron {
+        expr: "0 0 9 * * *".into(),
+        tz: Some("UTC".into())
+    });
 }
 
 #[test]
-fn from_record_every() {
-    let s = TaskSchedule::from_record("every", "", Some(300), None, None);
-    assert_eq!(s, Some(TaskSchedule::Every { seconds: 300 }));
+fn schedule_serde_every() {
+    let json = r#"{"kind":"every","seconds":300}"#;
+    let s: TaskSchedule = serde_json::from_str(json).expect("every schedule");
+    assert_eq!(s, TaskSchedule::Every { seconds: 300 });
 }
 
 #[test]
-fn from_record_at() {
-    let s = TaskSchedule::from_record("at", "", None, Some("2026-12-31T23:59:00Z"), None);
-    assert_eq!(
-        s,
-        Some(TaskSchedule::At {
-            time: "2026-12-31T23:59:00Z".into()
-        })
-    );
+fn schedule_serde_at() {
+    let json = r#"{"kind":"at","time":"2026-12-31T23:59:00Z"}"#;
+    let s: TaskSchedule = serde_json::from_str(json).expect("at schedule");
+    assert_eq!(s, TaskSchedule::At {
+        time: "2026-12-31T23:59:00Z".into()
+    });
 }
 
 #[test]
-fn from_record_unknown_returns_none() {
-    let s = TaskSchedule::from_record("unknown", "", None, None, None);
-    assert!(s.is_none());
+fn schedule_serde_unknown_kind_errors() {
+    let json = r#"{"kind":"unknown"}"#;
+    let err = serde_json::from_str::<TaskSchedule>(json).expect_err("unknown kind");
+    assert!(err.to_string().contains("unknown variant"));
 }
 
-// ── kind_str ──
+// ── storage expr ──
 
 #[test]
-fn kind_str_values() {
-    assert_eq!(
-        TaskSchedule::Cron {
-            expr: "".into(),
-            tz: None
-        }
-        .kind_str(),
-        "cron"
-    );
-    assert_eq!(TaskSchedule::Every { seconds: 1 }.kind_str(), "every");
-    assert_eq!(TaskSchedule::At { time: "".into() }.kind_str(), "at");
+fn to_storage_expr_contains_serialized_schedule() {
+    let expr = TaskSchedule::Every { seconds: 60 }
+        .to_storage_expr()
+        .expect("schedule expr");
+    assert!(expr.contains("PARSE_JSON"));
+    assert!(expr.contains("\"kind\":\"every\""));
+    assert!(expr.contains("\"seconds\":60"));
 }

@@ -1,6 +1,7 @@
 use crate::base::new_id;
 use crate::base::ErrorCode;
 use crate::base::Result;
+use crate::storage::dal::task::TaskDelivery;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::dal::task::TaskRepo;
 use crate::storage::dal::task::TaskSchedule;
@@ -13,7 +14,7 @@ pub struct CreateTaskParams {
     pub name: String,
     pub prompt: String,
     pub schedule: TaskSchedule,
-    pub webhook_url: Option<String>,
+    pub delivery: TaskDelivery,
     pub delete_after_run: bool,
 }
 
@@ -22,7 +23,7 @@ pub struct UpdateTaskParams {
     pub prompt: Option<String>,
     pub schedule: Option<TaskSchedule>,
     pub enabled: Option<bool>,
-    pub webhook_url: Option<Option<String>>,
+    pub delivery: Option<TaskDelivery>,
     pub delete_after_run: Option<bool>,
 }
 
@@ -31,21 +32,21 @@ pub async fn create_task(pool: &Pool, params: CreateTaskParams) -> Result<TaskRe
         .schedule
         .validate()
         .map_err(|e| ErrorCode::invalid_input(e))?;
+    params
+        .delivery
+        .validate()
+        .map_err(|e| ErrorCode::invalid_input(e))?;
 
     let next_run_at = params.schedule.initial_next_run_at();
-    let mut record = TaskRecord {
+    let record = TaskRecord {
         id: new_id(),
         executor_instance_id: params.executor_instance_id,
         name: params.name,
-        cron_expr: String::new(),
         prompt: params.prompt,
         enabled: true,
         status: "idle".to_string(),
-        schedule_kind: String::new(),
-        every_seconds: None,
-        at_time: None,
-        tz: None,
-        webhook_url: params.webhook_url,
+        schedule: params.schedule,
+        delivery: params.delivery,
         last_error: None,
         delete_after_run: params.delete_after_run,
         run_count: 0,
@@ -55,7 +56,6 @@ pub async fn create_task(pool: &Pool, params: CreateTaskParams) -> Result<TaskRe
         created_at: String::new(),
         updated_at: String::new(),
     };
-    params.schedule.apply_to_record(&mut record);
 
     let repo = TaskRepo::new(pool.clone());
     repo.insert(&record).await?;
@@ -92,41 +92,10 @@ pub async fn update_task(
     } else {
         (false, None)
     };
-
-    // Build repo update args from params
-    let schedule_kind;
-    let cron_expr;
-    let every_seconds;
-    let at_time_val;
-    let tz_val;
-    if let Some(ref schedule) = params.schedule {
-        schedule_kind = Some(schedule.kind_str().to_string());
-        match schedule {
-            TaskSchedule::Cron { expr, tz } => {
-                cron_expr = Some(expr.clone());
-                every_seconds = Some(None);
-                at_time_val = Some(None);
-                tz_val = Some(tz.as_deref().map(|s| s.to_string()));
-            }
-            TaskSchedule::Every { seconds } => {
-                cron_expr = Some(String::new());
-                every_seconds = Some(Some(*seconds));
-                at_time_val = Some(None);
-                tz_val = Some(None);
-            }
-            TaskSchedule::At { time } => {
-                cron_expr = Some(String::new());
-                every_seconds = Some(None);
-                at_time_val = Some(Some(time.clone()));
-                tz_val = Some(None);
-            }
-        }
-    } else {
-        schedule_kind = None;
-        cron_expr = None;
-        every_seconds = None;
-        at_time_val = None;
-        tz_val = None;
+    if let Some(ref delivery) = params.delivery {
+        delivery
+            .validate()
+            .map_err(|e| ErrorCode::invalid_input(e))?;
     }
 
     let next_run_at_outer: Option<Option<String>> = if schedule_changed {
@@ -138,14 +107,10 @@ pub async fn update_task(
     repo.update(
         task_id,
         params.name.as_deref(),
-        cron_expr.as_deref(),
         params.prompt.as_deref(),
         params.enabled,
-        schedule_kind.as_deref(),
-        every_seconds,
-        at_time_val.as_ref().map(|v| v.as_deref()),
-        tz_val.as_ref().map(|v| v.as_deref()),
-        params.webhook_url.as_ref().map(|v| v.as_deref()),
+        params.schedule.as_ref(),
+        params.delivery.as_ref(),
         params.delete_after_run,
         next_run_at_outer.as_ref().map(|v| v.as_deref()),
     )

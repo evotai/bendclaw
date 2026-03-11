@@ -1,4 +1,6 @@
+use super::delivery::TaskDelivery;
 use super::record::TaskRecord;
+use super::schedule::TaskSchedule;
 use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
@@ -17,36 +19,32 @@ impl RowMapper for TaskMapper {
     type Entity = TaskRecord;
 
     fn columns(&self) -> &str {
-        "id, executor_instance_id, name, cron_expr, prompt, enabled, status, schedule_kind, every_seconds, TO_VARCHAR(at_time), tz, webhook_url, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TaskRecord> {
-        let enabled_str = sql::col(row, 5);
+        let enabled_str = sql::col(row, 4);
         let enabled = enabled_str == "1" || enabled_str.eq_ignore_ascii_case("true");
-        let delete_after_run_str = sql::col(row, 13);
+        let delete_after_run_str = sql::col(row, 9);
         let delete_after_run =
             delete_after_run_str == "1" || delete_after_run_str.eq_ignore_ascii_case("true");
         Ok(TaskRecord {
             id: sql::col(row, 0),
             executor_instance_id: sql::col(row, 1),
             name: sql::col(row, 2),
-            cron_expr: sql::col(row, 3),
-            prompt: sql::col(row, 4),
+            prompt: sql::col(row, 3),
             enabled,
-            status: sql::col(row, 6),
-            schedule_kind: sql::col(row, 7),
-            every_seconds: sql::col_opt(row, 8).and_then(|s| s.parse().ok()),
-            at_time: sql::col_opt(row, 9),
-            tz: sql::col_opt(row, 10),
-            webhook_url: sql::col_opt(row, 11),
-            last_error: sql::col_opt(row, 12),
+            status: sql::col(row, 5),
+            schedule: TaskSchedule::from_storage(&sql::col(row, 6), "tasks.schedule")?,
+            delivery: TaskDelivery::from_storage(&sql::col(row, 7), "tasks.delivery")?,
+            last_error: sql::col_opt(row, 8),
             delete_after_run,
-            run_count: sql::col_i32(row, 14)?,
-            last_run_at: sql::col(row, 15),
-            next_run_at: sql::col_opt(row, 16),
-            lease_token: sql::col_opt(row, 17),
-            created_at: sql::col(row, 18),
-            updated_at: sql::col(row, 19),
+            run_count: sql::col_i32(row, 10)?,
+            last_run_at: sql::col(row, 11),
+            next_run_at: sql::col_opt(row, 12),
+            lease_token: sql::col_opt(row, 13),
+            created_at: sql::col(row, 14),
+            updated_at: sql::col(row, 15),
         })
     }
 }
@@ -70,6 +68,8 @@ impl TaskRepo {
         } else {
             "false"
         };
+        let schedule_expr = record.schedule.to_storage_expr()?;
+        let delivery_expr = record.delivery.to_storage_expr()?;
         let result = self
             .table
             .insert(&[
@@ -79,21 +79,11 @@ impl TaskRepo {
                     SqlVal::Str(&record.executor_instance_id),
                 ),
                 ("name", SqlVal::Str(&record.name)),
-                ("cron_expr", SqlVal::Str(&record.cron_expr)),
                 ("prompt", SqlVal::Str(&record.prompt)),
                 ("enabled", SqlVal::Raw(enabled_raw)),
                 ("status", SqlVal::Str(&record.status)),
-                ("schedule_kind", SqlVal::Str(&record.schedule_kind)),
-                ("every_seconds", match record.every_seconds {
-                    Some(v) => SqlVal::Int(v as i64),
-                    None => SqlVal::Null,
-                }),
-                ("at_time", SqlVal::str_or_null(record.at_time.as_deref())),
-                ("tz", SqlVal::str_or_null(record.tz.as_deref())),
-                (
-                    "webhook_url",
-                    SqlVal::str_or_null(record.webhook_url.as_deref()),
-                ),
+                ("schedule", SqlVal::Raw(&schedule_expr)),
+                ("delivery", SqlVal::Raw(&delivery_expr)),
                 ("last_error", SqlVal::Null),
                 ("delete_after_run", SqlVal::Raw(delete_after_run_raw)),
                 ("run_count", SqlVal::Int(0)),
@@ -161,48 +151,26 @@ impl TaskRepo {
         &self,
         task_id: &str,
         name: Option<&str>,
-        cron_expr: Option<&str>,
         prompt: Option<&str>,
         enabled: Option<bool>,
-        schedule_kind: Option<&str>,
-        every_seconds: Option<Option<i32>>,
-        at_time: Option<Option<&str>>,
-        tz: Option<Option<&str>>,
-        webhook_url: Option<Option<&str>>,
+        schedule: Option<&TaskSchedule>,
+        delivery: Option<&TaskDelivery>,
         delete_after_run: Option<bool>,
         next_run_at: Option<Option<&str>>,
     ) -> Result<()> {
         let mut builder = sql::Sql::update("tasks")
             .set_opt("name", name)
-            .set_opt("cron_expr", cron_expr)
-            .set_opt("prompt", prompt)
-            .set_opt("schedule_kind", schedule_kind);
+            .set_opt("prompt", prompt);
         if let Some(e) = enabled {
             builder = builder.set_raw("enabled", if e { "true" } else { "false" });
         }
-        if let Some(v) = every_seconds {
-            match v {
-                Some(secs) => builder = builder.set("every_seconds", secs),
-                None => builder = builder.set_raw("every_seconds", "NULL"),
-            }
+        if let Some(v) = schedule {
+            let expr = v.to_storage_expr()?;
+            builder = builder.set_raw("schedule", &expr);
         }
-        if let Some(v) = at_time {
-            match v {
-                Some(t) => builder = builder.set("at_time", t),
-                None => builder = builder.set_raw("at_time", "NULL"),
-            }
-        }
-        if let Some(v) = tz {
-            match v {
-                Some(t) => builder = builder.set("tz", t),
-                None => builder = builder.set_raw("tz", "NULL"),
-            }
-        }
-        if let Some(v) = webhook_url {
-            match v {
-                Some(u) => builder = builder.set("webhook_url", u),
-                None => builder = builder.set_raw("webhook_url", "NULL"),
-            }
+        if let Some(v) = delivery {
+            let expr = v.to_storage_expr()?;
+            builder = builder.set_raw("delivery", &expr);
         }
         if let Some(d) = delete_after_run {
             builder = builder.set_raw("delete_after_run", if d { "true" } else { "false" });

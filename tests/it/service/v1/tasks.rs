@@ -12,146 +12,79 @@ use crate::common::fake_databend::FakeDatabend;
 use crate::common::setup::app_with_root_pool_and_llm;
 use crate::common::setup::json_body;
 use crate::common::setup::uid;
+use crate::common::task_rows::quoted_values;
+use crate::common::task_rows::task_history_query;
+use crate::common::task_rows::task_query;
+use crate::common::task_rows::TaskHistoryRow;
+use crate::common::task_rows::TaskRow;
 use crate::mocks::llm::MockLLMProvider;
 
 #[derive(Clone)]
 struct TaskState {
-    records: Arc<Mutex<Vec<TaskRecord>>>,
-    history: Arc<Mutex<Vec<TaskHistoryRecord>>>,
+    records: Arc<Mutex<Vec<TaskRow>>>,
+    history: Arc<Mutex<Vec<TaskHistoryRow>>>,
 }
 
-#[derive(Clone)]
-struct TaskRecord {
-    id: String,
-    executor_instance_id: String,
-    name: String,
-    prompt: String,
-    enabled: bool,
-    status: String,
-    schedule_kind: String,
-    every_seconds: Option<i32>,
-    next_run_at: Option<String>,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Clone)]
-struct TaskHistoryRecord {
-    id: String,
-    task_id: String,
-    task_name: String,
-    status: String,
-    output: Option<String>,
-    duration_ms: Option<i32>,
-    created_at: String,
-}
-
-fn quoted_values(sql: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut chars = sql.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\'' {
-            continue;
+#[tokio::test]
+async fn tasks_api_create_accepts_channel_delivery() -> Result<()> {
+    let saw_insert = Arc::new(Mutex::new(false));
+    let saw_insert_for_fake = Arc::clone(&saw_insert);
+    let fake = FakeDatabend::new(move |sql, _database| {
+        if sql.starts_with("INSERT INTO tasks") {
+            *saw_insert_for_fake.lock().expect("insert marker") = true;
+            assert!(sql.contains("\"kind\":\"channel\""));
+            assert!(sql.contains("\"channel_account_id\":\"channel-1\""));
+            assert!(sql.contains("\"chat_id\":\"chat-42\""));
         }
-        let mut value = String::new();
-        while let Some(next) = chars.next() {
-            if next == '\'' {
-                if chars.peek() == Some(&'\'') {
-                    value.push('\'');
-                    chars.next();
-                    continue;
-                }
-                break;
-            }
-            value.push(next);
-        }
-        out.push(value);
-    }
-    out
-}
+        Ok(paged_rows(&[], None, None))
+    });
+    let prefix = format!(
+        "test_fast_task_delivery_{}_",
+        ulid::Ulid::new().to_string().to_lowercase()
+    );
+    let app = app_with_root_pool_and_llm(
+        fake.pool(),
+        "http://fake.local/v1",
+        "",
+        "default",
+        &prefix,
+        Arc::new(MockLLMProvider::with_text("ok")),
+    )
+    .await?;
+    let agent_id = uid("agent");
+    let user = uid("user");
 
-fn task_rows(records: &[TaskRecord]) -> bendclaw::storage::pool::QueryResponse {
-    let data = records
-        .iter()
-        .map(|record| {
-            vec![
-                serde_json::Value::String(record.id.clone()),
-                serde_json::Value::String(record.executor_instance_id.clone()),
-                serde_json::Value::String(record.name.clone()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(record.prompt.clone()),
-                serde_json::Value::String(record.enabled.to_string()),
-                serde_json::Value::String(record.status.clone()),
-                serde_json::Value::String(record.schedule_kind.clone()),
-                serde_json::Value::String(
-                    record
-                        .every_seconds
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                ),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String("false".to_string()),
-                serde_json::Value::String("0".to_string()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(record.next_run_at.clone().unwrap_or_default()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(record.created_at.clone()),
-                serde_json::Value::String(record.updated_at.clone()),
-            ]
-        })
-        .collect();
-    bendclaw::storage::pool::QueryResponse {
-        id: String::new(),
-        state: "Succeeded".to_string(),
-        error: None,
-        data,
-        next_uri: None,
-        final_uri: None,
-        schema: Vec::new(),
-    }
-}
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/agents/{agent_id}/tasks"))
+                .header("content-type", "application/json")
+                .header("x-user-id", &user)
+                .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                    "name": "notify-report",
+                    "prompt": "run report",
+                    "schedule": {
+                        "kind": "every",
+                        "seconds": 60
+                    },
+                    "delivery": {
+                        "kind": "channel",
+                        "channel_account_id": "channel-1",
+                        "chat_id": "chat-42"
+                    }
+                }))?))?,
+        )
+        .await?;
 
-fn task_history_rows(records: &[TaskHistoryRecord]) -> bendclaw::storage::pool::QueryResponse {
-    let data = records
-        .iter()
-        .map(|record| {
-            vec![
-                serde_json::Value::String(record.id.clone()),
-                serde_json::Value::String(record.task_id.clone()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(record.task_name.clone()),
-                serde_json::Value::String("every".to_string()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String("run report".to_string()),
-                serde_json::Value::String(record.status.clone()),
-                serde_json::Value::String(record.output.clone().unwrap_or_default()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(
-                    record
-                        .duration_ms
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                ),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(String::new()),
-                serde_json::Value::String(record.created_at.clone()),
-            ]
-        })
-        .collect();
-    bendclaw::storage::pool::QueryResponse {
-        id: String::new(),
-        state: "Succeeded".to_string(),
-        error: None,
-        data,
-        next_uri: None,
-        final_uri: None,
-        schema: Vec::new(),
-    }
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await?;
+    assert_eq!(body["delivery"]["kind"], "channel");
+    assert_eq!(body["delivery"]["channel_account_id"], "channel-1");
+    assert_eq!(body["delivery"]["chat_id"], "chat-42");
+    assert!(*saw_insert.lock().expect("insert marker"));
+    Ok(())
 }
 
 #[tokio::test]
@@ -165,16 +98,21 @@ async fn tasks_api_fast_create_list_and_toggle() -> Result<()> {
         let mut records = fake_state.records.lock().expect("task state");
         if sql.starts_with("INSERT INTO tasks") {
             let values = quoted_values(sql);
-            records.push(TaskRecord {
+            records.push(TaskRow {
                 id: values[0].clone(),
                 executor_instance_id: values[1].clone(),
                 name: values[2].clone(),
-                prompt: values[4].clone(),
+                prompt: values[3].clone(),
                 enabled: true,
-                status: values[5].clone(),
-                schedule_kind: values[6].clone(),
-                every_seconds: Some(60),
+                status: values[4].clone(),
+                schedule_json: r#"{"kind":"every","seconds":60}"#.to_string(),
+                delivery_json: String::new(),
+                last_error: None,
+                delete_after_run: false,
+                run_count: 0,
+                last_run_at: None,
                 next_run_at: Some("2026-03-11T00:00:00Z".to_string()),
+                lease_token: None,
                 created_at: "2026-03-10T00:00:00Z".to_string(),
                 updated_at: "2026-03-10T00:00:00Z".to_string(),
             });
@@ -191,12 +129,12 @@ async fn tasks_api_fast_create_list_and_toggle() -> Result<()> {
                 .filter(|record| record.id == id)
                 .cloned()
                 .collect();
-            return Ok(task_rows(&found));
+            return Ok(task_query(found));
         }
         if sql.starts_with("SELECT id, executor_instance_id") {
             let mut all = records.clone();
             all.reverse();
-            return Ok(task_rows(&all));
+            return Ok(task_query(all));
         }
         if sql.starts_with("UPDATE tasks SET enabled = NOT enabled") {
             let id = quoted_values(sql).pop().unwrap_or_default();
@@ -246,7 +184,7 @@ async fn tasks_api_fast_create_list_and_toggle() -> Result<()> {
     let created_body = json_body(created).await?;
     let task_id = created_body["id"].as_str().expect("task id").to_string();
     assert_eq!(created_body["name"], "nightly-report");
-    assert_eq!(created_body["schedule_kind"], "every");
+    assert_eq!(created_body["schedule"]["kind"], "every");
 
     let list = app
         .clone()
@@ -281,28 +219,25 @@ async fn tasks_api_fast_create_list_and_toggle() -> Result<()> {
 #[tokio::test]
 async fn tasks_api_fast_update_delete_and_history() -> Result<()> {
     let state = TaskState {
-        records: Arc::new(Mutex::new(vec![TaskRecord {
+        records: Arc::new(Mutex::new(vec![TaskRow {
             id: "task-1".to_string(),
             executor_instance_id: "test_instance".to_string(),
             name: "nightly-report".to_string(),
             prompt: "run report".to_string(),
             enabled: true,
             status: "idle".to_string(),
-            schedule_kind: "every".to_string(),
-            every_seconds: Some(60),
+            schedule_json: r#"{"kind":"every","seconds":60}"#.to_string(),
+            delivery_json: String::new(),
+            last_error: None,
+            delete_after_run: false,
+            run_count: 0,
+            last_run_at: None,
             next_run_at: Some("2026-03-11T00:00:00Z".to_string()),
+            lease_token: None,
             created_at: "2026-03-10T00:00:00Z".to_string(),
             updated_at: "2026-03-10T00:00:00Z".to_string(),
         }])),
-        history: Arc::new(Mutex::new(vec![TaskHistoryRecord {
-            id: "hist-1".to_string(),
-            task_id: "task-1".to_string(),
-            task_name: "nightly-report".to_string(),
-            status: "ok".to_string(),
-            output: Some("done".to_string()),
-            duration_ms: Some(1200),
-            created_at: "2026-03-11T00:05:00Z".to_string(),
-        }])),
+        history: Arc::new(Mutex::new(vec![TaskHistoryRow::ok("task-1")])),
     };
     let fake_state = state.clone();
     let fake = FakeDatabend::new(move |sql, _database| {
@@ -326,7 +261,7 @@ async fn tasks_api_fast_update_delete_and_history() -> Result<()> {
         }
         if sql.starts_with("SELECT id, task_id, run_id") {
             let history = fake_state.history.lock().expect("task history").clone();
-            return Ok(task_history_rows(&history));
+            return Ok(task_history_query(history));
         }
 
         let mut records = fake_state.records.lock().expect("task state");
@@ -337,7 +272,7 @@ async fn tasks_api_fast_update_delete_and_history() -> Result<()> {
                 .filter(|record| record.id == id)
                 .cloned()
                 .collect();
-            return Ok(task_rows(&found));
+            return Ok(task_query(found));
         }
         if sql.starts_with("UPDATE tasks SET ") {
             assert!(sql.contains("name = 'updated-report'"));

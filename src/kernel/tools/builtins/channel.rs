@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::base::Result;
 use crate::kernel::channel::registry::ChannelRegistry;
+use crate::kernel::channel::send_text_to_account;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
 use crate::kernel::tools::ToolContext;
@@ -93,14 +94,11 @@ impl Tool for ChannelSendTool {
             None => return Ok(ToolResult::error("Missing 'text' parameter")),
         };
 
-        let entry = match self.channels.get(channel_type) {
-            Some(e) => e,
-            None => {
-                return Ok(ToolResult::error(format!(
-                    "Unknown channel type: {channel_type}"
-                )))
-            }
-        };
+        if self.channels.get(channel_type).is_none() {
+            return Ok(ToolResult::error(format!(
+                "Unknown channel type: {channel_type}"
+            )));
+        }
 
         // Find the first enabled account of this channel type for the agent.
         let repo = ChannelAccountRepo::new(ctx.pool.clone());
@@ -120,8 +118,7 @@ impl Tool for ChannelSendTool {
             }
         };
 
-        let outbound = entry.plugin.outbound();
-        match outbound.send_text(&account.config, chat_id, text).await {
+        match send_text_to_account(self.channels.as_ref(), account, chat_id, text).await {
             Ok(msg_id) => Ok(ToolResult::ok(format!("Message sent (id: {msg_id})"))),
             Err(e) => Ok(ToolResult::error(format!("Failed to send: {e}"))),
         }

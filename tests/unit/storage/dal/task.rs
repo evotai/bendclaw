@@ -1,23 +1,47 @@
 use anyhow::Result;
+use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskHistoryRecord;
 use bendclaw::storage::TaskRecord;
+use bendclaw::storage::TaskSchedule;
 
 // ── TaskRecord ──
+
+#[test]
+fn task_delivery_channel_roundtrip() -> Result<()> {
+    let delivery = TaskDelivery::Channel {
+        channel_account_id: "channel-1".into(),
+        chat_id: "chat-42".into(),
+    };
+    let json = serde_json::to_string(&delivery)?;
+    let parsed: TaskDelivery = serde_json::from_str(&json)?;
+    assert_eq!(parsed, delivery);
+    Ok(())
+}
+
+#[test]
+fn task_delivery_validate_rejects_missing_channel_fields() {
+    let delivery = TaskDelivery::Channel {
+        channel_account_id: String::new(),
+        chat_id: "chat-42".into(),
+    };
+    assert!(delivery.validate().is_err());
+}
 
 fn make_task() -> TaskRecord {
     TaskRecord {
         id: "task-001".into(),
         executor_instance_id: "os-abc12345".into(),
         name: "Daily report".into(),
-        cron_expr: "0 9 * * *".into(),
         prompt: "Generate daily report".into(),
         enabled: true,
         status: "idle".into(),
-        schedule_kind: "cron".into(),
-        every_seconds: None,
-        at_time: None,
-        tz: Some("Asia/Shanghai".into()),
-        webhook_url: Some("https://example.com/hook".into()),
+        schedule: TaskSchedule::Cron {
+            expr: "0 9 * * *".into(),
+            tz: Some("Asia/Shanghai".into()),
+        },
+        delivery: TaskDelivery::Webhook {
+            url: "https://example.com/hook".into(),
+        },
         last_error: None,
         delete_after_run: false,
         run_count: 5,
@@ -37,16 +61,16 @@ fn task_record_serde_roundtrip() -> Result<()> {
     assert_eq!(parsed.id, "task-001");
     assert_eq!(parsed.executor_instance_id, "os-abc12345");
     assert_eq!(parsed.name, "Daily report");
-    assert_eq!(parsed.cron_expr, "0 9 * * *");
     assert_eq!(parsed.prompt, "Generate daily report");
     assert!(parsed.enabled);
     assert_eq!(parsed.status, "idle");
-    assert_eq!(parsed.schedule_kind, "cron");
-    assert_eq!(parsed.tz.as_deref(), Some("Asia/Shanghai"));
-    assert_eq!(
-        parsed.webhook_url.as_deref(),
-        Some("https://example.com/hook")
-    );
+    assert_eq!(parsed.schedule, TaskSchedule::Cron {
+        expr: "0 9 * * *".into(),
+        tz: Some("Asia/Shanghai".into())
+    });
+    assert_eq!(parsed.delivery, TaskDelivery::Webhook {
+        url: "https://example.com/hook".into()
+    });
     assert!(!parsed.delete_after_run);
     assert_eq!(parsed.run_count, 5);
     Ok(())
@@ -55,15 +79,17 @@ fn task_record_serde_roundtrip() -> Result<()> {
 #[test]
 fn task_record_schedule_kind_at() -> Result<()> {
     let record = TaskRecord {
-        schedule_kind: "at".into(),
-        at_time: Some("2026-12-31T23:59:00Z".into()),
+        schedule: TaskSchedule::At {
+            time: "2026-12-31T23:59:00Z".into(),
+        },
         delete_after_run: true,
         ..make_task()
     };
     let json = serde_json::to_string(&record)?;
     let parsed: TaskRecord = serde_json::from_str(&json)?;
-    assert_eq!(parsed.schedule_kind, "at");
-    assert_eq!(parsed.at_time.as_deref(), Some("2026-12-31T23:59:00Z"));
+    assert_eq!(parsed.schedule, TaskSchedule::At {
+        time: "2026-12-31T23:59:00Z".into()
+    });
     assert!(parsed.delete_after_run);
     Ok(())
 }
@@ -71,35 +97,27 @@ fn task_record_schedule_kind_at() -> Result<()> {
 #[test]
 fn task_record_schedule_kind_every() -> Result<()> {
     let record = TaskRecord {
-        schedule_kind: "every".into(),
-        every_seconds: Some(300),
-        cron_expr: String::new(),
+        schedule: TaskSchedule::Every { seconds: 300 },
         ..make_task()
     };
     let json = serde_json::to_string(&record)?;
     let parsed: TaskRecord = serde_json::from_str(&json)?;
-    assert_eq!(parsed.schedule_kind, "every");
-    assert_eq!(parsed.every_seconds, Some(300));
-    assert!(parsed.cron_expr.is_empty());
+    assert_eq!(parsed.schedule, TaskSchedule::Every { seconds: 300 });
     Ok(())
 }
 
 #[test]
 fn task_record_optional_fields_none() -> Result<()> {
     let record = TaskRecord {
-        every_seconds: None,
-        at_time: None,
-        tz: None,
-        webhook_url: None,
+        schedule: TaskSchedule::Every { seconds: 300 },
+        delivery: TaskDelivery::None,
         last_error: None,
         ..make_task()
     };
     let json = serde_json::to_string(&record)?;
     let parsed: TaskRecord = serde_json::from_str(&json)?;
-    assert!(parsed.every_seconds.is_none());
-    assert!(parsed.at_time.is_none());
-    assert!(parsed.tz.is_none());
-    assert!(parsed.webhook_url.is_none());
+    assert_eq!(parsed.schedule, TaskSchedule::Every { seconds: 300 });
+    assert_eq!(parsed.delivery, TaskDelivery::None);
     assert!(parsed.last_error.is_none());
     Ok(())
 }
@@ -126,16 +144,20 @@ fn make_history() -> TaskHistoryRecord {
         task_id: "task-001".into(),
         run_id: Some("run-abc".into()),
         task_name: "Daily report".into(),
-        schedule_kind: "cron".into(),
-        cron_expr: Some("0 9 * * *".into()),
+        schedule: TaskSchedule::Cron {
+            expr: "0 9 * * *".into(),
+            tz: Some("Asia/Shanghai".into()),
+        },
         prompt: "Generate daily report".into(),
         status: "ok".into(),
         output: Some("Report generated successfully".into()),
         error: None,
         duration_ms: Some(1500),
-        webhook_url: Some("https://example.com/hook".into()),
-        webhook_status: Some("ok".into()),
-        webhook_error: None,
+        delivery: TaskDelivery::Webhook {
+            url: "https://example.com/hook".into(),
+        },
+        delivery_status: Some("ok".into()),
+        delivery_error: None,
         executed_by_instance_id: None,
         created_at: "2026-03-09T09:00:01Z".into(),
     }
@@ -150,8 +172,10 @@ fn task_history_record_serde_roundtrip() -> Result<()> {
     assert_eq!(parsed.task_id, "task-001");
     assert_eq!(parsed.run_id.as_deref(), Some("run-abc"));
     assert_eq!(parsed.task_name, "Daily report");
-    assert_eq!(parsed.schedule_kind, "cron");
-    assert_eq!(parsed.cron_expr.as_deref(), Some("0 9 * * *"));
+    assert_eq!(parsed.schedule, TaskSchedule::Cron {
+        expr: "0 9 * * *".into(),
+        tz: Some("Asia/Shanghai".into())
+    });
     assert_eq!(parsed.status, "ok");
     assert_eq!(
         parsed.output.as_deref(),
@@ -159,8 +183,11 @@ fn task_history_record_serde_roundtrip() -> Result<()> {
     );
     assert!(parsed.error.is_none());
     assert_eq!(parsed.duration_ms, Some(1500));
-    assert_eq!(parsed.webhook_status.as_deref(), Some("ok"));
-    assert!(parsed.webhook_error.is_none());
+    assert_eq!(parsed.delivery, TaskDelivery::Webhook {
+        url: "https://example.com/hook".into()
+    });
+    assert_eq!(parsed.delivery_status.as_deref(), Some("ok"));
+    assert!(parsed.delivery_error.is_none());
     Ok(())
 }
 
@@ -170,7 +197,7 @@ fn task_history_record_error_status() -> Result<()> {
         status: "error".into(),
         output: None,
         error: Some("LLM rate limit exceeded".into()),
-        webhook_status: Some("skipped".into()),
+        delivery_status: Some("skipped".into()),
         ..make_history()
     };
     let json = serde_json::to_string(&record)?;
@@ -178,37 +205,37 @@ fn task_history_record_error_status() -> Result<()> {
     assert_eq!(parsed.status, "error");
     assert!(parsed.output.is_none());
     assert_eq!(parsed.error.as_deref(), Some("LLM rate limit exceeded"));
-    assert_eq!(parsed.webhook_status.as_deref(), Some("skipped"));
+    assert_eq!(parsed.delivery_status.as_deref(), Some("skipped"));
     Ok(())
 }
 
 #[test]
-fn task_history_record_webhook_failed() -> Result<()> {
+fn task_history_record_delivery_failed() -> Result<()> {
     let record = TaskHistoryRecord {
-        webhook_status: Some("failed".into()),
-        webhook_error: Some("HTTP 503".into()),
+        delivery_status: Some("failed".into()),
+        delivery_error: Some("HTTP 503".into()),
         ..make_history()
     };
     let json = serde_json::to_string(&record)?;
     let parsed: TaskHistoryRecord = serde_json::from_str(&json)?;
-    assert_eq!(parsed.webhook_status.as_deref(), Some("failed"));
-    assert_eq!(parsed.webhook_error.as_deref(), Some("HTTP 503"));
+    assert_eq!(parsed.delivery_status.as_deref(), Some("failed"));
+    assert_eq!(parsed.delivery_error.as_deref(), Some("HTTP 503"));
     Ok(())
 }
 
 #[test]
-fn task_history_record_no_webhook() -> Result<()> {
+fn task_history_record_no_delivery() -> Result<()> {
     let record = TaskHistoryRecord {
-        webhook_url: None,
-        webhook_status: None,
-        webhook_error: None,
+        delivery: TaskDelivery::None,
+        delivery_status: None,
+        delivery_error: None,
         ..make_history()
     };
     let json = serde_json::to_string(&record)?;
     let parsed: TaskHistoryRecord = serde_json::from_str(&json)?;
-    assert!(parsed.webhook_url.is_none());
-    assert!(parsed.webhook_status.is_none());
-    assert!(parsed.webhook_error.is_none());
+    assert_eq!(parsed.delivery, TaskDelivery::None);
+    assert!(parsed.delivery_status.is_none());
+    assert!(parsed.delivery_error.is_none());
     Ok(())
 }
 

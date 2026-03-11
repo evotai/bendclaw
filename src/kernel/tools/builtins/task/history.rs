@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::kernel::task::admin;
+use crate::kernel::task::view::TaskHistoryView;
 use crate::kernel::tools::tool::OperationClassifier;
 use crate::kernel::tools::tool::Tool;
 use crate::kernel::tools::tool::ToolContext;
@@ -76,7 +77,13 @@ impl Tool for TaskHistoryTool {
 
         match admin::list_task_history(&ctx.pool, task_id, limit).await {
             Ok(entries) => Ok(ToolResult::ok(
-                serde_json::to_string_pretty(&entries).unwrap_or_default(),
+                serde_json::to_string_pretty(
+                    &entries
+                        .into_iter()
+                        .map(TaskHistoryView::from)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_default(),
             )),
             Err(e) => Ok(ToolResult::error(format!(
                 "Failed to get task history: {e}"

@@ -84,3 +84,197 @@ async fn poll_once(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use parking_lot::RwLock;
+
+    use super::poll_once;
+    use super::TaskScheduler;
+    use crate::base::ErrorCode;
+    use crate::kernel::channel::registry::ChannelRegistry;
+    use crate::kernel::channel::supervisor::ChannelSupervisor;
+    use crate::kernel::runtime::agent_config::AgentConfig;
+    use crate::kernel::runtime::runtime::RuntimeParts;
+    use crate::kernel::runtime::Runtime;
+    use crate::kernel::runtime::RuntimeStatus;
+    use crate::kernel::session::SessionManager;
+    use crate::kernel::skills::store::SkillStore;
+    use crate::llm::message::ChatMessage;
+    use crate::llm::provider::LLMProvider;
+    use crate::llm::provider::LLMResponse;
+    use crate::llm::stream::ResponseStream;
+    use crate::llm::tool::ToolSchema;
+    use crate::storage::test_support::RecordingClient;
+    use crate::storage::AgentDatabases;
+
+    struct NoopLLM;
+
+    #[async_trait]
+    impl LLMProvider for NoopLLM {
+        async fn chat(
+            &self,
+            _model: &str,
+            _messages: &[ChatMessage],
+            _tools: &[ToolSchema],
+            _temperature: f32,
+        ) -> crate::base::Result<LLMResponse> {
+            Err(ErrorCode::internal("noop llm"))
+        }
+
+        fn chat_stream(
+            &self,
+            _model: &str,
+            _messages: &[ChatMessage],
+            _tools: &[ToolSchema],
+            _temperature: f32,
+        ) -> ResponseStream {
+            let (_writer, stream) = ResponseStream::channel(1);
+            stream
+        }
+    }
+
+    fn runtime_with_client(client: &RecordingClient) -> Arc<Runtime> {
+        let pool = client.pool();
+        let databases = Arc::new(AgentDatabases::new(pool, "test_").expect("agent databases"));
+        let workspace_root =
+            std::env::temp_dir().join(format!("bendclaw-scheduler-{}", ulid::Ulid::new()));
+        let _ = std::fs::create_dir_all(&workspace_root);
+        let skills = Arc::new(SkillStore::new(databases.clone(), workspace_root, None));
+        let channels = Arc::new(ChannelRegistry::new());
+        let supervisor = Arc::new(ChannelSupervisor::new(
+            channels.clone(),
+            Arc::new(|_, _| {}),
+        ));
+
+        let mut config = AgentConfig::default();
+        config.instance_id = "inst-1".to_string();
+
+        Arc::new(Runtime::from_parts(RuntimeParts {
+            config,
+            databases,
+            llm: RwLock::new(Arc::new(NoopLLM)),
+            skills,
+            sessions: Arc::new(SessionManager::new()),
+            channels,
+            supervisor,
+            status: RwLock::new(RuntimeStatus::Ready),
+            sync_cancel: tokio_util::sync::CancellationToken::new(),
+            sync_handle: RwLock::new(None),
+            scheduler_handle: RwLock::new(None),
+        }))
+    }
+
+    #[tokio::test]
+    async fn poll_once_handles_no_agent_databases() {
+        let client = RecordingClient::new(|sql, _database| {
+            if sql.starts_with("SHOW DATABASES LIKE ") {
+                return Ok(crate::storage::pool::QueryResponse {
+                    id: String::new(),
+                    state: "Succeeded".to_string(),
+                    error: None,
+                    data: Vec::new(),
+                    next_uri: None,
+                    final_uri: None,
+                    schema: Vec::new(),
+                });
+            }
+            Ok(crate::storage::pool::QueryResponse {
+                id: String::new(),
+                state: "Succeeded".to_string(),
+                error: None,
+                data: Vec::new(),
+                next_uri: None,
+                final_uri: None,
+                schema: Vec::new(),
+            })
+        });
+        let runtime = runtime_with_client(&client);
+
+        poll_once(&runtime, &reqwest::Client::new())
+            .await
+            .expect("poll without agents");
+
+        let sqls = client.sqls();
+        assert_eq!(sqls.len(), 1);
+        assert!(sqls[0].starts_with("SHOW DATABASES LIKE 'test_%'"));
+    }
+
+    #[tokio::test]
+    async fn poll_once_claims_due_tasks_for_each_agent() {
+        let database_rows = vec![vec![serde_json::Value::String("test_agent-a".to_string())]];
+        let due_rows = Vec::<Vec<serde_json::Value>>::new();
+        let client = RecordingClient::new(move |sql, _database| {
+            if sql.starts_with("SHOW DATABASES LIKE ") {
+                return Ok(crate::storage::pool::QueryResponse {
+                    id: String::new(),
+                    state: "Succeeded".to_string(),
+                    error: None,
+                    data: database_rows.clone(),
+                    next_uri: None,
+                    final_uri: None,
+                    schema: Vec::new(),
+                });
+            }
+            if sql.starts_with("SELECT id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE lease_token = ") {
+                return Ok(crate::storage::pool::QueryResponse {
+                    id: String::new(),
+                    state: "Succeeded".to_string(),
+                    error: None,
+                    data: due_rows.clone(),
+                    next_uri: None,
+                    final_uri: None,
+                    schema: Vec::new(),
+                });
+            }
+            Ok(crate::storage::pool::QueryResponse {
+                id: String::new(),
+                state: "Succeeded".to_string(),
+                error: None,
+                data: Vec::new(),
+                next_uri: None,
+                final_uri: None,
+                schema: Vec::new(),
+            })
+        });
+        let runtime = runtime_with_client(&client);
+
+        poll_once(&runtime, &reqwest::Client::new())
+            .await
+            .expect("poll with one agent");
+
+        let sqls = client.sqls();
+        assert!(sqls
+            .iter()
+            .any(|sql| sql.starts_with("SHOW DATABASES LIKE 'test_%'")));
+        assert!(sqls
+            .iter()
+            .any(|sql| sql.starts_with("UPDATE tasks SET status = 'running'")));
+        assert!(sqls
+            .iter()
+            .any(|sql| sql.contains("FROM tasks WHERE lease_token = ")));
+    }
+
+    #[tokio::test]
+    async fn scheduler_spawn_exits_when_cancelled() {
+        let client = RecordingClient::new(|_sql, _database| {
+            Ok(crate::storage::pool::QueryResponse {
+                id: String::new(),
+                state: "Succeeded".to_string(),
+                error: None,
+                data: Vec::new(),
+                next_uri: None,
+                final_uri: None,
+                schema: Vec::new(),
+            })
+        });
+        let runtime = runtime_with_client(&client);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let handle = TaskScheduler::spawn(runtime, cancel.clone(), reqwest::Client::new());
+        cancel.cancel();
+        handle.await.expect("scheduler join");
+    }
+}

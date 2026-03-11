@@ -5,6 +5,8 @@ pub mod migrator;
 pub mod pool;
 pub mod sql;
 pub mod table;
+#[cfg(any(test, doctest))]
+pub mod test_support;
 pub mod time;
 
 pub use agent_config::AgentConfigRecord;
@@ -41,6 +43,7 @@ pub use run::RunStatus;
 pub use run_event::RunEventRecord;
 pub use run_event::RunEventRepo;
 pub use session::SessionRecord;
+pub use task::TaskDelivery;
 pub use task::TaskRecord;
 pub use task::TaskRepo;
 pub use task::TaskSchedule;

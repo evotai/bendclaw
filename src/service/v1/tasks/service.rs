@@ -31,14 +31,7 @@ pub(super) async fn create_task(
     let executor_instance_id = req
         .executor_instance_id
         .unwrap_or_else(|| state.runtime.config().instance_id.clone());
-    let params = CreateTaskParams {
-        executor_instance_id,
-        name: req.name,
-        prompt: req.prompt,
-        schedule: req.schedule.into_task_schedule(),
-        webhook_url: req.webhook_url,
-        delete_after_run: req.delete_after_run,
-    };
+    let params: CreateTaskParams = req.spec.into_params(executor_instance_id);
     let record = admin::create_task(&pool, params).await?;
     Ok(record)
 }
@@ -50,14 +43,7 @@ pub(super) async fn update_task(
     req: UpdateTaskRequest,
 ) -> Result<TaskRecord> {
     let pool = state.runtime.databases().agent_pool(agent_id)?;
-    let params = UpdateTaskParams {
-        name: req.name,
-        prompt: req.prompt,
-        schedule: req.schedule.map(|s| s.into_task_schedule()),
-        enabled: req.enabled,
-        webhook_url: req.webhook_url,
-        delete_after_run: req.delete_after_run,
-    };
+    let params: UpdateTaskParams = req.into_params();
     let record = admin::update_task(&pool, task_id, params).await?;
     Ok(record)
 }

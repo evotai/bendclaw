@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::kernel::task::admin;
+use crate::kernel::task::view::TaskSummaryView;
 use crate::kernel::tools::tool::OperationClassifier;
 use crate::kernel::tools::tool::Tool;
 use crate::kernel::tools::tool::ToolContext;
@@ -38,7 +39,7 @@ impl Tool for TaskListTool {
     }
 
     fn description(&self) -> &str {
-        "List scheduled tasks. Returns id, name, enabled, status, schedule_kind, and next_run_at for each task."
+        "List scheduled tasks. Returns id, name, enabled, status, schedule, and next_run_at for each task."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -64,19 +65,8 @@ impl Tool for TaskListTool {
 
         match admin::list_tasks(&ctx.pool, limit).await {
             Ok(tasks) => {
-                let items: Vec<serde_json::Value> = tasks
-                    .iter()
-                    .map(|t| {
-                        json!({
-                            "id": t.id,
-                            "name": t.name,
-                            "enabled": t.enabled,
-                            "status": t.status,
-                            "schedule_kind": t.schedule_kind,
-                            "next_run_at": t.next_run_at,
-                        })
-                    })
-                    .collect();
+                let items: Vec<TaskSummaryView> =
+                    tasks.into_iter().map(TaskSummaryView::from).collect();
                 Ok(ToolResult::ok(
                     serde_json::to_string_pretty(&items).unwrap_or_default(),
                 ))

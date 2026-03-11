@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::kernel::task::admin;
+use crate::kernel::task::view::TaskView;
 use crate::kernel::tools::tool::OperationClassifier;
 use crate::kernel::tools::tool::Tool;
 use crate::kernel::tools::tool::ToolContext;
@@ -74,13 +75,7 @@ impl Tool for TaskToggleTool {
 
         match admin::toggle_task(&ctx.pool, task_id).await {
             Ok(task) => Ok(ToolResult::ok(
-                serde_json::to_string_pretty(&json!({
-                    "id": task.id,
-                    "name": task.name,
-                    "enabled": task.enabled,
-                    "status": task.status,
-                }))
-                .unwrap_or_default(),
+                serde_json::to_string_pretty(&TaskView::from(task)).unwrap_or_default(),
             )),
             Err(e) => Ok(ToolResult::error(format!("Failed to toggle task: {e}"))),
         }

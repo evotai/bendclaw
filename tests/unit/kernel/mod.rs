@@ -5,4 +5,5 @@ mod runtime;
 mod scheduler;
 mod session;
 mod skills;
+mod task;
 mod tools;

@@ -24,6 +24,16 @@ fn default_log_config() {
     let cfg = BendClawConfig::default();
     assert_eq!(cfg.log.level, "info");
     assert_eq!(cfg.log.format, "text");
+    let expected = std::env::var_os("HOME")
+        .map(|home| {
+            std::path::PathBuf::from(home)
+                .join(".evotai")
+                .join("logs")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .unwrap_or_default();
+    assert_eq!(cfg.log.dir, expected);
 }
 
 #[test]

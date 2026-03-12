@@ -106,12 +106,22 @@ fn run_dir() -> PathBuf {
     state_dir().join("run")
 }
 
+fn default_log_dir() -> PathBuf {
+    dirs_home().join(".evotai").join("logs")
+}
+
+fn log_dir() -> PathBuf {
+    std::env::var("BENDCLAW_LOG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| default_log_dir())
+}
+
 fn pid_file() -> PathBuf {
     run_dir().join("bendclaw.pid")
 }
 
 fn log_file() -> PathBuf {
-    run_dir().join("bendclaw.out")
+    log_dir().join("bendclaw.out")
 }
 
 fn dirs_home() -> PathBuf {
@@ -204,10 +214,10 @@ pub fn cmd_start() {
         remove_pid();
     }
 
-    let dir = run_dir();
-    fs::create_dir_all(&dir).ok();
-
     let log = log_file();
+    if let Some(dir) = log.parent() {
+        fs::create_dir_all(dir).ok();
+    }
     let lf = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -303,5 +313,15 @@ pub fn cmd_status() {
         None => {
             println!("🦞 BendClaw is not running");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_background_log_dir_uses_evotai_logs() {
+        assert_eq!(default_log_dir(), dirs_home().join(".evotai").join("logs"));
     }
 }

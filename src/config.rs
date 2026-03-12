@@ -201,7 +201,7 @@ impl Default for LogConfig {
 
 fn dirs_default_log_dir() -> String {
     if let Some(home) = std::env::var_os("HOME") {
-        let path = std::path::PathBuf::from(home).join(".evot").join("logs");
+        let path = std::path::PathBuf::from(home).join(".evotai").join("logs");
         return path.to_string_lossy().into_owned();
     }
     String::new()

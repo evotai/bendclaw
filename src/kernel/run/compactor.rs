@@ -132,9 +132,7 @@ impl Compactor {
         tracing::info!(total_tokens, max_context_tokens, "compaction triggered");
 
         // 4. Find split point: keep tail messages within budget
-        let Some(plan) = plan_compaction_split(messages, &msg_tokens, max_context_tokens) else {
-            return None;
-        };
+        let plan = plan_compaction_split(messages, &msg_tokens, max_context_tokens)?;
         let split = plan.split_index;
 
         // 5. Partition: system messages kept, non-system split into dropped/kept

@@ -5,11 +5,15 @@ use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::base::Result;
+use crate::client::BendclawClient;
+use crate::client::ClusterClient;
+use crate::config::ClusterConfig;
 use crate::config::WorkspaceConfig;
 use crate::kernel::channel::account::ChannelAccount;
 use crate::kernel::channel::dispatch::dispatch_inbound;
 use crate::kernel::channel::message::InboundEvent;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
+use crate::kernel::cluster::ClusterService;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::agent_config::CheckpointConfig;
 use crate::kernel::runtime::runtime::Runtime;
@@ -34,6 +38,8 @@ pub struct Builder {
     max_context_tokens: usize,
     max_duration_secs: u64,
     workspace: WorkspaceConfig,
+    cluster_config: Option<ClusterConfig>,
+    auth_key: String,
 }
 
 impl Builder {
@@ -59,6 +65,8 @@ impl Builder {
             max_context_tokens: 250_000,
             max_duration_secs: 300,
             workspace: WorkspaceConfig::default(),
+            cluster_config: None,
+            auth_key: String::new(),
         }
     }
 
@@ -104,6 +112,17 @@ impl Builder {
         self
     }
 
+    #[must_use]
+    pub fn with_cluster_config(
+        mut self,
+        cluster_config: Option<ClusterConfig>,
+        auth_key: &str,
+    ) -> Self {
+        self.cluster_config = cluster_config;
+        self.auth_key = auth_key.to_string();
+        self
+    }
+
     pub async fn build(self) -> Result<Arc<Runtime>> {
         let config = AgentConfig {
             instance_id: self.instance_id,
@@ -123,17 +142,22 @@ impl Builder {
             self.root_pool,
             self.hub_config,
             self.skills_sync_interval_secs,
+            self.cluster_config,
+            self.auth_key,
         )
         .await
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn construct(
     config: AgentConfig,
     llm: Arc<dyn LLMProvider>,
     root_pool: Option<Pool>,
     hub_config: Option<crate::config::HubConfig>,
     skills_sync_interval_secs: u64,
+    cluster_config: Option<ClusterConfig>,
+    auth_key: String,
 ) -> Result<Arc<Runtime>> {
     let t0 = std::time::Instant::now();
 
@@ -178,6 +202,31 @@ async fn construct(
     let sessions = Arc::new(SessionManager::new());
     let channels = Arc::new(build_channel_registry());
 
+    // Cluster initialization (opt-in)
+    let (cluster_service, heartbeat_handle) = if let Some(cc) = cluster_config {
+        let cluster_client = Arc::new(ClusterClient::new(
+            &cc.registry_url,
+            &cc.registry_token,
+            &config.instance_id,
+            &cc.advertise_url,
+        ));
+        let bendclaw_client = Arc::new(BendclawClient::new(
+            &auth_key,
+            std::time::Duration::from_secs(300),
+        ));
+        let svc = Arc::new(ClusterService::new(cluster_client, bendclaw_client));
+
+        if let Err(e) = svc.register_and_discover().await {
+            tracing::warn!(error = %e, "cluster init failed, continuing without cluster");
+            (None, None)
+        } else {
+            let hb_handle = svc.spawn_heartbeat(sync_cancel.clone());
+            (Some(svc), Some(hb_handle))
+        }
+    } else {
+        (None, None)
+    };
+
     // Use Arc::new_cyclic so the supervisor's event_handler can capture a Weak<Runtime>.
     let runtime = Arc::new_cyclic(|weak: &std::sync::Weak<Runtime>| {
         let weak = weak.clone();
@@ -203,6 +252,8 @@ async fn construct(
             sync_cancel: sync_cancel.clone(),
             sync_handle: RwLock::new(Some(sync_handle)),
             scheduler_handle: RwLock::new(None),
+            cluster: cluster_service,
+            heartbeat_handle: RwLock::new(heartbeat_handle),
         })
     });
 

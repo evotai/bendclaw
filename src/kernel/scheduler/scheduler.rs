@@ -167,6 +167,8 @@ mod tests {
             sync_cancel: tokio_util::sync::CancellationToken::new(),
             sync_handle: RwLock::new(None),
             scheduler_handle: RwLock::new(None),
+            cluster: None,
+            heartbeat_handle: RwLock::new(None),
         }))
     }
 

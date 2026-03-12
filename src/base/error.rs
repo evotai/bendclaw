@@ -144,6 +144,20 @@ build_agent_errors!(
         "SkillRequirements"
     ),
     (1600, sandbox, SANDBOX, "Sandbox"),
+    (
+        1700,
+        cluster_registration,
+        CLUSTER_REGISTRATION,
+        "ClusterRegistration"
+    ),
+    (
+        1701,
+        cluster_discovery,
+        CLUSTER_DISCOVERY,
+        "ClusterDiscovery"
+    ),
+    (1702, cluster_dispatch, CLUSTER_DISPATCH, "ClusterDispatch"),
+    (1703, cluster_collect, CLUSTER_COLLECT, "ClusterCollect"),
 );
 
 macro_rules! impl_from_for_error_code {

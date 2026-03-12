@@ -143,6 +143,8 @@ fn dispatcher(
             user_id: "u1".into(),
             session_id: "s1".into(),
             agent_id: "a1".into(),
+            run_id: "r1".into(),
+            trace_id: "t1".into(),
             workspace: bendclaw_test_harness::mocks::context::test_workspace(
                 std::env::temp_dir().join("bendclaw-test-dispatcher"),
             ),

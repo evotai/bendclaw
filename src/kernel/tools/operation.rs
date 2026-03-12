@@ -46,6 +46,9 @@ pub enum OpType {
     LearningWrite,
     KnowledgeSearch,
     LearningSearch,
+    ClusterNodes,
+    ClusterDispatch,
+    ClusterCollect,
 }
 
 impl fmt::Display for OpType {
@@ -73,6 +76,9 @@ impl fmt::Display for OpType {
             Self::LearningWrite => write!(f, "LEARNING_WRITE"),
             Self::KnowledgeSearch => write!(f, "KNOWLEDGE_SEARCH"),
             Self::LearningSearch => write!(f, "LEARNING_SEARCH"),
+            Self::ClusterNodes => write!(f, "CLUSTER_NODES"),
+            Self::ClusterDispatch => write!(f, "CLUSTER_DISPATCH"),
+            Self::ClusterCollect => write!(f, "CLUSTER_COLLECT"),
         }
     }
 }

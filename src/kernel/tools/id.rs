@@ -27,6 +27,9 @@ pub enum ToolId {
     LearningWrite,
     KnowledgeSearch,
     LearningSearch,
+    ClusterNodes,
+    ClusterDispatch,
+    ClusterCollect,
 }
 
 impl ToolId {
@@ -59,6 +62,9 @@ impl ToolId {
             Self::LearningWrite => "learning_write",
             Self::KnowledgeSearch => "knowledge_search",
             Self::LearningSearch => "learning_search",
+            Self::ClusterNodes => "cluster_nodes",
+            Self::ClusterDispatch => "cluster_dispatch",
+            Self::ClusterCollect => "cluster_collect",
         }
     }
 }
@@ -107,5 +113,9 @@ impl ToolId {
         ToolId::LearningWrite,
         ToolId::KnowledgeSearch,
         ToolId::LearningSearch,
+        // Cluster
+        ToolId::ClusterNodes,
+        ToolId::ClusterDispatch,
+        ToolId::ClusterCollect,
     ];
 }

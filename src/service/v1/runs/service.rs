@@ -142,6 +142,36 @@ pub async fn execute_run(
         .get_or_create_session(&agent_id, &session_id, &ctx.user_id)
         .await?;
 
+    // Validate parent_run_id belongs to the same agent and user
+    let parent_run_id = if let Some(ref prid) = parent_run_id {
+        let pool = state.runtime.databases().agent_pool(&agent_id)?;
+        let repo = RunRepo::new(pool);
+        match repo.load(prid).await? {
+            Some(parent) => {
+                if parent.user_id != ctx.user_id {
+                    return Err(ServiceError::Forbidden(
+                        "parent_run_id belongs to a different user".into(),
+                    ));
+                }
+                if parent.agent_id != agent_id {
+                    return Err(ServiceError::Forbidden(
+                        "parent_run_id belongs to a different agent".into(),
+                    ));
+                }
+                parent_run_id
+            }
+            None => {
+                tracing::warn!(
+                    parent_run_id = %prid,
+                    "parent_run_id not found, ignoring"
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let mut run_stream = session
         .run(&input, &ctx.trace_id, parent_run_id.as_deref())
         .await?;

@@ -25,6 +25,8 @@ fn ctx_with_pool(pool: bendclaw::storage::Pool) -> bendclaw::kernel::tools::Tool
         user_id: "u1".into(),
         session_id: "s1".into(),
         agent_id: "a1".into(),
+        run_id: "r-test".into(),
+        trace_id: "t-test".into(),
         workspace: test_workspace(
             std::env::temp_dir().join(format!("bendclaw-task-tool-{}", ulid::Ulid::new())),
         ),

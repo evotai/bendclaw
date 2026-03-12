@@ -1,5 +1,6 @@
 pub mod base;
 pub mod cli;
+pub mod client;
 pub mod config;
 pub mod kernel;
 pub mod llm;

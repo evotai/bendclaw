@@ -6,6 +6,8 @@ use super::ToolId;
 use super::ToolSpec;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::channel::registry::ChannelRegistry;
+use crate::kernel::cluster::ClusterService;
+use crate::kernel::cluster::DispatchTable;
 use crate::kernel::recall::RecallStore;
 use crate::kernel::skills::remote::repository::DatabendSkillRepositoryFactory;
 use crate::kernel::skills::store::SkillStore;
@@ -220,4 +222,32 @@ pub fn create_session_tools(
     );
 
     registry
+}
+
+/// Register cluster tools into an existing registry. Called conditionally
+/// when cluster config is present.
+pub fn register_cluster_tools(
+    registry: &mut ToolRegistry,
+    service: Arc<ClusterService>,
+    dispatch_table: Arc<DispatchTable>,
+) {
+    registry.register_builtin(
+        ToolId::ClusterNodes,
+        Arc::new(super::builtins::cluster::ClusterNodesTool::new(
+            service.clone(),
+        )),
+    );
+    registry.register_builtin(
+        ToolId::ClusterDispatch,
+        Arc::new(super::builtins::cluster::ClusterDispatchTool::new(
+            service,
+            dispatch_table.clone(),
+        )),
+    );
+    registry.register_builtin(
+        ToolId::ClusterCollect,
+        Arc::new(super::builtins::cluster::ClusterCollectTool::new(
+            dispatch_table,
+        )),
+    );
 }

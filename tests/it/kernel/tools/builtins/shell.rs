@@ -13,6 +13,8 @@ fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolC
         user_id: format!("u-{}", Ulid::new()).into(),
         session_id: format!("s-{}", Ulid::new()).into(),
         agent_id: "a1".into(),
+        run_id: "r-test".into(),
+        trace_id: "t-test".into(),
         workspace: test_workspace(workspace_dir),
         pool: dummy_pool(),
     }

@@ -1,5 +1,6 @@
 mod agent_store;
 mod channel;
+mod cluster;
 mod recall;
 mod run;
 mod runtime;

@@ -15,6 +15,7 @@ use crate::kernel::session::Session;
 use crate::kernel::session::SessionResources;
 use crate::kernel::skills::remote::repository::DatabendSkillRepositoryFactory;
 use crate::kernel::tools::registry::create_session_tools;
+use crate::kernel::tools::registry::register_cluster_tools;
 use crate::storage::dal::variable::VariableRepo;
 
 impl Runtime {
@@ -96,7 +97,7 @@ impl Runtime {
 
         let skill_store_factory =
             Arc::new(DatabendSkillRepositoryFactory::new(self.databases.clone()));
-        let tool_registry = Arc::new(create_session_tools(
+        let mut tool_registry = create_session_tools(
             storage.clone(),
             self.skills.clone(),
             skill_store_factory,
@@ -104,7 +105,15 @@ impl Runtime {
             self.channels.clone(),
             self.config.instance_id.clone(),
             recall_store.clone(),
-        ));
+        );
+
+        // Conditionally register cluster tools
+        if let Some(ref svc) = self.cluster {
+            let dt = svc.create_dispatch_table();
+            register_cluster_tools(&mut tool_registry, svc.clone(), dt);
+        }
+
+        let tool_registry = Arc::new(tool_registry);
 
         let mut tools = tool_registry.tool_schemas();
         let existing_names: std::collections::HashSet<String> =
@@ -140,6 +149,7 @@ impl Runtime {
                 config: Arc::new(self.config.clone()),
                 variables: variable_records,
                 recall: Some(recall_store),
+                cluster_client: self.cluster.clone(),
             },
         ));
 

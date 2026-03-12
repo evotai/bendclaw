@@ -63,6 +63,7 @@ pub struct SessionResources {
     pub config: Arc<AgentConfig>,
     pub variables: Vec<crate::storage::dal::variable::record::VariableRecord>,
     pub recall: Option<Arc<RecallStore>>,
+    pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
 }
 
 pub struct Session {
@@ -159,6 +160,9 @@ impl Session {
                 .with_variables(self.res.variables.clone());
             if let Some(ref recall) = self.res.recall {
                 pb = pb.with_recall(recall.clone());
+            }
+            if let Some(ref cc) = self.res.cluster_client {
+                pb = pb.with_cluster_client(cc.clone());
             }
             pb.build(&self.agent_id, &self.user_id, &self.id).await?
         };
@@ -326,6 +330,8 @@ impl Session {
                 user_id: self.user_id.clone(),
                 session_id: self.id.as_str().into(),
                 agent_id: self.agent_id.clone(),
+                run_id: run_id.into(),
+                trace_id: trace.trace_id.as_str().into(),
                 workspace: self.res.workspace.clone(),
                 pool: self.res.storage.pool().clone(),
             },

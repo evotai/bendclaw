@@ -110,11 +110,12 @@ async fn cmd_run(
     )
     .with_hub_config(config.hub.clone())
     .with_workspace(config.workspace.clone())
+    .with_cluster_config(config.cluster.clone(), &config.auth.api_key)
     .build()
     .await?;
 
     let state = AppState {
-        runtime,
+        runtime: runtime.clone(),
         auth_key: config.auth.api_key.clone(),
     };
 
@@ -139,6 +140,11 @@ async fn cmd_run(
             tracing::info!("shutdown signal received");
             shutdown_notify.notify_waiters();
         }
+    }
+
+    // Graceful shutdown: deregister from cluster, cancel heartbeat, close sessions
+    if let Err(e) = runtime.shutdown().await {
+        tracing::warn!(error = %e, "runtime shutdown error");
     }
 
     Ok(())

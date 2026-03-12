@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 
 use crate::kernel::channel::registry::ChannelRegistry;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
+use crate::kernel::cluster::ClusterService;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
@@ -30,6 +31,8 @@ pub struct Runtime {
     pub(crate) sync_cancel: tokio_util::sync::CancellationToken,
     pub(crate) sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub(crate) cluster: Option<Arc<ClusterService>>,
+    pub(crate) heartbeat_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 pub(crate) struct RuntimeParts {
@@ -44,6 +47,8 @@ pub(crate) struct RuntimeParts {
     pub sync_cancel: tokio_util::sync::CancellationToken,
     pub sync_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub cluster: Option<Arc<ClusterService>>,
+    pub heartbeat_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Runtime {
@@ -79,6 +84,8 @@ impl Runtime {
             sync_cancel: parts.sync_cancel,
             sync_handle: parts.sync_handle,
             scheduler_handle: parts.scheduler_handle,
+            cluster: parts.cluster,
+            heartbeat_handle: parts.heartbeat_handle,
         }
     }
 

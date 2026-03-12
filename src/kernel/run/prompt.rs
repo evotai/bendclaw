@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
+use crate::kernel::cluster::ClusterService;
 use crate::kernel::recall::RecallStore;
 use crate::kernel::skills::store::SkillStore;
 use crate::llm::tool::ToolSchema;
@@ -26,6 +27,7 @@ pub const MAX_RECALL_BYTES: usize = 32_768;
 pub const MAX_ERRORS_BYTES: usize = 8_192;
 pub const MAX_VARIABLES_BYTES: usize = 16_384;
 pub const MAX_RUNTIME_BYTES: usize = 4_096;
+pub const MAX_CLUSTER_BYTES: usize = 8_192;
 
 /// Truncate content to `max_bytes` on a char boundary.
 /// Logs full content at info level for debugging; warns on truncation.
@@ -80,6 +82,7 @@ pub struct PromptBuilder {
     tools: Option<Arc<Vec<ToolSchema>>>,
     variables: Option<Vec<VariableRecord>>,
     recall: Option<Arc<RecallStore>>,
+    cluster_client: Option<Arc<ClusterService>>,
 }
 
 impl PromptBuilder {
@@ -95,6 +98,7 @@ impl PromptBuilder {
             tools: None,
             variables: None,
             recall: None,
+            cluster_client: None,
         }
     }
 
@@ -152,6 +156,11 @@ impl PromptBuilder {
 
     pub fn with_recall(mut self, store: Arc<RecallStore>) -> Self {
         self.recall = Some(store);
+        self
+    }
+
+    pub fn with_cluster_client(mut self, client: Arc<ClusterService>) -> Self {
+        self.cluster_client = Some(client);
         self
     }
 
@@ -246,11 +255,15 @@ impl PromptBuilder {
         self.append_skills(&mut prompt, agent_id);
 
         // 5. Tools (compact list)
-        tracing::debug!("prompt step 5/9: loading tools layer");
+        tracing::debug!("prompt step 5/10: loading tools layer");
         self.append_tools(&mut prompt);
 
+        // 5b. Cluster info (between Tools and Recall)
+        tracing::debug!("prompt step 5b/10: loading cluster layer");
+        self.append_cluster_info(&mut prompt).await;
+
         // 6. Learnings / Recall Hints
-        tracing::debug!("prompt step 6/9: loading learnings layer");
+        tracing::debug!("prompt step 6/10: loading learnings layer");
         self.append_recall_hints(&mut prompt, agent_id).await;
 
         // 7. Variables
@@ -347,6 +360,42 @@ impl PromptBuilder {
         );
 
         let buf = truncate_layer("tools", &buf, MAX_TOOLS_BYTES, "registry");
+        prompt.push_str(&buf);
+    }
+
+    async fn append_cluster_info(&self, prompt: &mut String) {
+        let cluster_service = match &self.cluster_client {
+            Some(c) => c,
+            None => return,
+        };
+
+        // Read cached peer snapshot — never blocks on network
+        let nodes = cluster_service.cached_peers();
+
+        let mut buf = String::from("## Cluster\n\n");
+        buf.push_str("You are part of a distributed cluster. You can dispatch subtasks to peer nodes for parallel execution.\n\n");
+
+        if nodes.is_empty() {
+            buf.push_str("No peer nodes currently available.\n\n");
+        } else {
+            buf.push_str("| Node ID | Endpoint | Load | Status |\n");
+            buf.push_str("|---------|----------|------|--------|\n");
+            for n in &nodes {
+                let _ = writeln!(
+                    buf,
+                    "| {} | {} | {}/{} | {} |",
+                    n.instance_id, n.endpoint, n.current_load, n.max_load, n.status
+                );
+            }
+            buf.push('\n');
+        }
+
+        buf.push_str("Tools:\n");
+        buf.push_str("- `cluster_nodes`: Refresh the list of available peer nodes\n");
+        buf.push_str("- `cluster_dispatch(node_id, agent_id, task)`: Send a subtask to a peer node by its node_id\n");
+        buf.push_str("- `cluster_collect(dispatch_ids, timeout_secs)`: Wait for and collect results from dispatched subtasks\n\n");
+
+        let buf = truncate_layer("cluster", &buf, MAX_CLUSTER_BYTES, "cache");
         prompt.push_str(&buf);
     }
 

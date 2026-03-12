@@ -48,6 +48,8 @@ pub fn test_tool_context() -> ToolContext {
         user_id: format!("u-{}", Ulid::new()).into(),
         session_id: format!("s-{}", Ulid::new()).into(),
         agent_id: "a1".into(),
+        run_id: "r-test".into(),
+        trace_id: "t-test".into(),
         workspace: test_workspace(dir),
         pool: dummy_pool(),
     }
@@ -99,6 +101,7 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             config,
             variables: vec![],
             recall: Some(recall_store),
+            cluster_client: None,
         },
     ))
 }

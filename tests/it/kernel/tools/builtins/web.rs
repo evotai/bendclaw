@@ -162,6 +162,8 @@ async fn web_search_success_formats_results_and_caps_count(
         user_id: "u1".into(),
         session_id: "s1".into(),
         agent_id: "a1".into(),
+        run_id: "r-test".into(),
+        trace_id: "t-test".into(),
         workspace: std::sync::Arc::new(workspace),
         pool: crate::mocks::context::dummy_pool(),
     };

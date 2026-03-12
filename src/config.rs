@@ -92,6 +92,24 @@ pub struct BendClawConfig {
     pub hub: Option<HubConfig>,
     pub workspace: WorkspaceConfig,
     pub auth: AuthConfig,
+    /// Optional cluster configuration for distributed agent execution.
+    /// When present, enables cluster registration and dispatch tools.
+    pub cluster: Option<ClusterConfig>,
+}
+
+/// Cluster configuration for distributed agent execution.
+/// Enables registration with the evot-ai platform and dispatch of subtasks to peer nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterConfig {
+    /// Base URL of the cluster registry service (evot-ai platform).
+    pub registry_url: String,
+    /// API token for the cluster registry service.
+    pub registry_token: String,
+    /// Public base URL that other nodes use to reach this instance.
+    /// Required — must be routable from peer nodes (not 127.0.0.1).
+    /// Example: "https://node1.example.com:8787"
+    #[serde(default)]
+    pub advertise_url: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -261,6 +279,27 @@ impl BendClawConfig {
         if let Some(hub) = self.hub.as_mut() {
             override_str(&mut hub.repo_url, "BENDCLAW_HUB_REPO_URL");
         }
+
+        // Cluster config env overrides — create from env if both vars are set
+        if let Some(cluster) = self.cluster.as_mut() {
+            override_str(&mut cluster.registry_url, "BENDCLAW_CLUSTER_REGISTRY_URL");
+            override_str(
+                &mut cluster.registry_token,
+                "BENDCLAW_CLUSTER_REGISTRY_TOKEN",
+            );
+            override_str(&mut cluster.advertise_url, "BENDCLAW_CLUSTER_ADVERTISE_URL");
+        } else {
+            let url = std::env::var("BENDCLAW_CLUSTER_REGISTRY_URL").unwrap_or_default();
+            let token = std::env::var("BENDCLAW_CLUSTER_REGISTRY_TOKEN").unwrap_or_default();
+            if !url.is_empty() && !token.is_empty() {
+                self.cluster = Some(ClusterConfig {
+                    registry_url: url,
+                    registry_token: token,
+                    advertise_url: std::env::var("BENDCLAW_CLUSTER_ADVERTISE_URL")
+                        .unwrap_or_default(),
+                });
+            }
+        }
     }
 
     /// Apply CLI argument overrides — highest priority, beats file and env.
@@ -323,6 +362,16 @@ impl BendClawConfig {
                  instance_id  →  set BENDCLAW_INSTANCE_ID \
                  or instance_id in config file"
             );
+        }
+        if let Some(ref cluster) = self.cluster {
+            if cluster.advertise_url.is_empty() {
+                anyhow::bail!(
+                    "missing required configuration:\n  \
+                     cluster.advertise_url  →  set BENDCLAW_CLUSTER_ADVERTISE_URL \
+                     or [cluster] advertise_url in config file.\n  \
+                     This must be a URL reachable by peer nodes (not 127.0.0.1)."
+                );
+            }
         }
         Ok(())
     }

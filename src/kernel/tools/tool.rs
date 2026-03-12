@@ -16,6 +16,8 @@ pub struct ToolContext {
     pub user_id: Arc<str>,
     pub session_id: Arc<str>,
     pub agent_id: Arc<str>,
+    pub run_id: Arc<str>,
+    pub trace_id: Arc<str>,
     pub workspace: Arc<Workspace>,
     pub pool: Pool,
 }

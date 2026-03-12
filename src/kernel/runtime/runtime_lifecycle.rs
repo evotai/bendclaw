@@ -36,6 +36,15 @@ impl Runtime {
             let _ = handle.await;
         }
 
+        // Cluster cleanup: cancel heartbeat and deregister
+        let hb_handle = self.heartbeat_handle.write().take();
+        if let Some(handle) = hb_handle {
+            let _ = handle.await;
+        }
+        if let Some(ref svc) = self.cluster {
+            svc.deregister().await;
+        }
+
         *self.status.write() = RuntimeStatus::Stopped;
         tracing::info!(
             elapsed_ms = t0.elapsed().as_millis() as u64,

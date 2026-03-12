@@ -103,11 +103,26 @@ pub async fn create_run(
     State(state): State<AppState>,
     ctx: RequestContext,
     Path(agent_id): Path<String>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<CreateRunRequest>,
 ) -> Result<Response> {
     let session_id = req.session_id.unwrap_or_else(crate::kernel::new_id);
+    // parent_run_id is only accepted via internal header (set by BendclawClient),
+    // not exposed in the public request body, to prevent lineage spoofing.
+    let parent_run_id = headers
+        .get("x-parent-run-id")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     service::execute_run(
-        state, ctx, agent_id, session_id, req.input, req.stream, None, None,
+        state,
+        ctx,
+        agent_id,
+        session_id,
+        req.input,
+        req.stream,
+        parent_run_id,
+        None,
     )
     .await
 }

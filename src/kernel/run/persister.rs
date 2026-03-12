@@ -32,6 +32,7 @@ pub struct TurnPersister {
 }
 
 impl TurnPersister {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage: Arc<AgentStore>,
         trace: TraceRecorder,

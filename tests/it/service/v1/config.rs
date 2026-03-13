@@ -6,8 +6,8 @@ use axum::http::Request;
 use axum::http::StatusCode;
 use tower::ServiceExt;
 
-use crate::common::fake_databend::FakeDatabend;
 use crate::common::fake_databend::paged_rows;
+use crate::common::fake_databend::FakeDatabend;
 use crate::common::setup::app_with_root_pool_and_llm;
 use crate::common::setup::json_body;
 use crate::mocks::llm::MockLLMProvider;

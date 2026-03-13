@@ -162,7 +162,6 @@ fn build_cors(auth: &AuthConfig) -> CorsLayer {
 
 pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Router {
     let authenticated_routes = Router::new()
-        .route("/health", get(health_check))
         .route("/v1/agents/{agent_id}/setup", post(routes::setup_agent))
         .route("/v1/stats/sessions", get(routes::session_stats))
         .route("/v1/stats/can_suspend", get(routes::can_suspend))
@@ -363,10 +362,156 @@ pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Route
         post(v1::channels::webhook),
     );
 
-    authenticated_routes
+    let public_routes = Router::new().route("/health", get(health_check));
+
+    public_routes
         .merge(webhook_routes)
+        .merge(authenticated_routes)
         .layer(build_cors(auth))
         .layer(middleware::from_fn(log_http_request))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use axum::body::Body;
+    use axum::http::Request;
+    use parking_lot::RwLock;
+    use tower::ServiceExt;
+
+    use super::*;
+    use crate::base::ErrorCode;
+    use crate::kernel::channel::registry::ChannelRegistry;
+    use crate::kernel::channel::supervisor::ChannelSupervisor;
+    use crate::kernel::runtime::agent_config::AgentConfig;
+    use crate::kernel::runtime::runtime::RuntimeParts;
+    use crate::kernel::runtime::Runtime;
+    use crate::kernel::runtime::RuntimeStatus;
+    use crate::kernel::session::SessionManager;
+    use crate::kernel::skills::store::SkillStore;
+    use crate::llm::message::ChatMessage;
+    use crate::llm::provider::LLMProvider;
+    use crate::llm::provider::LLMResponse;
+    use crate::llm::stream::ResponseStream;
+    use crate::llm::tool::ToolSchema;
+    use crate::storage::test_support::RecordingClient;
+    use crate::storage::AgentDatabases;
+
+    struct NoopLLM;
+
+    #[async_trait]
+    impl LLMProvider for NoopLLM {
+        async fn chat(
+            &self,
+            _model: &str,
+            _messages: &[ChatMessage],
+            _tools: &[ToolSchema],
+            _temperature: f32,
+        ) -> crate::base::Result<LLMResponse> {
+            Err(ErrorCode::internal("noop llm"))
+        }
+
+        fn chat_stream(
+            &self,
+            _model: &str,
+            _messages: &[ChatMessage],
+            _tools: &[ToolSchema],
+            _temperature: f32,
+        ) -> ResponseStream {
+            let (_writer, stream) = ResponseStream::channel(1);
+            stream
+        }
+    }
+
+    fn test_state(auth_key: &str) -> AppState {
+        let client = RecordingClient::new(|_sql, _database| {
+            Ok(crate::storage::pool::QueryResponse {
+                id: String::new(),
+                state: "Succeeded".to_string(),
+                error: None,
+                data: Vec::new(),
+                next_uri: None,
+                final_uri: None,
+                schema: Vec::new(),
+            })
+        });
+        let pool = client.pool();
+        let databases = Arc::new(AgentDatabases::new(pool, "test_").expect("agent databases"));
+        let workspace_root =
+            std::env::temp_dir().join(format!("bendclaw-router-{}", ulid::Ulid::new()));
+        let _ = std::fs::create_dir_all(&workspace_root);
+        let skills = Arc::new(SkillStore::new(databases.clone(), workspace_root, None));
+        let channels = Arc::new(ChannelRegistry::new());
+        let supervisor = Arc::new(ChannelSupervisor::new(
+            channels.clone(),
+            Arc::new(|_, _| {}),
+        ));
+
+        let runtime = Arc::new(Runtime::from_parts(RuntimeParts {
+            config: AgentConfig::default(),
+            databases,
+            llm: RwLock::new(Arc::new(NoopLLM)),
+            skills,
+            sessions: Arc::new(SessionManager::new()),
+            channels,
+            supervisor,
+            status: RwLock::new(RuntimeStatus::Ready),
+            sync_cancel: tokio_util::sync::CancellationToken::new(),
+            sync_handle: RwLock::new(None),
+            scheduler_handle: RwLock::new(None),
+            cluster: None,
+            heartbeat_handle: RwLock::new(None),
+        }));
+
+        AppState {
+            runtime,
+            auth_key: auth_key.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn health_route_bypasses_auth() {
+        let auth = AuthConfig {
+            api_key: "secret".to_string(),
+            cors_origins: Vec::new(),
+        };
+        let router = api_router(test_state("secret"), "info", &auth);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("health response");
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn stats_route_still_requires_auth() {
+        let auth = AuthConfig {
+            api_key: "secret".to_string(),
+            cors_origins: Vec::new(),
+        };
+        let router = api_router(test_state("secret"), "info", &auth);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/stats/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("stats response");
+
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
 }

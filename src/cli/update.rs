@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Cursor;
+use std::io::IsTerminal;
 use std::path::Path;
 
 use anyhow::Context as _;
@@ -10,6 +11,7 @@ use serde::Deserialize;
 const GITHUB_API: &str = "https://api.github.com";
 const GITHUB_REPO: &str = "EvotAI/bendclaw";
 const BINARY_NAME: &str = "bendclaw";
+const DRACULA_GREEN: (u8, u8, u8) = (80, 250, 123);
 
 #[derive(Debug, Deserialize)]
 struct GitHubRelease {
@@ -24,6 +26,7 @@ struct GitHubReleaseAsset {
 }
 
 pub async fn cmd_update() -> Result<()> {
+    let style = UpdateCliStyle::detect();
     let current_exe = std::env::current_exe().context("failed to resolve current executable")?;
     let current_tag = current_release_tag();
     let target = supported_target()?;
@@ -36,7 +39,10 @@ pub async fn cmd_update() -> Result<()> {
     let current_display = current_tag.trim_start_matches('v');
 
     if tags_match(&current_tag, &latest_tag) {
-        println!("Already up to date: {latest_display}");
+        println!(
+            "{}",
+            style.success(format!("Already up to date: {latest_display}"))
+        );
         return Ok(());
     }
 
@@ -59,11 +65,38 @@ pub async fn cmd_update() -> Result<()> {
     install_binary(&current_exe, &binary)?;
 
     println!(
-        "Successfully updated from {} to version {}",
-        current_display, latest_display
+        "{}",
+        style.success(format!(
+            "Successfully updated from {} to version {}",
+            current_display, latest_display
+        ))
     );
     println!("Installed binary: {}", current_exe.display());
     Ok(())
+}
+
+struct UpdateCliStyle {
+    ansi_enabled: bool,
+}
+
+impl UpdateCliStyle {
+    fn detect() -> Self {
+        Self {
+            ansi_enabled: stdout_supports_color(),
+        }
+    }
+
+    fn success(&self, message: impl AsRef<str>) -> String {
+        self.paint(message.as_ref(), DRACULA_GREEN)
+    }
+
+    fn paint(&self, message: &str, (r, g, b): (u8, u8, u8)) -> String {
+        if !self.ansi_enabled {
+            return message.to_string();
+        }
+
+        format!("\x1b[38;2;{r};{g};{b}m{message}\x1b[0m")
+    }
 }
 
 async fn fetch_latest_release() -> Result<GitHubRelease> {
@@ -218,6 +251,28 @@ fn user_agent() -> String {
 
 fn tags_match(current: &str, latest: &str) -> bool {
     current == latest || current.trim_start_matches('v') == latest.trim_start_matches('v')
+}
+
+fn stdout_supports_color() -> bool {
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+
+    if std::env::var("CLICOLOR_FORCE")
+        .map(|value| value != "0")
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    if std::env::var("CLICOLOR")
+        .map(|value| value == "0")
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    std::io::stdout().is_terminal()
 }
 
 #[cfg(test)]

@@ -121,6 +121,60 @@ jobs:
         shell: bash
         run: git push origin "refs/tags/${{ steps.next.outputs.tag }}"
 
+      - name: Generate release notes
+        id: notes
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.next.outputs.tag }}"
+          PREV="${{ steps.next.outputs.previous }}"
+          SHA="${{ steps.meta.outputs.sha }}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          AUTO_NOTES_FILE="${RUNNER_TEMP}/auto-release-notes.md"
+          CHANGELOG_FILE="${RUNNER_TEMP}/git-changelog.md"
+
+          API_ARGS=(
+            "repos/${GITHUB_REPOSITORY}/releases/generate-notes"
+            -f "tag_name=${TAG}"
+            -f "target_commitish=${SHA}"
+          )
+          if [ -n "${PREV}" ]; then
+            API_ARGS+=(-f "previous_tag_name=${PREV}")
+          fi
+
+          gh api --method POST "${API_ARGS[@]}" --jq '.body // ""' > "${AUTO_NOTES_FILE}"
+
+          if [ -n "${PREV}" ]; then
+            RANGE="${PREV}..${SHA}"
+          else
+            RANGE="${SHA}"
+          fi
+
+          git log --first-parent --reverse --pretty=format:'- %s (%h)' "${RANGE}" > "${CHANGELOG_FILE}"
+
+          cat "${AUTO_NOTES_FILE}" > "${NOTES_FILE}"
+          if [ -s "${NOTES_FILE}" ]; then
+            printf '\n\n' >> "${NOTES_FILE}"
+          fi
+
+          echo "### Changelog" >> "${NOTES_FILE}"
+          if [ -s "${CHANGELOG_FILE}" ]; then
+            cat "${CHANGELOG_FILE}" >> "${NOTES_FILE}"
+            printf '\n' >> "${NOTES_FILE}"
+          else
+            echo "- Initial release" >> "${NOTES_FILE}"
+          fi
+
+          echo "file=${NOTES_FILE}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "Release notes preview"
+            echo ""
+            sed -n '1,120p' "${NOTES_FILE}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create prerelease (draft)
         if: github.ref_name == 'main'
         shell: bash
@@ -137,11 +191,6 @@ jobs:
             echo "SHA: ${SHA}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          NOTES_ARGS=()
-          if [ -n "${PREV}" ]; then
-            NOTES_ARGS+=(--notes-start-tag "${PREV}")
-          fi
-
           PRERELEASE_ARG=""
           if [ "${{ inputs.prerelease }}" = "true" ]; then
             PRERELEASE_ARG="--prerelease"
@@ -151,8 +200,7 @@ jobs:
             --verify-tag \
             --target "${SHA}" \
             --title "${NAME}" \
-            --generate-notes \
-            "${NOTES_ARGS[@]}" \
+            --notes-file "${{ steps.notes.outputs.file }}" \
             ${PRERELEASE_ARG} \
             --draft
         env:

@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Stop => cmd_stop(),
         Command::Restart => cmd_restart(),
         Command::Status => cmd_status(),
+        Command::Update => bendclaw::cli::cmd_update().await?,
         Command::Run => cmd_run(cli.config, cli.overrides).await?,
     }
 

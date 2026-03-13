@@ -39,6 +39,8 @@ ulid = "1"
 tiktoken-rs = "0.6"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 cron = { version = "0.15", features = ["serde"] }
+flate2 = "1"
+tar = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

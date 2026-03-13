@@ -150,6 +150,7 @@ impl Runtime {
                 variables: variable_records,
                 recall: Some(recall_store),
                 cluster_client: self.cluster.clone(),
+                directive: self.directive.clone(),
             },
         ));
 

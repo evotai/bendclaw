@@ -41,6 +41,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         variables: vec![],
         recall: None,
         cluster_client: None,
+        directive: None,
     });
 
     assert!(session.belongs_to("a1", "u1"));

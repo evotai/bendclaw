@@ -15,6 +15,8 @@
 //! | `BENDCLAW_AUTH_KEY`          | `auth.api_key`         | *(empty)*      |
 //! | `BENDCLAW_AUTH_CORS_ORIGINS` | `auth.cors_origins`    | *(default whitelist)* |
 //! | `BENDCLAW_INSTANCE_ID`       | `instance_id`          | **required**   |
+//! | `BENDCLAW_DIRECTIVE_API_BASE` | `directive.api_base`  | *(optional)*   |
+//! | `BENDCLAW_DIRECTIVE_TOKEN`   | `directive.token`      | *(optional)*   |
 
 use std::fs;
 
@@ -95,6 +97,20 @@ pub struct BendClawConfig {
     /// Optional cluster configuration for distributed agent execution.
     /// When present, enables cluster registration and dispatch tools.
     pub cluster: Option<ClusterConfig>,
+    /// Optional directive configuration for platform-driven agent behavior.
+    /// When present, queries the evot-ai platform for directives injected into the system prompt.
+    pub directive: Option<DirectiveConfig>,
+}
+
+/// Directive configuration for platform-driven agent behavior.
+/// When configured, bendclaw queries the evot-ai platform for directives (e.g. resource warnings)
+/// and injects them into the agent's system prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectiveConfig {
+    /// evot-ai platform API base URL.
+    pub api_base: String,
+    /// evot-ai platform API token.
+    pub token: String,
 }
 
 /// Cluster configuration for distributed agent execution.
@@ -280,6 +296,18 @@ impl BendClawConfig {
             override_str(&mut hub.repo_url, "BENDCLAW_HUB_REPO_URL");
         }
 
+        // Directive config env overrides
+        if let Some(directive) = self.directive.as_mut() {
+            override_str(&mut directive.api_base, "BENDCLAW_DIRECTIVE_API_BASE");
+            override_str(&mut directive.token, "BENDCLAW_DIRECTIVE_TOKEN");
+        } else {
+            let api_base = std::env::var("BENDCLAW_DIRECTIVE_API_BASE").unwrap_or_default();
+            let token = std::env::var("BENDCLAW_DIRECTIVE_TOKEN").unwrap_or_default();
+            if !api_base.is_empty() && !token.is_empty() {
+                self.directive = Some(DirectiveConfig { api_base, token });
+            }
+        }
+
         // Cluster config env overrides — create from env if both vars are set
         if let Some(cluster) = self.cluster.as_mut() {
             override_str(&mut cluster.registry_url, "BENDCLAW_CLUSTER_REGISTRY_URL");
@@ -362,6 +390,14 @@ impl BendClawConfig {
                  instance_id  →  set BENDCLAW_INSTANCE_ID \
                  or instance_id in config file"
             );
+        }
+        if let Some(ref directive) = self.directive {
+            if directive.api_base.is_empty() || directive.token.is_empty() {
+                anyhow::bail!(
+                    "invalid directive configuration:\n  \
+                     directive.api_base and directive.token must both be set when [directive] is present"
+                );
+            }
         }
         if let Some(ref cluster) = self.cluster {
             if cluster.advertise_url.is_empty() {

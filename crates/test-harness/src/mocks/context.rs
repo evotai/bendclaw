@@ -102,6 +102,7 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             variables: vec![],
             recall: Some(recall_store),
             cluster_client: None,
+            directive: None,
         },
     ))
 }

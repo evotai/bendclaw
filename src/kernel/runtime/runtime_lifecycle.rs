@@ -45,6 +45,11 @@ impl Runtime {
             svc.deregister().await;
         }
 
+        let directive_handle = self.directive_handle.write().take();
+        if let Some(handle) = directive_handle {
+            let _ = handle.await;
+        }
+
         *self.status.write() = RuntimeStatus::Stopped;
         tracing::info!(
             elapsed_ms = t0.elapsed().as_millis() as u64,

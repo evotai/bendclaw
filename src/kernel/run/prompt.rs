@@ -28,6 +28,7 @@ pub const MAX_ERRORS_BYTES: usize = 8_192;
 pub const MAX_VARIABLES_BYTES: usize = 16_384;
 pub const MAX_RUNTIME_BYTES: usize = 4_096;
 pub const MAX_CLUSTER_BYTES: usize = 8_192;
+pub const MAX_DIRECTIVE_BYTES: usize = 4_096;
 
 /// Truncate content to `max_bytes` on a char boundary.
 /// Logs full content at info level for debugging; warns on truncation.
@@ -83,6 +84,7 @@ pub struct PromptBuilder {
     variables: Option<Vec<VariableRecord>>,
     recall: Option<Arc<RecallStore>>,
     cluster_client: Option<Arc<ClusterService>>,
+    directive_prompt: Option<String>,
 }
 
 impl PromptBuilder {
@@ -99,6 +101,7 @@ impl PromptBuilder {
             variables: None,
             recall: None,
             cluster_client: None,
+            directive_prompt: None,
         }
     }
 
@@ -161,6 +164,11 @@ impl PromptBuilder {
 
     pub fn with_cluster_client(mut self, client: Arc<ClusterService>) -> Self {
         self.cluster_client = Some(client);
+        self
+    }
+
+    pub fn with_directive_prompt(mut self, prompt: Option<String>) -> Self {
+        self.directive_prompt = prompt;
         self
     }
 
@@ -261,6 +269,10 @@ impl PromptBuilder {
         // 5b. Cluster info (between Tools and Recall)
         tracing::debug!("prompt step 5b/10: loading cluster layer");
         self.append_cluster_info(&mut prompt).await;
+
+        // 5c. Directive (platform-driven behavior)
+        tracing::debug!("prompt step 5c/10: loading directive layer");
+        self.append_directive(&mut prompt);
 
         // 6. Learnings / Recall Hints
         tracing::debug!("prompt step 6/10: loading learnings layer");
@@ -396,6 +408,18 @@ impl PromptBuilder {
         buf.push_str("- `cluster_collect(dispatch_ids, timeout_secs)`: Wait for and collect results from dispatched subtasks\n\n");
 
         let buf = truncate_layer("cluster", &buf, MAX_CLUSTER_BYTES, "cache");
+        prompt.push_str(&buf);
+    }
+
+    fn append_directive(&self, prompt: &mut String) {
+        let text = match &self.directive_prompt {
+            Some(s) if !s.is_empty() => s,
+            _ => return,
+        };
+        let mut buf = String::from("## Directive\n\n");
+        buf.push_str(text);
+        buf.push_str("\n\n");
+        let buf = truncate_layer("directive", &buf, MAX_DIRECTIVE_BYTES, "platform");
         prompt.push_str(&buf);
     }
 

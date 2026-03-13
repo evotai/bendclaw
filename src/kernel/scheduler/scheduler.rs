@@ -169,6 +169,8 @@ mod tests {
             scheduler_handle: RwLock::new(None),
             cluster: None,
             heartbeat_handle: RwLock::new(None),
+            directive: None,
+            directive_handle: RwLock::new(None),
         }))
     }
 

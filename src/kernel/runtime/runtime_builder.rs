@@ -7,7 +7,9 @@ use tokio_util::sync::CancellationToken;
 use crate::base::Result;
 use crate::client::BendclawClient;
 use crate::client::ClusterClient;
+use crate::client::DirectiveClient;
 use crate::config::ClusterConfig;
+use crate::config::DirectiveConfig;
 use crate::config::WorkspaceConfig;
 use crate::kernel::channel::account::ChannelAccount;
 use crate::kernel::channel::dispatch::dispatch_inbound;
@@ -15,6 +17,7 @@ use crate::kernel::channel::message::InboundEvent;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterOptions;
 use crate::kernel::cluster::ClusterService;
+use crate::kernel::directive::DirectiveService;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::agent_config::CheckpointConfig;
 use crate::kernel::runtime::runtime::Runtime;
@@ -42,6 +45,7 @@ pub struct Builder {
     cluster_config: Option<ClusterConfig>,
     cluster_options: ClusterOptions,
     auth_key: String,
+    directive_config: Option<DirectiveConfig>,
 }
 
 impl Builder {
@@ -70,6 +74,7 @@ impl Builder {
             cluster_config: None,
             cluster_options: ClusterOptions::default(),
             auth_key: String::new(),
+            directive_config: None,
         }
     }
 
@@ -132,6 +137,12 @@ impl Builder {
         self
     }
 
+    #[must_use]
+    pub fn with_directive_config(mut self, directive_config: Option<DirectiveConfig>) -> Self {
+        self.directive_config = directive_config;
+        self
+    }
+
     pub async fn build(self) -> Result<Arc<Runtime>> {
         let config = AgentConfig {
             instance_id: self.instance_id,
@@ -154,6 +165,7 @@ impl Builder {
             self.cluster_config,
             self.cluster_options,
             self.auth_key,
+            self.directive_config,
         )
         .await
     }
@@ -169,6 +181,7 @@ async fn construct(
     cluster_config: Option<ClusterConfig>,
     cluster_options: ClusterOptions,
     auth_key: String,
+    directive_config: Option<DirectiveConfig>,
 ) -> Result<Arc<Runtime>> {
     let t0 = std::time::Instant::now();
 
@@ -212,6 +225,22 @@ async fn construct(
 
     let sessions = Arc::new(SessionManager::new());
     let channels = Arc::new(build_channel_registry());
+
+    // Directive cache (opt-in)
+    let (directive, directive_handle) = if let Some(dc) = directive_config {
+        let client = Arc::new(DirectiveClient::new(&dc.api_base, &dc.token)?);
+        let service = Arc::new(DirectiveService::new(
+            client,
+            DirectiveService::DEFAULT_REFRESH_INTERVAL,
+        ));
+        if let Err(e) = service.refresh().await {
+            tracing::warn!(error = %e, "directive init failed, starting with empty cache");
+        }
+        let handle = service.spawn_refresh_loop(sync_cancel.clone());
+        (Some(service), Some(handle))
+    } else {
+        (None, None)
+    };
 
     // Cluster initialization (opt-in)
     let (cluster_service, heartbeat_handle) = if let Some(cc) = cluster_config {
@@ -269,6 +298,8 @@ async fn construct(
             scheduler_handle: RwLock::new(None),
             cluster: cluster_service,
             heartbeat_handle: RwLock::new(heartbeat_handle),
+            directive,
+            directive_handle: RwLock::new(directive_handle),
         })
     });
 

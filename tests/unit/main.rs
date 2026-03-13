@@ -5,6 +5,7 @@ mod architecture;
 mod base;
 mod config;
 mod config_cluster;
+mod config_directive;
 mod kernel;
 mod llm;
 mod service;

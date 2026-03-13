@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 use crate::kernel::channel::registry::ChannelRegistry;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
+use crate::kernel::directive::DirectiveService;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
@@ -33,6 +34,8 @@ pub struct Runtime {
     pub(crate) scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) cluster: Option<Arc<ClusterService>>,
     pub(crate) heartbeat_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub(crate) directive: Option<Arc<DirectiveService>>,
+    pub(crate) directive_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 pub(crate) struct RuntimeParts {
@@ -49,6 +52,8 @@ pub(crate) struct RuntimeParts {
     pub scheduler_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub cluster: Option<Arc<ClusterService>>,
     pub heartbeat_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    pub directive: Option<Arc<DirectiveService>>,
+    pub directive_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Runtime {
@@ -86,6 +91,8 @@ impl Runtime {
             scheduler_handle: parts.scheduler_handle,
             cluster: parts.cluster,
             heartbeat_handle: parts.heartbeat_handle,
+            directive: parts.directive,
+            directive_handle: parts.directive_handle,
         }
     }
 

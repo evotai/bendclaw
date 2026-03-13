@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::base::ErrorCode;
 use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
+use crate::kernel::directive::DirectiveService;
 use crate::kernel::recall::RecallStore;
 use crate::kernel::run::compactor::Compactor;
 use crate::kernel::run::context::Context;
@@ -64,6 +65,7 @@ pub struct SessionResources {
     pub variables: Vec<crate::storage::dal::variable::record::VariableRecord>,
     pub recall: Option<Arc<RecallStore>>,
     pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
+    pub directive: Option<Arc<DirectiveService>>,
 }
 
 pub struct Session {
@@ -113,6 +115,12 @@ impl Session {
         let start = Instant::now();
 
         self.enforce_token_limits().await?;
+
+        let directive_prompt = self
+            .res
+            .directive
+            .as_ref()
+            .and_then(|directive| directive.cached_prompt());
 
         self.ensure_history_loaded().await?;
         let mut history = self.history.lock().clone();
@@ -164,6 +172,7 @@ impl Session {
             if let Some(ref cc) = self.res.cluster_client {
                 pb = pb.with_cluster_client(cc.clone());
             }
+            pb = pb.with_directive_prompt(directive_prompt);
             pb.build(&self.agent_id, &self.user_id, &self.id).await?
         };
 

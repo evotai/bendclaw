@@ -112,6 +112,7 @@ async fn cmd_run(
     .with_hub_config(config.hub.clone())
     .with_workspace(config.workspace.clone())
     .with_cluster_config(config.cluster.clone(), &config.auth.api_key)
+    .with_directive_config(config.directive.clone())
     .build()
     .await?;
 

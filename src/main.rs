@@ -72,15 +72,24 @@ async fn cmd_run(
         .parse(format!("{},tower_http=warn", &config.log.level))
         .unwrap_or_else(|_| EnvFilter::new("info,tower_http=warn"));
 
+    let is_json = config.log.format == "json";
+
     let file_layer = if !config.log.dir.is_empty() {
         let writer = tracing_fmt::LocalDailyWriter::new(&config.log.dir, "bendclaw.log")
             .expect("failed to create log file writer");
-        Some(
-            tracing_subscriber::fmt::layer()
-                .with_ansi(false)
-                .with_target(true)
-                .with_writer(writer),
-        )
+        let file_filter = EnvFilter::builder()
+            .parse(format!("{},tower_http=warn", &config.log.level))
+            .unwrap_or_else(|_| EnvFilter::new("info,tower_http=warn"));
+        let base = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_target(true)
+            .with_writer(writer);
+        let layer = if is_json {
+            base.json().boxed()
+        } else {
+            base.boxed()
+        };
+        Some(layer.with_filter(file_filter))
     } else {
         None
     };
@@ -91,12 +100,7 @@ async fn cmd_run(
 
     tracing_subscriber::registry()
         .with(terminal_layer.with_filter(filter))
-        .with(file_layer.map(|l| {
-            let file_filter = EnvFilter::builder()
-                .parse(format!("{},tower_http=warn", &config.log.level))
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=warn"));
-            l.with_filter(file_filter)
-        }))
+        .with(file_layer)
         .with(ErrorLayer::default())
         .init();
 

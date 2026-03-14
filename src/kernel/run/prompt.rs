@@ -168,7 +168,6 @@ impl PromptBuilder {
     /// Build the full system prompt.
     pub async fn build(&self, agent_id: &str, user_id: &str, session_id: &str) -> Result<String> {
         tracing::info!(
-            log_kind = "server_log",
             stage = "prompt",
             status = "started",
             agent_id,
@@ -180,7 +179,6 @@ impl PromptBuilder {
         let config = self.storage.config_get(agent_id).await?;
         let has_config = config.is_some();
         tracing::debug!(
-            log_kind = "server_log",
             stage = "prompt",
             status = "config_loaded",
             agent_id,
@@ -267,7 +265,6 @@ impl PromptBuilder {
         self.append_runtime(&mut prompt);
 
         tracing::info!(
-            log_kind = "server_log",
             stage = "prompt",
             status = "completed",
             agent_id,

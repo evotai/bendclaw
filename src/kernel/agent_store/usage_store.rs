@@ -33,7 +33,6 @@ impl UsageStore {
     pub async fn record(&self, event: UsageEvent) -> Result<()> {
         let record = self.event_to_record(event);
         tracing::info!(
-            log_kind = "server_log",
             stage = "usage_store",
             action = "record",
             status = "buffered",
@@ -75,11 +74,7 @@ impl UsageStore {
         if records.is_empty() {
             return Ok(());
         }
-        tracing::info!(
-            log_kind = "server_log",
-            stage = "usage_store",
-            action = "flush",
-            status = "started",
+        tracing::debug!(
             count = records.len(),
             "flushing usage records"
         );
@@ -87,7 +82,7 @@ impl UsageStore {
             match self.usage_repo.save_batch(&records).await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    tracing::warn!(log_kind = "server_log", stage = "usage_store", action = "flush", status = "retrying", error = %e, count = records.len(), attempt, "usage flush failed");
+                    tracing::warn!(stage = "usage_store", action = "flush", status = "retrying", error = %e, count = records.len(), attempt, "usage flush failed");
                     if attempt < MAX_RETRIES {
                         tokio::time::sleep(std::time::Duration::from_millis(
                             (attempt as u64) * 100,
@@ -101,7 +96,6 @@ impl UsageStore {
         records.append(&mut *buf);
         *buf = records;
         tracing::warn!(
-            log_kind = "server_log",
             stage = "usage_store",
             action = "flush",
             status = "requeued",

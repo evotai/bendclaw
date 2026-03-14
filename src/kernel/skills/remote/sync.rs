@@ -24,7 +24,7 @@ pub async fn sync(databases: &Arc<AgentDatabases>, workspace_root: &std::path::P
 
     let all_skills = fetch_all(databases, &db_names).await;
 
-    tracing::info!(
+    tracing::debug!(
         databases = db_names.len(),
         skills = all_skills.len(),
         "skill sync from agent databases"

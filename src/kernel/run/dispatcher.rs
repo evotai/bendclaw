@@ -102,7 +102,6 @@ impl ToolDispatcher {
                     Ok(arguments) => arguments,
                     Err(error) => {
                         tracing::warn!(
-                            log_kind = "server_log",
                             stage = "tool",
                             action = "parse_arguments",
                             status = "failed",

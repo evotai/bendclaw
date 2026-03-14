@@ -30,7 +30,6 @@ impl Runtime {
         if let Some(session) = self.sessions.get(session_id) {
             if !session.belongs_to(agent_id, user_id) {
                 tracing::error!(
-                    log_kind = "server_log",
                     stage = "runtime",
                     action = "get_or_create_session",
                     status = "denied",
@@ -46,7 +45,6 @@ impl Runtime {
             if session.is_stale() && !session.is_running() {
                 self.sessions.remove(session_id);
                 tracing::info!(
-                    log_kind = "server_log",
                     stage = "runtime",
                     action = "get_or_create_session",
                     status = "recreated",
@@ -58,7 +56,6 @@ impl Runtime {
                 );
             } else {
                 tracing::info!(
-                    log_kind = "server_log",
                     stage = "runtime",
                     action = "get_or_create_session",
                     status = "reused",
@@ -174,7 +171,6 @@ impl Runtime {
         self.sessions.insert(session.clone());
 
         tracing::info!(
-            log_kind = "server_log",
             stage = "runtime",
             action = "get_or_create_session",
             status = "created",

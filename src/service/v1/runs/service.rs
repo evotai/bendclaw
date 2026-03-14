@@ -122,7 +122,6 @@ pub async fn execute_run(
     continue_from_run_id: Option<String>,
 ) -> Result<Response> {
     tracing::info!(
-        log_kind = "server_log",
         stage = "service",
         action = "execute_run",
         status = "started",
@@ -175,7 +174,6 @@ pub async fn execute_run(
     let run_id = run_stream.run_id().to_string();
 
     tracing::info!(
-        log_kind = "server_log",
         stage = "service",
         action = "execute_run",
         status = "run_created",
@@ -214,7 +212,6 @@ pub async fn execute_run(
                 return;
             }
             tracing::info!(
-                log_kind = "server_log",
                 stage = "service",
                 action = "execute_run",
                 status = "continued",
@@ -235,7 +232,6 @@ pub async fn execute_run(
             ) {
                 if tx.send(Ok(sse_event)).await.is_err() {
                     tracing::warn!(
-                        log_kind = "server_log",
                         stage = "service",
                         action = "execute_run",
                         status = "sse_client_closed",
@@ -259,7 +255,6 @@ pub async fn execute_run(
             payload["content"] = serde_json::Value::String(err.to_string());
             let _ = tx.send(Ok(stream::encode_sse("RunError", payload))).await;
             tracing::error!(
-                log_kind = "server_log",
                 stage = "service",
                 action = "execute_run",
                 status = "stream_failed",

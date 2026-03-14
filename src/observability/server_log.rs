@@ -95,13 +95,18 @@ impl ServerFields {
 
     fn payload_text(&self) -> String {
         let payload = redaction::redact(Value::Object(self.payload.clone()));
-        serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
+        let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+        const MAX_PAYLOAD: usize = 1024;
+        if text.len() > MAX_PAYLOAD {
+            format!("{}...(truncated {} bytes)", &text[..MAX_PAYLOAD], text.len() - MAX_PAYLOAD)
+        } else {
+            text
+        }
     }
 }
 
 pub fn info(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields) {
     tracing::info!(
-        log_kind = "server_log",
         trace_id = %ctx.trace_id,
         run_id = %ctx.run_id,
         session_id = %ctx.session_id,
@@ -122,7 +127,6 @@ pub fn info(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields
 
 pub fn warn(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields) {
     tracing::warn!(
-        log_kind = "server_log",
         trace_id = %ctx.trace_id,
         run_id = %ctx.run_id,
         session_id = %ctx.session_id,
@@ -143,7 +147,6 @@ pub fn warn(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields
 
 pub fn error(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields) {
     tracing::error!(
-        log_kind = "server_log",
         trace_id = %ctx.trace_id,
         run_id = %ctx.run_id,
         session_id = %ctx.session_id,

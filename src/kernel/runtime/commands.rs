@@ -30,7 +30,6 @@ fn log_runtime_info(
     payload: serde_json::Value,
 ) {
     tracing::info!(
-        log_kind = "server_log",
         stage = "runtime",
         command,
         status,
@@ -49,7 +48,6 @@ fn log_runtime_error(
     payload: serde_json::Value,
 ) {
     tracing::error!(
-        log_kind = "server_log",
         stage = "runtime",
         command,
         status = "failed",

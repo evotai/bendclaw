@@ -6,7 +6,6 @@ pub fn repo_error(
 ) {
     let payload_str = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
     tracing::error!(
-        log_kind = "server_log",
         stage = "storage_repo",
         repo,
         action,

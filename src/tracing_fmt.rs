@@ -87,29 +87,69 @@ where
         mut writer: tracing_subscriber::fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
-        write!(writer, "{}", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
-
+        let ansi = writer.has_ansi_escapes();
         let level = *event.metadata().level();
-        write!(writer, " {level:>5}")?;
 
-        write!(writer, " {}", event.metadata().target())?;
+        // Timestamp — dim gray
+        if ansi {
+            write!(writer, "\x1b[2m{}\x1b[0m", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
+        } else {
+            write!(writer, "{}", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
+        }
 
+        // Level — colored by severity
+        if ansi {
+            let color = match level {
+                tracing::Level::ERROR => "\x1b[1;31m",
+                tracing::Level::WARN => "\x1b[1;33m",
+                tracing::Level::INFO => "\x1b[1;32m",
+                tracing::Level::DEBUG => "\x1b[1;34m",
+                tracing::Level::TRACE => "\x1b[35m",
+            };
+            write!(writer, " {color}{level:>5}\x1b[0m")?;
+        } else {
+            write!(writer, " {level:>5}")?;
+        }
+
+        // Target — cyan
+        if ansi {
+            write!(writer, " \x1b[36m{}\x1b[0m", event.metadata().target())?;
+        } else {
+            write!(writer, " {}", event.metadata().target())?;
+        }
+
+        // Spans — yellow
         if let Some(scope) = ctx.event_scope() {
             for span in scope.from_root() {
-                write!(writer, " {}{{", span.name())?;
+                if ansi {
+                    write!(writer, " \x1b[33m{}{{", span.name())?;
+                } else {
+                    write!(writer, " {}{{", span.name())?;
+                }
                 let ext = span.extensions();
                 if let Some(fields) = ext.get::<tracing_subscriber::fmt::FormattedFields<N>>() {
                     if !fields.is_empty() {
                         write!(writer, "{fields}")?;
                     }
                 }
-                write!(writer, "}}")?;
+                if ansi {
+                    write!(writer, "}}\x1b[0m")?;
+                } else {
+                    write!(writer, "}}")?;
+                }
             }
             write!(writer, ":")?;
         }
 
+        // Message — bold for ERROR/WARN, normal otherwise
         write!(writer, " ")?;
-        ctx.field_format().format_fields(writer.by_ref(), event)?;
+        if ansi && (level <= tracing::Level::WARN) {
+            write!(writer, "\x1b[1m")?;
+            ctx.field_format().format_fields(writer.by_ref(), event)?;
+            write!(writer, "\x1b[0m")?;
+        } else {
+            ctx.field_format().format_fields(writer.by_ref(), event)?;
+        }
         writeln!(writer)
     }
 }

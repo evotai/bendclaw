@@ -143,7 +143,6 @@ impl Pool {
         let sql = sql.to_string();
         let started = Instant::now();
         tracing::debug!(
-            log_kind = "server_log",
             stage = "storage",
             operation = "exec",
             status = "started",
@@ -170,7 +169,6 @@ impl Pool {
             .when(is_retryable)
             .notify(|e: &ErrorCode, dur: Duration| {
                 tracing::warn!(
-                    log_kind = "server_log",
                     stage = "storage",
                     operation = "exec",
                     status = "retrying",
@@ -185,8 +183,7 @@ impl Pool {
             })
             .await;
         match &result {
-            Ok(_) => tracing::info!(
-                log_kind = "server_log",
+            Ok(_) => tracing::debug!(
                 stage = "storage",
                 operation = "exec",
                 status = "completed",
@@ -198,7 +195,6 @@ impl Pool {
                 "storage query"
             ),
             Err(error) => tracing::error!(
-                log_kind = "server_log",
                 stage = "storage",
                 operation = "exec",
                 status = "failed",
@@ -218,7 +214,6 @@ impl Pool {
         let sql = sql.to_string();
         let started = Instant::now();
         tracing::debug!(
-            log_kind = "server_log",
             stage = "storage",
             operation = "query_all",
             status = "started",
@@ -267,7 +262,6 @@ impl Pool {
             .when(is_retryable)
             .notify(|e: &ErrorCode, dur: Duration| {
                 tracing::warn!(
-                    log_kind = "server_log",
                     stage = "storage",
                     operation = "query_all",
                     status = "retrying",
@@ -282,8 +276,7 @@ impl Pool {
             })
             .await;
         match &result {
-            Ok(rows) => tracing::info!(
-                log_kind = "server_log",
+            Ok(rows) => tracing::debug!(
                 stage = "storage",
                 operation = "query_all",
                 status = "completed",
@@ -296,7 +289,6 @@ impl Pool {
                 "storage query"
             ),
             Err(error) => tracing::error!(
-                log_kind = "server_log",
                 stage = "storage",
                 operation = "query_all",
                 status = "failed",

@@ -19,7 +19,7 @@ pub(crate) async fn init_run(
             .session_upsert(session_id, agent_id, user_id, Some(user_message), None)
             .await
         {
-            tracing::warn!(log_kind = "server_log", stage = "persist", action = "init_run", status = "session_upsert_failed", session_id, agent_id, user_id, error = %e, "failed to insert session record");
+            tracing::warn!(stage = "persist", action = "init_run", status = "session_upsert_failed", session_id, agent_id, user_id, error = %e, "failed to insert session record");
         }
     }
 
@@ -43,7 +43,7 @@ pub(crate) async fn init_run(
         })
         .await
     {
-        tracing::warn!(log_kind = "server_log", stage = "persist", action = "init_run", status = "run_insert_failed", session_id, agent_id, user_id, run_id = %run_id, parent_run_id = parent_run_id.unwrap_or_default(), error = %e, "failed to insert run record");
+        tracing::warn!(stage = "persist", action = "init_run", status = "run_insert_failed", session_id, agent_id, user_id, run_id = %run_id, parent_run_id = parent_run_id.unwrap_or_default(), error = %e, "failed to insert run record");
     }
 
     Ok(run_id)

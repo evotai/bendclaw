@@ -63,7 +63,14 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
         return next.run(req).await;
     }
 
-    let trace_id = header_value(&req, TRACE_HEADER);
+    let trace_id = {
+        let header = header_value(&req, TRACE_HEADER);
+        if header.is_empty() {
+            ulid::Ulid::new().to_string().to_lowercase()
+        } else {
+            header
+        }
+    };
     let user_id = {
         let header = header_value(&req, USER_HEADER);
         if header.is_empty() {
@@ -79,26 +86,6 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
-    let forwarded_for = header_value(&req, "x-forwarded-for");
-    let real_ip = header_value(&req, "x-real-ip");
-    let query = uri.query().unwrap_or_default().to_string();
-
-    tracing::info!(
-        log_kind = "server_log",
-        stage = "http",
-        status = "received",
-        method = %method,
-        uri = %uri,
-        matched_path,
-        trace_id,
-        user_id,
-        user_agent,
-        content_length,
-        forwarded_for,
-        real_ip,
-        query,
-        "http request"
-    );
 
     let response = next.run(req).await;
     let status = response.status();
@@ -106,9 +93,7 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
 
     if status.is_server_error() {
         tracing::error!(
-            log_kind = "server_log",
             stage = "http",
-            status = "completed",
             method = %method,
             uri = %uri,
             matched_path,
@@ -116,18 +101,13 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
             user_id,
             user_agent,
             content_length,
-            forwarded_for,
-            real_ip,
-            query,
             response_status = status.as_u16(),
             elapsed_ms,
             "http request"
         );
     } else {
         tracing::info!(
-            log_kind = "server_log",
             stage = "http",
-            status = "completed",
             method = %method,
             uri = %uri,
             matched_path,
@@ -135,9 +115,6 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
             user_id,
             user_agent,
             content_length,
-            forwarded_for,
-            real_ip,
-            query,
             response_status = status.as_u16(),
             elapsed_ms,
             "http request"

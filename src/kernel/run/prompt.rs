@@ -31,18 +31,11 @@ pub const MAX_CLUSTER_BYTES: usize = 8_192;
 pub const MAX_DIRECTIVE_BYTES: usize = 4_096;
 
 /// Truncate content to `max_bytes` on a char boundary.
-/// Logs full content at info level for debugging; warns on truncation.
+/// Warns on truncation.
 pub fn truncate_layer(layer: &str, content: &str, max_bytes: usize, source: &str) -> String {
     let original = content.len();
 
     if original <= max_bytes {
-        tracing::info!(
-            layer,
-            size = original,
-            max = max_bytes,
-            source,
-            "prompt layer loaded"
-        );
         return content.to_string();
     }
 
@@ -186,7 +179,7 @@ impl PromptBuilder {
 
         let config = self.storage.config_get(agent_id).await?;
         let has_config = config.is_some();
-        tracing::info!(
+        tracing::debug!(
             log_kind = "server_log",
             stage = "prompt",
             status = "config_loaded",
@@ -198,7 +191,6 @@ impl PromptBuilder {
         let mut prompt = String::with_capacity(4096);
 
         // 1. Identity
-        tracing::debug!("prompt step 1/9: loading identity layer");
         let identity = self.identity.as_deref().or_else(|| {
             let c = config.as_ref()?;
             if c.identity.is_empty() {
@@ -216,12 +208,9 @@ impl PromptBuilder {
             let s = truncate_layer("identity", s, MAX_IDENTITY_BYTES, src);
             prompt.push_str(&s);
             prompt.push_str("\n\n");
-        } else {
-            tracing::debug!("prompt step 1/8: identity layer — skipped (empty)");
         }
 
         // 2. Soul
-        tracing::debug!("prompt step 2/9: loading soul layer");
         let soul = self.soul.as_deref().or_else(|| {
             let c = config.as_ref()?;
             if c.soul.is_empty() {
@@ -240,12 +229,9 @@ impl PromptBuilder {
             prompt.push_str("## Soul\n\n");
             prompt.push_str(&s);
             prompt.push_str("\n\n");
-        } else {
-            tracing::debug!("prompt step 2/8: soul layer — skipped (empty)");
         }
 
         // 3. System Prompt (from DB)
-        tracing::debug!("prompt step 3/9: loading system prompt layer");
         let system = config
             .as_ref()
             .map(|c| c.system_prompt.as_str())
@@ -254,40 +240,30 @@ impl PromptBuilder {
             let s = truncate_layer("system", system, MAX_SYSTEM_BYTES, "db");
             prompt.push_str(&s);
             prompt.push_str("\n\n");
-        } else {
-            tracing::debug!("prompt step 3/8: system prompt layer — skipped (empty)");
         }
 
         // 4. Skills (metadata only)
-        tracing::debug!("prompt step 4/9: loading skills layer");
         self.append_skills(&mut prompt, agent_id);
 
         // 5. Tools (compact list)
-        tracing::debug!("prompt step 5/10: loading tools layer");
         self.append_tools(&mut prompt);
 
         // 5b. Cluster info (between Tools and Recall)
-        tracing::debug!("prompt step 5b/10: loading cluster layer");
         self.append_cluster_info(&mut prompt).await;
 
         // 5c. Directive (platform-driven behavior)
-        tracing::debug!("prompt step 5c/10: loading directive layer");
         self.append_directive(&mut prompt);
 
         // 6. Learnings / Recall Hints
-        tracing::debug!("prompt step 6/10: loading learnings layer");
         self.append_recall_hints(&mut prompt, agent_id).await;
 
         // 7. Variables
-        tracing::debug!("prompt step 7/9: loading variables layer");
         self.append_variables(&mut prompt).await;
 
         // 8. Recent Errors
-        tracing::debug!("prompt step 8/9: loading recent errors layer");
         self.append_recent_errors(&mut prompt, session_id).await;
 
         // 9. Runtime
-        tracing::debug!("prompt step 9/9: loading runtime layer");
         self.append_runtime(&mut prompt);
 
         tracing::info!(
@@ -307,32 +283,15 @@ impl PromptBuilder {
 
     fn append_skills(&self, prompt: &mut String, agent_id: &str) {
         let skills = self.skills.for_agent(agent_id);
-        tracing::debug!(
-            agent_id,
-            total_skills = skills.len(),
-            "skills: queried catalog for agent"
-        );
 
         let non_exec: Vec<_> = skills.iter().filter(|s| !s.executable).collect();
         if non_exec.is_empty() {
-            tracing::debug!("skills: no non-executable skills found — skipped");
             return;
         }
 
-        tracing::debug!(
-            count = non_exec.len(),
-            "skills: loading non-executable skills into prompt"
-        );
-
         let mut buf = String::new();
         buf.push_str("## Available Skills\n\n<available_skills>\n");
-        for (i, s) in non_exec.iter().enumerate() {
-            tracing::debug!(
-                index = i,
-                name = %s.name,
-                description = %s.description,
-                "skills: adding skill to prompt"
-            );
+        for s in &non_exec {
             let _ = writeln!(buf, "<skill name=\"{}\">{}</skill>", s.name, s.description);
         }
         buf.push_str("</available_skills>\n\n");
@@ -345,23 +304,12 @@ impl PromptBuilder {
     fn append_tools(&self, prompt: &mut String) {
         let tools = match &self.tools {
             Some(t) if !t.is_empty() => t,
-            _ => {
-                tracing::debug!("tools: no tools registered — skipped");
-                return;
-            }
+            _ => return,
         };
-
-        tracing::debug!(count = tools.len(), "tools: loading tool list into prompt");
 
         let mut buf = String::new();
         buf.push_str("## Available Tools\n\n");
-        for (i, t) in tools.iter().enumerate() {
-            tracing::debug!(
-                index = i,
-                name = %t.function.name,
-                description = %t.function.description,
-                "tools: adding tool to prompt"
-            );
+        for t in tools.iter() {
             let _ = writeln!(buf, "- `{}`: {}", t.function.name, t.function.description);
         }
         buf.push_str(
@@ -423,10 +371,9 @@ impl PromptBuilder {
         prompt.push_str(&buf);
     }
 
-    async fn append_recall_hints(&self, prompt: &mut String, agent_id: &str) {
+    async fn append_recall_hints(&self, prompt: &mut String, _agent_id: &str) {
         // If text was injected directly, use it (backwards compat for tests)
         if let Some(ref s) = self.learnings {
-            tracing::debug!(size = s.len(), "learnings: using injected text");
             if !s.is_empty() {
                 let mut buf = String::from("## Learnings\n\n");
                 buf.push_str(s);
@@ -487,10 +434,8 @@ impl PromptBuilder {
         }
 
         // Fallback: load old-style learnings from DB
-        tracing::debug!(agent_id, limit = LEARNINGS_LIMIT, "learnings: querying db");
         match self.storage.learning_list(LEARNINGS_LIMIT).await {
             Ok(records) if !records.is_empty() => {
-                tracing::debug!(count = records.len(), "learnings: loaded from db");
                 let text = format_learnings(&records);
                 if !text.is_empty() {
                     let mut buf = String::from("## Learnings\n\n");
@@ -500,11 +445,9 @@ impl PromptBuilder {
                     prompt.push_str(&buf);
                 }
             }
-            Ok(_) => {
-                tracing::debug!("learnings: no records found — skipped");
-            }
+            Ok(_) => {}
             Err(e) => {
-                tracing::debug!(error = %e, "learnings: db query failed — skipped");
+                tracing::warn!(error = %e, "learnings: db query failed — skipped");
             }
         }
     }
@@ -515,10 +458,8 @@ impl PromptBuilder {
         // session even when variables are changed externally.
         if let Some(ref vars) = self.variables {
             if vars.is_empty() {
-                tracing::info!("variables: snapshot empty — skipped");
                 return;
             }
-            tracing::info!(count = vars.len(), "variables: using snapshot");
             let mut buf = String::from("## Variables\n\n");
             buf.push_str(
                 "The following variables are available as environment variables in shell commands.\n\n",
@@ -540,20 +481,14 @@ impl PromptBuilder {
             return;
         }
 
-        tracing::info!("variables: querying db");
         let records = match self.storage.variable_list().await {
             Ok(r) if !r.is_empty() => r,
-            Ok(_) => {
-                tracing::info!("variables: no records found — skipped");
-                return;
-            }
+            Ok(_) => return,
             Err(e) => {
-                tracing::info!(error = %e, "variables: db query failed — skipped");
+                tracing::warn!(error = %e, "variables: db query failed — skipped");
                 return;
             }
         };
-
-        tracing::info!(count = records.len(), "variables: loaded from db");
 
         let mut buf = String::from("## Variables\n\n");
         buf.push_str(
@@ -578,7 +513,6 @@ impl PromptBuilder {
 
     fn append_runtime(&self, prompt: &mut String) {
         let (buf, src) = if let Some(ref rt) = self.runtime {
-            tracing::debug!(size = rt.len(), "runtime: using injected text");
             let mut b = String::from("## Runtime\n\n");
             b.push_str(rt);
             b.push_str("\n\n");
@@ -589,12 +523,6 @@ impl PromptBuilder {
                 .unwrap_or_else(|_| "unknown".into());
             let os = std::env::consts::OS;
             let arch = std::env::consts::ARCH;
-            tracing::debug!(
-                host = %host,
-                os = %os,
-                arch = %arch,
-                "runtime: built from environment"
-            );
             let b = format!("## Runtime\n\nHost: {} | OS: {} ({})\n\n", host, os, arch,);
             (b, "env")
         };
@@ -605,34 +533,16 @@ impl PromptBuilder {
 
     async fn append_recent_errors(&self, prompt: &mut String, session_id: &str) {
         let (text, src) = if let Some(ref s) = self.recent_errors {
-            tracing::debug!(size = s.len(), "recent_errors: using injected text");
             (s.clone(), "injected")
         } else {
-            tracing::debug!(
-                session_id,
-                limit = RECENT_ERRORS_LIMIT,
-                "recent_errors: querying db for failed spans"
-            );
             match self
                 .storage
                 .recent_failed_spans(session_id, RECENT_ERRORS_LIMIT)
                 .await
             {
                 Ok(spans) if !spans.is_empty() => {
-                    tracing::debug!(
-                        count = spans.len(),
-                        "recent_errors: loaded failed spans from db"
-                    );
                     let mut out = String::new();
-                    for (i, s) in spans.iter().enumerate() {
-                        tracing::debug!(
-                            index = i,
-                            name = %s.name,
-                            kind = %s.kind,
-                            error_code = %s.error_code,
-                            error_message = %s.error_message,
-                            "recent_errors: failed span"
-                        );
+                    for s in &spans {
                         if s.error_message.is_empty() {
                             let _ = writeln!(out, "- `{}`: failed", s.name);
                         } else {
@@ -641,12 +551,9 @@ impl PromptBuilder {
                     }
                     (out, "db")
                 }
-                Ok(_) => {
-                    tracing::debug!("recent_errors: no failed spans found — skipped");
-                    return;
-                }
+                Ok(_) => return,
                 Err(e) => {
-                    tracing::debug!(error = %e, "recent_errors: db query failed — skipped");
+                    tracing::warn!(error = %e, "recent_errors: db query failed — skipped");
                     return;
                 }
             }

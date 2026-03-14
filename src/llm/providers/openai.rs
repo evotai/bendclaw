@@ -118,7 +118,7 @@ impl LLMProvider for OpenAIProvider {
                 status = %status,
                 request_id = %request_id,
                 headers = %response_headers_value(&headers),
-                response = %text,
+                response = %truncate_for_log(&text),
                 "llm chat api error"
             );
             return Err(ErrorCode::llm_request(format!(
@@ -248,7 +248,7 @@ async fn drive_stream(
             response_bytes = text.len(),
             "llm stream api error"
         );
-        tracing::debug!(provider = "openai", model = %model, response = %text, "llm stream api error body");
+        tracing::debug!(provider = "openai", model = %model, response = %truncate_for_log(&text), "llm stream api error body");
         return Err(format!("OpenAI API error {status}: {text}"));
     }
 
@@ -423,6 +423,15 @@ fn serialize_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
             obj
         })
         .collect()
+}
+
+fn truncate_for_log(text: &str) -> &str {
+    const MAX_LOG_LEN: usize = 512;
+    if text.len() <= MAX_LOG_LEN {
+        text
+    } else {
+        &text[..MAX_LOG_LEN]
+    }
 }
 
 fn parse_response(data: &serde_json::Value) -> Result<LLMResponse> {

@@ -157,7 +157,7 @@ impl ToolDispatcher {
                             match result {
                                 Ok(r) => r,
                                 Err(_) => {
-                                    tracing::warn!(tool = %name, "tool call timed out");
+                                    tracing::warn!(tool = %name, tool_call_id = %parsed.call.id, "tool call timed out");
                                     ToolCallResult::InfraError(
                                         format!("tool '{name}' timed out"),
                                         tracker.finish(),

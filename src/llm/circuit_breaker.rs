@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Tracks consecutive failures and trips open after a threshold.
 ///
@@ -44,13 +44,10 @@ impl CircuitBreaker {
         if failures == 0 {
             return true;
         }
-        if let Ok(guard) = self.tripped_at.try_lock() {
-            match *guard {
-                None => true,
-                Some(t) => t.elapsed() >= self.cooldown,
-            }
-        } else {
-            false
+        let guard = self.tripped_at.lock();
+        match *guard {
+            None => true,
+            Some(t) => t.elapsed() >= self.cooldown,
         }
     }
 
@@ -58,29 +55,27 @@ impl CircuitBreaker {
     pub fn record_success(&self) {
         let prev = self.consecutive_failures.load(Ordering::Relaxed);
         self.consecutive_failures.store(0, Ordering::Relaxed);
-        if let Ok(mut guard) = self.tripped_at.try_lock() {
-            if guard.is_some() {
-                tracing::info!(previous_failures = prev, "circuit breaker recovered");
-            }
-            *guard = None;
+        let mut guard = self.tripped_at.lock();
+        if guard.is_some() {
+            tracing::info!(previous_failures = prev, "circuit breaker recovered");
         }
+        *guard = None;
     }
 
     /// Increment failures. Trips the circuit when threshold is reached.
     pub fn record_failure(&self) {
         let prev = self.consecutive_failures.fetch_add(1, Ordering::Relaxed);
         if prev + 1 >= self.threshold {
-            if let Ok(mut guard) = self.tripped_at.try_lock() {
-                if guard.is_none() {
-                    tracing::warn!(
-                        failures = prev + 1,
-                        threshold = self.threshold,
-                        cooldown_secs = self.cooldown.as_secs(),
-                        "circuit breaker tripped"
-                    );
-                }
-                *guard = Some(Instant::now());
+            let mut guard = self.tripped_at.lock();
+            if guard.is_none() {
+                tracing::warn!(
+                    failures = prev + 1,
+                    threshold = self.threshold,
+                    cooldown_secs = self.cooldown.as_secs(),
+                    "circuit breaker tripped"
+                );
             }
+            *guard = Some(Instant::now());
         }
     }
 

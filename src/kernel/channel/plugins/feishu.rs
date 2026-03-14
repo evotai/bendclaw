@@ -386,8 +386,8 @@ fn handle_ws_message(text: &str, config: &FeishuConfig, event_tx: &InboundEventS
             }
 
             if let Some(inbound) = parse_feishu_message(event_data) {
-                if event_tx.send(inbound).is_err() {
-                    tracing::warn!("feishu ws: event receiver dropped");
+                if event_tx.try_send(inbound).is_err() {
+                    tracing::warn!("feishu ws: event channel full or receiver dropped");
                 }
             }
         }

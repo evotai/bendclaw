@@ -4,11 +4,14 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use tokio::sync::Semaphore;
+
 use super::executor;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::task::execution;
 
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 30;
+const MAX_CONCURRENT_TASKS: usize = 32;
 
 pub struct TaskScheduler;
 
@@ -21,6 +24,7 @@ impl TaskScheduler {
         http_client: reqwest::Client,
     ) -> JoinHandle<()> {
         let interval = Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS);
+        let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
         tokio::spawn(async move {
             tracing::info!("task scheduler started (poll interval: {interval:?})");
             let mut consecutive_errors: u64 = 0;
@@ -33,7 +37,7 @@ impl TaskScheduler {
                     _ = tokio::time::sleep(interval) => {}
                 }
 
-                if let Err(e) = poll_once(&runtime, &http_client).await {
+                if let Err(e) = poll_once(&runtime, &http_client, &sem).await {
                     consecutive_errors += 1;
                     // Log first failure, then every 20th to avoid flooding.
                     if consecutive_errors == 1 || consecutive_errors.is_multiple_of(20) {
@@ -57,6 +61,7 @@ impl TaskScheduler {
 async fn poll_once(
     runtime: &Arc<Runtime>,
     http_client: &reqwest::Client,
+    sem: &Arc<Semaphore>,
 ) -> crate::base::Result<()> {
     let instance_id = runtime.config().instance_id.clone();
     let agent_ids = runtime.databases().list_agent_ids().await?;
@@ -83,7 +88,12 @@ async fn poll_once(
             let agent_id = agent_id.clone();
             let lease_token = lease_token.clone();
             let guard = runtime.track_task();
+            let sem = sem.clone();
             tokio::spawn(async move {
+                let _permit = match sem.acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => return, // semaphore closed
+                };
                 let _guard = guard;
                 if let Err(e) =
                     executor::execute_task(&runtime, &agent_id, &task, &lease_token, &client).await
@@ -111,6 +121,8 @@ mod tests {
 
     use super::poll_once;
     use super::TaskScheduler;
+    use super::MAX_CONCURRENT_TASKS;
+    use tokio::sync::Semaphore;
     use crate::base::ErrorCode;
     use crate::kernel::channel::registry::ChannelRegistry;
     use crate::kernel::channel::supervisor::ChannelSupervisor;
@@ -219,7 +231,8 @@ mod tests {
         });
         let runtime = runtime_with_client(&client);
 
-        poll_once(&runtime, &reqwest::Client::new())
+        let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
+        poll_once(&runtime, &reqwest::Client::new(), &sem)
             .await
             .expect("poll without agents");
 
@@ -267,7 +280,8 @@ mod tests {
         });
         let runtime = runtime_with_client(&client);
 
-        poll_once(&runtime, &reqwest::Client::new())
+        let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_TASKS));
+        poll_once(&runtime, &reqwest::Client::new(), &sem)
             .await
             .expect("poll with one agent");
 

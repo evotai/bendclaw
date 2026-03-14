@@ -380,7 +380,7 @@ async fn poll_updates(
                 attachments: vec![],
                 timestamp: msg.date,
             });
-            if event_tx.send(event).is_err() {
+            if event_tx.send(event).await.is_err() {
                 tracing::warn!("telegram: event receiver dropped");
             }
         }

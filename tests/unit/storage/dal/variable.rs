@@ -78,9 +78,9 @@ async fn variable_repo_get_builds_id_lookup_query() -> Result<()> {
 #[tokio::test]
 async fn variable_repo_touch_last_used_many_updates_each_id() -> Result<()> {
     let fake = FakeDatabend::new(|sql, _database| {
-        assert!(
-            sql == "UPDATE variables SET last_used_at=NOW() WHERE id='var-1'"
-                || sql == "UPDATE variables SET last_used_at=NOW() WHERE id='var-2'"
+        assert_eq!(
+            sql,
+            "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-1', 'var-2')"
         );
         Ok(paged_rows(&[], None, None))
     });
@@ -91,11 +91,7 @@ async fn variable_repo_touch_last_used_many_updates_each_id() -> Result<()> {
 
     assert_eq!(fake.calls(), vec![
         FakeDatabendCall::Query {
-            sql: "UPDATE variables SET last_used_at=NOW() WHERE id='var-1'".to_string(),
-            database: None,
-        },
-        FakeDatabendCall::Query {
-            sql: "UPDATE variables SET last_used_at=NOW() WHERE id='var-2'".to_string(),
+            sql: "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-1', 'var-2')".to_string(),
             database: None,
         },
     ]);

@@ -4,7 +4,7 @@ use std::fs::{self};
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use chrono::Local;
 use tracing_subscriber::registry::LookupSpan;
@@ -51,7 +51,7 @@ fn open_log_file(dir: &Path, prefix: &str, date: &str) -> std::io::Result<File> 
 impl Write for &LocalDailyWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         if state.current_date != today {
             if let Ok(f) = open_log_file(&self.dir, &self.prefix, &today) {
                 state.file = f;
@@ -62,7 +62,7 @@ impl Write for &LocalDailyWriter {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.state.lock().unwrap().file.flush()
+        self.state.lock().file.flush()
     }
 }
 

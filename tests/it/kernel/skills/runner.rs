@@ -266,7 +266,7 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
     let fake = FakeDatabend::new(|sql, _database| {
         assert_eq!(
             sql,
-            "UPDATE variables SET last_used_at=NOW() WHERE id='var-secret'"
+            "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-secret')"
         );
         Ok(paged_rows(&[], None, None))
     });
@@ -303,7 +303,7 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
 
     assert_eq!(output.data, Some(serde_json::json!("secret-token")));
     assert_eq!(fake.calls(), vec![FakeDatabendCall::Query {
-        sql: "UPDATE variables SET last_used_at=NOW() WHERE id='var-secret'".to_string(),
+        sql: "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-secret')".to_string(),
         database: None,
     }]);
     Ok(())

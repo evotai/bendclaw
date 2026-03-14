@@ -9,6 +9,7 @@ use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
 
 const REPO: &str = "variable";
+const MAX_LIST_LIMIT: u64 = 10_000;
 
 #[derive(Clone)]
 struct VariableMapper;
@@ -90,7 +91,13 @@ impl VariableRepo {
     }
 
     pub async fn list_all(&self) -> Result<Vec<VariableRecord>> {
-        self.table.list(&[], "created_at DESC", u64::MAX).await
+        let result = self.table.list(&[], "created_at DESC", MAX_LIST_LIMIT).await;
+        if let Ok(ref records) = result {
+            if records.len() as u64 >= MAX_LIST_LIMIT {
+                tracing::warn!(limit = MAX_LIST_LIMIT, "variable list_all hit limit, results may be truncated");
+            }
+        }
+        result
     }
 
     pub async fn list_active(&self, limit: u32) -> Result<Vec<VariableRecord>> {
@@ -112,8 +119,13 @@ impl VariableRepo {
     pub async fn list_all_active(&self) -> Result<Vec<VariableRecord>> {
         let result = self
             .table
-            .list_where("revoked = FALSE", "created_at DESC", u64::MAX)
+            .list_where("revoked = FALSE", "created_at DESC", MAX_LIST_LIMIT)
             .await;
+        if let Ok(ref records) = result {
+            if records.len() as u64 >= MAX_LIST_LIMIT {
+                tracing::warn!(limit = MAX_LIST_LIMIT, "variable list_all_active hit limit, results may be truncated");
+            }
+        }
         if let Err(error) = &result {
             repo_error(REPO, "list_all_active", serde_json::json!({}), error);
         }
@@ -187,9 +199,27 @@ impl VariableRepo {
     }
 
     pub async fn touch_last_used_many(&self, ids: &[String]) -> Result<()> {
-        for id in ids {
-            self.touch_last_used(id).await?;
+        if ids.is_empty() {
+            return Ok(());
         }
-        Ok(())
+        let in_list: String = ids
+            .iter()
+            .map(|id| format!("'{}'", sql::escape(id)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql_str = format!(
+            "UPDATE variables SET last_used_at=NOW() WHERE id IN ({})",
+            in_list
+        );
+        let result = self.table.pool().exec(&sql_str).await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "touch_last_used_many",
+                serde_json::json!({"count": ids.len()}),
+                error,
+            );
+        }
+        result
     }
 }

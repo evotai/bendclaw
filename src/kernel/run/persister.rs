@@ -157,7 +157,7 @@ impl TurnPersister {
 
         match status {
             RunStatus::Completed | RunStatus::Paused => {
-                let _ = self
+                if let Err(e) = self
                     .trace
                     .complete_trace(
                         duration_ms,
@@ -165,10 +165,15 @@ impl TurnPersister {
                         result.usage.completion_tokens,
                         0.0,
                     )
-                    .await;
+                    .await
+                {
+                    tracing::warn!(error = %e, "failed to complete trace");
+                }
             }
             RunStatus::Cancelled | RunStatus::Error | RunStatus::Pending | RunStatus::Running => {
-                let _ = self.trace.fail_trace(duration_ms).await;
+                if let Err(e) = self.trace.fail_trace(duration_ms).await {
+                    tracing::warn!(error = %e, "failed to fail trace");
+                }
             }
         }
 
@@ -248,7 +253,7 @@ impl TurnPersister {
                 .detail("event_count", all_events.len()),
         );
 
-        let _ = self
+        if let Err(e) = self
             .storage
             .run_update_final(
                 &self.run_id,
@@ -259,8 +264,13 @@ impl TurnPersister {
                 Reason::Error.as_str(),
                 0,
             )
-            .await;
-        let _ = self.trace.fail_trace(duration_ms).await;
+            .await
+        {
+            tracing::warn!(error = %e, "failed to update run record on error");
+        }
+        if let Err(e) = self.trace.fail_trace(duration_ms).await {
+            tracing::warn!(error = %e, "failed to fail trace");
+        }
     }
 
     pub async fn persist_cancelled(&self, events: &[Event]) {
@@ -293,11 +303,16 @@ impl TurnPersister {
                 .detail("event_count", all_events.len()),
         );
 
-        let _ = self
+        if let Err(e) = self
             .storage
             .run_update_status(&self.run_id, RunStatus::Cancelled)
-            .await;
-        let _ = self.trace.fail_trace(duration_ms).await;
+            .await
+        {
+            tracing::warn!(error = %e, "failed to update run status on cancel");
+        }
+        if let Err(e) = self.trace.fail_trace(duration_ms).await {
+            tracing::warn!(error = %e, "failed to fail trace");
+        }
     }
 
     async fn persist_events(&self, events: &[Event]) -> Result<()> {

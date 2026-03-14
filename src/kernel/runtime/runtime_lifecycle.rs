@@ -26,20 +26,28 @@ impl Runtime {
         self.sessions.close_all().await;
         self.sync_cancel.cancel();
 
+        let shutdown_timeout = std::time::Duration::from_secs(10);
+
         let handle = self.sync_handle.write().take();
         if let Some(handle) = handle {
-            let _ = handle.await;
+            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+                tracing::warn!("sync task did not finish within timeout");
+            }
         }
 
         let sched_handle = self.scheduler_handle.write().take();
         if let Some(handle) = sched_handle {
-            let _ = handle.await;
+            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+                tracing::warn!("scheduler task did not finish within timeout");
+            }
         }
 
         // Cluster cleanup: cancel heartbeat and deregister
         let hb_handle = self.heartbeat_handle.write().take();
         if let Some(handle) = hb_handle {
-            let _ = handle.await;
+            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+                tracing::warn!("heartbeat task did not finish within timeout");
+            }
         }
         if let Some(ref svc) = self.cluster {
             svc.deregister().await;
@@ -47,7 +55,9 @@ impl Runtime {
 
         let directive_handle = self.directive_handle.write().take();
         if let Some(handle) = directive_handle {
-            let _ = handle.await;
+            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+                tracing::warn!("directive task did not finish within timeout");
+            }
         }
 
         *self.status.write() = RuntimeStatus::Stopped;

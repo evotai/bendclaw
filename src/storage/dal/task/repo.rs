@@ -246,6 +246,7 @@ impl TaskRepo {
             .set_raw("updated_at", "NOW()")
             .where_raw("enabled = true")
             .where_raw("status != 'running'")
+            .where_raw("(lease_token IS NULL OR lease_token = '')")
             .where_raw("next_run_at <= NOW()")
             .where_eq("executor_instance_id", executor_instance_id)
             .build();

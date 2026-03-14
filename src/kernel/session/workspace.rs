@@ -201,8 +201,12 @@ impl Workspace {
         };
 
         let Some(mut stdout_handle) = child.stdout.take() else {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            if let Err(e) = child.kill().await {
+                tracing::warn!(error = %e, "failed to kill child process");
+            }
+            if let Err(e) = child.wait().await {
+                tracing::warn!(error = %e, "failed to wait on child process");
+            }
             return CommandOutput {
                 exit_code: -1,
                 stdout: String::new(),
@@ -210,8 +214,12 @@ impl Workspace {
             };
         };
         let Some(mut stderr_handle) = child.stderr.take() else {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            if let Err(e) = child.kill().await {
+                tracing::warn!(error = %e, "failed to kill child process");
+            }
+            if let Err(e) = child.wait().await {
+                tracing::warn!(error = %e, "failed to wait on child process");
+            }
             return CommandOutput {
                 exit_code: -1,
                 stdout: String::new(),
@@ -258,7 +266,9 @@ impl Workspace {
                     }
                 }
                 _ = tokio::time::sleep(idle_timeout) => {
-                    let _ = child.kill().await;
+                    if let Err(e) = child.kill().await {
+                        tracing::warn!(error = %e, "failed to kill timed-out child process");
+                    }
                     return CommandOutput {
                         exit_code: -1,
                         stdout: String::from_utf8_lossy(&stdout_buf).into_owned(),

@@ -132,7 +132,7 @@ impl LLMProvider for AnthropicProvider {
                 status = %status,
                 request_id = %request_id,
                 headers = %response_headers_value(&headers),
-                response = %text,
+                response = %truncate_for_log(&text),
                 "llm chat api error"
             );
             return Err(ErrorCode::llm_request(format!(
@@ -258,7 +258,7 @@ async fn drive_stream(
             response_bytes = text.len(),
             "llm stream api error"
         );
-        tracing::debug!(provider = "anthropic", model = %model, response = %text, "llm stream api error body");
+        tracing::debug!(provider = "anthropic", model = %model, response = %truncate_for_log(&text), "llm stream api error body");
         return Err(format!("Anthropic API error {status}: {text}"));
     }
 
@@ -607,6 +607,15 @@ fn to_anthropic_tools(tools: &[ToolSchema]) -> Vec<serde_json::Value> {
             })
         })
         .collect()
+}
+
+fn truncate_for_log(text: &str) -> &str {
+    const MAX_LOG_LEN: usize = 512;
+    if text.len() <= MAX_LOG_LEN {
+        text
+    } else {
+        &text[..MAX_LOG_LEN]
+    }
 }
 
 fn parse_response(data: &serde_json::Value) -> Result<LLMResponse> {

@@ -50,7 +50,7 @@ impl ChannelSupervisor {
         self.stop(&account.channel_account_id).await;
 
         let cancel = CancellationToken::new();
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<InboundEvent>();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<InboundEvent>(1024);
 
         let handle = factory.spawn(account, event_tx, cancel.clone()).await?;
 

@@ -62,6 +62,7 @@ impl ReliableProvider {
             .with_min_delay(Duration::from_millis(self.base_backoff_ms))
             .with_max_delay(Duration::from_millis(MAX_BACKOFF_MS))
             .with_max_times(self.max_retries as usize)
+            .with_jitter()
     }
 }
 

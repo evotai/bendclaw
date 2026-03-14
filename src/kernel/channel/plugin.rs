@@ -10,7 +10,7 @@ use super::message::InboundEvent;
 use crate::base::Result;
 
 /// Sender for pushing inbound events from long-lived connections (WebSocket, polling).
-pub type InboundEventSender = tokio::sync::mpsc::UnboundedSender<InboundEvent>;
+pub type InboundEventSender = tokio::sync::mpsc::Sender<InboundEvent>;
 
 /// Describes how a channel receives inbound events.
 pub enum InboundKind {

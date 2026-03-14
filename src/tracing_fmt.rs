@@ -87,10 +87,7 @@ where
         mut writer: tracing_subscriber::fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
-        use tracing_subscriber::fmt::time::FormatTime;
-
-        let timer = tracing_subscriber::fmt::time::SystemTime;
-        timer.format_time(&mut writer)?;
+        write!(writer, "{}", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
 
         let level = *event.metadata().level();
         write!(writer, " {level:>5}")?;

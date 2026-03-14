@@ -45,10 +45,7 @@ impl TaskScheduler {
                     }
                 } else {
                     if consecutive_errors > 0 {
-                        tracing::info!(
-                            consecutive_errors,
-                            "task scheduler recovered"
-                        );
+                        tracing::info!(consecutive_errors, "task scheduler recovered");
                     }
                     consecutive_errors = 0;
                 }

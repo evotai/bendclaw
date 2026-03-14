@@ -484,6 +484,9 @@ fn is_retryable(e: &ErrorCode) -> bool {
             || msg.contains("reset by peer")
             || msg.contains("temporarily unavailable")
             || msg.contains("unknown database")
+            || msg.contains("http 500")
+            || msg.contains("http 502")
+            || msg.contains("http 503")
     }
 }
 

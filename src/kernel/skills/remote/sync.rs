@@ -168,13 +168,22 @@ pub fn spawn_sync_task(
     cancel: tokio_util::sync::CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        let base_interval = std::time::Duration::from_secs(interval_secs);
+        let mut interval = tokio::time::interval(base_interval);
         interval.tick().await;
         let mut consecutive_errors: u64 = 0;
         loop {
+            let sleep_dur = if consecutive_errors > 0 {
+                // Exponential backoff: 60s, 120s, 240s, capped at 300s
+                let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
+                std::time::Duration::from_secs(secs)
+            } else {
+                base_interval
+            };
+
             tokio::select! {
                 _ = cancel.cancelled() => { tracing::info!("skill sync task cancelled"); break; }
-                _ = interval.tick() => {
+                _ = tokio::time::sleep(sleep_dur) => {
                     if let Err(e) = store.refresh().await {
                         consecutive_errors += 1;
                         if consecutive_errors == 1 || consecutive_errors.is_multiple_of(20) {

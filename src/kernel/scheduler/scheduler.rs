@@ -29,12 +29,20 @@ impl TaskScheduler {
             tracing::info!("task scheduler started (poll interval: {interval:?})");
             let mut consecutive_errors: u64 = 0;
             loop {
+                let sleep_dur = if consecutive_errors > 0 {
+                    // Exponential backoff: 60s, 120s, 240s, capped at 300s
+                    let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
+                    Duration::from_secs(secs)
+                } else {
+                    interval
+                };
+
                 tokio::select! {
                     _ = cancel.cancelled() => {
                         tracing::info!("task scheduler shutting down");
                         return;
                     }
-                    _ = tokio::time::sleep(interval) => {}
+                    _ = tokio::time::sleep(sleep_dur) => {}
                 }
 
                 if let Err(e) = poll_once(&runtime, &http_client, &sem).await {

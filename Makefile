@@ -2,7 +2,7 @@
 
 DEV_CONFIG ?= $(HOME)/.bendclaw/bendclaw_dev.toml
 
-.PHONY: setup check run test test-unit test-it test-contract test-live test-live-storage test-live-e2e test-all coverage coverage-core-check snapshot-review dev-env test-down ci
+.PHONY: setup check build run test test-unit test-it test-contract test-live test-live-storage test-live-e2e test-all coverage coverage-core-check snapshot-review dev-env test-down ci
 
 setup:
 	@echo "==> checking protoc..."
@@ -28,6 +28,9 @@ setup:
 check:
 	cargo fmt --all -- --check
 	cargo clippy --all-targets -- -D warnings
+
+build:
+	cargo build --release
 
 # Fast: unit + it + contract (no credentials needed)
 test: test-unit test-it test-contract

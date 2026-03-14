@@ -72,8 +72,6 @@ async fn cmd_run(
         .parse(format!("{},tower_http=warn", &config.log.level))
         .unwrap_or_else(|_| EnvFilter::new("info,tower_http=warn"));
 
-    let is_json = config.log.format == "json";
-
     let file_layer = if !config.log.dir.is_empty() {
         let writer = tracing_fmt::LocalDailyWriter::new(&config.log.dir, "bendclaw.log")
             .expect("failed to create log file writer");
@@ -84,11 +82,7 @@ async fn cmd_run(
             .with_ansi(false)
             .with_target(true)
             .with_writer(writer);
-        let layer = if is_json {
-            base.json().boxed()
-        } else {
-            base.boxed()
-        };
+        let layer = base.json().boxed();
         Some(layer.with_filter(file_filter))
     } else {
         None

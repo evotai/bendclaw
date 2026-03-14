@@ -23,8 +23,6 @@ CREATE INVERTED INDEX IF NOT EXISTS idx_knowledge_locator ON knowledge(locator);
 CREATE INVERTED INDEX IF NOT EXISTS idx_knowledge_status ON knowledge(status);
 CREATE INVERTED INDEX IF NOT EXISTS idx_knowledge_summary ON knowledge(summary);
 
-DROP TABLE IF EXISTS learnings;
-
 CREATE TABLE IF NOT EXISTS learnings (
     id VARCHAR NOT NULL,
     kind VARCHAR NOT NULL DEFAULT 'pattern',

@@ -10,11 +10,11 @@ use crate::kernel::channel::registry::ChannelRegistry;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
+use crate::kernel::lease::LeaseServiceHandle;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
 use crate::llm::provider::LLMProvider;
-use crate::kernel::lease::LeaseServiceHandle;
 use crate::storage::pool::Pool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

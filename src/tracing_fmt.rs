@@ -4,9 +4,9 @@ use std::fs::{self};
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-use parking_lot::Mutex;
 
 use chrono::Local;
+use parking_lot::Mutex;
 use tracing_subscriber::registry::LookupSpan;
 
 /// A daily-rolling file writer that uses local time for date boundaries.
@@ -92,7 +92,11 @@ where
 
         // Timestamp — dim gray
         if ansi {
-            write!(writer, "\x1b[2m{}\x1b[0m", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
+            write!(
+                writer,
+                "\x1b[2m{}\x1b[0m",
+                Local::now().format("%Y-%m-%dT%H:%M:%S%.3f")
+            )?;
         } else {
             write!(writer, "{}", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
         }

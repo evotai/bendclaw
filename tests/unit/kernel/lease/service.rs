@@ -76,33 +76,48 @@ impl FakeResource {
 
 #[async_trait]
 impl LeaseResource for FakeResource {
-    fn table(&self) -> &str { "fake_resources" }
-    fn lease_secs(&self) -> u64 { 60 }
-    fn scan_interval_secs(&self) -> u64 { 1 }
+    fn table(&self) -> &str {
+        "fake_resources"
+    }
+    fn lease_secs(&self) -> u64 {
+        60
+    }
+    fn scan_interval_secs(&self) -> u64 {
+        1
+    }
 
     async fn discover(&self) -> Result<Vec<ResourceEntry>> {
         let entries = self.entries.lock().unwrap();
-        Ok(entries.iter().map(|e| ResourceEntry {
-            id: e.id.clone(),
-            pool: e.pool.clone(),
-            lease_token: e.lease_token.clone(),
-            lease_instance_id: e.lease_instance_id.clone(),
-            lease_expires_at: e.lease_expires_at.clone(),
-            context: String::new(),
-            release_fn: None,
-        }).collect())
+        Ok(entries
+            .iter()
+            .map(|e| ResourceEntry {
+                id: e.id.clone(),
+                pool: e.pool.clone(),
+                lease_token: e.lease_token.clone(),
+                lease_instance_id: e.lease_instance_id.clone(),
+                lease_expires_at: e.lease_expires_at.clone(),
+                context: String::new(),
+                release_fn: None,
+            })
+            .collect())
     }
 
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         if *self.fail_on_acquired.lock().unwrap() {
             return Err(bendclaw::base::ErrorCode::internal("forced failure"));
         }
-        self.events.lock().unwrap().push(Event::Acquired(entry.id.clone()));
+        self.events
+            .lock()
+            .unwrap()
+            .push(Event::Acquired(entry.id.clone()));
         Ok(())
     }
 
     async fn on_released(&self, resource_id: &str, _pool: &Pool) {
-        self.events.lock().unwrap().push(Event::Released(resource_id.to_string()));
+        self.events
+            .lock()
+            .unwrap()
+            .push(Event::Released(resource_id.to_string()));
     }
 }
 
@@ -142,7 +157,9 @@ async fn scan_claims_unclaimed_resource_and_fires_on_acquired() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancel.cancel();
 
-    assert_eq!(resource.events(), vec![Event::Acquired("res-1".to_string())]);
+    assert_eq!(resource.events(), vec![Event::Acquired(
+        "res-1".to_string()
+    )]);
     assert_eq!(handle.active_lease_count(), 1);
 }
 
@@ -198,7 +215,11 @@ async fn skips_resource_held_by_other_instance() {
     let resource = FakeResource::new(pool);
     let future = chrono::Utc::now() + chrono::Duration::minutes(5);
     let expires = future.format("%Y-%m-%d %H:%M:%S").to_string();
-    resource.set_entries(vec![resource.entry_held_by("res-1", "other-inst", &expires)]);
+    resource.set_entries(vec![resource.entry_held_by(
+        "res-1",
+        "other-inst",
+        &expires,
+    )]);
 
     let cancel = CancellationToken::new();
     let mut builder = LeaseServiceBuilder::new("inst-1");
@@ -216,7 +237,11 @@ async fn skips_resource_held_by_other_instance() {
 async fn reclaims_own_expired_lease_after_restart() {
     let pool = fake_pool();
     let resource = FakeResource::new(pool);
-    resource.set_entries(vec![resource.entry_held_by("res-1", "inst-1", "2020-01-01 00:00:00")]);
+    resource.set_entries(vec![resource.entry_held_by(
+        "res-1",
+        "inst-1",
+        "2020-01-01 00:00:00",
+    )]);
 
     let cancel = CancellationToken::new();
     let mut builder = LeaseServiceBuilder::new("inst-1");
@@ -226,7 +251,9 @@ async fn reclaims_own_expired_lease_after_restart() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancel.cancel();
 
-    assert_eq!(resource.events(), vec![Event::Acquired("res-1".to_string())]);
+    assert_eq!(resource.events(), vec![Event::Acquired(
+        "res-1".to_string()
+    )]);
     assert_eq!(handle.active_lease_count(), 1);
 }
 
@@ -246,7 +273,9 @@ async fn reclaims_own_valid_lease_after_restart() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     cancel.cancel();
 
-    assert_eq!(resource.events(), vec![Event::Acquired("res-1".to_string())]);
+    assert_eq!(resource.events(), vec![Event::Acquired(
+        "res-1".to_string()
+    )]);
     assert_eq!(handle.active_lease_count(), 1);
 }
 
@@ -265,11 +294,21 @@ async fn release_all_clears_held_leases_and_calls_on_released() {
     assert_eq!(handle.active_lease_count(), 2);
 
     handle.release_all().await;
-    assert_eq!(handle.active_lease_count(), 0, "counter must be 0 after release_all");
+    assert_eq!(
+        handle.active_lease_count(),
+        0,
+        "counter must be 0 after release_all"
+    );
 
     let events = resource.events();
-    let released_count = events.iter().filter(|e| matches!(e, Event::Released(_))).count();
-    assert_eq!(released_count, 2, "on_released must be called for each held lease");
+    let released_count = events
+        .iter()
+        .filter(|e| matches!(e, Event::Released(_)))
+        .count();
+    assert_eq!(
+        released_count, 2,
+        "on_released must be called for each held lease"
+    );
     cancel.cancel();
 }
 
@@ -285,21 +324,34 @@ async fn claimed_entry_has_correct_lease_token() {
 
     #[async_trait]
     impl LeaseResource for TokenCapture {
-        fn table(&self) -> &str { self.inner.table() }
-        fn lease_secs(&self) -> u64 { self.inner.lease_secs() }
-        fn scan_interval_secs(&self) -> u64 { self.inner.scan_interval_secs() }
-        async fn discover(&self) -> Result<Vec<ResourceEntry>> { self.inner.discover().await }
+        fn table(&self) -> &str {
+            self.inner.table()
+        }
+        fn lease_secs(&self) -> u64 {
+            self.inner.lease_secs()
+        }
+        fn scan_interval_secs(&self) -> u64 {
+            self.inner.scan_interval_secs()
+        }
+        async fn discover(&self) -> Result<Vec<ResourceEntry>> {
+            self.inner.discover().await
+        }
         async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
             self.tokens.lock().unwrap().push(entry.lease_token.clone());
             Ok(())
         }
-        async fn on_released(&self, id: &str, pool: &Pool) { self.inner.on_released(id, pool).await }
+        async fn on_released(&self, id: &str, pool: &Pool) {
+            self.inner.on_released(id, pool).await
+        }
     }
 
     let inner = FakeResource::new(pool);
     inner.set_entries(vec![inner.entry("res-1")]);
 
-    let wrapper = Arc::new(TokenCapture { inner, tokens: tokens.clone() });
+    let wrapper = Arc::new(TokenCapture {
+        inner,
+        tokens: tokens.clone(),
+    });
 
     let cancel = CancellationToken::new();
     let mut builder = LeaseServiceBuilder::new("inst-1");
@@ -327,14 +379,24 @@ async fn unhealthy_resource_gets_released_and_reacquired() {
 
     #[async_trait]
     impl LeaseResource for HealthCheckResource {
-        fn table(&self) -> &str { self.inner.table() }
-        fn lease_secs(&self) -> u64 { self.inner.lease_secs() }
-        fn scan_interval_secs(&self) -> u64 { self.inner.scan_interval_secs() }
-        async fn discover(&self) -> Result<Vec<ResourceEntry>> { self.inner.discover().await }
+        fn table(&self) -> &str {
+            self.inner.table()
+        }
+        fn lease_secs(&self) -> u64 {
+            self.inner.lease_secs()
+        }
+        fn scan_interval_secs(&self) -> u64 {
+            self.inner.scan_interval_secs()
+        }
+        async fn discover(&self) -> Result<Vec<ResourceEntry>> {
+            self.inner.discover().await
+        }
         async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
             self.inner.on_acquired(entry).await
         }
-        async fn on_released(&self, id: &str, pool: &Pool) { self.inner.on_released(id, pool).await }
+        async fn on_released(&self, id: &str, pool: &Pool) {
+            self.inner.on_released(id, pool).await
+        }
         async fn is_healthy(&self, _id: &str) -> bool {
             self.healthy.load(std::sync::atomic::Ordering::Relaxed)
         }
@@ -362,7 +424,11 @@ async fn unhealthy_resource_gets_released_and_reacquired() {
 
     let events = inner.events();
     assert!(
-        events.iter().filter(|e| matches!(e, Event::Acquired(_))).count() >= 2,
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::Acquired(_)))
+            .count()
+            >= 2,
         "unhealthy resource should be released and re-acquired: {events:?}"
     );
     assert!(
@@ -382,17 +448,27 @@ async fn release_fn_updates_counter_and_calls_on_released() {
 
     #[async_trait]
     impl LeaseResource for ReleaseFnCapture {
-        fn table(&self) -> &str { self.inner.table() }
-        fn lease_secs(&self) -> u64 { self.inner.lease_secs() }
-        fn scan_interval_secs(&self) -> u64 { 60 }
-        async fn discover(&self) -> Result<Vec<ResourceEntry>> { self.inner.discover().await }
+        fn table(&self) -> &str {
+            self.inner.table()
+        }
+        fn lease_secs(&self) -> u64 {
+            self.inner.lease_secs()
+        }
+        fn scan_interval_secs(&self) -> u64 {
+            60
+        }
+        async fn discover(&self) -> Result<Vec<ResourceEntry>> {
+            self.inner.discover().await
+        }
         async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
             if let Some(ref f) = entry.release_fn {
                 self.release_fns.lock().unwrap().push(f.clone());
             }
             Ok(())
         }
-        async fn on_released(&self, id: &str, pool: &Pool) { self.inner.on_released(id, pool).await }
+        async fn on_released(&self, id: &str, pool: &Pool) {
+            self.inner.on_released(id, pool).await
+        }
     }
 
     let inner = FakeResource::new(pool);
@@ -418,11 +494,17 @@ async fn release_fn_updates_counter_and_calls_on_released() {
     fns[0]("res-1");
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert_eq!(handle.active_lease_count(), 0, "counter must update after release_fn");
+    assert_eq!(
+        handle.active_lease_count(),
+        0,
+        "counter must update after release_fn"
+    );
 
     let events = inner.events();
     assert!(
-        events.iter().any(|e| *e == Event::Released("res-1".to_string())),
+        events
+            .iter()
+            .any(|e| *e == Event::Released("res-1".to_string())),
         "release_fn must trigger on_released: {events:?}"
     );
     cancel.cancel();
@@ -462,11 +544,16 @@ async fn stale_eviction_issues_release_sql_and_on_released() {
             && s.contains("lease_instance_id = NULL")
             && s.contains("lease_token = NULL")
     });
-    assert!(has_release, "stale eviction must call release_sql: {sqls:?}");
+    assert!(
+        has_release,
+        "stale eviction must call release_sql: {sqls:?}"
+    );
 
     let events = resource.events();
     assert!(
-        events.iter().any(|e| *e == Event::Released("res-1".to_string())),
+        events
+            .iter()
+            .any(|e| *e == Event::Released("res-1".to_string())),
         "stale eviction must call on_released: {events:?}"
     );
 }
@@ -486,7 +573,9 @@ async fn cancel_prevents_claiming_new_resources() {
     // First scan claims res-1.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(handle.active_lease_count(), 1);
-    assert_eq!(resource.events(), vec![Event::Acquired("res-1".to_string())]);
+    assert_eq!(resource.events(), vec![Event::Acquired(
+        "res-1".to_string()
+    )]);
 
     // Cancel, then add a new resource.
     cancel.cancel();
@@ -497,11 +586,18 @@ async fn cancel_prevents_claiming_new_resources() {
 
     // res-2 must NOT have been claimed after cancel.
     let events = resource.events();
-    let acquired_ids: Vec<_> = events.iter().filter_map(|e| match e {
-        Event::Acquired(id) => Some(id.as_str()),
-        _ => None,
-    }).collect();
-    assert_eq!(acquired_ids, vec!["res-1"], "no new claims after cancel: {events:?}");
+    let acquired_ids: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Acquired(id) => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        acquired_ids,
+        vec!["res-1"],
+        "no new claims after cancel: {events:?}"
+    );
 }
 
 #[tokio::test]
@@ -543,11 +639,13 @@ async fn disabled_resource_evicted_and_released_on_next_scan() {
 
     // DB lease must be cleared.
     let sqls = sql_log.lock().unwrap();
-    let has_release = sqls.iter().any(|s| {
-        s.contains("UPDATE fake_resources SET")
-            && s.contains("lease_instance_id = NULL")
-    });
-    assert!(has_release, "disabled resource must have DB lease cleared: {sqls:?}");
+    let has_release = sqls
+        .iter()
+        .any(|s| s.contains("UPDATE fake_resources SET") && s.contains("lease_instance_id = NULL"));
+    assert!(
+        has_release,
+        "disabled resource must have DB lease cleared: {sqls:?}"
+    );
 
     // on_released must fire (supervisor.stop equivalent).
     let events = resource.events();

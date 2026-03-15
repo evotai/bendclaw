@@ -309,9 +309,8 @@ async fn construct(
     });
 
     let http_client = reqwest::Client::new();
-    let mut lease_builder = crate::kernel::lease::LeaseServiceBuilder::new(
-        &runtime.config().instance_id,
-    );
+    let mut lease_builder =
+        crate::kernel::lease::LeaseServiceBuilder::new(&runtime.config().instance_id);
     lease_builder.register(Arc::new(
         crate::kernel::channel::lease::ChannelLeaseResource::new(
             runtime.databases().clone(),
@@ -320,10 +319,7 @@ async fn construct(
         ),
     ));
     lease_builder.register(Arc::new(
-        crate::kernel::task::lease::TaskLeaseResource::new(
-            runtime.clone(),
-            http_client,
-        ),
+        crate::kernel::task::lease::TaskLeaseResource::new(runtime.clone(), http_client),
     ));
     let lease_handle = lease_builder.spawn(sync_cancel);
     *runtime.lease_handle.write() = Some(lease_handle);

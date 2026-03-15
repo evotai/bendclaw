@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bendclaw::storage::SpanRepo;
 use bendclaw::storage::trace::TraceListFilter;
+use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
 
 use crate::common::fake_databend::paged_rows;
@@ -8,8 +8,19 @@ use crate::common::fake_databend::FakeDatabend;
 
 fn trace_row() -> Vec<serde_json::Value> {
     vec![
-        "trace-1", "run-1", "sess-1", "agent-1", "user-1", "chat", "completed", "150", "100",
-        "50", "0.005", "2026-03-11T00:00:00Z", "2026-03-11T00:01:00Z",
+        "trace-1",
+        "run-1",
+        "sess-1",
+        "agent-1",
+        "user-1",
+        "chat",
+        "completed",
+        "150",
+        "100",
+        "50",
+        "0.005",
+        "2026-03-11T00:00:00Z",
+        "2026-03-11T00:01:00Z",
     ]
     .into_iter()
     .map(|s| serde_json::Value::String(s.to_string()))
@@ -43,11 +54,7 @@ fn span_row() -> Vec<serde_json::Value> {
 }
 
 fn agg_row(vals: &[&str]) -> bendclaw::storage::pool::QueryResponse {
-    paged_rows(
-        &[&vals.iter().map(|s| *s).collect::<Vec<_>>()],
-        None,
-        None,
-    )
+    paged_rows(&[&vals.iter().map(|s| *s).collect::<Vec<_>>()], None, None)
 }
 
 #[tokio::test]
@@ -216,7 +223,14 @@ async fn trace_repo_summary_for_agent_generates_valid_sql() -> Result<()> {
             assert!(sql.contains("COUNT(*)"));
             assert!(sql.contains("SUM(input_tokens)"));
             assert!(sql.contains("agent_id = 'a-1'"));
-            return Ok(agg_row(&["10", "500", "300", "0.05", "120.5", "2026-03-11"]));
+            return Ok(agg_row(&[
+                "10",
+                "500",
+                "300",
+                "0.05",
+                "120.5",
+                "2026-03-11",
+            ]));
         }
         // second query: span breakdown
         assert!(sql.contains("FROM spans"));

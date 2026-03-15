@@ -92,76 +92,92 @@ pub fn map_event_to_sse(
             payload["content"] = serde_json::Value::String(error.clone());
             ("RunError", payload)
         }
-        Event::Audit { name, payload: audit_payload } => {
-            match name.as_str() {
-                "llm.request" => {
-                    let mut payload = base_event_payload(agent_id, session_id, run_id, "ModelRequestStarted");
-                    if let Some(model) = audit_payload.get("model") {
-                        payload["model"] = model.clone();
-                    }
-                    if let Some(temperature) = audit_payload.get("temperature") {
-                        payload["temperature"] = temperature.clone();
-                    }
-                    if let Some(iteration) = audit_payload.get("iteration") {
-                        payload["iteration"] = iteration.clone();
-                    }
-                    ("ModelRequestStarted", payload)
+        Event::Audit {
+            name,
+            payload: audit_payload,
+        } => match name.as_str() {
+            "llm.request" => {
+                let mut payload =
+                    base_event_payload(agent_id, session_id, run_id, "ModelRequestStarted");
+                if let Some(model) = audit_payload.get("model") {
+                    payload["model"] = model.clone();
                 }
-                "llm.response" => {
-                    let mut payload = base_event_payload(agent_id, session_id, run_id, "ModelRequestCompleted");
-                    if let Some(model) = audit_payload.get("model") {
-                        payload["model"] = model.clone();
-                    }
-                    if let Some(provider) = audit_payload.get("provider") {
-                        payload["provider"] = provider.clone();
-                    }
-                    if let Some(finish_reason) = audit_payload.get("finish_reason") {
-                        payload["finish_reason"] = finish_reason.clone();
-                    }
-                    if let Some(usage) = audit_payload.get("usage") {
-                        if let Some(obj) = usage.as_object() {
-                            payload["input_tokens"] = serde_json::json!(obj.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0));
-                            payload["output_tokens"] = serde_json::json!(obj.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0));
-                            payload["total_tokens"] = serde_json::json!(obj.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0));
-                            payload["reasoning_tokens"] = serde_json::json!(obj.get("reasoning_tokens").and_then(|v| v.as_u64()).unwrap_or(0));
-                        }
-                    }
-                    if let Some(ttft) = audit_payload.get("ttft_ms") {
-                        payload["time_to_first_token"] = ttft.clone();
-                    }
-                    ("ModelRequestCompleted", payload)
+                if let Some(temperature) = audit_payload.get("temperature") {
+                    payload["temperature"] = temperature.clone();
                 }
-                "llm.error" => {
-                    let mut payload = base_event_payload(agent_id, session_id, run_id, "ModelRequestCompleted");
-                    if let Some(model) = audit_payload.get("model") {
-                        payload["model"] = model.clone();
-                    }
-                    if let Some(error) = audit_payload.get("error") {
-                        payload["error"] = error.clone();
-                    }
-                    payload["status"] = serde_json::json!("error");
-                    ("ModelRequestCompleted", payload)
+                if let Some(iteration) = audit_payload.get("iteration") {
+                    payload["iteration"] = iteration.clone();
                 }
-                "turn.started" => {
-                    let mut payload = base_event_payload(agent_id, session_id, run_id, "TurnStarted");
-                    if let Some(iteration) = audit_payload.get("iteration") {
-                        payload["iteration"] = iteration.clone();
-                    }
-                    ("TurnStarted", payload)
-                }
-                "turn.completed" => {
-                    let mut payload = base_event_payload(agent_id, session_id, run_id, "TurnCompleted");
-                    if let Some(iteration) = audit_payload.get("iteration") {
-                        payload["iteration"] = iteration.clone();
-                    }
-                    if let Some(outcome) = audit_payload.get("outcome") {
-                        payload["outcome"] = outcome.clone();
-                    }
-                    ("TurnCompleted", payload)
-                }
-                _ => return None,
+                ("ModelRequestStarted", payload)
             }
-        }
+            "llm.response" => {
+                let mut payload =
+                    base_event_payload(agent_id, session_id, run_id, "ModelRequestCompleted");
+                if let Some(model) = audit_payload.get("model") {
+                    payload["model"] = model.clone();
+                }
+                if let Some(provider) = audit_payload.get("provider") {
+                    payload["provider"] = provider.clone();
+                }
+                if let Some(finish_reason) = audit_payload.get("finish_reason") {
+                    payload["finish_reason"] = finish_reason.clone();
+                }
+                if let Some(usage) = audit_payload.get("usage") {
+                    if let Some(obj) = usage.as_object() {
+                        payload["input_tokens"] = serde_json::json!(obj
+                            .get("prompt_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0));
+                        payload["output_tokens"] = serde_json::json!(obj
+                            .get("completion_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0));
+                        payload["total_tokens"] = serde_json::json!(obj
+                            .get("total_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0));
+                        payload["reasoning_tokens"] = serde_json::json!(obj
+                            .get("reasoning_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0));
+                    }
+                }
+                if let Some(ttft) = audit_payload.get("ttft_ms") {
+                    payload["time_to_first_token"] = ttft.clone();
+                }
+                ("ModelRequestCompleted", payload)
+            }
+            "llm.error" => {
+                let mut payload =
+                    base_event_payload(agent_id, session_id, run_id, "ModelRequestCompleted");
+                if let Some(model) = audit_payload.get("model") {
+                    payload["model"] = model.clone();
+                }
+                if let Some(error) = audit_payload.get("error") {
+                    payload["error"] = error.clone();
+                }
+                payload["status"] = serde_json::json!("error");
+                ("ModelRequestCompleted", payload)
+            }
+            "turn.started" => {
+                let mut payload = base_event_payload(agent_id, session_id, run_id, "TurnStarted");
+                if let Some(iteration) = audit_payload.get("iteration") {
+                    payload["iteration"] = iteration.clone();
+                }
+                ("TurnStarted", payload)
+            }
+            "turn.completed" => {
+                let mut payload = base_event_payload(agent_id, session_id, run_id, "TurnCompleted");
+                if let Some(iteration) = audit_payload.get("iteration") {
+                    payload["iteration"] = iteration.clone();
+                }
+                if let Some(outcome) = audit_payload.get("outcome") {
+                    payload["outcome"] = outcome.clone();
+                }
+                ("TurnCompleted", payload)
+            }
+            _ => return None,
+        },
         Event::End {
             stop_reason, usage, ..
         } => {

@@ -239,6 +239,9 @@ mod tests {
 
     #[test]
     fn default_background_log_dir_uses_evotai_logs() {
-        assert_eq!(default_log_dir(), dirs_home().join(EVOTAI_DIR_NAME).join("logs"));
+        assert_eq!(
+            default_log_dir(),
+            dirs_home().join(EVOTAI_DIR_NAME).join("logs")
+        );
     }
 }

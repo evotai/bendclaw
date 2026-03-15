@@ -1,5 +1,5 @@
-mod dispatcher;
 mod dispatch_trust;
+mod dispatcher;
 mod feishu;
 mod github;
 mod http_api;

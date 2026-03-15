@@ -89,12 +89,10 @@ async fn variable_repo_touch_last_used_many_updates_each_id() -> Result<()> {
     repo.touch_last_used_many(&["var-1".to_string(), "var-2".to_string()])
         .await?;
 
-    assert_eq!(fake.calls(), vec![
-        FakeDatabendCall::Query {
-            sql: "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-1', 'var-2')".to_string(),
-            database: None,
-        },
-    ]);
+    assert_eq!(fake.calls(), vec![FakeDatabendCall::Query {
+        sql: "UPDATE variables SET last_used_at=NOW() WHERE id IN ('var-1', 'var-2')".to_string(),
+        database: None,
+    },]);
     Ok(())
 }
 

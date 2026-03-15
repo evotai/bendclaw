@@ -58,7 +58,7 @@ impl LeaseResource for TaskLeaseResource {
             "enabled = true AND next_run_at <= NOW() AND (\
                 status != 'running' \
                 OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= NOW()))\
-            )"
+            )",
         )
     }
 
@@ -102,17 +102,15 @@ impl LeaseResource for TaskLeaseResource {
 
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         let repo = TaskRepo::new(entry.pool.clone());
-        let task = repo
-            .get(&entry.id)
-            .await?
-            .ok_or_else(|| crate::base::ErrorCode::internal(
-                format!("task '{}' disappeared after claim", entry.id),
-            ))?;
+        let task = repo.get(&entry.id).await?.ok_or_else(|| {
+            crate::base::ErrorCode::internal(format!("task '{}' disappeared after claim", entry.id))
+        })?;
 
         let agent_id = if entry.context.is_empty() {
-            return Err(crate::base::ErrorCode::internal(
-                format!("no agent_id context for task '{}'", entry.id),
-            ));
+            return Err(crate::base::ErrorCode::internal(format!(
+                "no agent_id context for task '{}'",
+                entry.id
+            )));
         } else {
             entry.context.clone()
         };

@@ -91,10 +91,16 @@ impl VariableRepo {
     }
 
     pub async fn list_all(&self) -> Result<Vec<VariableRecord>> {
-        let result = self.table.list(&[], "created_at DESC", MAX_LIST_LIMIT).await;
+        let result = self
+            .table
+            .list(&[], "created_at DESC", MAX_LIST_LIMIT)
+            .await;
         if let Ok(ref records) = result {
             if records.len() as u64 >= MAX_LIST_LIMIT {
-                tracing::warn!(limit = MAX_LIST_LIMIT, "variable list_all hit limit, results may be truncated");
+                tracing::warn!(
+                    limit = MAX_LIST_LIMIT,
+                    "variable list_all hit limit, results may be truncated"
+                );
             }
         }
         result
@@ -123,7 +129,10 @@ impl VariableRepo {
             .await;
         if let Ok(ref records) = result {
             if records.len() as u64 >= MAX_LIST_LIMIT {
-                tracing::warn!(limit = MAX_LIST_LIMIT, "variable list_all_active hit limit, results may be truncated");
+                tracing::warn!(
+                    limit = MAX_LIST_LIMIT,
+                    "variable list_all_active hit limit, results may be truncated"
+                );
             }
         }
         if let Err(error) = &result {

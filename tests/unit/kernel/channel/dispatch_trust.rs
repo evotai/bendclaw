@@ -1,6 +1,5 @@
-use serde_json::json;
-
 use bendclaw::kernel::channel::dispatch::is_sender_allowed;
+use serde_json::json;
 
 #[test]
 fn allow_all_when_no_allow_from() {

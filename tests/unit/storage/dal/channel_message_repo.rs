@@ -6,8 +6,18 @@ use crate::common::fake_databend::FakeDatabend;
 
 fn msg_row(id: &str) -> Vec<serde_json::Value> {
     vec![
-        id, "slack", "acc-1", "chat-1", "sess-1", "inbound", "sender-1", "hello", "pm-1",
-        "run-1", "[]", "2026-03-11T00:00:00Z",
+        id,
+        "slack",
+        "acc-1",
+        "chat-1",
+        "sess-1",
+        "inbound",
+        "sender-1",
+        "hello",
+        "pm-1",
+        "run-1",
+        "[]",
+        "2026-03-11T00:00:00Z",
     ]
     .into_iter()
     .map(|s| serde_json::Value::String(s.to_string()))

@@ -102,12 +102,12 @@ impl LeaseResource for ChannelLeaseResource {
 
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         let repo = ChannelAccountRepo::new(entry.pool.clone());
-        let account = repo
-            .load(&entry.id)
-            .await?
-            .ok_or_else(|| crate::base::ErrorCode::internal(
-                format!("channel account '{}' disappeared after claim", entry.id),
-            ))?;
+        let account = repo.load(&entry.id).await?.ok_or_else(|| {
+            crate::base::ErrorCode::internal(format!(
+                "channel account '{}' disappeared after claim",
+                entry.id
+            ))
+        })?;
 
         let channel_account = ChannelAccount {
             channel_account_id: account.id,

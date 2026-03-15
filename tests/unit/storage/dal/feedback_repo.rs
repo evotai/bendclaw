@@ -6,10 +6,18 @@ use crate::common::fake_databend::FakeDatabend;
 use crate::common::fake_databend::FakeDatabendCall;
 
 fn feedback_row(id: &str) -> Vec<serde_json::Value> {
-    vec![id, "sess-1", "run-1", "5", "great", "2026-03-11T00:00:00Z", "2026-03-11T00:00:00Z"]
-        .into_iter()
-        .map(|s| serde_json::Value::String(s.to_string()))
-        .collect()
+    vec![
+        id,
+        "sess-1",
+        "run-1",
+        "5",
+        "great",
+        "2026-03-11T00:00:00Z",
+        "2026-03-11T00:00:00Z",
+    ]
+    .into_iter()
+    .map(|s| serde_json::Value::String(s.to_string()))
+    .collect()
 }
 
 #[tokio::test]

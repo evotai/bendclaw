@@ -6,8 +6,17 @@ use crate::common::fake_databend::FakeDatabend;
 
 fn config_row(agent_id: &str) -> Vec<serde_json::Value> {
     vec![
-        agent_id, "You are helpful.", "Bot", "A bot", "assistant", "friendly", "", "", "",
-        "2026-03-11T00:00:00Z", "2026-03-11T00:00:00Z",
+        agent_id,
+        "You are helpful.",
+        "Bot",
+        "A bot",
+        "assistant",
+        "friendly",
+        "",
+        "",
+        "",
+        "2026-03-11T00:00:00Z",
+        "2026-03-11T00:00:00Z",
     ]
     .into_iter()
     .map(|s| serde_json::Value::String(s.to_string()))

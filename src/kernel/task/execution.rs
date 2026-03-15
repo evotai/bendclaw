@@ -143,8 +143,8 @@ mod tests {
             serde_json::Value::String(String::new()),
             serde_json::Value::String("2026-03-11 00:00:00".to_string()),
             serde_json::Value::String("lease-1".to_string()),
-            serde_json::Value::String(String::new()),  // lease_instance_id
-            serde_json::Value::String(String::new()),  // lease_expires_at
+            serde_json::Value::String(String::new()), // lease_instance_id
+            serde_json::Value::String(String::new()), // lease_expires_at
             serde_json::Value::String("2026-03-10T00:00:00Z".to_string()),
             serde_json::Value::String("2026-03-10T00:00:00Z".to_string()),
         ]]);

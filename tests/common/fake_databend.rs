@@ -10,9 +10,9 @@ use bendclaw::storage::pool::DatabendClient;
 use bendclaw::storage::pool::QueryResponse;
 use bendclaw::storage::pool::SchemaField;
 use bendclaw::storage::Pool;
-use databend_common_ast::parser::Dialect;
 use databend_common_ast::parser::parse_sql;
 use databend_common_ast::parser::tokenize_sql;
+use databend_common_ast::parser::Dialect;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FakeDatabendCall {

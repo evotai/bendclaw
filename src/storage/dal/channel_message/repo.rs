@@ -102,10 +102,7 @@ impl ChannelMessageRepo {
             sql::escape(chat_id),
             sql::escape(platform_message_id),
         );
-        let query = format!(
-            "SELECT COUNT(*) FROM channel_messages WHERE {}",
-            condition
-        );
+        let query = format!("SELECT COUNT(*) FROM channel_messages WHERE {}", condition);
         let row = self.table.pool().query_row(&query).await?;
         Ok(row.map(|r| sql::col(&r, 0) != "0").unwrap_or(false))
     }

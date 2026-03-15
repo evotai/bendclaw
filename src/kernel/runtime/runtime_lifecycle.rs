@@ -31,7 +31,10 @@ impl Runtime {
 
         let handle = self.sync_handle.write().take();
         if let Some(handle) = handle {
-            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+            if tokio::time::timeout(shutdown_timeout, handle)
+                .await
+                .is_err()
+            {
                 tracing::warn!("sync task did not finish within timeout");
             }
         }
@@ -41,7 +44,10 @@ impl Runtime {
             // Wait for scan loops to exit. The cancel check before the claim
             // branch in scan_once minimizes (but doesn't eliminate) the window
             // for new claims — cooperative cancellation can't be fully atomic.
-            if tokio::time::timeout(shutdown_timeout, handle.join()).await.is_err() {
+            if tokio::time::timeout(shutdown_timeout, handle.join())
+                .await
+                .is_err()
+            {
                 tracing::warn!("lease scan loops did not finish within timeout, aborting");
                 handle.abort_all();
             }
@@ -57,7 +63,10 @@ impl Runtime {
         // Cluster cleanup: cancel heartbeat and deregister
         let hb_handle = self.heartbeat_handle.write().take();
         if let Some(handle) = hb_handle {
-            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+            if tokio::time::timeout(shutdown_timeout, handle)
+                .await
+                .is_err()
+            {
                 tracing::warn!("heartbeat task did not finish within timeout");
             }
         }
@@ -67,7 +76,10 @@ impl Runtime {
 
         let directive_handle = self.directive_handle.write().take();
         if let Some(handle) = directive_handle {
-            if tokio::time::timeout(shutdown_timeout, handle).await.is_err() {
+            if tokio::time::timeout(shutdown_timeout, handle)
+                .await
+                .is_err()
+            {
                 tracing::warn!("directive task did not finish within timeout");
             }
         }

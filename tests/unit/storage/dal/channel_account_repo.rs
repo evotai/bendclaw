@@ -7,9 +7,18 @@ use crate::common::fake_databend::FakeDatabendCall;
 
 fn account_row(id: &str) -> Vec<serde_json::Value> {
     vec![
-        id, "slack", "acc-1", "agent-1", "user-1", "{\"token\":\"abc\"}", "1",
-        "", "", "", // lease_instance_id, lease_token, lease_expires_at
-        "2026-03-11T00:00:00Z", "2026-03-11T00:00:00Z",
+        id,
+        "slack",
+        "acc-1",
+        "agent-1",
+        "user-1",
+        "{\"token\":\"abc\"}",
+        "1",
+        "",
+        "",
+        "", // lease_instance_id, lease_token, lease_expires_at
+        "2026-03-11T00:00:00Z",
+        "2026-03-11T00:00:00Z",
     ]
     .into_iter()
     .map(|s| serde_json::Value::String(s.to_string()))
@@ -73,7 +82,10 @@ async fn channel_account_load_and_find_generate_valid_sql() -> Result<()> {
     assert_eq!(loaded.channel_type, "slack");
     assert!(loaded.enabled);
 
-    let found = repo.find_by_account("slack", "acc-1").await?.expect("should exist");
+    let found = repo
+        .find_by_account("slack", "acc-1")
+        .await?
+        .expect("should exist");
     assert_eq!(found.id, "ca-1");
     Ok(())
 }

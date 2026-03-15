@@ -74,10 +74,7 @@ impl UsageStore {
         if records.is_empty() {
             return Ok(());
         }
-        tracing::debug!(
-            count = records.len(),
-            "flushing usage records"
-        );
+        tracing::debug!(count = records.len(), "flushing usage records");
         for attempt in 1..=MAX_RETRIES {
             match self.usage_repo.save_batch(&records).await {
                 Ok(()) => return Ok(()),

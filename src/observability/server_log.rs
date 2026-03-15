@@ -98,7 +98,11 @@ impl ServerFields {
         let text = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
         const MAX_PAYLOAD: usize = 1024;
         if text.len() > MAX_PAYLOAD {
-            format!("{}...(truncated {} bytes)", &text[..MAX_PAYLOAD], text.len() - MAX_PAYLOAD)
+            format!(
+                "{}...(truncated {} bytes)",
+                &text[..MAX_PAYLOAD],
+                text.len() - MAX_PAYLOAD
+            )
         } else {
             text
         }

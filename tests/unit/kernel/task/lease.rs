@@ -14,7 +14,9 @@ fn noop_fake() -> FakeDatabend {
 fn claim_condition_includes_stuck_task_recovery() {
     let runtime = test_runtime(noop_fake());
     let resource = TaskLeaseResource::new(runtime, reqwest::Client::new());
-    let cond = resource.claim_condition().expect("should have claim_condition");
+    let cond = resource
+        .claim_condition()
+        .expect("should have claim_condition");
     assert!(cond.contains("enabled = true"), "must require enabled");
     assert!(cond.contains("next_run_at <= NOW()"), "must require due");
     assert!(cond.contains("status != 'running'"), "must exclude running");
@@ -67,9 +69,9 @@ async fn discover_carries_agent_id_in_context() {
         }
         // list_active query
         if sql.contains("WHERE") && sql.contains("next_run_at") {
-            return Ok(crate::common::task_rows::task_query([
-                TaskRow::every("task-1", "report", true),
-            ]));
+            return Ok(crate::common::task_rows::task_query([TaskRow::every(
+                "task-1", "report", true,
+            )]));
         }
         Ok(paged_rows(&[], None, None))
     });

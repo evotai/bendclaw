@@ -260,45 +260,46 @@ async fn scan_once(
             // Unclaimed or expired — try to claim.
             let token = new_id();
             match claim_sql(
-                &entry.pool, table, &entry.id, instance_id,
-                &token, lease_secs, claim_cond,
+                &entry.pool,
+                table,
+                &entry.id,
+                instance_id,
+                &token,
+                lease_secs,
+                claim_cond,
             )
             .await
             {
                 Ok(true) => {
-                    held_map.insert(
-                        entry.id.clone(),
-                        HeldLease {
-                            token: token.clone(),
-                            pool: entry.pool.clone(),
-                        },
-                    );
+                    held_map.insert(entry.id.clone(), HeldLease {
+                        token: token.clone(),
+                        pool: entry.pool.clone(),
+                    });
                     // Build release callback for async workers.
                     let release_held = held.clone();
                     let release_table = table.to_string();
                     let release_count = lease_count.clone();
                     let release_resource = resource.clone();
-                    let release_fn: super::types::ReleaseFn =
-                        Arc::new(move |resource_id: &str| {
-                            let h = release_held.clone();
-                            let t = release_table.clone();
-                            let cnt = release_count.clone();
-                            let res = release_resource.clone();
-                            let id = resource_id.to_string();
-                            tokio::spawn(async move {
-                                let pool = if let Some(lease) = h.lock().await.remove(&id) {
-                                    let p = lease.pool.clone();
-                                    let _ = release_sql(&p, &t, &id, &lease.token).await;
-                                    Some(p)
-                                } else {
-                                    None
-                                };
-                                cnt.store(h.lock().await.len(), Ordering::Relaxed);
-                                if let Some(pool) = pool {
-                                    res.on_released(&id, &pool).await;
-                                }
-                            });
+                    let release_fn: super::types::ReleaseFn = Arc::new(move |resource_id: &str| {
+                        let h = release_held.clone();
+                        let t = release_table.clone();
+                        let cnt = release_count.clone();
+                        let res = release_resource.clone();
+                        let id = resource_id.to_string();
+                        tokio::spawn(async move {
+                            let pool = if let Some(lease) = h.lock().await.remove(&id) {
+                                let p = lease.pool.clone();
+                                let _ = release_sql(&p, &t, &id, &lease.token).await;
+                                Some(p)
+                            } else {
+                                None
+                            };
+                            cnt.store(h.lock().await.len(), Ordering::Relaxed);
+                            if let Some(pool) = pool {
+                                res.on_released(&id, &pool).await;
+                            }
                         });
+                    });
                     let claimed_entry = ResourceEntry {
                         id: entry.id.clone(),
                         pool: entry.pool.clone(),
@@ -395,14 +396,12 @@ async fn claim_sql(
         )
         .set_raw("updated_at", "NOW()")
         .where_eq("id", id)
-        .where_raw(
-            &format!(
-                "(lease_instance_id IS NULL OR lease_instance_id = '' \
+        .where_raw(&format!(
+            "(lease_instance_id IS NULL OR lease_instance_id = '' \
                  OR lease_expires_at IS NULL OR lease_expires_at <= NOW() \
                  OR lease_instance_id = '{}')",
-                sql::escape(instance_id)
-            ),
-        );
+            sql::escape(instance_id)
+        ));
     if let Some(cond) = extra_cond {
         update = update.where_raw(cond);
     }
@@ -446,12 +445,7 @@ async fn renew_sql(
 }
 
 /// Release a single lease. Only clears lease columns.
-async fn release_sql(
-    pool: &Pool,
-    table: &str,
-    id: &str,
-    token: &str,
-) -> crate::base::Result<()> {
+async fn release_sql(pool: &Pool, table: &str, id: &str, token: &str) -> crate::base::Result<()> {
     let update = sql::Sql::update(table)
         .set_raw("lease_instance_id", "NULL")
         .set_raw("lease_token", "NULL")

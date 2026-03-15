@@ -6,7 +6,13 @@ use crate::common::fake_databend::FakeDatabend;
 
 fn session_row(id: &str) -> Vec<serde_json::Value> {
     vec![
-        id, "agent-1", "user-1", "My Chat", "{}", "{}", "2026-03-11T00:00:00Z",
+        id,
+        "agent-1",
+        "user-1",
+        "My Chat",
+        "{}",
+        "{}",
+        "2026-03-11T00:00:00Z",
         "2026-03-11T00:01:00Z",
     ]
     .into_iter()

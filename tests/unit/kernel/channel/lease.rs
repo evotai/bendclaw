@@ -39,19 +39,44 @@ struct FakeOutbound;
 
 #[async_trait]
 impl ChannelOutbound for FakeOutbound {
-    async fn send_text(&self, _: &serde_json::Value, _: &str, _: &str) -> bendclaw::base::Result<String> {
+    async fn send_text(
+        &self,
+        _: &serde_json::Value,
+        _: &str,
+        _: &str,
+    ) -> bendclaw::base::Result<String> {
         Ok(String::new())
     }
-    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::base::Result<()> { Ok(()) }
-    async fn edit_message(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> bendclaw::base::Result<()> { Ok(()) }
-    async fn add_reaction(&self, _: &serde_json::Value, _: &str, _: &str, _: &str) -> bendclaw::base::Result<()> { Ok(()) }
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
+    async fn edit_message(
+        &self,
+        _: &serde_json::Value,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
+    async fn add_reaction(
+        &self,
+        _: &serde_json::Value,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
 }
 
 struct ReceiverPlugin;
 
 #[async_trait]
 impl ChannelPlugin for ReceiverPlugin {
-    fn channel_type(&self) -> &str { "fake_receiver" }
+    fn channel_type(&self) -> &str {
+        "fake_receiver"
+    }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
             channel_kind: ChannelKind::Conversational,
@@ -64,8 +89,12 @@ impl ChannelPlugin for ReceiverPlugin {
             max_message_len: 4096,
         }
     }
-    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> { Ok(()) }
-    fn outbound(&self) -> Arc<dyn ChannelOutbound> { Arc::new(FakeOutbound) }
+    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
+    fn outbound(&self) -> Arc<dyn ChannelOutbound> {
+        Arc::new(FakeOutbound)
+    }
     fn inbound(&self) -> InboundKind {
         InboundKind::Receiver(Arc::new(FakeReceiverFactory))
     }
@@ -75,7 +104,9 @@ struct WebhookOnlyPlugin;
 
 #[async_trait]
 impl ChannelPlugin for WebhookOnlyPlugin {
-    fn channel_type(&self) -> &str { "fake_webhook" }
+    fn channel_type(&self) -> &str {
+        "fake_webhook"
+    }
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
             channel_kind: ChannelKind::EventDriven,
@@ -88,9 +119,15 @@ impl ChannelPlugin for WebhookOnlyPlugin {
             max_message_len: 4096,
         }
     }
-    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> { Ok(()) }
-    fn outbound(&self) -> Arc<dyn ChannelOutbound> { Arc::new(FakeOutbound) }
-    fn inbound(&self) -> InboundKind { InboundKind::None }
+    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> {
+        Ok(())
+    }
+    fn outbound(&self) -> Arc<dyn ChannelOutbound> {
+        Arc::new(FakeOutbound)
+    }
+    fn inbound(&self) -> InboundKind {
+        InboundKind::None
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -119,9 +156,7 @@ fn build_resource(
     query_handler: impl Fn(&str, Option<&str>) -> Result<QueryResponse, String> + Send + Sync + 'static,
 ) -> (ChannelLeaseResource, Arc<ChannelSupervisor>) {
     let fake = FakeDatabend::new(move |sql, db| {
-        query_handler(sql, db).map_err(|e| {
-            bendclaw::base::ErrorCode::internal(e)
-        })
+        query_handler(sql, db).map_err(|e| bendclaw::base::ErrorCode::internal(e))
     });
     let pool = fake.pool();
     let databases = Arc::new(AgentDatabases::new(pool, "test_").unwrap());
@@ -228,7 +263,10 @@ async fn on_acquired_starts_supervisor() {
     };
 
     resource.on_acquired(&entry).await.unwrap();
-    assert!(supervisor.is_alive("acct-1").await, "supervisor should be running after on_acquired");
+    assert!(
+        supervisor.is_alive("acct-1").await,
+        "supervisor should be running after on_acquired"
+    );
 }
 
 #[tokio::test]
@@ -269,7 +307,10 @@ async fn on_released_stops_supervisor() {
     resource.on_released("acct-1", &pool).await;
     // Give stop a moment to propagate.
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    assert!(!supervisor.is_alive("acct-1").await, "supervisor should be stopped after on_released");
+    assert!(
+        !supervisor.is_alive("acct-1").await,
+        "supervisor should be stopped after on_released"
+    );
 }
 
 #[tokio::test]
@@ -308,11 +349,17 @@ async fn is_healthy_reflects_supervisor_state() {
     };
 
     resource.on_acquired(&entry).await.unwrap();
-    assert!(resource.is_healthy("acct-1").await, "running receiver should be healthy");
+    assert!(
+        resource.is_healthy("acct-1").await,
+        "running receiver should be healthy"
+    );
 
     supervisor.stop("acct-1").await;
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    assert!(!resource.is_healthy("acct-1").await, "stopped receiver should be unhealthy");
+    assert!(
+        !resource.is_healthy("acct-1").await,
+        "stopped receiver should be unhealthy"
+    );
 }
 
 #[tokio::test]

@@ -51,8 +51,7 @@ impl LLMProvider for NoopLLM {
 pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
     let pool = fake.pool();
     let databases = Arc::new(AgentDatabases::new(pool, "test_").expect("agent databases"));
-    let workspace_root =
-        std::env::temp_dir().join(format!("bendclaw-test-{}", ulid::Ulid::new()));
+    let workspace_root = std::env::temp_dir().join(format!("bendclaw-test-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&workspace_root);
     let skills = Arc::new(SkillStore::new(databases.clone(), workspace_root, None));
     let channels = Arc::new(ChannelRegistry::new());

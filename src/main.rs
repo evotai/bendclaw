@@ -116,10 +116,12 @@ async fn cmd_run(
     };
 
     let sentry_layer = if config.telemetry.enabled {
-        Some(sentry_tracing::layer().event_filter(|md| match *md.level() {
-            tracing::Level::ERROR => sentry_tracing::EventFilter::Event,
-            _ => sentry_tracing::EventFilter::Ignore,
-        }))
+        Some(
+            sentry_tracing::layer().event_filter(|md| match *md.level() {
+                tracing::Level::ERROR => sentry_tracing::EventFilter::Event,
+                _ => sentry_tracing::EventFilter::Ignore,
+            }),
+        )
     } else {
         None
     };

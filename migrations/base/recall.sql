@@ -17,10 +17,8 @@ CREATE TABLE IF NOT EXISTS knowledge (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
     INVERTED INDEX idx_knowledge_kind(kind),
-    INVERTED INDEX idx_knowledge_subject(subject),
-    INVERTED INDEX idx_knowledge_locator(locator),
     INVERTED INDEX idx_knowledge_status(status),
-    INVERTED INDEX idx_knowledge_summary(summary)
+    INVERTED INDEX idx_knowledge_fts(subject, summary, locator)
 ) ENGINE = FUSE;
 
 CREATE TABLE IF NOT EXISTS learnings (

@@ -33,16 +33,6 @@ async fn setup_pool() -> Result<Option<Pool>> {
         .await?;
     let pool = root.with_database(&db_name)?;
     run_migration(&pool, RECALL_MIGRATION).await?;
-    // Ensure inverted indexes are materialized before querying.
-    for idx in [
-        "idx_knowledge_subject",
-        "idx_knowledge_locator",
-        "idx_knowledge_summary",
-    ] {
-        let _ = pool
-            .exec(&format!("REFRESH INVERTED INDEX {idx} ON knowledge"))
-            .await;
-    }
     Ok(Some(pool))
 }
 

@@ -11,10 +11,14 @@ pub fn escape(s: &str) -> String {
 }
 
 /// Escape a string for safe use inside a `QUERY('...')` Lucene expression.
-/// Escapes Lucene special characters with backslash and doubles SQL single quotes.
+/// Escapes Lucene special characters with backslash and strips single quotes
+/// (which conflict with the SQL string delimiter and are not meaningful for FTS).
 pub fn escape_query(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + s.len() / 4);
     for c in s.chars() {
+        if c == '\'' {
+            continue;
+        }
         if matches!(
             c,
             '+' | '-'
@@ -34,12 +38,8 @@ pub fn escape_query(s: &str) -> String {
                 | '?'
                 | ':'
                 | '\\'
-                | '\''
         ) {
             out.push('\\');
-        }
-        if c == '\'' {
-            out.push('\'');
         }
         out.push(c);
     }

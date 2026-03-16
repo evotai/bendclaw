@@ -528,7 +528,7 @@ fn escape_query_special_chars() {
 
 #[test]
 fn escape_query_quotes() {
-    assert_eq!(escape_query("it's"), "it\\''s");
+    assert_eq!(escape_query("it's"), "its");
     assert_eq!(escape_query(r#"say "hi""#), r#"say \"hi\""#);
 }
 

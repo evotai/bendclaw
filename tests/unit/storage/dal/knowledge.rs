@@ -84,5 +84,5 @@ fn search_condition_escapes_special_chars() {
 #[test]
 fn search_condition_escapes_quotes() {
     let cond = build_search_condition("it's a test");
-    assert!(cond.contains("it\\''s a test"));
+    assert!(cond.contains("its a test"));
 }

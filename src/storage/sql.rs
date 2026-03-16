@@ -34,6 +34,7 @@ pub fn escape_query(s: &str) -> String {
                 | '?'
                 | ':'
                 | '\\'
+                | '\''
         ) {
             out.push('\\');
         }

@@ -52,7 +52,7 @@ impl AnthropicProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
         stream: bool,
     ) -> (serde_json::Value, String) {
         let (system_prompt, api_messages) = to_anthropic_messages(messages);
@@ -88,7 +88,7 @@ impl LLMProvider for AnthropicProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> Result<LLMResponse> {
         tracing::info!(
             provider = "anthropic",
@@ -173,7 +173,7 @@ impl LLMProvider for AnthropicProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> ResponseStream {
         let (writer, stream) = ResponseStream::channel(64);
         let (body, url) = self.build_body(model, messages, tools, temperature, true);

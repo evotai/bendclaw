@@ -31,7 +31,7 @@ impl LLMProvider for NoopLLM {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         Err(bendclaw::base::ErrorCode::internal("noop llm"))
     }
@@ -41,7 +41,7 @@ impl LLMProvider for NoopLLM {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let (_writer, stream) = ResponseStream::channel(1);
         stream

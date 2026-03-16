@@ -226,7 +226,7 @@ impl Runtime {
         self.llm.read().default_model().to_string()
     }
 
-    pub fn temperature(&self) -> f32 {
+    pub fn temperature(&self) -> f64 {
         self.llm.read().default_temperature()
     }
 }

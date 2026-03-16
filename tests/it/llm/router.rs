@@ -55,7 +55,7 @@ fn router_empty_default_model() -> Result<()> {
 fn router_empty_default_temperature() -> Result<()> {
     let config = LLMConfig::default();
     let router = LLMRouter::from_config(&config).context("router build")?;
-    assert!((router.default_temperature() - 0.7).abs() < f32::EPSILON);
+    assert!((router.default_temperature() - 0.7).abs() < f64::EPSILON);
     Ok(())
 }
 
@@ -114,7 +114,7 @@ fn router_default_model_from_highest_weight() -> Result<()> {
 fn router_default_temperature_from_highest_weight() -> Result<()> {
     let config = make_config_with_providers();
     let router = LLMRouter::from_config(&config).context("router build")?;
-    assert!((router.default_temperature() - 0.5).abs() < f32::EPSILON);
+    assert!((router.default_temperature() - 0.5).abs() < f64::EPSILON);
     Ok(())
 }
 

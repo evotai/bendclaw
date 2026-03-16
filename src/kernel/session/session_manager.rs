@@ -170,7 +170,7 @@ mod tests {
             _model: &str,
             _messages: &[ChatMessage],
             _tools: &[ToolSchema],
-            _temperature: f32,
+            _temperature: f64,
         ) -> crate::base::Result<LLMResponse> {
             Err(ErrorCode::internal("noop llm"))
         }
@@ -180,7 +180,7 @@ mod tests {
             _model: &str,
             _messages: &[ChatMessage],
             _tools: &[ToolSchema],
-            _temperature: f32,
+            _temperature: f64,
         ) -> ResponseStream {
             let (_writer, stream) = ResponseStream::channel(1);
             stream

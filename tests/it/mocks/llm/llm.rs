@@ -133,7 +133,7 @@ impl LLMProvider for MockLLMProvider {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         let turn = self.next_turn();
         match turn {
@@ -178,7 +178,7 @@ impl LLMProvider for MockLLMProvider {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let turn = self.next_turn();
         let (writer, stream) = ResponseStream::channel(16);

@@ -41,7 +41,7 @@ pub struct ProviderEndpoint {
     pub weight: u32,
     /// Sampling temperature for this provider. Default 0.7.
     #[serde(default = "default_temperature")]
-    pub temperature: f32,
+    pub temperature: f64,
     /// Input token price in USD per 1M tokens.
     #[serde(default)]
     pub input_price: f64,
@@ -54,7 +54,7 @@ fn default_weight() -> u32 {
     100
 }
 
-fn default_temperature() -> f32 {
+fn default_temperature() -> f64 {
     0.7
 }
 

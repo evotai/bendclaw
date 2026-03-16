@@ -34,7 +34,7 @@ impl LLMProvider for FailThenSucceed {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         let mut remaining = self.remaining_failures.lock();
         if *remaining > 0 {
@@ -60,7 +60,7 @@ impl LLMProvider for FailThenSucceed {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let remaining_failures = {
             let mut r = self.remaining_failures.lock();
@@ -95,7 +95,7 @@ impl LLMProvider for AlwaysFail {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         Err(ErrorCode::llm_rate_limit("rate limited"))
     }
@@ -105,7 +105,7 @@ impl LLMProvider for AlwaysFail {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let (writer, stream) = ResponseStream::channel(16);
         tokio::spawn(async move {
@@ -188,7 +188,7 @@ fn reliable_delegates_default_model() {
 fn reliable_delegates_default_temperature() {
     let inner = Arc::new(crate::mocks::llm::MockLLMProvider::with_text("hi"));
     let reliable = ReliableProvider::wrap(inner);
-    assert!((reliable.default_temperature() - 0.7).abs() < f32::EPSILON);
+    assert!((reliable.default_temperature() - 0.7).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -262,7 +262,7 @@ impl LLMProvider for CountingFail {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         *self.call_count.lock() += 1;
         Err(ErrorCode::new(self.error_code, "TestError", &self.message))
@@ -273,7 +273,7 @@ impl LLMProvider for CountingFail {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         *self.call_count.lock() += 1;
         let msg = self.message.clone();

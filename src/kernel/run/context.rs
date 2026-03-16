@@ -24,7 +24,7 @@ pub(crate) struct Context {
     // ── LLM ──
     pub llm: Arc<dyn LLMProvider>,
     pub model: Arc<str>,
-    pub temperature: f32,
+    pub temperature: f64,
 
     // ── Limits ──
     pub max_iterations: u32,

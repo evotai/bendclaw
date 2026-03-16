@@ -47,7 +47,7 @@ impl OpenAIProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
         stream: bool,
     ) -> Result<serde_json::Value> {
         let mut body = json!({
@@ -74,7 +74,7 @@ impl LLMProvider for OpenAIProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> Result<LLMResponse> {
         tracing::info!(
             provider = "openai",
@@ -159,7 +159,7 @@ impl LLMProvider for OpenAIProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> ResponseStream {
         let body = match self.build_body(model, messages, tools, temperature, true) {
             Ok(b) => b,

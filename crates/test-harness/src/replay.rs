@@ -248,7 +248,7 @@ impl LLMProvider for TraceLlm {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         let ex = self.next_exchange();
         let usage = mock_usage_from(ex.usage.as_ref());
@@ -262,7 +262,7 @@ impl LLMProvider for TraceLlm {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let ex = self.next_exchange();
         let usage = mock_usage_from(ex.usage.as_ref());

@@ -73,7 +73,7 @@ impl LLMProvider for ReliableProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> Result<LLMResponse> {
         let op = || async { self.inner.chat(model, messages, tools, temperature).await };
 
@@ -90,7 +90,7 @@ impl LLMProvider for ReliableProvider {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> ResponseStream {
         let (writer, stream) = ResponseStream::channel(64);
         let inner = self.inner.clone();
@@ -169,7 +169,7 @@ impl LLMProvider for ReliableProvider {
         self.inner.default_model()
     }
 
-    fn default_temperature(&self) -> f32 {
+    fn default_temperature(&self) -> f64 {
         self.inner.default_temperature()
     }
 }

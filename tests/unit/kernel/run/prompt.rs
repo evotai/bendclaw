@@ -200,7 +200,7 @@ impl LLMProvider for NoopLLM {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> bendclaw::base::Result<LLMResponse> {
         unreachable!("prompt builder tests do not call chat")
     }
@@ -210,7 +210,7 @@ impl LLMProvider for NoopLLM {
         _model: &str,
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         let (_writer, stream) = ResponseStream::channel(1);
         stream
@@ -220,7 +220,7 @@ impl LLMProvider for NoopLLM {
         "mock"
     }
 
-    fn default_temperature(&self) -> f32 {
+    fn default_temperature(&self) -> f64 {
         0.0
     }
 }

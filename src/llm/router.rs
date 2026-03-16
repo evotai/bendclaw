@@ -34,7 +34,7 @@ struct Slot {
     provider_name: String,
     provider: Arc<dyn LLMProvider>,
     model: String,
-    temperature: f32,
+    temperature: f64,
     breaker: CircuitBreaker,
     input_price: f64,
     output_price: f64,
@@ -110,7 +110,7 @@ impl LLMProvider for LLMRouter {
         _model: &str,
         messages: &[super::message::ChatMessage],
         tools: &[super::tool::ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> Result<LLMResponse> {
         let mut last_error = None;
         let start = Instant::now();
@@ -174,7 +174,7 @@ impl LLMProvider for LLMRouter {
         _model: &str,
         messages: &[super::message::ChatMessage],
         tools: &[super::tool::ToolSchema],
-        _temperature: f32,
+        _temperature: f64,
     ) -> ResponseStream {
         if self.slots.is_empty() {
             return ResponseStream::from_error(ErrorCode::llm_request(
@@ -238,7 +238,7 @@ impl LLMProvider for LLMRouter {
             .unwrap_or("unknown")
     }
 
-    fn default_temperature(&self) -> f32 {
+    fn default_temperature(&self) -> f64 {
         self.slots.first().map(|s| s.temperature).unwrap_or(0.7)
     }
 }

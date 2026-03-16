@@ -55,7 +55,7 @@ impl LLMProvider for ReactiveMockLLMProvider {
         _model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> Result<LLMResponse> {
         let call_index = self.next_call_index();
         (self.handler)(call_index, messages, tools, temperature)
@@ -66,7 +66,7 @@ impl LLMProvider for ReactiveMockLLMProvider {
         _model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> ResponseStream {
         let call_index = self.next_call_index();
         let (writer, stream) = ResponseStream::channel(16);
@@ -123,7 +123,7 @@ impl LLMProvider for ReactiveMockLLMProvider {
         "mock"
     }
 
-    fn default_temperature(&self) -> f32 {
+    fn default_temperature(&self) -> f64 {
         0.0
     }
 }

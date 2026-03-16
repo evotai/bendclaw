@@ -75,7 +75,7 @@ pub trait LLMProvider: Send + Sync {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> Result<LLMResponse>;
 
     /// Streaming call: returns a `ResponseStream` that yields events as they arrive.
@@ -87,7 +87,7 @@ pub trait LLMProvider: Send + Sync {
         model: &str,
         messages: &[ChatMessage],
         tools: &[ToolSchema],
-        temperature: f32,
+        temperature: f64,
     ) -> ResponseStream;
 
     /// Return pricing for the given model as `(input_price, output_price)` in USD per 1M tokens.
@@ -102,7 +102,7 @@ pub trait LLMProvider: Send + Sync {
     }
 
     /// Default sampling temperature for the primary model.
-    fn default_temperature(&self) -> f32 {
+    fn default_temperature(&self) -> f64 {
         0.7
     }
 }

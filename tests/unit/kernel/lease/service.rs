@@ -54,7 +54,7 @@ impl FakeResource {
             id: id.to_string(),
             pool: self.pool.clone(),
             lease_token: None,
-            lease_instance_id: None,
+            lease_node_id: None,
             lease_expires_at: None,
             context: String::new(),
             release_fn: None,
@@ -66,7 +66,7 @@ impl FakeResource {
             id: id.to_string(),
             pool: self.pool.clone(),
             lease_token: Some("old-token".to_string()),
-            lease_instance_id: Some(instance.to_string()),
+            lease_node_id: Some(instance.to_string()),
             lease_expires_at: Some(expires.to_string()),
             context: String::new(),
             release_fn: None,
@@ -94,7 +94,7 @@ impl LeaseResource for FakeResource {
                 id: e.id.clone(),
                 pool: e.pool.clone(),
                 lease_token: e.lease_token.clone(),
-                lease_instance_id: e.lease_instance_id.clone(),
+                lease_node_id: e.lease_node_id.clone(),
                 lease_expires_at: e.lease_expires_at.clone(),
                 context: String::new(),
                 release_fn: None,
@@ -541,7 +541,7 @@ async fn stale_eviction_issues_release_sql_and_on_released() {
     let sqls = sql_log.lock().unwrap();
     let has_release = sqls.iter().any(|s| {
         s.contains("UPDATE fake_resources SET")
-            && s.contains("lease_instance_id = NULL")
+            && s.contains("lease_node_id = NULL")
             && s.contains("lease_token = NULL")
     });
     assert!(
@@ -641,7 +641,7 @@ async fn disabled_resource_evicted_and_released_on_next_scan() {
     let sqls = sql_log.lock().unwrap();
     let has_release = sqls
         .iter()
-        .any(|s| s.contains("UPDATE fake_resources SET") && s.contains("lease_instance_id = NULL"));
+        .any(|s| s.contains("UPDATE fake_resources SET") && s.contains("lease_node_id = NULL"));
     assert!(
         has_release,
         "disabled resource must have DB lease cleared: {sqls:?}"

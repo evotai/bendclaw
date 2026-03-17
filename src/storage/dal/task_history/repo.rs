@@ -19,7 +19,7 @@ impl RowMapper for TaskHistoryMapper {
     type Entity = TaskHistoryRecord;
 
     fn columns(&self) -> &str {
-        "id, task_id, run_id, task_name, schedule, prompt, status, output, error, duration_ms, delivery, delivery_status, delivery_error, executed_by_instance_id, TO_VARCHAR(created_at)"
+        "id, task_id, run_id, task_name, schedule, prompt, status, output, error, duration_ms, delivery, delivery_status, delivery_error, executed_by_node_id, TO_VARCHAR(created_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TaskHistoryRecord> {
@@ -37,7 +37,7 @@ impl RowMapper for TaskHistoryMapper {
             delivery: TaskDelivery::from_storage(&sql::col(row, 10), "task_history.delivery")?,
             delivery_status: sql::col_opt(row, 11),
             delivery_error: sql::col_opt(row, 12),
-            executed_by_instance_id: sql::col_opt(row, 13),
+            executed_by_node_id: sql::col_opt(row, 13),
             created_at: sql::col(row, 14),
         })
     }
@@ -84,8 +84,8 @@ impl TaskHistoryRepo {
                     SqlVal::str_or_null(record.delivery_error.as_deref()),
                 ),
                 (
-                    "executed_by_instance_id",
-                    SqlVal::str_or_null(record.executed_by_instance_id.as_deref()),
+                    "executed_by_node_id",
+                    SqlVal::str_or_null(record.executed_by_node_id.as_deref()),
                 ),
                 ("created_at", SqlVal::Raw("NOW()")),
             ])

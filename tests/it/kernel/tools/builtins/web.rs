@@ -166,6 +166,7 @@ async fn web_search_success_formats_results_and_caps_count(
         trace_id: "t-test".into(),
         workspace: std::sync::Arc::new(workspace),
         pool: crate::mocks::context::dummy_pool(),
+        is_dispatched: false,
     };
 
     let result = tool

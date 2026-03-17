@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS traces (
     input_tokens  UINT64   NOT NULL DEFAULT 0 COMMENT 'Total input tokens',
     output_tokens UINT64   NOT NULL DEFAULT 0 COMMENT 'Total output tokens',
     total_cost   DOUBLE    NOT NULL DEFAULT 0.0 COMMENT 'Total estimated cost',
+    parent_trace_id VARCHAR NOT NULL DEFAULT '' COMMENT 'Parent trace from dispatching node',
+    origin_node_id  VARCHAR NOT NULL DEFAULT '' COMMENT 'Instance ID of the node that dispatched this trace',
     created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
 ) COMMENT = 'Request-level traces';

@@ -16,7 +16,8 @@ fn run_row(id: &str, status: &str) -> bendclaw::storage::pool::QueryResponse {
             serde_json::Value::String("session-1".to_string()),
             serde_json::Value::String("agent-1".to_string()),
             serde_json::Value::String("user-1".to_string()),
-            serde_json::Value::String(String::new()),
+            serde_json::Value::String(String::new()), // parent_run_id
+            serde_json::Value::String(String::new()), // node_id
             serde_json::Value::String(status.to_string()),
             serde_json::Value::String("hello".to_string()),
             serde_json::Value::String("done".to_string()),
@@ -39,10 +40,10 @@ async fn run_repo_load_and_list_for_session_build_expected_queries() -> Result<(
         if sql.starts_with("SELECT COUNT(*) FROM runs WHERE ") {
             return Ok(paged_rows(&[&["2"]], None, None));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' AND status = 'COMPLETED' ORDER BY created_at DESC LIMIT 20 OFFSET 0") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' AND status = 'COMPLETED' ORDER BY created_at DESC LIMIT 20 OFFSET 0") {
             return Ok(run_row("run-1", "COMPLETED"));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-1' LIMIT 1") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-1' LIMIT 1") {
             return Ok(run_row("run-1", "COMPLETED"));
         }
         panic!("unexpected SQL: {sql}");

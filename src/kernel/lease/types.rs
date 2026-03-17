@@ -14,7 +14,7 @@ pub struct ResourceEntry {
     pub id: String,
     pub pool: Pool,
     pub lease_token: Option<String>,
-    pub lease_instance_id: Option<String>,
+    pub lease_node_id: Option<String>,
     pub lease_expires_at: Option<String>,
     /// Generic context carried from discover() to on_acquired().
     /// For tasks this is the agent_id; channels leave it empty.

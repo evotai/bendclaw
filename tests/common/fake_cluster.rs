@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use anyhow::Context as _;
 use anyhow::Result;
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
@@ -17,7 +18,7 @@ use axum::routing::post;
 use axum::routing::put;
 use axum::Json;
 use axum::Router;
-use bendclaw::client::NodeInfo;
+use bendclaw::client::NodeEntry;
 use bendclaw::client::RemoteRunResponse;
 use serde::Deserialize;
 use serde::Serialize;
@@ -25,19 +26,22 @@ use serde::Serialize;
 #[derive(Clone)]
 struct RegistryState {
     auth_token: String,
-    nodes: Arc<Mutex<BTreeMap<String, NodeInfo>>>,
+    nodes: Arc<Mutex<BTreeMap<String, NodeEntry>>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct RegisterRequest {
-    instance_id: String,
+    node_id: String,
     endpoint: String,
-    max_load: u32,
+    #[serde(default)]
+    cluster_id: String,
+    #[serde(default)]
+    data: serde_json::Value,
 }
 
 pub struct FakeClusterRegistry {
     base_url: String,
-    nodes: Arc<Mutex<BTreeMap<String, NodeInfo>>>,
+    nodes: Arc<Mutex<BTreeMap<String, NodeEntry>>>,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     server_handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -51,11 +55,8 @@ impl FakeClusterRegistry {
         };
         let app = Router::new()
             .route("/v1/cluster/nodes", post(register_node).get(list_nodes))
-            .route(
-                "/v1/cluster/nodes/{instance_id}/heartbeat",
-                put(heartbeat_node),
-            )
-            .route("/v1/cluster/nodes/{instance_id}", delete(delete_node))
+            .route("/v1/cluster/nodes/{node_id}/heartbeat", put(heartbeat_node))
+            .route("/v1/cluster/nodes/{node_id}", delete(delete_node))
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -84,7 +85,7 @@ impl FakeClusterRegistry {
         &self.base_url
     }
 
-    pub fn snapshot(&self) -> Vec<NodeInfo> {
+    pub fn snapshot(&self) -> Vec<NodeEntry> {
         self.nodes
             .lock()
             .expect("fake registry nodes lock")
@@ -110,6 +111,7 @@ pub struct FakeRunRequest {
     pub user_id: String,
     pub input: String,
     pub parent_run_id: Option<String>,
+    pub origin_node_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +174,14 @@ impl FakeRunPlan {
         Self {
             create: FakeRunState::running(),
             polls: vec![FakeRunState::running(), FakeRunState::failed(error)],
+        }
+    }
+
+    /// Always returns RUNNING — never completes. Useful for timeout tests.
+    pub fn stuck_running() -> Self {
+        Self {
+            create: FakeRunState::running(),
+            polls: vec![FakeRunState::running()],
         }
     }
 }
@@ -282,65 +292,73 @@ async fn register_node(
     State(state): State<RegistryState>,
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
-) -> std::result::Result<Json<NodeInfo>, StatusCode> {
+) -> std::result::Result<Json<NodeEntry>, StatusCode> {
     if !is_authorized(&headers, &state.auth_token) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let node = NodeInfo {
-        instance_id: body.instance_id.clone(),
+    let node = NodeEntry {
+        node_id: body.node_id.clone(),
         endpoint: body.endpoint,
-        max_load: body.max_load,
-        current_load: 0,
-        status: "READY".to_string(),
+        cluster_id: body.cluster_id.clone(),
+        data: body.data,
     };
     state
         .nodes
         .lock()
         .expect("fake registry nodes lock")
-        .insert(body.instance_id, node.clone());
+        .insert(body.node_id, node.clone());
     Ok(Json(node))
+}
+
+#[derive(Deserialize, Default)]
+struct ListNodesQuery {
+    cluster_id: Option<String>,
 }
 
 async fn list_nodes(
     State(state): State<RegistryState>,
     headers: HeaderMap,
-) -> std::result::Result<Json<Vec<NodeInfo>>, StatusCode> {
+    Query(q): Query<ListNodesQuery>,
+) -> std::result::Result<Json<Vec<NodeEntry>>, StatusCode> {
     if !is_authorized(&headers, &state.auth_token) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(
-        state
-            .nodes
-            .lock()
-            .expect("fake registry nodes lock")
-            .values()
-            .cloned()
-            .collect(),
-    ))
+    let nodes = state
+        .nodes
+        .lock()
+        .expect("fake registry nodes lock")
+        .values()
+        .filter(|n| match &q.cluster_id {
+            Some(cid) => n.cluster_id == *cid,
+            None => true,
+        })
+        .cloned()
+        .collect();
+    Ok(Json(nodes))
 }
 
 async fn heartbeat_node(
     State(state): State<RegistryState>,
     headers: HeaderMap,
-    Path(instance_id): Path<String>,
+    Path(node_id): Path<String>,
 ) -> std::result::Result<StatusCode, StatusCode> {
     if !is_authorized(&headers, &state.auth_token) {
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let mut nodes = state.nodes.lock().expect("fake registry nodes lock");
-    let Some(node) = nodes.get_mut(&instance_id) else {
-        return Err(StatusCode::NOT_FOUND);
-    };
-    node.status = "READY".to_string();
-    Ok(StatusCode::OK)
+    let nodes = state.nodes.lock().expect("fake registry nodes lock");
+    if nodes.contains_key(&node_id) {
+        Ok(StatusCode::OK)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
 }
 
 async fn delete_node(
     State(state): State<RegistryState>,
     headers: HeaderMap,
-    Path(instance_id): Path<String>,
+    Path(node_id): Path<String>,
 ) -> std::result::Result<StatusCode, StatusCode> {
     if !is_authorized(&headers, &state.auth_token) {
         return Err(StatusCode::UNAUTHORIZED);
@@ -350,7 +368,7 @@ async fn delete_node(
         .nodes
         .lock()
         .expect("fake registry nodes lock")
-        .remove(&instance_id);
+        .remove(&node_id);
     Ok(StatusCode::OK)
 }
 
@@ -373,6 +391,11 @@ async fn create_run(
         .get("x-parent-run-id")
         .and_then(|value| value.to_str().ok())
         .map(|value| value.to_string());
+    let origin_node_id = headers
+        .get("x-origin-node-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
     let run_id = ulid::Ulid::new().to_string();
     let request = FakeRunRequest {
         run_id: run_id.clone(),
@@ -380,6 +403,7 @@ async fn create_run(
         user_id,
         input: body.input,
         parent_run_id,
+        origin_node_id,
     };
     let plan = (state.handler)(&request);
     let create_response = run_response(&run_id, plan.create);

@@ -35,6 +35,8 @@ async fn traces_api_fast_list_get_and_spans() -> Result<()> {
                     "10",
                     "20",
                     "0.5",
+                    "",
+                    "",
                     "2026-03-11T00:00:00Z",
                     "2026-03-11T00:01:00Z",
                 ]],
@@ -58,6 +60,8 @@ async fn traces_api_fast_list_get_and_spans() -> Result<()> {
                     "10",
                     "20",
                     "0.5",
+                    "",
+                    "",
                     "2026-03-11T00:00:00Z",
                     "2026-03-11T00:01:00Z",
                 ]],
@@ -123,6 +127,9 @@ async fn traces_api_fast_list_get_and_spans() -> Result<()> {
     let list_body = json_body(list).await?;
     assert_eq!(list_body["data"][0]["trace_id"], "trace-1");
     assert_eq!(list_body["data"][0]["status"], "completed");
+    // parent_trace_id / origin_node_id are empty → skip_serializing_if omits them
+    assert!(list_body["data"][0].get("parent_trace_id").is_none());
+    assert!(list_body["data"][0].get("origin_node_id").is_none());
 
     let detail = app
         .clone()
@@ -152,5 +159,66 @@ async fn traces_api_fast_list_get_and_spans() -> Result<()> {
     let spans_body = json_body(spans).await?;
     assert_eq!(spans_body[0]["span_id"], "span-1");
     assert_eq!(spans_body[0]["summary"], "echo hi");
+    Ok(())
+}
+
+#[tokio::test]
+async fn traces_api_list_child_traces() -> Result<()> {
+    let fake = FakeDatabend::new(|sql, _database| {
+        if sql.contains("WHERE parent_trace_id =") {
+            return Ok(paged_rows(
+                &[&[
+                    "child-t",
+                    "run-2",
+                    "session-2",
+                    "agent-b",
+                    "user-a",
+                    "agent.run",
+                    "completed",
+                    "30",
+                    "5",
+                    "8",
+                    "0.1",
+                    "parent-t",
+                    "node-1",
+                    "2026-03-11T00:02:00Z",
+                    "2026-03-11T00:03:00Z",
+                ]],
+                None,
+                None,
+            ));
+        }
+        Ok(paged_rows(&[], None, None))
+    });
+
+    let prefix = format!(
+        "test_child_trace_{}_",
+        ulid::Ulid::new().to_string().to_lowercase()
+    );
+    let app = app_with_root_pool_and_llm(
+        fake.pool(),
+        "http://fake.local/v1",
+        "",
+        "default",
+        &prefix,
+        Arc::new(MockLLMProvider::with_text("ok")),
+    )
+    .await?;
+    let agent_id = uid("agent");
+    let user = uid("user");
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/agents/{agent_id}/traces/parent-t/children"))
+                .header("x-user-id", &user)
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await?;
+    assert_eq!(body[0]["trace_id"], "child-t");
+    assert_eq!(body[0]["parent_trace_id"], "parent-t");
+    assert_eq!(body[0]["origin_node_id"], "node-1");
     Ok(())
 }

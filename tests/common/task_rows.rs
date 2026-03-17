@@ -5,7 +5,7 @@ use bendclaw::storage::pool::QueryResponse;
 #[derive(Clone)]
 pub struct TaskRow {
     pub id: String,
-    pub executor_instance_id: String,
+    pub executor_node_id: String,
     pub name: String,
     pub prompt: String,
     pub enabled: bool,
@@ -18,7 +18,7 @@ pub struct TaskRow {
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,
     pub lease_token: Option<String>,
-    pub lease_instance_id: Option<String>,
+    pub lease_node_id: Option<String>,
     pub lease_expires_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -28,7 +28,7 @@ impl TaskRow {
     pub fn every(id: &str, name: &str, enabled: bool) -> Self {
         Self {
             id: id.to_string(),
-            executor_instance_id: "inst-1".to_string(),
+            executor_node_id: "inst-1".to_string(),
             name: name.to_string(),
             prompt: "run report".to_string(),
             enabled,
@@ -41,7 +41,7 @@ impl TaskRow {
             last_run_at: None,
             next_run_at: Some("2026-03-11T00:00:00Z".to_string()),
             lease_token: None,
-            lease_instance_id: None,
+            lease_node_id: None,
             lease_expires_at: None,
             created_at: "2026-03-10T00:00:00Z".to_string(),
             updated_at: "2026-03-10T00:00:00Z".to_string(),
@@ -51,7 +51,7 @@ impl TaskRow {
     pub fn into_json_row(self) -> Vec<serde_json::Value> {
         vec![
             serde_json::Value::String(self.id),
-            serde_json::Value::String(self.executor_instance_id),
+            serde_json::Value::String(self.executor_node_id),
             serde_json::Value::String(self.name),
             serde_json::Value::String(self.prompt),
             serde_json::Value::String(self.enabled.to_string()),
@@ -64,7 +64,7 @@ impl TaskRow {
             serde_json::Value::String(self.last_run_at.unwrap_or_default()),
             serde_json::Value::String(self.next_run_at.unwrap_or_default()),
             serde_json::Value::String(self.lease_token.unwrap_or_default()),
-            serde_json::Value::String(self.lease_instance_id.unwrap_or_default()),
+            serde_json::Value::String(self.lease_node_id.unwrap_or_default()),
             serde_json::Value::String(self.lease_expires_at.unwrap_or_default()),
             serde_json::Value::String(self.created_at),
             serde_json::Value::String(self.updated_at),
@@ -87,7 +87,7 @@ pub struct TaskHistoryRow {
     pub delivery_json: String,
     pub delivery_status: Option<String>,
     pub delivery_error: Option<String>,
-    pub executed_by_instance_id: Option<String>,
+    pub executed_by_node_id: Option<String>,
     pub created_at: String,
 }
 
@@ -107,7 +107,7 @@ impl TaskHistoryRow {
             delivery_json: String::new(),
             delivery_status: None,
             delivery_error: None,
-            executed_by_instance_id: Some("inst-1".to_string()),
+            executed_by_node_id: Some("inst-1".to_string()),
             created_at: "2026-03-11T00:05:00Z".to_string(),
         }
     }
@@ -127,7 +127,7 @@ impl TaskHistoryRow {
             serde_json::Value::String(self.delivery_json),
             serde_json::Value::String(self.delivery_status.unwrap_or_default()),
             serde_json::Value::String(self.delivery_error.unwrap_or_default()),
-            serde_json::Value::String(self.executed_by_instance_id.unwrap_or_default()),
+            serde_json::Value::String(self.executed_by_node_id.unwrap_or_default()),
             serde_json::Value::String(self.created_at),
         ]
     }

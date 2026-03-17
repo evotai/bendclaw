@@ -11,14 +11,12 @@ use crate::kernel::tools::OpType;
 use crate::kernel::tools::ToolId;
 
 pub struct TaskHistoryTool {
-    _instance_id: String,
+    _node_id: String,
 }
 
 impl TaskHistoryTool {
-    pub fn new(instance_id: String) -> Self {
-        Self {
-            _instance_id: instance_id,
-        }
+    pub fn new(node_id: String) -> Self {
+        Self { _node_id: node_id }
     }
 }
 

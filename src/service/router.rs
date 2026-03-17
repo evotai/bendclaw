@@ -26,6 +26,10 @@ use crate::config::AuthConfig;
 const TRACE_HEADER: &str = "x-request-id";
 const USER_HEADER: &str = "x-user-id";
 
+/// Resolved request trace ID, injected by the logging middleware.
+#[derive(Clone)]
+pub struct ResolvedTraceId(pub String);
+
 fn header_value(req: &Request<Body>, key: &str) -> String {
     req.headers()
         .get(key)
@@ -48,7 +52,7 @@ fn query_value(req: &Request<Body>, key: &str) -> String {
         .unwrap_or_default()
 }
 
-async fn log_http_request(req: Request<Body>, next: Next) -> Response {
+async fn log_http_request(mut req: Request<Body>, next: Next) -> Response {
     let started = Instant::now();
     let method = req.method().clone();
     let uri = req.uri().clone();
@@ -71,6 +75,8 @@ async fn log_http_request(req: Request<Body>, next: Next) -> Response {
             header
         }
     };
+    req.extensions_mut()
+        .insert(ResolvedTraceId(trace_id.clone()));
     let user_id = {
         let header = header_value(&req, USER_HEADER);
         if header.is_empty() {
@@ -269,6 +275,10 @@ pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Route
         .route(
             "/v1/agents/{agent_id}/traces/{trace_id}/spans",
             get(v1::traces::list_spans),
+        )
+        .route(
+            "/v1/agents/{agent_id}/traces/{trace_id}/children",
+            get(v1::traces::list_child_traces),
         )
         // Run Events
         .route(

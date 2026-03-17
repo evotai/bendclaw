@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS runs (
     agent_id       VARCHAR   NOT NULL DEFAULT '' COMMENT 'Agent identifier',
     user_id        VARCHAR   NOT NULL   COMMENT 'Who initiated the run',
     parent_run_id  VARCHAR   NOT NULL DEFAULT '' COMMENT 'Parent run id when continued/retried',
+    node_id        VARCHAR   NOT NULL DEFAULT '' COMMENT 'Bendclaw node that executed this run',
     status         VARCHAR   NOT NULL DEFAULT 'RUNNING' COMMENT 'PENDING | RUNNING | PAUSED | COMPLETED | CANCELLED | ERROR',
     input          VARCHAR   NOT NULL DEFAULT '' COMMENT 'User message that started this run',
     output         VARCHAR   NOT NULL DEFAULT '' COMMENT 'Final assistant response text',

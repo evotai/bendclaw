@@ -31,6 +31,7 @@ fn ctx_with_pool(pool: bendclaw::storage::Pool) -> bendclaw::kernel::tools::Tool
             std::env::temp_dir().join(format!("bendclaw-task-tool-{}", ulid::Ulid::new())),
         ),
         pool,
+        is_dispatched: false,
     }
 }
 
@@ -256,7 +257,7 @@ async fn task_history_tool_returns_entries() -> Result<()> {
     let fake = FakeDatabend::new(|sql, _database| {
         assert_eq!(
             sql,
-            "SELECT id, task_id, run_id, task_name, schedule, prompt, status, output, error, duration_ms, delivery, delivery_status, delivery_error, executed_by_instance_id, TO_VARCHAR(created_at) FROM task_history WHERE task_id = 'task-1' ORDER BY created_at DESC LIMIT 5"
+            "SELECT id, task_id, run_id, task_name, schedule, prompt, status, output, error, duration_ms, delivery, delivery_status, delivery_error, executed_by_node_id, TO_VARCHAR(created_at) FROM task_history WHERE task_id = 'task-1' ORDER BY created_at DESC LIMIT 5"
         );
         Ok(task_history_query([TaskHistoryRow::ok("task-1")]))
     });

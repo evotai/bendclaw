@@ -13,6 +13,7 @@ pub(crate) async fn init_run(
     user_id: &str,
     user_message: &str,
     parent_run_id: Option<&str>,
+    node_id: &str,
 ) -> Result<String> {
     if storage.session_load(session_id).await?.is_none() {
         if let Err(e) = storage
@@ -31,6 +32,7 @@ pub(crate) async fn init_run(
             agent_id: agent_id.to_string(),
             user_id: user_id.to_string(),
             parent_run_id: parent_run_id.unwrap_or_default().to_string(),
+            node_id: node_id.to_string(),
             status: RunStatus::Running.as_str().to_string(),
             input: user_message.to_string(),
             output: String::new(),

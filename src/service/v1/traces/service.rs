@@ -75,6 +75,18 @@ pub async fn list_spans(
     Ok(span_repo.list_by_trace(trace_id).await?)
 }
 
+pub async fn list_child_traces(
+    state: &AppState,
+    agent_id: &str,
+    trace_id: &str,
+    user_id: &str,
+) -> Result<Vec<TraceResponse>> {
+    let pool = state.runtime.databases().agent_pool(agent_id)?;
+    let repo = TraceRepo::new(pool);
+    let rows = repo.list_child_traces(trace_id, user_id).await?;
+    Ok(rows.into_iter().map(to_response).collect())
+}
+
 fn to_response(r: TraceRecord) -> TraceResponse {
     TraceResponse {
         trace_id: r.trace_id,
@@ -86,6 +98,8 @@ fn to_response(r: TraceRecord) -> TraceResponse {
         input_tokens: r.input_tokens,
         output_tokens: r.output_tokens,
         total_cost: r.total_cost,
+        parent_trace_id: r.parent_trace_id,
+        origin_node_id: r.origin_node_id,
         created_at: r.created_at,
     }
 }

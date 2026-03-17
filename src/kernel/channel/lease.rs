@@ -89,7 +89,7 @@ impl LeaseResource for ChannelLeaseResource {
                     id: account.id.clone(),
                     pool: pool.clone(),
                     lease_token: account.lease_token,
-                    lease_instance_id: account.lease_instance_id,
+                    lease_node_id: account.lease_node_id,
                     lease_expires_at: account.lease_expires_at,
                     context: String::new(),
                     release_fn: None,

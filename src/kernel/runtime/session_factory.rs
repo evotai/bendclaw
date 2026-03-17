@@ -117,7 +117,7 @@ impl Runtime {
             skill_store_factory,
             pool.clone(),
             self.channels.clone(),
-            self.config.instance_id.clone(),
+            self.config.node_id.clone(),
             recall_store.clone(),
         );
 

@@ -7,14 +7,22 @@ use axum::response::Response;
 use axum::Json;
 use serde::Deserialize;
 
+use crate::service::router::ResolvedTraceId;
+
 const USER_HEADER: &str = "x-user-id";
 const TRACE_HEADER: &str = "x-request-id";
+const PARENT_TRACE_HEADER: &str = "x-trace-id";
+const ORIGIN_NODE_HEADER: &str = "x-origin-node-id";
 
 /// Per-request context extracted from headers.
 #[derive(Debug, Clone)]
 pub struct RequestContext {
     pub user_id: String,
     pub trace_id: String,
+    /// Trace ID from the dispatching node, for distributed trace linking.
+    pub parent_trace_id: String,
+    /// Node ID of the dispatching node, for distributed trace linking.
+    pub origin_node_id: String,
 }
 
 pub struct MissingHeader(&'static str);
@@ -58,7 +66,14 @@ impl RequestContext {
 
         Ok(Self {
             user_id,
-            trace_id: header(TRACE_HEADER).unwrap_or_default(),
+            trace_id: parts
+                .extensions
+                .get::<ResolvedTraceId>()
+                .map(|r| r.0.clone())
+                .or_else(|| header(TRACE_HEADER))
+                .unwrap_or_default(),
+            parent_trace_id: header(PARENT_TRACE_HEADER).unwrap_or_default(),
+            origin_node_id: header(ORIGIN_NODE_HEADER).unwrap_or_default(),
         })
     }
 }

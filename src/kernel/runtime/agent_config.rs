@@ -8,7 +8,7 @@ use crate::config::WorkspaceConfig;
 /// Everything needed to build and run the agent runtime.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentConfig {
-    pub instance_id: String,
+    pub node_id: String,
     pub databend_api_base_url: String,
     pub databend_api_token: String,
     pub databend_warehouse: String,
@@ -23,7 +23,7 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            instance_id: String::new(),
+            node_id: String::new(),
             databend_api_base_url: String::new(),
             databend_api_token: String::new(),
             databend_warehouse: "default".to_string(),

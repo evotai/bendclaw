@@ -5,7 +5,7 @@ use anyhow::Context as _;
 use anyhow::Result;
 use bendclaw::base::ErrorCode;
 use bendclaw::base::Role;
-use bendclaw::client::NodeInfo;
+use bendclaw::client::NodeEntry;
 use bendclaw::config::ClusterConfig;
 use bendclaw::kernel::cluster::ClusterOptions;
 use bendclaw::llm::message::ChatMessage;
@@ -60,11 +60,11 @@ fn parse_tool_json_values(messages: &[ChatMessage]) -> Vec<Value> {
         .collect()
 }
 
-fn latest_peer_nodes(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<NodeInfo>> {
+fn latest_peer_nodes(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<NodeEntry>> {
     parse_tool_json_values(messages)
         .into_iter()
         .rev()
-        .find_map(|value| serde_json::from_value::<Vec<NodeInfo>>(value).ok())
+        .find_map(|value| serde_json::from_value::<Vec<NodeEntry>>(value).ok())
         .ok_or_else(|| ErrorCode::llm_request("cluster_nodes output missing from tool history"))
 }
 
@@ -120,7 +120,7 @@ fn coordinator_llm(worker_agents: Vec<String>) -> Arc<dyn LLMProvider> {
             )]),
             1 => {
                 let mut peers = latest_peer_nodes(messages)?;
-                peers.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
+                peers.sort_by(|a, b| a.node_id.cmp(&b.node_id));
 
                 if peers.len() < worker_agents.len() {
                     return Err(ErrorCode::llm_request(format!(
@@ -139,7 +139,7 @@ fn coordinator_llm(worker_agents: Vec<String>) -> Arc<dyn LLMProvider> {
                             &format!("tc_dispatch_{index}"),
                             "cluster_dispatch",
                             serde_json::json!({
-                                "node_id": peer.instance_id,
+                                "node_id": peer.node_id,
                                 "agent_id": agent_id,
                                 "task": format!("solve subtask for {agent_id}")
                             }),
@@ -296,7 +296,7 @@ async fn cluster_multi_agent_collaboration_e2e() -> Result<()> {
         api_token: api_token.clone(),
         warehouse: warehouse.clone(),
         db_prefix: ctx.prefix().to_string(),
-        instance_id: "node-coordinator".to_string(),
+        node_id: "node-coordinator".to_string(),
         auth_key: auth_key.to_string(),
         llm: coordinator_llm(vec![worker_agent_a.clone()]),
         cluster: cluster_config(),
@@ -309,7 +309,7 @@ async fn cluster_multi_agent_collaboration_e2e() -> Result<()> {
         api_token: api_token.clone(),
         warehouse: warehouse.clone(),
         db_prefix: ctx.prefix().to_string(),
-        instance_id: "node-worker-a".to_string(),
+        node_id: "node-worker-a".to_string(),
         auth_key: auth_key.to_string(),
         llm: worker_llm_a,
         cluster: cluster_config(),
@@ -419,7 +419,7 @@ async fn cluster_shutdown_deregisters_nodes() -> Result<()> {
         api_token,
         warehouse,
         db_prefix: ctx.prefix().to_string(),
-        instance_id: "node-shutdown".to_string(),
+        node_id: "node-shutdown".to_string(),
         auth_key: auth_key.to_string(),
         llm: Arc::new(MockLLMProvider::with_text("ok")),
         cluster: Some(ClusterConfig {

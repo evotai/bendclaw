@@ -124,7 +124,7 @@ async fn try_dispatch_inbound(
         .await?;
 
     let trace_id = new_id();
-    let mut run_stream = session.run(&input, &trace_id, None).await?;
+    let mut run_stream = session.run(&input, &trace_id, None, "", "", false).await?;
     let run_id = run_stream.run_id().to_string();
 
     let mut output_text = String::new();

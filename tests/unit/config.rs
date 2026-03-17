@@ -55,7 +55,7 @@ fn validate_with_base_url_and_token_succeeds() {
     let mut cfg = BendClawConfig::default();
     cfg.storage.databend_api_base_url = "https://app.databend.com".into();
     cfg.storage.databend_api_token = "test-token".into();
-    cfg.instance_id = "test-instance".into();
+    cfg.node_id = "test-instance".into();
     assert!(cfg.validate().is_ok());
 }
 

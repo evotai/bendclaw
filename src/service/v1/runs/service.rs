@@ -120,6 +120,7 @@ pub async fn execute_run(
     stream_output: bool,
     parent_run_id: Option<String>,
     continue_from_run_id: Option<String>,
+    is_remote_dispatch: bool,
 ) -> Result<Response> {
     tracing::info!(
         stage = "service",
@@ -169,7 +170,14 @@ pub async fn execute_run(
     };
 
     let mut run_stream = session
-        .run(&input, &ctx.trace_id, parent_run_id.as_deref())
+        .run(
+            &input,
+            &ctx.trace_id,
+            parent_run_id.as_deref(),
+            &ctx.parent_trace_id,
+            &ctx.origin_node_id,
+            is_remote_dispatch,
+        )
         .await?;
     let run_id = run_stream.run_id().to_string();
 
@@ -334,6 +342,7 @@ fn to_response(record: RunRecord, events: Option<Vec<RunEventResponse>>) -> Resu
         stop_reason: record.stop_reason,
         iterations: record.iterations,
         parent_run_id: record.parent_run_id,
+        node_id: record.node_id,
         created_at: record.created_at,
         updated_at: record.updated_at,
         events,

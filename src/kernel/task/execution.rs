@@ -11,13 +11,11 @@ use crate::storage::pool::Pool;
 /// Returns the claimed tasks and the lease token used.
 pub async fn claim_due_tasks(
     pool: &Pool,
-    executor_instance_id: &str,
+    executor_node_id: &str,
 ) -> Result<(Vec<TaskRecord>, String)> {
     let lease_token = new_id();
     let repo = TaskRepo::new(pool.clone());
-    let tasks = repo
-        .claim_due_tasks(executor_instance_id, &lease_token)
-        .await?;
+    let tasks = repo.claim_due_tasks(executor_node_id, &lease_token).await?;
     Ok((tasks, lease_token))
 }
 
@@ -27,7 +25,7 @@ pub async fn finish_execution(
     pool: &Pool,
     task: &TaskRecord,
     lease_token: &str,
-    executor_instance_id: &str,
+    executor_node_id: &str,
     status: &str,
     run_id: Option<String>,
     output: Option<String>,
@@ -51,7 +49,7 @@ pub async fn finish_execution(
         delivery: task.delivery.clone(),
         delivery_status,
         delivery_error,
-        executed_by_instance_id: Some(executor_instance_id.to_string()),
+        executed_by_node_id: Some(executor_node_id.to_string()),
         created_at: String::new(),
     };
     let history_repo = TaskHistoryRepo::new(pool.clone());
@@ -97,7 +95,7 @@ mod tests {
     fn sample_task(schedule_kind: &str, delete_after_run: bool) -> TaskRecord {
         TaskRecord {
             id: "task-1".to_string(),
-            executor_instance_id: "inst-1".to_string(),
+            executor_node_id: "inst-1".to_string(),
             name: "nightly-report".to_string(),
             prompt: "run report".to_string(),
             enabled: true,
@@ -119,7 +117,7 @@ mod tests {
             last_run_at: String::new(),
             next_run_at: Some("2026-03-11 00:00:00".to_string()),
             lease_token: Some("lease-1".to_string()),
-            lease_instance_id: None,
+            lease_node_id: None,
             lease_expires_at: None,
             created_at: String::new(),
             updated_at: String::new(),
@@ -143,13 +141,13 @@ mod tests {
             serde_json::Value::String(String::new()),
             serde_json::Value::String("2026-03-11 00:00:00".to_string()),
             serde_json::Value::String("lease-1".to_string()),
-            serde_json::Value::String(String::new()), // lease_instance_id
+            serde_json::Value::String(String::new()), // lease_node_id
             serde_json::Value::String(String::new()), // lease_expires_at
             serde_json::Value::String("2026-03-10T00:00:00Z".to_string()),
             serde_json::Value::String("2026-03-10T00:00:00Z".to_string()),
         ]]);
         let client = RecordingClient::new(move |sql, _database| {
-            if sql.starts_with("SELECT id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_instance_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE lease_token = ") {
+            if sql.starts_with("SELECT id, executor_node_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_node_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE lease_token = ") {
                 return Ok(crate::storage::pool::QueryResponse {
                     id: String::new(),
                     state: "Succeeded".to_string(),

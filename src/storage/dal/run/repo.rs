@@ -18,7 +18,7 @@ impl RowMapper for RunMapper {
     type Entity = RunRecord;
 
     fn columns(&self) -> &str {
-        "id, session_id, agent_id, user_id, parent_run_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<RunRecord> {
@@ -28,15 +28,16 @@ impl RowMapper for RunMapper {
             agent_id: sql::col(row, 2),
             user_id: sql::col(row, 3),
             parent_run_id: sql::col(row, 4),
-            status: sql::col(row, 5),
-            input: sql::col(row, 6),
-            output: sql::col(row, 7),
-            error: sql::col(row, 8),
-            metrics: sql::col(row, 9),
-            stop_reason: sql::col(row, 10),
-            iterations: sql::col_u32(row, 11)?,
-            created_at: sql::col(row, 12),
-            updated_at: sql::col(row, 13),
+            node_id: sql::col(row, 5),
+            status: sql::col(row, 6),
+            input: sql::col(row, 7),
+            output: sql::col(row, 8),
+            error: sql::col(row, 9),
+            metrics: sql::col(row, 10),
+            stop_reason: sql::col(row, 11),
+            iterations: sql::col_u32(row, 12)?,
+            created_at: sql::col(row, 13),
+            updated_at: sql::col(row, 14),
         })
     }
 }
@@ -62,6 +63,7 @@ impl RunRepo {
                 ("agent_id", SqlVal::Str(&record.agent_id)),
                 ("user_id", SqlVal::Str(&record.user_id)),
                 ("parent_run_id", SqlVal::Str(&record.parent_run_id)),
+                ("node_id", SqlVal::Str(&record.node_id)),
                 ("status", SqlVal::Str(&record.status)),
                 ("input", SqlVal::Str(&record.input)),
                 ("output", SqlVal::Str(&record.output)),

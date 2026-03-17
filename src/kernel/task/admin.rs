@@ -10,7 +10,7 @@ use crate::storage::dal::task_history::TaskHistoryRepo;
 use crate::storage::pool::Pool;
 
 pub struct CreateTaskParams {
-    pub executor_instance_id: String,
+    pub executor_node_id: String,
     pub name: String,
     pub prompt: String,
     pub schedule: TaskSchedule,
@@ -40,7 +40,7 @@ pub async fn create_task(pool: &Pool, params: CreateTaskParams) -> Result<TaskRe
     let next_run_at = params.schedule.initial_next_run_at();
     let record = TaskRecord {
         id: new_id(),
-        executor_instance_id: params.executor_instance_id,
+        executor_node_id: params.executor_node_id,
         name: params.name,
         prompt: params.prompt,
         enabled: true,
@@ -53,7 +53,7 @@ pub async fn create_task(pool: &Pool, params: CreateTaskParams) -> Result<TaskRe
         last_run_at: String::new(),
         next_run_at,
         lease_token: None,
-        lease_instance_id: None,
+        lease_node_id: None,
         lease_expires_at: None,
         created_at: String::new(),
         updated_at: String::new(),

@@ -8,7 +8,7 @@ use crate::storage::TaskSchedule;
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskView {
     pub id: String,
-    pub executor_instance_id: String,
+    pub executor_node_id: String,
     pub name: String,
     pub prompt: String,
     pub enabled: bool,
@@ -29,7 +29,7 @@ impl From<TaskRecord> for TaskView {
     fn from(record: TaskRecord) -> Self {
         Self {
             id: record.id,
-            executor_instance_id: record.executor_instance_id,
+            executor_node_id: record.executor_node_id,
             name: record.name,
             prompt: record.prompt,
             enabled: record.enabled,
@@ -86,7 +86,7 @@ pub struct TaskHistoryView {
     pub delivery: TaskDelivery,
     pub delivery_status: Option<String>,
     pub delivery_error: Option<String>,
-    pub executed_by_instance_id: Option<String>,
+    pub executed_by_node_id: Option<String>,
     pub created_at: String,
 }
 
@@ -106,7 +106,7 @@ impl From<TaskHistoryRecord> for TaskHistoryView {
             delivery: record.delivery,
             delivery_status: record.delivery_status,
             delivery_error: record.delivery_error,
-            executed_by_instance_id: record.executed_by_instance_id,
+            executed_by_node_id: record.executed_by_node_id,
             created_at: record.created_at,
         }
     }

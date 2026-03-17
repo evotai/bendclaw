@@ -19,7 +19,7 @@ impl RowMapper for TaskMapper {
     type Entity = TaskRecord;
 
     fn columns(&self) -> &str {
-        "id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_instance_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, executor_node_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_node_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TaskRecord> {
@@ -30,7 +30,7 @@ impl RowMapper for TaskMapper {
             delete_after_run_str == "1" || delete_after_run_str.eq_ignore_ascii_case("true");
         Ok(TaskRecord {
             id: sql::col(row, 0),
-            executor_instance_id: sql::col(row, 1),
+            executor_node_id: sql::col(row, 1),
             name: sql::col(row, 2),
             prompt: sql::col(row, 3),
             enabled,
@@ -43,7 +43,7 @@ impl RowMapper for TaskMapper {
             last_run_at: sql::col(row, 11),
             next_run_at: sql::col_opt(row, 12),
             lease_token: sql::col_opt(row, 13),
-            lease_instance_id: sql::col_opt(row, 14),
+            lease_node_id: sql::col_opt(row, 14),
             lease_expires_at: sql::col_opt(row, 15),
             created_at: sql::col(row, 16),
             updated_at: sql::col(row, 17),
@@ -76,10 +76,7 @@ impl TaskRepo {
             .table
             .insert(&[
                 ("id", SqlVal::Str(&record.id)),
-                (
-                    "executor_instance_id",
-                    SqlVal::Str(&record.executor_instance_id),
-                ),
+                ("executor_node_id", SqlVal::Str(&record.executor_node_id)),
                 ("name", SqlVal::Str(&record.name)),
                 ("prompt", SqlVal::Str(&record.prompt)),
                 ("enabled", SqlVal::Raw(enabled_raw)),
@@ -95,7 +92,7 @@ impl TaskRepo {
                     SqlVal::str_or_null(record.next_run_at.as_deref()),
                 ),
                 ("lease_token", SqlVal::Null),
-                ("lease_instance_id", SqlVal::Null),
+                ("lease_node_id", SqlVal::Null),
                 ("lease_expires_at", SqlVal::Raw("NULL")),
                 ("created_at", SqlVal::Raw("NOW()")),
                 ("updated_at", SqlVal::Raw("NOW()")),
@@ -129,11 +126,11 @@ impl TaskRepo {
     }
 
     /// List tasks that are due for execution (enabled and next_run_at <= NOW()).
-    /// Only returns tasks whose executor_instance_id matches the given instance.
-    pub async fn list_due(&self, executor_instance_id: &str) -> Result<Vec<TaskRecord>> {
+    /// Only returns tasks whose executor_node_id matches the given instance.
+    pub async fn list_due(&self, executor_node_id: &str) -> Result<Vec<TaskRecord>> {
         let condition = format!(
-            "enabled = true AND status != 'running' AND next_run_at <= NOW() AND executor_instance_id = '{}'",
-            crate::storage::sql::escape(executor_instance_id)
+            "enabled = true AND status != 'running' AND next_run_at <= NOW() AND executor_node_id = '{}'",
+            crate::storage::sql::escape(executor_node_id)
         );
         let result = self
             .table
@@ -143,14 +140,14 @@ impl TaskRepo {
             repo_error(
                 REPO,
                 "list_due",
-                serde_json::json!({"executor_instance_id": executor_instance_id}),
+                serde_json::json!({"executor_node_id": executor_node_id}),
                 error,
             );
         }
         result
     }
 
-    /// List all due tasks regardless of executor_instance_id (for lease-based scheduling).
+    /// List all due tasks regardless of executor_node_id (for lease-based scheduling).
     /// Also picks up tasks stuck in 'running' with expired leases (crash recovery).
     pub async fn list_due_any(&self) -> Result<Vec<TaskRecord>> {
         let condition = "enabled = true AND next_run_at <= NOW() AND (\
@@ -322,7 +319,7 @@ impl TaskRepo {
     /// Returns the claimed tasks.
     pub async fn claim_due_tasks(
         &self,
-        executor_instance_id: &str,
+        executor_node_id: &str,
         lease_token: &str,
     ) -> Result<Vec<TaskRecord>> {
         let update_sql = sql::Sql::update("tasks")
@@ -333,13 +330,13 @@ impl TaskRepo {
             .where_raw("status != 'running'")
             .where_raw("(lease_token IS NULL OR lease_token = '')")
             .where_raw("next_run_at <= NOW()")
-            .where_eq("executor_instance_id", executor_instance_id)
+            .where_eq("executor_node_id", executor_node_id)
             .build();
         if let Err(e) = self.table.pool().exec(&update_sql).await {
             repo_error(
                 REPO,
                 "claim_due_tasks",
-                serde_json::json!({"executor_instance_id": executor_instance_id}),
+                serde_json::json!({"executor_node_id": executor_node_id}),
                 &e,
             );
             return Err(e);
@@ -376,7 +373,7 @@ impl TaskRepo {
         let mut builder = sql::Sql::update("tasks")
             .set("status", status)
             .set_raw("lease_token", "NULL")
-            .set_raw("lease_instance_id", "NULL")
+            .set_raw("lease_node_id", "NULL")
             .set_raw("lease_expires_at", "NULL")
             .set_raw("last_run_at", "NOW()")
             .set_raw("run_count", "run_count + 1")

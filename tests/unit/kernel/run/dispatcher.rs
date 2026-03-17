@@ -149,6 +149,7 @@ fn dispatcher(
                 std::env::temp_dir().join("bendclaw-test-dispatcher"),
             ),
             pool: bendclaw_test_harness::mocks::context::dummy_pool(),
+            is_dispatched: false,
         },
         cancel,
     )

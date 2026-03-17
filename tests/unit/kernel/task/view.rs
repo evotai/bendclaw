@@ -10,7 +10,7 @@ use bendclaw::storage::TaskSchedule;
 fn sample_task() -> TaskRecord {
     TaskRecord {
         id: "task-1".to_string(),
-        executor_instance_id: "inst-1".to_string(),
+        executor_node_id: "inst-1".to_string(),
         name: "nightly-report".to_string(),
         prompt: "run report".to_string(),
         enabled: true,
@@ -26,7 +26,7 @@ fn sample_task() -> TaskRecord {
         last_run_at: "2026-03-10T00:00:00Z".to_string(),
         next_run_at: Some("2026-03-11T00:00:00Z".to_string()),
         lease_token: Some("lease-1".to_string()),
-        lease_instance_id: None,
+        lease_node_id: None,
         lease_expires_at: None,
         created_at: "2026-03-01T00:00:00Z".to_string(),
         updated_at: "2026-03-10T00:00:00Z".to_string(),
@@ -48,7 +48,7 @@ fn sample_history() -> TaskHistoryRecord {
         delivery: TaskDelivery::None,
         delivery_status: Some("ok".to_string()),
         delivery_error: None,
-        executed_by_instance_id: Some("inst-1".to_string()),
+        executed_by_node_id: Some("inst-1".to_string()),
         created_at: "2026-03-10T00:05:00Z".to_string(),
     }
 }

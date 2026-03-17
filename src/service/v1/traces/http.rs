@@ -22,6 +22,10 @@ pub struct TraceResponse {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub total_cost: f64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub parent_trace_id: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub origin_node_id: String,
     pub created_at: String,
 }
 
@@ -77,5 +81,15 @@ pub async fn list_spans(
 ) -> Result<Json<Vec<SpanRecord>>> {
     Ok(Json(
         service::list_spans(&state, &agent_id, &trace_id).await?,
+    ))
+}
+
+pub async fn list_child_traces(
+    State(state): State<AppState>,
+    ctx: RequestContext,
+    Path((agent_id, trace_id)): Path<(String, String)>,
+) -> Result<Json<Vec<TraceResponse>>> {
+    Ok(Json(
+        service::list_child_traces(&state, &agent_id, &trace_id, &ctx.user_id).await?,
     ))
 }

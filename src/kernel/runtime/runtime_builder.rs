@@ -35,7 +35,7 @@ pub struct Builder {
     api_token: String,
     warehouse: String,
     db_prefix: String,
-    instance_id: String,
+    node_id: String,
     llm: Arc<dyn LLMProvider>,
     root_pool: Option<Pool>,
     hub_config: Option<crate::config::HubConfig>,
@@ -56,7 +56,7 @@ impl Builder {
         api_token: &str,
         warehouse: &str,
         db_prefix: &str,
-        instance_id: &str,
+        node_id: &str,
         llm: Arc<dyn LLMProvider>,
     ) -> Self {
         Self {
@@ -64,7 +64,7 @@ impl Builder {
             api_token: api_token.to_string(),
             warehouse: warehouse.to_string(),
             db_prefix: db_prefix.to_string(),
-            instance_id: instance_id.to_string(),
+            node_id: node_id.to_string(),
             llm,
             root_pool: None,
             hub_config: None,
@@ -147,7 +147,7 @@ impl Builder {
 
     pub async fn build(self) -> Result<Arc<Runtime>> {
         let config = AgentConfig {
-            instance_id: self.instance_id,
+            node_id: self.node_id,
             databend_api_base_url: self.api_base_url,
             databend_api_token: self.api_token,
             databend_warehouse: self.warehouse,
@@ -250,8 +250,9 @@ async fn construct(
         let cluster_client = Arc::new(ClusterClient::new(
             &cc.registry_url,
             &cc.registry_token,
-            &config.instance_id,
+            &config.node_id,
             &cc.advertise_url,
+            &cc.cluster_id,
         ));
         let bendclaw_client = Arc::new(BendclawClient::new(
             &auth_key,
@@ -310,7 +311,7 @@ async fn construct(
 
     let http_client = reqwest::Client::new();
     let mut lease_builder =
-        crate::kernel::lease::LeaseServiceBuilder::new(&runtime.config().instance_id);
+        crate::kernel::lease::LeaseServiceBuilder::new(&runtime.config().node_id);
     lease_builder.register(Arc::new(
         crate::kernel::channel::lease::ChannelLeaseResource::new(
             runtime.databases().clone(),

@@ -47,7 +47,7 @@ impl ChannelAccountService {
             user_id: req.user_id.clone(),
             config: req.config,
             enabled: req.enabled.unwrap_or(true),
-            lease_instance_id: None,
+            lease_node_id: None,
             lease_token: None,
             lease_expires_at: None,
             created_at: String::new(),

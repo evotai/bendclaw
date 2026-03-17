@@ -20,6 +20,9 @@ pub struct ToolContext {
     pub trace_id: Arc<str>,
     pub workspace: Arc<Workspace>,
     pub pool: Pool,
+    /// True when this run was dispatched from a remote node (has parent_run_id).
+    /// Prevents nested dispatch — only one level of fanout is allowed.
+    pub is_dispatched: bool,
 }
 
 /// Result of an in-process tool execution.

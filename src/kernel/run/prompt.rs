@@ -338,10 +338,11 @@ impl PromptBuilder {
             buf.push_str("| Node ID | Endpoint | Load | Status |\n");
             buf.push_str("|---------|----------|------|--------|\n");
             for n in &nodes {
+                let meta = n.meta();
                 let _ = writeln!(
                     buf,
                     "| {} | {} | {}/{} | {} |",
-                    n.instance_id, n.endpoint, n.current_load, n.max_load, n.status
+                    n.node_id, n.endpoint, meta.current_load, meta.max_load, meta.status
                 );
             }
             buf.push('\n');

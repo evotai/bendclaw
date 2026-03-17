@@ -23,7 +23,7 @@ impl RowMapper for TraceMapper {
     type Entity = TraceRecord;
 
     fn columns(&self) -> &str {
-        "trace_id, run_id, session_id, agent_id, user_id, name, status, duration_ms, input_tokens, output_tokens, total_cost, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "trace_id, run_id, session_id, agent_id, user_id, name, status, duration_ms, input_tokens, output_tokens, total_cost, parent_trace_id, origin_node_id, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TraceRecord> {
@@ -39,8 +39,10 @@ impl RowMapper for TraceMapper {
             input_tokens: sql::col_u64(row, 8)?,
             output_tokens: sql::col_u64(row, 9)?,
             total_cost: sql::col_f64(row, 10)?,
-            created_at: sql::col(row, 11),
-            updated_at: sql::col(row, 12),
+            parent_trace_id: sql::col(row, 11),
+            origin_node_id: sql::col(row, 12),
+            created_at: sql::col(row, 13),
+            updated_at: sql::col(row, 14),
         })
     }
 }
@@ -78,6 +80,8 @@ impl TraceRepo {
                 ("user_id", SqlVal::Str(&record.user_id)),
                 ("name", SqlVal::Str(&record.name)),
                 ("status", SqlVal::Str(&record.status)),
+                ("parent_trace_id", SqlVal::Str(&record.parent_trace_id)),
+                ("origin_node_id", SqlVal::Str(&record.origin_node_id)),
                 ("created_at", SqlVal::Raw("NOW()")),
                 ("updated_at", SqlVal::Raw("NOW()")),
             ])
@@ -164,6 +168,34 @@ impl TraceRepo {
                 REPO,
                 "list_by_session",
                 serde_json::json!({"session_id": session_id, "limit": limit}),
+                error,
+            );
+        }
+        result
+    }
+
+    /// List child traces dispatched from a parent trace (cross-node).
+    pub async fn list_child_traces(
+        &self,
+        parent_trace_id: &str,
+        user_id: &str,
+    ) -> Result<Vec<TraceRecord>> {
+        let result = self
+            .table
+            .list(
+                &[
+                    Where("parent_trace_id", SqlVal::Str(parent_trace_id)),
+                    Where("user_id", SqlVal::Str(user_id)),
+                ],
+                "created_at ASC",
+                1000,
+            )
+            .await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "list_child_traces",
+                serde_json::json!({"parent_trace_id": parent_trace_id}),
                 error,
             );
         }

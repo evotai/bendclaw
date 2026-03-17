@@ -15,7 +15,7 @@
 //! | `BENDCLAW_WORKSPACE_SANDBOX` | `workspace.sandbox`    | `false`        |
 //! | `BENDCLAW_AUTH_KEY`          | `auth.api_key`         | *(empty)*      |
 //! | `BENDCLAW_AUTH_CORS_ORIGINS` | `auth.cors_origins`    | *(default whitelist)* |
-//! | `BENDCLAW_INSTANCE_ID`       | `instance_id`          | **required**   |
+//! | `BENDCLAW_NODE_ID`       | `node_id`          | **required**   |
 //! | `BENDCLAW_DIRECTIVE_API_BASE` | `directive.api_base`  | *(optional)*   |
 //! | `BENDCLAW_DIRECTIVE_TOKEN`   | `directive.token`      | *(optional)*   |
 //! | `BENDCLAW_LLM_NAME`          | `llm.providers[0].name` | *(optional)* |
@@ -26,6 +26,7 @@
 //! | `BENDCLAW_LLM_WEIGHT`        | `llm.providers[0].weight` | `100`      |
 //! | `BENDCLAW_LLM_TEMPERATURE`   | `llm.providers[0].temperature` | `0.7` |
 //! | `BENDCLAW_ADMIN_BIND_ADDR`   | `admin.bind_addr`      | *(optional)*   |
+//! | `BENDCLAW_CLUSTER_ID`        | `cluster.cluster_id`   | **required when cluster enabled** |
 
 use std::fs;
 
@@ -98,7 +99,7 @@ pub struct BendClawConfig {
     /// Unique identifier for this bendclaw instance. Must match the AgentOS ID
     /// assigned by the console. Used to filter tasks that belong to this instance.
     /// Required when running alongside other bendclaw instances sharing the same DB.
-    pub instance_id: String,
+    pub node_id: String,
     pub server: ServerConfig,
     pub storage: StorageConfig,
     pub log: LogConfig,
@@ -150,6 +151,11 @@ pub struct ClusterConfig {
     /// Example: "https://node1.example.com:8787"
     #[serde(default)]
     pub advertise_url: String,
+    /// Logical cluster identifier for node isolation within the same registry token.
+    /// Nodes with different cluster_id values are invisible to each other.
+    /// Required when cluster is enabled.
+    #[serde(default)]
+    pub cluster_id: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -326,7 +332,7 @@ impl BendClawConfig {
         override_bool(&mut self.telemetry.enabled, "BENDCLAW_TELEMETRY_ENABLED");
         override_str(&mut self.workspace.root_dir, "BENDCLAW_WORKSPACE_ROOT_DIR");
         override_bool(&mut self.workspace.sandbox, "BENDCLAW_WORKSPACE_SANDBOX");
-        override_str(&mut self.instance_id, "BENDCLAW_INSTANCE_ID");
+        override_str(&mut self.node_id, "BENDCLAW_NODE_ID");
         override_str(&mut self.auth.api_key, "BENDCLAW_AUTH_KEY");
         if let Ok(v) = std::env::var("BENDCLAW_AUTH_CORS_ORIGINS") {
             if !v.is_empty() {
@@ -368,6 +374,7 @@ impl BendClawConfig {
                 "BENDCLAW_CLUSTER_REGISTRY_TOKEN",
             );
             override_str(&mut cluster.advertise_url, "BENDCLAW_CLUSTER_ADVERTISE_URL");
+            override_str(&mut cluster.cluster_id, "BENDCLAW_CLUSTER_ID");
         } else {
             let url = std::env::var("BENDCLAW_CLUSTER_REGISTRY_URL").unwrap_or_default();
             let token = std::env::var("BENDCLAW_CLUSTER_REGISTRY_TOKEN").unwrap_or_default();
@@ -377,6 +384,7 @@ impl BendClawConfig {
                     registry_token: token,
                     advertise_url: std::env::var("BENDCLAW_CLUSTER_ADVERTISE_URL")
                         .unwrap_or_default(),
+                    cluster_id: std::env::var("BENDCLAW_CLUSTER_ID").unwrap_or_default(),
                 });
             }
         }
@@ -459,11 +467,11 @@ impl BendClawConfig {
                  or [storage] databend_api_token in config file"
             );
         }
-        if self.instance_id.is_empty() {
+        if self.node_id.is_empty() {
             anyhow::bail!(
                 "missing required configuration:\n  \
-                 instance_id  →  set BENDCLAW_INSTANCE_ID \
-                 or instance_id in config file"
+                 node_id  →  set BENDCLAW_NODE_ID \
+                 or node_id in config file"
             );
         }
         if let Some(ref directive) = self.directive {
@@ -489,6 +497,14 @@ impl BendClawConfig {
                      cluster.advertise_url  →  set BENDCLAW_CLUSTER_ADVERTISE_URL \
                      or [cluster] advertise_url in config file.\n  \
                      This must be a URL reachable by peer nodes (not 127.0.0.1)."
+                );
+            }
+            if cluster.cluster_id.is_empty() {
+                anyhow::bail!(
+                    "missing required configuration:\n  \
+                     cluster.cluster_id  →  set BENDCLAW_CLUSTER_ID \
+                     or [cluster] cluster_id in config file.\n  \
+                     Nodes with different cluster_id values are invisible to each other."
                 );
             }
         }

@@ -141,7 +141,7 @@ fn account_row(id: &str, channel_type: &str, enabled: bool) -> Vec<serde_json::V
         "user-1".to_string(),
         r#"{"token":"abc"}"#.to_string(),
         if enabled { "1" } else { "0" }.to_string(),
-        String::new(), // lease_instance_id
+        String::new(), // lease_node_id
         String::new(), // lease_token
         String::new(), // lease_expires_at
         "2026-01-01T00:00:00Z".to_string(),
@@ -256,7 +256,7 @@ async fn on_acquired_starts_supervisor() {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
-        lease_instance_id: Some("inst-1".to_string()),
+        lease_node_id: Some("inst-1".to_string()),
         lease_expires_at: None,
         context: String::new(),
         release_fn: None,
@@ -295,7 +295,7 @@ async fn on_released_stops_supervisor() {
         id: "acct-1".to_string(),
         pool: pool.clone(),
         lease_token: Some("tok-1".to_string()),
-        lease_instance_id: Some("inst-1".to_string()),
+        lease_node_id: Some("inst-1".to_string()),
         lease_expires_at: None,
         context: String::new(),
         release_fn: None,
@@ -342,7 +342,7 @@ async fn is_healthy_reflects_supervisor_state() {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
-        lease_instance_id: Some("inst-1".to_string()),
+        lease_node_id: Some("inst-1".to_string()),
         lease_expires_at: None,
         context: String::new(),
         release_fn: None,

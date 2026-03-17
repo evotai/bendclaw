@@ -214,6 +214,7 @@ fn make_run_record(metrics_json: &str) -> bendclaw::storage::RunRecord {
         agent_id: "agent-1".into(),
         user_id: "user-1".into(),
         parent_run_id: String::new(),
+        node_id: String::new(),
         status: "COMPLETED".into(),
         input: "hello".into(),
         output: "world".into(),

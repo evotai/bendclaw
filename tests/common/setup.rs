@@ -163,7 +163,7 @@ pub struct TestNodeOptions {
     pub api_token: String,
     pub warehouse: String,
     pub db_prefix: String,
-    pub instance_id: String,
+    pub node_id: String,
     pub auth_key: String,
     pub llm: Arc<dyn bendclaw::llm::provider::LLMProvider>,
     pub cluster: Option<bendclaw::config::ClusterConfig>,
@@ -212,7 +212,7 @@ pub async fn spawn_test_node(mut options: TestNodeOptions) -> anyhow::Result<Tes
         &options.api_token,
         &options.warehouse,
         &options.db_prefix,
-        &options.instance_id,
+        &options.node_id,
         options.llm,
     )
     .with_hub_config(None)

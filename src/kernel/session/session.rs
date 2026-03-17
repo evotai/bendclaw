@@ -99,6 +99,9 @@ impl Session {
         user_message: &str,
         trace_id: &str,
         parent_run_id: Option<&str>,
+        parent_trace_id: &str,
+        origin_node_id: &str,
+        is_remote_dispatch: bool,
     ) -> Result<Stream> {
         {
             let state = self.state.lock();
@@ -140,12 +143,15 @@ impl Session {
             &self.user_id,
             user_message,
             parent_run_id,
+            &self.res.config.node_id,
         )
         .await?;
 
         history.push(Message::user(user_message));
 
-        let trace = self.create_trace(&run_id, trace_id).await;
+        let trace = self
+            .create_trace(&run_id, trace_id, parent_trace_id, origin_node_id)
+            .await;
         let run_ctx = server_log::ServerCtx::new(
             &trace.trace_id,
             &run_id,
@@ -230,6 +236,7 @@ impl Session {
             run_index,
             trace.clone(),
             &llm,
+            is_remote_dispatch,
         );
 
         tracing::info!(
@@ -263,16 +270,22 @@ impl Session {
     }
 
     pub async fn chat(&self, user_message: &str, trace_id: &str) -> Result<Stream> {
-        self.run(user_message, trace_id, None).await
+        self.run(user_message, trace_id, None, "", "", false).await
     }
 
-    async fn create_trace(&self, run_id: &str, trace_id: &str) -> TraceRecorder {
+    async fn create_trace(
+        &self,
+        run_id: &str,
+        trace_id: &str,
+        parent_trace_id: &str,
+        origin_node_id: &str,
+    ) -> TraceRecorder {
         let effective_trace_id = if trace_id.is_empty() {
             run_id.to_string()
         } else {
             trace_id.to_string()
         };
-        let trace = TraceRecorder::new(
+        let mut trace = TraceRecorder::new(
             self.res.storage.trace_repo(),
             self.res.storage.span_repo(),
             effective_trace_id,
@@ -281,10 +294,14 @@ impl Session {
             self.id.clone(),
             self.user_id.to_string(),
         );
+        if !parent_trace_id.is_empty() {
+            trace = trace.with_parent_trace(parent_trace_id, origin_node_id);
+        }
         let _ = trace.start_trace("agent.run").await;
         trace
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_engine(
         &self,
         run_id: &str,
@@ -293,6 +310,7 @@ impl Session {
         turn: u32,
         trace: TraceRecorder,
         llm: &Arc<dyn LLMProvider>,
+        is_dispatched: bool,
     ) -> (
         JoinHandle<Result<AgentResult>>,
         mpsc::Receiver<Event>,
@@ -346,6 +364,7 @@ impl Session {
                 trace_id: trace.trace_id.as_str().into(),
                 workspace: self.res.workspace.clone(),
                 pool: self.res.storage.pool().clone(),
+                is_dispatched,
             },
             cancel.clone(),
         );

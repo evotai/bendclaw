@@ -43,6 +43,7 @@ impl BendclawClient {
     }
 
     /// Create a run on a remote bendclaw node.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_run(
         &self,
         endpoint: &str,
@@ -50,6 +51,8 @@ impl BendclawClient {
         input: &str,
         user_id: &str,
         parent_run_id: Option<&str>,
+        trace_id: Option<&str>,
+        origin_node_id: Option<&str>,
     ) -> Result<RemoteRunResponse> {
         let url = format!(
             "{}/v1/agents/{}/runs",
@@ -67,6 +70,12 @@ impl BendclawClient {
             .header("x-user-id", user_id);
         if let Some(prid) = parent_run_id {
             req = req.header("x-parent-run-id", prid);
+        }
+        if let Some(tid) = trace_id {
+            req = req.header("x-trace-id", tid);
+        }
+        if let Some(onid) = origin_node_id {
+            req = req.header("x-origin-node-id", onid);
         }
         let resp = req.json(&body).send().await.map_err(|e| {
             ErrorCode::cluster_dispatch(format!("create_run request to {endpoint} failed: {e}"))

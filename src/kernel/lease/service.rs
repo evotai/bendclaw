@@ -18,14 +18,14 @@ use crate::storage::sql;
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 pub struct LeaseServiceBuilder {
-    instance_id: String,
+    node_id: String,
     resources: Vec<Arc<dyn LeaseResource>>,
 }
 
 impl LeaseServiceBuilder {
-    pub fn new(instance_id: &str) -> Self {
+    pub fn new(node_id: &str) -> Self {
         Self {
-            instance_id: instance_id.to_string(),
+            node_id: node_id.to_string(),
             resources: Vec::new(),
         }
     }
@@ -49,7 +49,7 @@ impl LeaseServiceBuilder {
             lease_counts.push(count.clone());
 
             let handle = spawn_scan_loop(
-                self.instance_id.clone(),
+                self.node_id.clone(),
                 resource.clone(),
                 held,
                 count,
@@ -142,7 +142,7 @@ impl LeaseServiceHandle {
 // ── Scan loop ────────────────────────────────────────────────────────────────
 
 fn spawn_scan_loop(
-    instance_id: String,
+    node_id: String,
     resource: Arc<dyn LeaseResource>,
     held: Arc<Mutex<HashMap<String, HeldLease>>>,
     lease_count: Arc<AtomicUsize>,
@@ -153,7 +153,7 @@ fn spawn_scan_loop(
         let mut consecutive_errors: u64 = 0;
 
         loop {
-            match scan_once(&instance_id, &resource, &held, &lease_count, &cancel).await {
+            match scan_once(&node_id, &resource, &held, &lease_count, &cancel).await {
                 Ok(()) => {
                     if consecutive_errors > 0 {
                         tracing::info!(
@@ -198,7 +198,7 @@ fn spawn_scan_loop(
 }
 
 async fn scan_once(
-    instance_id: &str,
+    node_id: &str,
     resource: &Arc<dyn LeaseResource>,
     held: &Arc<Mutex<HashMap<String, HeldLease>>>,
     lease_count: &Arc<AtomicUsize>,
@@ -252,7 +252,7 @@ async fn scan_once(
                 );
                 held_map.remove(&entry.id);
             }
-        } else if is_held_by_other(instance_id, entry) {
+        } else if is_held_by_other(node_id, entry) {
             // Another instance holds a valid lease — skip.
         } else if cancel.is_cancelled() {
             // Shutting down — don't claim new resources.
@@ -263,7 +263,7 @@ async fn scan_once(
                 &entry.pool,
                 table,
                 &entry.id,
-                instance_id,
+                node_id,
                 &token,
                 lease_secs,
                 claim_cond,
@@ -304,7 +304,7 @@ async fn scan_once(
                         id: entry.id.clone(),
                         pool: entry.pool.clone(),
                         lease_token: Some(token.clone()),
-                        lease_instance_id: Some(instance_id.to_string()),
+                        lease_node_id: Some(node_id.to_string()),
                         lease_expires_at: entry.lease_expires_at.clone(),
                         context: entry.context.clone(),
                         release_fn: Some(release_fn),
@@ -359,11 +359,11 @@ async fn scan_once(
     Ok(())
 }
 
-fn is_held_by_other(instance_id: &str, entry: &ResourceEntry) -> bool {
-    let Some(ref holder) = entry.lease_instance_id else {
+fn is_held_by_other(node_id: &str, entry: &ResourceEntry) -> bool {
+    let Some(ref holder) = entry.lease_node_id else {
         return false;
     };
-    if holder == instance_id {
+    if holder == node_id {
         return false;
     }
     let Some(ref expires) = entry.lease_expires_at else {
@@ -382,13 +382,13 @@ async fn claim_sql(
     pool: &Pool,
     table: &str,
     id: &str,
-    instance_id: &str,
+    node_id: &str,
     token: &str,
     lease_secs: u64,
     extra_cond: Option<&str>,
 ) -> crate::base::Result<bool> {
     let mut update = sql::Sql::update(table)
-        .set("lease_instance_id", instance_id)
+        .set("lease_node_id", node_id)
         .set("lease_token", token)
         .set_raw(
             "lease_expires_at",
@@ -397,10 +397,10 @@ async fn claim_sql(
         .set_raw("updated_at", "NOW()")
         .where_eq("id", id)
         .where_raw(&format!(
-            "(lease_instance_id IS NULL OR lease_instance_id = '' \
+            "(lease_node_id IS NULL OR lease_node_id = '' \
                  OR lease_expires_at IS NULL OR lease_expires_at <= NOW() \
-                 OR lease_instance_id = '{}')",
-            sql::escape(instance_id)
+                 OR lease_node_id = '{}')",
+            sql::escape(node_id)
         ));
     if let Some(cond) = extra_cond {
         update = update.where_raw(cond);
@@ -411,7 +411,7 @@ async fn claim_sql(
         .from(table)
         .where_eq("id", id)
         .where_eq("lease_token", token)
-        .where_eq("lease_instance_id", instance_id)
+        .where_eq("lease_node_id", node_id)
         .build();
     let row = pool.query_row(&check).await?;
     let count = row
@@ -447,7 +447,7 @@ async fn renew_sql(
 /// Release a single lease. Only clears lease columns.
 async fn release_sql(pool: &Pool, table: &str, id: &str, token: &str) -> crate::base::Result<()> {
     let update = sql::Sql::update(table)
-        .set_raw("lease_instance_id", "NULL")
+        .set_raw("lease_node_id", "NULL")
         .set_raw("lease_token", "NULL")
         .set_raw("lease_expires_at", "NULL")
         .set_raw("updated_at", "NOW()")

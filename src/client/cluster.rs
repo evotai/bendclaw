@@ -12,32 +12,58 @@ pub struct ClusterClient {
     client: reqwest::Client,
     base_url: String,
     api_token: String,
-    instance_id: String,
+    node_id: String,
     endpoint: String,
+    cluster_id: String,
 }
 
+/// Registry-side node record — only routing-essential fields.
+/// Business data lives in the opaque `data` blob.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub instance_id: String,
+pub struct NodeEntry {
+    pub node_id: String,
     pub endpoint: String,
+    pub cluster_id: String,
+    #[serde(default)]
+    pub data: serde_json::Value,
+}
+
+impl NodeEntry {
+    /// Deserialize the opaque `data` blob into [`NodeMeta`].
+    /// Returns `Default` on missing or malformed data.
+    pub fn meta(&self) -> NodeMeta {
+        serde_json::from_value(self.data.clone()).unwrap_or_default()
+    }
+}
+
+/// Client-side business metadata stored inside `NodeEntry.data`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NodeMeta {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
     pub max_load: u32,
+    #[serde(default)]
     pub current_load: u32,
+    #[serde(default)]
     pub status: String,
 }
 
 #[derive(Serialize)]
 struct RegisterRequest<'a> {
-    instance_id: &'a str,
+    node_id: &'a str,
     endpoint: &'a str,
-    max_load: u32,
+    cluster_id: &'a str,
+    data: serde_json::Value,
 }
 
 impl ClusterClient {
     pub fn new(
         base_url: impl Into<String>,
         api_token: impl Into<String>,
-        instance_id: impl Into<String>,
+        node_id: impl Into<String>,
         endpoint: impl Into<String>,
+        cluster_id: impl Into<String>,
     ) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
@@ -48,21 +74,33 @@ impl ClusterClient {
             client,
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_token: api_token.into(),
-            instance_id: instance_id.into(),
+            node_id: node_id.into(),
             endpoint: endpoint.into(),
+            cluster_id: cluster_id.into(),
         }
     }
-    pub fn instance_id(&self) -> &str {
-        &self.instance_id
+    pub fn node_id(&self) -> &str {
+        &self.node_id
+    }
+
+    pub fn cluster_id(&self) -> &str {
+        &self.cluster_id
     }
 
     /// Register this node with the cluster registry.
     pub async fn register(&self) -> Result<()> {
         let url = format!("{}/v1/cluster/nodes", self.base_url);
-        let body = RegisterRequest {
-            instance_id: &self.instance_id,
-            endpoint: &self.endpoint,
+        let meta = NodeMeta {
+            version: env!("CARGO_PKG_VERSION").to_string(),
             max_load: 10,
+            current_load: 0,
+            status: "READY".to_string(),
+        };
+        let body = RegisterRequest {
+            node_id: &self.node_id,
+            endpoint: &self.endpoint,
+            cluster_id: &self.cluster_id,
+            data: serde_json::to_value(&meta).unwrap_or_default(),
         };
         let resp = self
             .client
@@ -82,7 +120,7 @@ impl ClusterClient {
                 "register failed: HTTP {status}: {text}"
             )));
         }
-        tracing::info!(instance_id = %self.instance_id, "registered with cluster");
+        tracing::info!(node_id = %self.node_id, "registered with cluster");
         Ok(())
     }
 
@@ -90,7 +128,7 @@ impl ClusterClient {
     pub async fn heartbeat(&self) -> Result<()> {
         let url = format!(
             "{}/v1/cluster/nodes/{}/heartbeat",
-            self.base_url, self.instance_id
+            self.base_url, self.node_id
         );
         let resp = self
             .client
@@ -112,9 +150,12 @@ impl ClusterClient {
         Ok(())
     }
 
-    /// Discover peer nodes, filtering out this instance.
-    pub async fn discover(&self) -> Result<Vec<NodeInfo>> {
-        let url = format!("{}/v1/cluster/nodes", self.base_url);
+    /// Discover peer nodes, filtering out this instance and scoping to the same cluster_id.
+    pub async fn discover(&self) -> Result<Vec<NodeEntry>> {
+        let url = format!(
+            "{}/v1/cluster/nodes?cluster_id={}",
+            self.base_url, self.cluster_id
+        );
         let resp = self
             .client
             .get(&url)
@@ -131,20 +172,20 @@ impl ClusterClient {
             )));
         }
 
-        let nodes: Vec<NodeInfo> = resp
+        let nodes: Vec<NodeEntry> = resp
             .json()
             .await
             .map_err(|e| ErrorCode::cluster_discovery(format!("failed to parse nodes: {e}")))?;
 
         Ok(nodes
             .into_iter()
-            .filter(|n| n.instance_id != self.instance_id)
+            .filter(|n| n.node_id != self.node_id)
             .collect())
     }
 
     /// Deregister this node from the cluster registry.
     pub async fn deregister(&self) -> Result<()> {
-        let url = format!("{}/v1/cluster/nodes/{}", self.base_url, self.instance_id);
+        let url = format!("{}/v1/cluster/nodes/{}", self.base_url, self.node_id);
         let resp = self
             .client
             .delete(&url)
@@ -159,11 +200,11 @@ impl ClusterClient {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
             tracing::warn!(
-                instance_id = %self.instance_id,
+                node_id = %self.node_id,
                 "deregister failed: HTTP {status}: {text}"
             );
         } else {
-            tracing::info!(instance_id = %self.instance_id, "deregistered from cluster");
+            tracing::info!(node_id = %self.node_id, "deregistered from cluster");
         }
         Ok(())
     }

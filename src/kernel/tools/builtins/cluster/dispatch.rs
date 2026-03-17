@@ -60,7 +60,7 @@ impl Tool for ClusterDispatchTool {
             "properties": {
                 "node_id": {
                     "type": "string",
-                    "description": "The node_id (instance_id) of the target node from cluster_nodes"
+                    "description": "The node_id of the target node from cluster_nodes"
                 },
                 "agent_id": {
                     "type": "string",
@@ -80,6 +80,13 @@ impl Tool for ClusterDispatchTool {
         args: serde_json::Value,
         ctx: &ToolContext,
     ) -> Result<ToolResult> {
+        // Single-layer fanout: reject dispatch from an already-dispatched run.
+        if ctx.is_dispatched {
+            return Ok(ToolResult::error(
+                "nested dispatch is not allowed, only one level of fanout is supported",
+            ));
+        }
+
         let node_id = match args.get("node_id").and_then(|v| v.as_str()) {
             Some(n) if !n.is_empty() => n,
             _ => return Ok(ToolResult::error("Missing or empty 'node_id' parameter")),
@@ -121,9 +128,19 @@ impl Tool for ClusterDispatchTool {
 
         let user_id: &str = &ctx.user_id;
         let parent_run_id = Some(ctx.run_id.as_ref());
+        let trace_id = Some(ctx.trace_id.as_ref());
         match self
             .dispatch_table
-            .dispatch(node_id, &endpoint, agent_id, task, user_id, parent_run_id)
+            .dispatch(
+                node_id,
+                &endpoint,
+                agent_id,
+                task,
+                user_id,
+                parent_run_id,
+                trace_id,
+                Some(self.service.node_id()), // origin_node_id
+            )
             .await
         {
             Ok(dispatch_id) => {

@@ -5,5 +5,6 @@ pub mod directive;
 pub use bendclaw::BendclawClient;
 pub use bendclaw::RemoteRunResponse;
 pub use cluster::ClusterClient;
-pub use cluster::NodeInfo;
+pub use cluster::NodeEntry;
+pub use cluster::NodeMeta;
 pub use directive::DirectiveClient;

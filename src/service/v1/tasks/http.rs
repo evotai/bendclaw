@@ -20,7 +20,7 @@ use crate::service::v1::common::Paginated;
 pub struct CreateTaskRequest {
     #[serde(flatten)]
     pub spec: TaskCreateSpec,
-    pub executor_instance_id: Option<String>,
+    pub executor_node_id: Option<String>,
 }
 
 pub type UpdateTaskRequest = TaskUpdateSpec;

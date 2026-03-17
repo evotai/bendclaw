@@ -34,6 +34,7 @@ pub struct RunResponse {
     pub stop_reason: String,
     pub iterations: u32,
     pub parent_run_id: String,
+    pub node_id: String,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,8 +122,9 @@ pub async fn create_run(
         session_id,
         req.input,
         req.stream,
-        parent_run_id,
+        parent_run_id.clone(),
         None,
+        parent_run_id.is_some(),
     )
     .await
 }
@@ -163,6 +165,7 @@ pub async fn continue_run(
         req.stream,
         Some(run_id.clone()),
         Some(run_id),
+        false,
     )
     .await
 }

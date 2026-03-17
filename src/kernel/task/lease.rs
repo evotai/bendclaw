@@ -89,7 +89,7 @@ impl LeaseResource for TaskLeaseResource {
                     id: task.id.clone(),
                     pool: pool.clone(),
                     lease_token: task.lease_token,
-                    lease_instance_id: task.lease_instance_id,
+                    lease_node_id: task.lease_node_id,
                     lease_expires_at: task.lease_expires_at,
                     context: agent_id.clone(),
                     release_fn: None,

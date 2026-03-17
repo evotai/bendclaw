@@ -39,5 +39,6 @@ pub fn test_tool_context() -> ToolContext {
         trace_id: "t-test".into(),
         workspace: test_workspace(dir),
         pool: dummy_pool(),
+        is_dispatched: false,
     }
 }

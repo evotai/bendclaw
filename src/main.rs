@@ -103,7 +103,7 @@ async fn cmd_run(
         ));
         sentry::configure_scope(|scope| {
             scope.set_user(Some(sentry::User {
-                id: Some(config.instance_id.clone()),
+                id: Some(config.node_id.clone()),
                 ..Default::default()
             }));
             scope.set_tag("os", std::env::consts::OS);
@@ -145,7 +145,7 @@ async fn cmd_run(
         &config.storage.databend_api_token,
         &config.storage.databend_warehouse,
         &config.storage.db_prefix,
-        &config.instance_id,
+        &config.node_id,
         llm,
     )
     .with_hub_config(config.hub.clone())

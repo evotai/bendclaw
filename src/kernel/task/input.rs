@@ -19,9 +19,9 @@ pub struct TaskCreateSpec {
 }
 
 impl TaskCreateSpec {
-    pub fn into_params(self, executor_instance_id: String) -> CreateTaskParams {
+    pub fn into_params(self, executor_node_id: String) -> CreateTaskParams {
         CreateTaskParams {
-            executor_instance_id,
+            executor_node_id,
             name: self.name,
             prompt: self.prompt,
             schedule: self.schedule,

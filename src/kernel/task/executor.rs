@@ -24,7 +24,7 @@ pub async fn execute_task(
     http_client: &reqwest::Client,
 ) -> crate::base::Result<()> {
     let pool = runtime.databases().agent_pool(agent_id)?;
-    let executor_instance_id = runtime.config().instance_id.clone();
+    let executor_node_id = runtime.config().node_id.clone();
 
     // 1. Execute the task prompt
     let started = Instant::now();
@@ -48,7 +48,7 @@ pub async fn execute_task(
         &pool,
         task,
         lease_token,
-        &executor_instance_id,
+        &executor_node_id,
         &status,
         run_id,
         output,
@@ -89,7 +89,10 @@ async fn run_task_prompt(
             )
         }
     };
-    let stream = match session.run(&task.prompt, &task.id, None).await {
+    let stream = match session
+        .run(&task.prompt, &task.id, None, "", "", false)
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             return (
@@ -265,7 +268,7 @@ mod tests {
     fn sample_task() -> TaskRecord {
         TaskRecord {
             id: "task-1".to_string(),
-            executor_instance_id: "inst-1".to_string(),
+            executor_node_id: "inst-1".to_string(),
             name: "nightly-report".to_string(),
             prompt: "run report".to_string(),
             enabled: true,
@@ -278,7 +281,7 @@ mod tests {
             last_run_at: String::new(),
             next_run_at: None,
             lease_token: None,
-            lease_instance_id: None,
+            lease_node_id: None,
             lease_expires_at: None,
             created_at: String::new(),
             updated_at: String::new(),
@@ -407,7 +410,7 @@ mod tests {
             serde_json::Value::String("user-1".to_string()),
             serde_json::Value::String("{}".to_string()),
             serde_json::Value::String(if enabled { "1" } else { "0" }.to_string()),
-            serde_json::Value::String("".to_string()), // lease_instance_id
+            serde_json::Value::String("".to_string()), // lease_node_id
             serde_json::Value::String("".to_string()), // lease_token
             serde_json::Value::String("".to_string()), // lease_expires_at
             serde_json::Value::String("2026-03-10T00:00:00Z".to_string()),

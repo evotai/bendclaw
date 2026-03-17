@@ -14,6 +14,8 @@ pub struct TraceRecord {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub total_cost: f64,
+    pub parent_trace_id: String,
+    pub origin_node_id: String,
     pub created_at: String,
     pub updated_at: String,
 }

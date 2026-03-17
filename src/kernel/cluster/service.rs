@@ -9,7 +9,7 @@ use crate::base::ErrorCode;
 use crate::base::Result;
 use crate::client::BendclawClient;
 use crate::client::ClusterClient;
-use crate::client::NodeInfo;
+use crate::client::NodeEntry;
 
 /// Unified cluster abstraction owning registration, peer cache, and node-to-node client.
 /// Runtime holds a single `Arc<ClusterService>` instead of scattered fields.
@@ -17,7 +17,7 @@ pub struct ClusterService {
     cluster_client: Arc<ClusterClient>,
     bendclaw_client: Arc<BendclawClient>,
     /// Cached peer list, refreshed by heartbeat loop and cluster_nodes tool.
-    peers: RwLock<Vec<NodeInfo>>,
+    peers: RwLock<Vec<NodeEntry>>,
     options: ClusterOptions,
 }
 
@@ -39,13 +39,18 @@ impl ClusterService {
         }
     }
 
+    /// Return the node_id of this cluster node.
+    pub fn node_id(&self) -> &str {
+        self.cluster_client.node_id()
+    }
+
     /// Return the last cached peer snapshot (never blocks on network).
-    pub fn cached_peers(&self) -> Vec<NodeInfo> {
+    pub fn cached_peers(&self) -> Vec<NodeEntry> {
         self.peers.read().clone()
     }
 
     /// Refresh the peer cache from the registry.
-    pub async fn refresh_peers(&self) -> Result<Vec<NodeInfo>> {
+    pub async fn refresh_peers(&self) -> Result<Vec<NodeEntry>> {
         let started = std::time::Instant::now();
         let nodes = self.cluster_client.discover().await?;
         let mut peers = self.peers.write();
@@ -72,7 +77,7 @@ impl ClusterService {
         let peers = self.peers.read();
         peers
             .iter()
-            .find(|n| n.instance_id == node_id)
+            .find(|n| n.node_id == node_id)
             .map(|n| n.endpoint.clone())
             .ok_or_else(|| {
                 ErrorCode::cluster_dispatch(format!(
@@ -94,7 +99,7 @@ impl ClusterService {
     pub async fn register_and_discover(self: &Arc<Self>) -> Result<()> {
         self.cluster_client.register().await?;
         tracing::info!(
-            instance_id = %self.cluster_client.instance_id(),
+            node_id = %self.cluster_client.node_id(),
             "cluster node registered, starting peer discovery"
         );
         match self.refresh_peers().await {
@@ -143,7 +148,7 @@ impl ClusterService {
     /// Deregister from the cluster registry.
     pub async fn deregister(&self) {
         tracing::info!(
-            instance_id = %self.cluster_client.instance_id(),
+            node_id = %self.cluster_client.node_id(),
             "cluster deregistration started"
         );
         if let Err(e) = self.cluster_client.deregister().await {

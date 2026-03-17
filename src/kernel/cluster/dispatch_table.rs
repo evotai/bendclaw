@@ -28,6 +28,9 @@ pub struct DispatchEntry {
     pub output: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Trace ID of the dispatching (parent) run, for distributed trace correlation.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub parent_trace_id: String,
 }
 
 /// Per-session in-memory state tracking dispatched subtasks to peer nodes.
@@ -60,11 +63,21 @@ impl DispatchTable {
         input: &str,
         user_id: &str,
         parent_run_id: Option<&str>,
+        trace_id: Option<&str>,
+        origin_node_id: Option<&str>,
     ) -> Result<String> {
         let dispatch_id = ulid::Ulid::new().to_string();
         let resp = self
             .client
-            .create_run(endpoint, agent_id, input, user_id, parent_run_id)
+            .create_run(
+                endpoint,
+                agent_id,
+                input,
+                user_id,
+                parent_run_id,
+                trace_id,
+                origin_node_id,
+            )
             .await?;
 
         let remote_run_id = resp.id;
@@ -78,6 +91,7 @@ impl DispatchTable {
             status: "RUNNING".to_string(),
             output: None,
             error: None,
+            parent_trace_id: trace_id.unwrap_or_default().to_string(),
         };
         self.entries.lock().insert(dispatch_id.clone(), entry);
         Ok(dispatch_id)

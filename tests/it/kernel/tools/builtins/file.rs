@@ -17,6 +17,7 @@ fn make_ctx(workspace_dir: std::path::PathBuf) -> bendclaw::kernel::tools::ToolC
         trace_id: "t-test".into(),
         workspace: test_workspace(workspace_dir),
         pool: dummy_pool(),
+        is_dispatched: false,
     }
 }
 

@@ -56,6 +56,7 @@ pub struct RunRecord {
     pub agent_id: String,
     pub user_id: String,
     pub parent_run_id: String,
+    pub node_id: String,
     pub status: String,
     pub input: String,
     pub output: String,

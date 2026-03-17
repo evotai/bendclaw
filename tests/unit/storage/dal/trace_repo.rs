@@ -19,6 +19,8 @@ fn trace_row() -> Vec<serde_json::Value> {
         "100",
         "50",
         "0.005",
+        "",
+        "",
         "2026-03-11T00:00:00Z",
         "2026-03-11T00:01:00Z",
     ]
@@ -78,6 +80,8 @@ async fn trace_repo_insert_generates_valid_sql() -> Result<()> {
         input_tokens: 0,
         output_tokens: 0,
         total_cost: 0.0,
+        parent_trace_id: String::new(),
+        origin_node_id: String::new(),
         created_at: String::new(),
         updated_at: String::new(),
     };

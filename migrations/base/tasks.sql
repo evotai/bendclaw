@@ -1,7 +1,7 @@
 -- Scheduled tasks for periodic agent execution.
 CREATE TABLE IF NOT EXISTS tasks (
     id                    VARCHAR   NOT NULL   COMMENT 'ULID primary key',
-    executor_instance_id  VARCHAR   NULL      COMMENT 'Deprecated: use lease columns instead',
+    executor_node_id  VARCHAR   NULL      COMMENT 'Deprecated: use lease columns instead',
     name                  VARCHAR   NOT NULL   COMMENT 'Human-readable task name',
     prompt                TEXT      NOT NULL DEFAULT '' COMMENT 'Prompt to execute on schedule',
     enabled               BOOLEAN   NOT NULL DEFAULT true COMMENT 'Whether task is active',
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     last_run_at           TIMESTAMP NULL      COMMENT 'Last execution timestamp',
     next_run_at           TIMESTAMP NULL      COMMENT 'Next scheduled execution',
     lease_token           VARCHAR   NULL      COMMENT 'Execution lease token for concurrency control',
-    lease_instance_id     VARCHAR   NULL      COMMENT 'Instance holding the execution lease',
+    lease_node_id     VARCHAR   NULL      COMMENT 'Instance holding the execution lease',
     lease_expires_at      TIMESTAMP NULL      COMMENT 'Lease expiration time',
     created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
@@ -35,6 +35,6 @@ CREATE TABLE IF NOT EXISTS task_history (
     delivery                 VARIANT   NOT NULL DEFAULT '{"kind":"none"}'::VARIANT COMMENT 'Delivery snapshot for this execution',
     delivery_status          VARCHAR   NULL       COMMENT 'ok | failed',
     delivery_error           VARCHAR   NULL       COMMENT 'Delivery error',
-    executed_by_instance_id  VARCHAR   NULL       COMMENT 'Instance that executed this run',
+    executed_by_node_id  VARCHAR   NULL       COMMENT 'Instance that executed this run',
     created_at               TIMESTAMP NOT NULL DEFAULT NOW()
 ) COMMENT = 'Task execution history (snapshot of task at execution time)';

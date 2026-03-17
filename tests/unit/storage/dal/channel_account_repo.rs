@@ -16,7 +16,7 @@ fn account_row(id: &str) -> Vec<serde_json::Value> {
         "1",
         "",
         "",
-        "", // lease_instance_id, lease_token, lease_expires_at
+        "", // lease_node_id, lease_token, lease_expires_at
         "2026-03-11T00:00:00Z",
         "2026-03-11T00:00:00Z",
     ]
@@ -54,7 +54,7 @@ async fn channel_account_insert_generates_valid_sql() -> Result<()> {
         user_id: "user-1".into(),
         config: serde_json::json!({"token": "abc"}),
         enabled: true,
-        lease_instance_id: None,
+        lease_node_id: None,
         lease_token: None,
         lease_expires_at: None,
         created_at: String::new(),
@@ -147,7 +147,7 @@ async fn channel_account_delete_generates_valid_sql() -> Result<()> {
 async fn channel_account_release_lease_clears_lease_columns() -> Result<()> {
     let fake = FakeDatabend::new(|sql, _db| {
         assert!(sql.starts_with("UPDATE channel_accounts SET"));
-        assert!(sql.contains("lease_instance_id = NULL"));
+        assert!(sql.contains("lease_node_id = NULL"));
         assert!(sql.contains("lease_token = NULL"));
         assert!(sql.contains("lease_expires_at = NULL"));
         assert!(sql.contains("WHERE id = 'ca-1'"));

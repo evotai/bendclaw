@@ -13,12 +13,12 @@ use crate::kernel::tools::OpType;
 use crate::kernel::tools::ToolId;
 
 pub struct TaskCreateTool {
-    instance_id: String,
+    node_id: String,
 }
 
 impl TaskCreateTool {
-    pub fn new(instance_id: String) -> Self {
-        Self { instance_id }
+    pub fn new(node_id: String) -> Self {
+        Self { node_id }
     }
 }
 
@@ -67,7 +67,7 @@ impl Tool for TaskCreateTool {
             }
         };
 
-        match admin::create_task(&ctx.pool, spec.into_params(self.instance_id.clone())).await {
+        match admin::create_task(&ctx.pool, spec.into_params(self.node_id.clone())).await {
             Ok(record) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(&TaskView::from(record)).unwrap_or_default(),
             )),

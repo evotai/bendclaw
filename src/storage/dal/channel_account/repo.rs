@@ -14,7 +14,7 @@ impl RowMapper for Mapper {
     type Entity = ChannelAccountRecord;
 
     fn columns(&self) -> &str {
-        "id, channel_type, account_id, agent_id, user_id, config, enabled, lease_instance_id, lease_token, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, channel_type, account_id, agent_id, user_id, config, enabled, lease_node_id, lease_token, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<Self::Entity> {
@@ -28,7 +28,7 @@ impl RowMapper for Mapper {
             user_id: sql::col(row, 4),
             config,
             enabled: sql::col(row, 6) == "1",
-            lease_instance_id: sql::col_opt(row, 7),
+            lease_node_id: sql::col_opt(row, 7),
             lease_token: sql::col_opt(row, 8),
             lease_expires_at: sql::col_opt(row, 9),
             created_at: sql::col(row, 10),
@@ -126,7 +126,7 @@ impl ChannelAccountRepo {
     /// Release the receiver lease for a channel account (used on delete or disable).
     pub async fn release_lease(&self, id: &str) -> Result<()> {
         let sql_str = sql::Sql::update("channel_accounts")
-            .set_raw("lease_instance_id", "NULL")
+            .set_raw("lease_node_id", "NULL")
             .set_raw("lease_token", "NULL")
             .set_raw("lease_expires_at", "NULL")
             .set_raw("updated_at", "NOW()")

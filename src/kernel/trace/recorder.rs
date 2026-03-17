@@ -19,6 +19,8 @@ pub struct TraceRecorder {
     agent_id: String,
     session_id: String,
     user_id: String,
+    parent_trace_id: String,
+    origin_node_id: String,
 }
 
 impl TraceRecorder {
@@ -39,7 +41,20 @@ impl TraceRecorder {
             agent_id: agent_id.into(),
             session_id: session_id.into(),
             user_id: user_id.into(),
+            parent_trace_id: String::new(),
+            origin_node_id: String::new(),
         }
+    }
+
+    /// Set parent trace context for distributed trace linking.
+    pub fn with_parent_trace(
+        mut self,
+        parent_trace_id: impl Into<String>,
+        origin_node_id: impl Into<String>,
+    ) -> Self {
+        self.parent_trace_id = parent_trace_id.into();
+        self.origin_node_id = origin_node_id.into();
+        self
     }
 
     /// Insert the top-level trace record (status=running).
@@ -57,6 +72,8 @@ impl TraceRecorder {
                 input_tokens: 0,
                 output_tokens: 0,
                 total_cost: 0.0,
+                parent_trace_id: self.parent_trace_id.clone(),
+                origin_node_id: self.origin_node_id.clone(),
                 created_at: String::new(),
                 updated_at: String::new(),
             })

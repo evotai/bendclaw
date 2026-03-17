@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS channel_accounts (
     user_id         VARCHAR   NOT NULL   COMMENT 'Owner',
     config          VARIANT   NOT NULL DEFAULT '{}'::VARIANT COMMENT 'Platform-specific config (JSON)',
     enabled         BOOLEAN   NOT NULL DEFAULT TRUE COMMENT 'Soft-disable without deleting',
-    lease_instance_id VARCHAR  NULL     COMMENT 'Instance holding the receiver lease',
+    lease_node_id VARCHAR  NULL     COMMENT 'Instance holding the receiver lease',
     lease_token       VARCHAR  NULL     COMMENT 'Lease token for receiver mutex',
     lease_expires_at  TIMESTAMP NULL    COMMENT 'Lease expiration time',
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),

@@ -12,7 +12,7 @@ async fn task_repo_list_due_scopes_by_executor_instance() -> Result<()> {
     let fake = FakeDatabend::new(|sql, _database| {
         assert_eq!(
             sql,
-            "SELECT id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_instance_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE enabled = true AND status != 'running' AND next_run_at <= NOW() AND executor_instance_id = 'inst-1' ORDER BY next_run_at ASC LIMIT 100"
+            "SELECT id, executor_node_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_node_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE enabled = true AND status != 'running' AND next_run_at <= NOW() AND executor_node_id = 'inst-1' ORDER BY next_run_at ASC LIMIT 100"
         );
         Ok(task_query([TaskRow::every(
             "task-1",
@@ -34,7 +34,7 @@ async fn task_repo_claim_due_tasks_updates_then_loads_claimed_rows() -> Result<(
     let fake = FakeDatabend::new(|sql, _database| {
         if sql.starts_with("UPDATE tasks SET status = 'running'") {
             assert!(sql.contains("lease_token = 'lease-1'"));
-            assert!(sql.contains("executor_instance_id = 'inst-1'"));
+            assert!(sql.contains("executor_node_id = 'inst-1'"));
             assert!(
                 sql.contains("(lease_token IS NULL OR lease_token = '')"),
                 "claim_due_tasks must guard against double-claim: {sql}"
@@ -43,7 +43,7 @@ async fn task_repo_claim_due_tasks_updates_then_loads_claimed_rows() -> Result<(
         }
         assert_eq!(
             sql,
-            "SELECT id, executor_instance_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_instance_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE lease_token = 'lease-1' AND status = 'running' ORDER BY next_run_at ASC LIMIT 100"
+            "SELECT id, executor_node_id, name, prompt, enabled, status, schedule, delivery, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_node_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM tasks WHERE lease_token = 'lease-1' AND status = 'running' ORDER BY next_run_at ASC LIMIT 100"
         );
         Ok(task_query([TaskRow {
             lease_token: Some("lease-1".to_string()),
@@ -77,7 +77,7 @@ async fn task_repo_finish_task_clears_lease_and_updates_status() -> Result<()> {
     assert_eq!(
         fake.calls(),
         vec![FakeDatabendCall::Query {
-            sql: "UPDATE tasks SET status = 'completed', lease_token = NULL, lease_instance_id = NULL, lease_expires_at = NULL, last_run_at = NOW(), run_count = run_count + 1, updated_at = NOW(), last_error = NULL, next_run_at = NULL WHERE id = 'task-1' AND lease_token = 'lease-1'".to_string(),
+            sql: "UPDATE tasks SET status = 'completed', lease_token = NULL, lease_node_id = NULL, lease_expires_at = NULL, last_run_at = NOW(), run_count = run_count + 1, updated_at = NOW(), last_error = NULL, next_run_at = NULL WHERE id = 'task-1' AND lease_token = 'lease-1'".to_string(),
             database: None,
         }]
     );
@@ -120,8 +120,8 @@ async fn task_repo_list_due_any_omits_executor_instance_filter() -> Result<()> {
             "should have base conditions: {sql}"
         );
         assert!(
-            !sql.contains("AND executor_instance_id ="),
-            "list_due_any must not filter by executor_instance_id: {sql}"
+            !sql.contains("AND executor_node_id ="),
+            "list_due_any must not filter by executor_node_id: {sql}"
         );
         assert!(
             sql.contains("status != 'running'"),

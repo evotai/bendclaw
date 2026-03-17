@@ -28,10 +28,10 @@ pub(super) async fn create_task(
     req: CreateTaskRequest,
 ) -> Result<TaskRecord> {
     let pool = state.runtime.databases().agent_pool(agent_id)?;
-    let executor_instance_id = req
-        .executor_instance_id
-        .unwrap_or_else(|| state.runtime.config().instance_id.clone());
-    let params: CreateTaskParams = req.spec.into_params(executor_instance_id);
+    let executor_node_id = req
+        .executor_node_id
+        .unwrap_or_else(|| state.runtime.config().node_id.clone());
+    let params: CreateTaskParams = req.spec.into_params(executor_node_id);
     let record = admin::create_task(&pool, params).await?;
     Ok(record)
 }

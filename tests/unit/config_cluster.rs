@@ -13,7 +13,7 @@ fn parse_cluster_section() -> anyhow::Result<()> {
     std::fs::write(
         &path,
         r#"
-instance_id = "node-1"
+node_id = "node-1"
 
 [storage]
 databend_api_base_url = "https://test.databend.com"
@@ -46,6 +46,7 @@ fn cluster_env_override_creates_from_scratch() {
         registry_url: url.clone(),
         registry_token: token.clone(),
         advertise_url: String::new(),
+        cluster_id: String::new(),
     });
 
     let cluster = cfg.cluster.as_ref().expect("cluster should be Some");
@@ -72,6 +73,7 @@ fn serde_roundtrip_with_cluster() -> anyhow::Result<()> {
         registry_url: "https://api.evot.ai".into(),
         registry_token: "sk-test".into(),
         advertise_url: "https://node1.example.com:8787".into(),
+        cluster_id: "test-cluster".into(),
     });
     let toml_str = toml::to_string(&cfg)?;
     let back: BendClawConfig = toml::from_str(&toml_str)?;
@@ -90,11 +92,12 @@ fn validate_cluster_without_advertise_url_fails() {
     let mut cfg = BendClawConfig::default();
     cfg.storage.databend_api_base_url = "https://app.databend.com".into();
     cfg.storage.databend_api_token = "tok".into();
-    cfg.instance_id = "node-1".into();
+    cfg.node_id = "node-1".into();
     cfg.cluster = Some(bendclaw::config::ClusterConfig {
         registry_url: "https://api.evot.ai".into(),
         registry_token: "sk-test".into(),
         advertise_url: String::new(),
+        cluster_id: "test-cluster".into(),
     });
     assert!(cfg.validate().is_err());
 }
@@ -104,11 +107,12 @@ fn validate_cluster_with_advertise_url_succeeds() {
     let mut cfg = BendClawConfig::default();
     cfg.storage.databend_api_base_url = "https://app.databend.com".into();
     cfg.storage.databend_api_token = "tok".into();
-    cfg.instance_id = "node-1".into();
+    cfg.node_id = "node-1".into();
     cfg.cluster = Some(bendclaw::config::ClusterConfig {
         registry_url: "https://api.evot.ai".into(),
         registry_token: "sk-test".into(),
         advertise_url: "https://node1.example.com:8787".into(),
+        cluster_id: "test-cluster".into(),
     });
     assert!(cfg.validate().is_ok());
 }

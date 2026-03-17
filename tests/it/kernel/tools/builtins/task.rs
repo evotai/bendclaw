@@ -32,6 +32,12 @@ fn ctx_with_pool(pool: bendclaw::storage::Pool) -> bendclaw::kernel::tools::Tool
         ),
         pool,
         is_dispatched: false,
+        runtime: bendclaw::kernel::tools::ToolRuntime {
+            event_tx: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            cli_agent_state: bendclaw::kernel::tools::cli_agent::new_shared_state(),
+            tool_call_id: None,
+        },
     }
 }
 

@@ -1,5 +1,5 @@
 pub mod http;
 mod service;
-mod stream;
+pub mod stream;
 
 pub use http::*;

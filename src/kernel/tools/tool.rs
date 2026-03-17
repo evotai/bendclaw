@@ -3,15 +3,28 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::base::Result;
+use crate::kernel::run::event::Event;
 use crate::kernel::session::workspace::Workspace;
+use crate::kernel::tools::cli_agent::SharedAgentState;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::storage::pool::Pool;
 
+/// Runtime controls injected into tools during execution.
+#[derive(Clone)]
+pub struct ToolRuntime {
+    pub event_tx: Option<mpsc::Sender<Event>>,
+    pub cancel: CancellationToken,
+    pub cli_agent_state: SharedAgentState,
+    pub tool_call_id: Option<Arc<str>>,
+}
+
 /// Per-session identity context passed to tools at execution time.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolContext {
     pub user_id: Arc<str>,
     pub session_id: Arc<str>,
@@ -23,6 +36,16 @@ pub struct ToolContext {
     /// True when this run was dispatched from a remote node (has parent_run_id).
     /// Prevents nested dispatch — only one level of fanout is allowed.
     pub is_dispatched: bool,
+    pub runtime: ToolRuntime,
+}
+
+impl ToolContext {
+    pub fn current_tool_call_id(&self) -> &str {
+        match &self.runtime.tool_call_id {
+            Some(tool_call_id) => tool_call_id,
+            None => &self.run_id,
+        }
+    }
 }
 
 /// Result of an in-process tool execution.

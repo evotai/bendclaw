@@ -30,6 +30,9 @@ pub enum ToolId {
     ClusterNodes,
     ClusterDispatch,
     ClusterCollect,
+    ClaudeCode,
+    CodexExec,
+    CodeReview,
 }
 
 impl ToolId {
@@ -65,6 +68,9 @@ impl ToolId {
             Self::ClusterNodes => "cluster_nodes",
             Self::ClusterDispatch => "cluster_dispatch",
             Self::ClusterCollect => "cluster_collect",
+            Self::ClaudeCode => "claude_code",
+            Self::CodexExec => "codex_exec",
+            Self::CodeReview => "code_review",
         }
     }
 }
@@ -113,6 +119,10 @@ impl ToolId {
         ToolId::LearningWrite,
         ToolId::KnowledgeSearch,
         ToolId::LearningSearch,
+        // Coding agents
+        ToolId::ClaudeCode,
+        ToolId::CodexExec,
+        ToolId::CodeReview,
     ];
 
     /// Cluster tools, registered conditionally when cluster config is present.

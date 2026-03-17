@@ -2,13 +2,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::kernel::run::event::Event;
 use crate::kernel::skills::executor::parse_skill_args;
 use crate::kernel::skills::executor::SkillExecutor;
 use crate::kernel::tools::registry::ToolRegistry;
 use crate::kernel::tools::Tool;
 use crate::kernel::tools::ToolContext;
+use crate::kernel::tools::ToolRuntime;
 use crate::kernel::OpType;
 use crate::kernel::OperationMeta;
 use crate::kernel::OperationTracker;
@@ -71,9 +74,16 @@ impl ToolDispatcher {
     pub fn new(
         tool_registry: Arc<ToolRegistry>,
         skill_executor: Arc<dyn SkillExecutor>,
-        tool_context: ToolContext,
+        mut tool_context: ToolContext,
         cancel: CancellationToken,
+        event_tx: mpsc::Sender<Event>,
     ) -> Self {
+        tool_context.runtime = ToolRuntime {
+            event_tx: Some(event_tx),
+            cancel: cancel.clone(),
+            cli_agent_state: tool_context.runtime.cli_agent_state.clone(),
+            tool_call_id: None,
+        };
         Self {
             tool_registry,
             skill_executor,
@@ -204,7 +214,7 @@ impl ToolDispatcher {
         timeout: Duration,
     ) -> ToolCallResult {
         if let Some(tool) = self.tool_registry.get(&tc.name) {
-            self.run_tool(&tc.name, tool, args, timeout).await
+            self.run_tool(&tc.id, &tc.name, tool, args, timeout).await
         } else {
             self.run_skill(&tc.name, &tc.arguments, timeout).await
         }
@@ -212,14 +222,17 @@ impl ToolDispatcher {
 
     async fn run_tool(
         &self,
+        tool_call_id: &str,
         name: &str,
         tool: &Arc<dyn Tool>,
         args: serde_json::Value,
         timeout: Duration,
     ) -> ToolCallResult {
         let tracker = Self::begin_tracker(name, &args, Some(tool), timeout);
+        let mut tool_context = self.tool_context.clone();
+        tool_context.runtime.tool_call_id = Some(Arc::from(tool_call_id));
 
-        let result = match tool.execute_with_context(args, &self.tool_context).await {
+        let result = match tool.execute_with_context(args, &tool_context).await {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!(tool = name, error = %e, "tool execution failed");

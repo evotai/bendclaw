@@ -1,5 +1,6 @@
 pub mod channel;
 pub mod cluster;
+pub mod coding_agent;
 pub mod databend;
 pub mod file;
 pub mod memory;

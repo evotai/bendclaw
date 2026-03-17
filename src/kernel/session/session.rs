@@ -36,6 +36,7 @@ use crate::kernel::skills::store::SkillStore;
 use crate::kernel::tools::progressive::ProgressiveToolView;
 use crate::kernel::tools::registry::ToolRegistry;
 use crate::kernel::tools::ToolContext;
+use crate::kernel::tools::ToolRuntime;
 use crate::kernel::trace::TraceRecorder;
 use crate::kernel::Message;
 use crate::llm::provider::LLMProvider;
@@ -353,6 +354,8 @@ impl Session {
             self.res.workspace.clone(),
             self.res.storage.pool().clone(),
         ));
+        let (tx, rx) = Engine::create_channel();
+        let event_tx = tx.clone();
         let dispatcher = ToolDispatcher::new(
             self.res.tool_registry.clone(),
             skill_executor,
@@ -365,18 +368,27 @@ impl Session {
                 workspace: self.res.workspace.clone(),
                 pool: self.res.storage.pool().clone(),
                 is_dispatched,
+                runtime: ToolRuntime {
+                    event_tx: None,
+                    cancel: cancel.clone(),
+                    cli_agent_state: crate::kernel::tools::cli_agent::new_shared_state(),
+                    tool_call_id: None,
+                },
             },
             cancel.clone(),
+            event_tx,
         );
 
-        let (mut engine, events) = Engine::new(
+        let mut engine = Engine::from_tx(
             ctx,
             dispatcher,
             compactor,
             cancel.clone(),
             iteration.clone(),
             trace,
+            tx,
         );
+        let events = rx;
         let task = tokio::spawn(async move { engine.run().await });
 
         (task, events, cancel, iteration)

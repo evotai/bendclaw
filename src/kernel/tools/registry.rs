@@ -221,6 +221,20 @@ pub fn create_session_tools(
         Arc::new(super::recall::LearningSearchTool::new(recall_store)),
     );
 
+    // Coding agent tools
+    registry.register_builtin(
+        ToolId::ClaudeCode,
+        Arc::new(super::coding_agent::ClaudeCodeTool),
+    );
+    registry.register_builtin(
+        ToolId::CodexExec,
+        Arc::new(super::coding_agent::CodexExecTool),
+    );
+    registry.register_builtin(
+        ToolId::CodeReview,
+        Arc::new(super::coding_agent::CodeReviewTool),
+    );
+
     registry
 }
 

@@ -313,8 +313,29 @@ impl PromptBuilder {
             "\nCall tools when they would help accomplish the task.\
              \nUse memory_write for user or session preferences.\
              \nUse learning_write for reusable agent-level lessons.\
-             \nSearch memory, knowledge, or learning when prior context may help.\n\n",
+             \nSearch memory, knowledge, or learning when prior context may help.\n",
         );
+
+        let has_claude = tools.iter().any(|t| t.function.name == "claude_code");
+        let has_codex = tools.iter().any(|t| t.function.name == "codex_exec");
+        let has_review = tools.iter().any(|t| t.function.name == "code_review");
+        if has_claude || has_codex || has_review {
+            buf.push_str("\n### Coding-agent orchestration\n\n");
+            buf.push_str("Treat coding-agent tools as single-shot actions: one execution or one review per call. You decide the overall workflow.\n");
+            if has_claude && has_codex {
+                buf.push_str(
+                    "You may use one coding agent to implement and the other to review.\n",
+                );
+            }
+            if has_review {
+                buf.push_str("Use `code_review` when you want a chosen coding agent to review a git diff target (`uncommitted`, `staged`, `branch:<name>`, `commit:<sha>`).\n");
+            }
+            buf.push_str("It is normal to do multiple review/fix rounds. Decide whether to continue or stop based on the remaining issues and the task goal.\n\n");
+        } else {
+            buf.push('\n');
+        }
+
+        buf.push('\n');
 
         let buf = truncate_layer("tools", &buf, MAX_TOOLS_BYTES, "registry");
         prompt.push_str(&buf);

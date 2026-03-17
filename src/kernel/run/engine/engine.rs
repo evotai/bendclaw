@@ -31,16 +31,23 @@ pub(crate) struct Engine {
 }
 
 impl Engine {
-    pub fn new(
+    /// Create the event channel before building the dispatcher so the `tx`
+    /// can be injected into `ToolContext`. Returns `(tx, rx)`.
+    pub fn create_channel() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
+        mpsc::channel(EVENT_CAPACITY)
+    }
+
+    /// Build the engine from a pre-created `tx` (from `create_channel`).
+    pub fn from_tx(
         ctx: Context,
         dispatcher: ToolDispatcher,
         compactor: Compactor,
         cancel: CancellationToken,
         iteration: Arc<AtomicU32>,
         trace_recorder: TraceRecorder,
-    ) -> (Self, mpsc::Receiver<Event>) {
-        let (tx, rx) = mpsc::channel(EVENT_CAPACITY);
-        let engine = Self {
+        tx: mpsc::Sender<Event>,
+    ) -> Self {
+        Self {
             abort_policy: AbortPolicy::new(ctx.max_iterations),
             ctx,
             compactor,
@@ -51,8 +58,7 @@ impl Engine {
             tx,
             trace: Trace::new(trace_recorder),
             loop_span_id: String::new(),
-        };
-        (engine, rx)
+        }
     }
     pub(super) fn ops_ctx(&self, turn: u32) -> server_log::ServerCtx<'_> {
         server_log::ServerCtx::new(

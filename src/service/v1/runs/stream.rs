@@ -10,6 +10,18 @@ pub fn map_event_to_sse(
     run_id: &str,
     event: &Event,
 ) -> Option<SseEvent> {
+    // ToolUpdate is excluded from DB persistence but must flow through SSE.
+    if let Event::ToolUpdate {
+        tool_call_id,
+        output,
+    } = event
+    {
+        let mut payload = base_event_payload(agent_id, session_id, run_id, "ToolCallUpdate");
+        payload["tool_call_id"] = serde_json::Value::String(tool_call_id.clone());
+        payload["content"] = serde_json::Value::String(output.clone());
+        return Some(encode_sse("ToolCallUpdate", payload));
+    }
+
     if should_skip_event(event) {
         return None;
     }

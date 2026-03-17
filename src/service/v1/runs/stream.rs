@@ -241,13 +241,14 @@ pub fn encode_sse(event: &str, payload: serde_json::Value) -> SseEvent {
     SseEvent::default().event(event).data(payload.to_string())
 }
 
-fn map_agent_event_to_sse(
+/// Maps an AgentEvent to (sse_event_name, payload). Exposed for testing.
+pub fn map_agent_event(
     agent_id: &str,
     session_id: &str,
     run_id: &str,
     tool_call_id: &str,
     agent_event: &AgentEvent,
-) -> SseEvent {
+) -> (String, serde_json::Value) {
     let (event_name, mut payload) = match agent_event {
         AgentEvent::Text { content } => {
             let mut p = base_event_payload(agent_id, session_id, run_id, "ToolCallUpdate");
@@ -296,5 +297,16 @@ fn map_agent_event_to_sse(
     };
     payload["tool_call_id"] = serde_json::Value::String(tool_call_id.to_string());
     payload["agent_event_kind"] = serde_json::Value::String(agent_event.kind().to_string());
-    encode_sse(event_name, payload)
+    (event_name.to_string(), payload)
+}
+
+fn map_agent_event_to_sse(
+    agent_id: &str,
+    session_id: &str,
+    run_id: &str,
+    tool_call_id: &str,
+    agent_event: &AgentEvent,
+) -> SseEvent {
+    let (name, payload) = map_agent_event(agent_id, session_id, run_id, tool_call_id, agent_event);
+    encode_sse(&name, payload)
 }

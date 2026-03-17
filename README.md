@@ -1,10 +1,9 @@
 <p align="center">
-  <strong>BendClaw</strong>
+  <a href="https://evot.ai"><img src="https://www.evot.ai/_next/image?url=%2Flogo.png&w=96&q=75&dpl=dpl_6RSmM78VtbzvB2CD4qzLH2zq9wga" alt="evot.ai" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/datafuselabs/evot-ai/actions"><img src="https://github.com/datafuselabs/evot-ai/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"></a>
+  <strong>BendClaw</strong>
 </p>
 
 <p align="center">

@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="https://github.com/user-attachments/assets/132aa3cc-5c79-445a-8c18-5da152f7745d" alt="BendClaw" />
+</p>
+
+<p align="center">
   <strong>BendClaw</strong>
 </p>
 

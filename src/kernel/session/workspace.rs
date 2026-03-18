@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 
+use crate::base::truncate_bytes_on_char_boundary;
 use crate::storage::dal::variable::record::VariableRecord;
 
 // ── Path resolver ──
@@ -288,11 +289,11 @@ impl Workspace {
         let mut stderr = String::from_utf8_lossy(&stderr_buf).into_owned();
 
         if stdout.len() > max_output {
-            stdout.truncate(max_output);
+            stdout = truncate_bytes_on_char_boundary(&stdout, max_output);
             stdout.push_str("\n... [output truncated]");
         }
         if stderr.len() > max_output {
-            stderr.truncate(max_output);
+            stderr = truncate_bytes_on_char_boundary(&stderr, max_output);
             stderr.push_str("\n... [stderr truncated]");
         }
 

@@ -2,6 +2,7 @@ pub mod error;
 pub mod error_source;
 pub mod id;
 pub mod message_types;
+pub mod text;
 
 pub use error::ErrorCode;
 pub use error::OptionExt;
@@ -17,3 +18,5 @@ pub use id::validate_agent_id;
 pub use message_types::Content;
 pub use message_types::Role;
 pub use message_types::ToolCall;
+pub use text::truncate_bytes_on_char_boundary;
+pub use text::truncate_chars_with_ellipsis;

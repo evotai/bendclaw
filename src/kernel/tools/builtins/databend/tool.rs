@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::action::Action;
+use crate::base::truncate_bytes_on_char_boundary;
 use crate::base::Result;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
@@ -236,7 +237,7 @@ fn format_rows(rows: &[serde_json::Value]) -> String {
         ));
     }
     if output.len() > MAX_OUTPUT_BYTES {
-        output.truncate(MAX_OUTPUT_BYTES);
+        output = truncate_bytes_on_char_boundary(&output, MAX_OUTPUT_BYTES);
         output.push_str("\n... [output truncated at 1MB]");
     }
     output

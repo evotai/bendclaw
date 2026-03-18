@@ -609,13 +609,8 @@ fn to_anthropic_tools(tools: &[ToolSchema]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-fn truncate_for_log(text: &str) -> &str {
-    const MAX_LOG_LEN: usize = 512;
-    if text.len() <= MAX_LOG_LEN {
-        text
-    } else {
-        &text[..MAX_LOG_LEN]
-    }
+fn truncate_for_log(text: &str) -> String {
+    crate::base::truncate_bytes_on_char_boundary(text, 512)
 }
 
 fn parse_response(data: &serde_json::Value) -> Result<LLMResponse> {

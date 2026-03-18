@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::json;
 
+use crate::base::truncate_chars_with_ellipsis;
 use crate::base::Result;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
@@ -31,12 +32,7 @@ impl OperationClassifier for WebFetchTool {
     }
 
     fn summarize(&self, args: &serde_json::Value) -> String {
-        let url = Self::extract_url(args);
-        if url.len() > 120 {
-            format!("{}...", &url[..117])
-        } else {
-            url.to_string()
-        }
+        truncate_chars_with_ellipsis(Self::extract_url(args), 120)
     }
 }
 

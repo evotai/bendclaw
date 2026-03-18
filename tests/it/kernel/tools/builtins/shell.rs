@@ -206,6 +206,15 @@ fn summarize_exactly_120_chars_not_truncated() {
     assert!(!result.ends_with("..."));
 }
 
+#[test]
+fn summarize_long_multibyte_command_truncated_safely() {
+    let tool = ShellTool;
+    let cmd = "请分析这个项目，给出详细的改进方案。".repeat(20);
+    let result = tool.summarize(&json!({"command": cmd}));
+    assert!(result.ends_with("..."));
+    assert_eq!(result.chars().count(), 120);
+}
+
 #[tokio::test]
 async fn shell_env_isolation() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;

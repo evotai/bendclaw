@@ -1,4 +1,5 @@
 use super::ChannelRegistry;
+use crate::base::truncate_bytes_on_char_boundary;
 use crate::base::ErrorCode;
 use crate::base::Result;
 use crate::storage::ChannelAccountRecord;
@@ -27,7 +28,7 @@ pub async fn send_text_to_account(
     let max_len = entry.plugin.capabilities().max_message_len;
     let mut payload = text.to_string();
     if payload.len() > max_len {
-        payload.truncate(max_len);
+        payload = truncate_bytes_on_char_boundary(&payload, max_len);
     }
 
     outbound.send_text(&account.config, chat_id, &payload).await

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::codex_agent::CodexAgent;
+use crate::base::truncate_chars_with_ellipsis;
 use crate::base::Result;
 use crate::kernel::tools::cli_agent::AgentOptions;
 use crate::kernel::tools::cli_agent::AgentProcess;
@@ -30,11 +31,7 @@ impl OperationClassifier for CodexExecTool {
 
     fn summarize(&self, args: &serde_json::Value) -> String {
         let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
-        if prompt.len() > 120 {
-            format!("{}...", &prompt[..117])
-        } else {
-            prompt.to_string()
-        }
+        truncate_chars_with_ellipsis(prompt, 120)
     }
 }
 

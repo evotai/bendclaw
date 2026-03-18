@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio_stream::StreamExt;
 
 use crate::base::new_id;
+use crate::base::truncate_bytes_on_char_boundary;
 use crate::kernel::channel::account::ChannelAccount;
 use crate::kernel::channel::dispatcher::ChannelDispatcher;
 use crate::kernel::channel::message::InboundEvent;
@@ -146,7 +147,7 @@ async fn try_dispatch_inbound(
         .map(|e| e.plugin.capabilities().max_message_len)
         .unwrap_or(4096);
     if output_text.len() > max_len {
-        output_text.truncate(max_len);
+        output_text = truncate_bytes_on_char_boundary(&output_text, max_len);
     }
 
     // Send reply.

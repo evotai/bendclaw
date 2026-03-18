@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
 
+use crate::base::truncate_bytes_on_char_boundary;
 use crate::observability::redaction;
 
 #[derive(Debug, Clone, Copy)]
@@ -100,7 +101,7 @@ impl ServerFields {
         if text.len() > MAX_PAYLOAD {
             format!(
                 "{}...(truncated {} bytes)",
-                &text[..MAX_PAYLOAD],
+                truncate_bytes_on_char_boundary(&text, MAX_PAYLOAD),
                 text.len() - MAX_PAYLOAD
             )
         } else {

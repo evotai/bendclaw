@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::json;
 
+use crate::base::truncate_chars_with_ellipsis;
 use crate::base::Result;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
@@ -60,12 +61,7 @@ impl OperationClassifier for ShellTool {
     }
 
     fn summarize(&self, args: &serde_json::Value) -> String {
-        let cmd = Self::extract_command(args);
-        if cmd.len() > 120 {
-            format!("{}...", &cmd[..117])
-        } else {
-            cmd.to_string()
-        }
+        truncate_chars_with_ellipsis(Self::extract_command(args), 120)
     }
 }
 

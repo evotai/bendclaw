@@ -114,6 +114,15 @@ async fn web_fetch_rejects_non_http_scheme() -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+#[test]
+fn web_fetch_summarize_long_multibyte_url_safely() {
+    let tool = WebFetchTool;
+    let url = format!("https://example.com/{}", "路径".repeat(100));
+    let result = tool.summarize(&json!({ "url": url }));
+    assert!(result.ends_with("..."));
+    assert_eq!(result.chars().count(), 120);
+}
+
 #[tokio::test]
 async fn web_search_success_formats_results_and_caps_count(
 ) -> Result<(), Box<dyn std::error::Error>> {

@@ -45,6 +45,7 @@ dotenvy = "0.15"
 flate2 = "1"
 tar = "0.4"
 native-tls = "0.2.18"
+openssl = { version = "0.10", features = ["vendored"] }
 prost = "0.14.3"
 
 [target.'cfg(unix)'.dependencies]

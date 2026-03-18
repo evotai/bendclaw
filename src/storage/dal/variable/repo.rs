@@ -13,7 +13,6 @@ use crate::storage::table::Where;
 const REPO: &str = "variable";
 const MAX_LIST_LIMIT: u64 = 10_000;
 const CACHE_TTL: Duration = Duration::from_secs(60);
-const CACHE_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct VariableMapper;
@@ -56,8 +55,7 @@ pub struct VariableRepo {
 impl VariableRepo {
     pub fn new(pool: Pool) -> Self {
         Self {
-            table: DatabendTable::new(pool, "variables", VariableMapper)
-                .with_cache(CACHE_TTL, CACHE_CAPACITY),
+            table: DatabendTable::new(pool, "variables", VariableMapper).with_ttl_cache(CACHE_TTL),
         }
     }
 
@@ -169,10 +167,7 @@ impl VariableRepo {
             "UPDATE variables SET key='{}', value='{}', secret={}, revoked={}, updated_at=NOW() WHERE id='{}'",
             key_e, value_e, secret, revoked, id_e
         );
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
@@ -186,10 +181,7 @@ impl VariableRepo {
 
     pub async fn delete(&self, id: &str) -> Result<()> {
         let sql = format!("DELETE FROM variables WHERE id = '{}'", sql::escape(id));
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
@@ -206,10 +198,7 @@ impl VariableRepo {
             "UPDATE variables SET last_used_at=NOW() WHERE id='{}'",
             sql::escape(id)
         );
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
@@ -234,10 +223,7 @@ impl VariableRepo {
             "UPDATE variables SET last_used_at=NOW() WHERE id IN ({})",
             in_list
         );
-        let result = self.table.pool().exec(&sql_str).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql_str).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,

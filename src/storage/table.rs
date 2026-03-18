@@ -14,6 +14,8 @@ use super::sql::Sql;
 use super::sql::SqlVal;
 use crate::base::Result;
 
+const DEFAULT_CACHE_CAPACITY: usize = 128;
+
 /// Maps a raw JSON row to a domain type.
 pub trait RowMapper: Send + Sync {
     type Entity;
@@ -33,6 +35,7 @@ pub struct DatabendTable<M> {
     table: String,
     mapper: M,
     cache: Option<Arc<TtlCache<Vec<serde_json::Value>>>>,
+    cache_reads: bool,
 }
 
 impl<M: RowMapper> DatabendTable<M> {
@@ -42,13 +45,18 @@ impl<M: RowMapper> DatabendTable<M> {
             table: table.to_string(),
             mapper,
             cache: None,
+            cache_reads: false,
         }
     }
 
-    /// Enable LRU+TTL caching for read operations on this table.
-    /// Write operations automatically clear the cache.
-    pub fn with_cache(mut self, ttl: Duration, capacity: usize) -> Self {
-        self.cache = Some(Arc::new(TtlCache::new(&self.table, capacity, ttl)));
+    /// Enable LRU+TTL caching for basic read operations on this table.
+    pub fn with_ttl_cache(mut self, ttl: Duration) -> Self {
+        self.cache = Some(Arc::new(TtlCache::new(
+            &self.table,
+            DEFAULT_CACHE_CAPACITY,
+            ttl,
+        )));
+        self.cache_reads = true;
         self
     }
 
@@ -56,25 +64,52 @@ impl<M: RowMapper> DatabendTable<M> {
         &self.pool
     }
 
+    fn can_cache_query(&self, query: &str) -> bool {
+        self.cache_reads && !query.contains("SCORE()") && !query.contains("QUERY('")
+    }
+
     fn cached_rows(&self, sql: &str) -> Option<Vec<serde_json::Value>> {
-        self.cache.as_ref().and_then(|c| c.get(sql))
+        if !self.can_cache_query(sql) {
+            return None;
+        }
+        let rows = self.cache.as_ref().and_then(|c| c.get(sql));
+        tracing::debug!(
+            table = %self.table,
+            sql_len = sql.len(),
+            hit = rows.is_some(),
+            "storage table cache lookup"
+        );
+        rows
     }
 
     fn store_rows(&self, sql: &str, rows: &[serde_json::Value]) {
+        if !self.can_cache_query(sql) {
+            return;
+        }
         if let Some(c) = &self.cache {
             c.put(sql.to_string(), rows.to_vec());
+            tracing::debug!(
+                table = %self.table,
+                sql_len = sql.len(),
+                rows = rows.len(),
+                "storage table cache store"
+            );
         }
     }
 
     fn invalidate_cache(&self) {
         if let Some(c) = &self.cache {
             c.clear();
+            tracing::debug!(table = %self.table, "storage table cache cleared");
         }
     }
 
-    /// Manually clear the cache. Use when writes bypass the table layer (raw SQL).
-    pub fn clear_cache(&self) {
-        self.invalidate_cache();
+    pub async fn exec_raw(&self, sql: &str) -> Result<()> {
+        let result = self.pool.exec(sql).await;
+        if result.is_ok() {
+            self.invalidate_cache();
+        }
+        result
     }
 
     fn apply_wheres(q: sql::SelectBuilder, wheres: &[Where<'_>]) -> sql::SelectBuilder {

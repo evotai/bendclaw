@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio_stream::StreamExt;
 
@@ -88,6 +89,18 @@ async fn try_dispatch_inbound(
         }
     }
 
+    tracing::info!(
+        channel_type = %account.channel_type,
+        account_id = %account.channel_account_id,
+        external_account_id = %account.external_account_id,
+        session_id = %session_key,
+        chat_id,
+        sender_id = event_sender_id(event).unwrap_or(""),
+        message_id = event_message_id(event).unwrap_or(""),
+        input_bytes = input.len(),
+        "channel inbound accepted"
+    );
+
     // Record inbound message.
     if let InboundEvent::Message(msg) = event {
         let _ = msg_repo
@@ -116,7 +129,28 @@ async fn try_dispatch_inbound(
 
     // Send typing indicator.
     if let Some(ref ob) = outbound {
-        let _ = ob.send_typing(&account.config, chat_id).await;
+        let started = Instant::now();
+        match ob.send_typing(&account.config, chat_id).await {
+            Ok(()) => tracing::info!(
+                channel_type = %account.channel_type,
+                account_id = %account.channel_account_id,
+                external_account_id = %account.external_account_id,
+                chat_id,
+                send_type = "typing",
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "channel outbound sent"
+            ),
+            Err(error) => tracing::warn!(
+                channel_type = %account.channel_type,
+                account_id = %account.channel_account_id,
+                external_account_id = %account.external_account_id,
+                chat_id,
+                send_type = "typing",
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                error = %error,
+                "channel outbound failed"
+            ),
+        }
     }
 
     // Run the session.
@@ -152,9 +186,37 @@ async fn try_dispatch_inbound(
 
     // Send reply.
     let platform_msg_id = if let Some(ref ob) = outbound {
-        ob.send_text(&account.config, chat_id, &output_text)
-            .await
-            .unwrap_or_default()
+        let started = Instant::now();
+        match ob.send_text(&account.config, chat_id, &output_text).await {
+            Ok(msg_id) => {
+                tracing::info!(
+                    channel_type = %account.channel_type,
+                    account_id = %account.channel_account_id,
+                    external_account_id = %account.external_account_id,
+                    chat_id,
+                    send_type = "text",
+                    message_id = %msg_id,
+                    output_bytes = output_text.len(),
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "channel outbound sent"
+                );
+                msg_id
+            }
+            Err(error) => {
+                tracing::warn!(
+                    channel_type = %account.channel_type,
+                    account_id = %account.channel_account_id,
+                    external_account_id = %account.external_account_id,
+                    chat_id,
+                    send_type = "text",
+                    output_bytes = output_text.len(),
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    error = %error,
+                    "channel outbound failed"
+                );
+                String::new()
+            }
+        }
     } else {
         String::new()
     };
@@ -184,6 +246,13 @@ async fn try_dispatch_inbound(
 fn event_sender_id(event: &InboundEvent) -> Option<&str> {
     match event {
         InboundEvent::Message(msg) if !msg.sender_id.is_empty() => Some(&msg.sender_id),
+        _ => None,
+    }
+}
+
+fn event_message_id(event: &InboundEvent) -> Option<&str> {
+    match event {
+        InboundEvent::Message(msg) if !msg.message_id.is_empty() => Some(&msg.message_id),
         _ => None,
     }
 }

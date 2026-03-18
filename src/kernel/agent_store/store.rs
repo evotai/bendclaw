@@ -135,17 +135,7 @@ impl AgentStore {
         session_id: &str,
         state: &serde_json::Value,
     ) -> Result<()> {
-        let json = serde_json::to_string(state)?;
-        let sql = format!(
-            "UPDATE sessions SET session_state = PARSE_JSON('{}'), updated_at = NOW() WHERE id = '{}'",
-            crate::storage::sql::escape(&json),
-            crate::storage::sql::escape(session_id)
-        );
-        let result = self.pool.exec(&sql).await;
-        if result.is_ok() {
-            self.sessions.clear_cache();
-        }
-        result
+        self.sessions.update_state(session_id, state).await
     }
 
     pub async fn session_get_state(&self, session_id: &str) -> Result<serde_json::Value> {
@@ -156,15 +146,7 @@ impl AgentStore {
     }
 
     pub async fn session_delete(&self, session_id: &str) -> Result<()> {
-        let sql = format!(
-            "DELETE FROM sessions WHERE id = '{}'",
-            crate::storage::sql::escape(session_id)
-        );
-        let result = self.pool.exec(&sql).await;
-        if result.is_ok() {
-            self.sessions.clear_cache();
-        }
-        result
+        self.sessions.delete_by_id(session_id).await
     }
 
     // ── Runs ──────────────────────────────────────────────────────────────

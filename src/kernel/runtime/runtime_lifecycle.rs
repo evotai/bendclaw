@@ -97,7 +97,7 @@ impl Runtime {
             }
         }
 
-        // Flush trace writer queue
+        // Stop trace writer quickly; pending trace ops may be dropped on shutdown.
         self.trace_writer.shutdown().await;
 
         *self.status.write() = RuntimeStatus::Stopped;

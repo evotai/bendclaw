@@ -12,7 +12,6 @@ use crate::storage::table::Where;
 
 const REPO: &str = "knowledge";
 const CACHE_TTL: Duration = Duration::from_secs(60);
-const CACHE_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct KnowledgeMapper;
@@ -64,8 +63,7 @@ pub struct KnowledgeRepo {
 impl KnowledgeRepo {
     pub fn new(pool: Pool) -> Self {
         Self {
-            table: DatabendTable::new(pool, "knowledge", KnowledgeMapper)
-                .with_cache(CACHE_TTL, CACHE_CAPACITY),
+            table: DatabendTable::new(pool, "knowledge", KnowledgeMapper).with_ttl_cache(CACHE_TTL),
         }
     }
 
@@ -136,10 +134,7 @@ impl KnowledgeRepo {
 
     pub async fn delete(&self, id: &str) -> Result<()> {
         let sql = format!("DELETE FROM knowledge WHERE id = '{}'", sql::escape(id));
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(REPO, "delete", serde_json::json!({"id": id}), error);
         }

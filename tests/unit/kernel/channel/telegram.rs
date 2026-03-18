@@ -28,7 +28,7 @@ fn capabilities() {
     assert!(!caps.supports_streaming);
     assert!(caps.supports_markdown);
     assert!(!caps.supports_threads);
-    assert!(!caps.supports_reactions);
+    assert!(caps.supports_reactions);
     assert_eq!(caps.max_message_len, 4096);
 }
 
@@ -74,16 +74,15 @@ async fn outbound_edit_message_does_not_panic() {
 }
 
 #[tokio::test]
-async fn outbound_add_reaction_returns_error() {
+async fn outbound_add_reaction_does_not_panic() {
     let ch = TelegramChannel::new();
     let outbound = ch.outbound();
-    let result = outbound
+    let _ = outbound
         .add_reaction(
             &serde_json::json!({"token": "fake_token"}),
             "chat_1",
-            "msg_1",
-            "thumbsup",
+            "123",
+            "\u{1F44D}",
         )
         .await;
-    assert!(result.is_err());
 }

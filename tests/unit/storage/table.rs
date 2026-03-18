@@ -57,3 +57,63 @@ async fn table_insert_batch_skips_empty_rows() -> Result<()> {
     assert!(fake.calls().is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn table_get_uses_cache_when_enabled() -> Result<()> {
+    let fake = FakeDatabend::new(|sql, _database| {
+        assert_eq!(sql, "SELECT value FROM demo WHERE id = 'row-1' LIMIT 1");
+        Ok(paged_rows(&[&["value-1"]], None, None))
+    });
+    let table = DatabendTable::new(fake.pool(), "demo", TextMapper)
+        .with_ttl_cache(std::time::Duration::from_secs(60));
+
+    let first = table.get(&[Where("id", SqlVal::Str("row-1"))]).await?;
+    let second = table.get(&[Where("id", SqlVal::Str("row-1"))]).await?;
+
+    assert_eq!(first.as_deref(), Some("value-1"));
+    assert_eq!(second.as_deref(), Some("value-1"));
+    assert_eq!(fake.calls().len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn table_exec_raw_invalidates_cache() -> Result<()> {
+    let query_count = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+    let query_count_cloned = query_count.clone();
+    let fake = FakeDatabend::new(move |sql, _database| {
+        if sql.starts_with("SELECT") {
+            *query_count_cloned.lock().expect("query count lock") += 1;
+            Ok(paged_rows(&[&["value-1"]], None, None))
+        } else {
+            Ok(paged_rows(&[], None, None))
+        }
+    });
+    let table = DatabendTable::new(fake.pool(), "demo", TextMapper)
+        .with_ttl_cache(std::time::Duration::from_secs(60));
+
+    let _ = table.get(&[Where("id", SqlVal::Str("row-1"))]).await?;
+    table
+        .exec_raw("UPDATE demo SET value = 'x' WHERE id = 'row-1'")
+        .await?;
+    let _ = table.get(&[Where("id", SqlVal::Str("row-1"))]).await?;
+
+    assert_eq!(*query_count.lock().expect("query count lock"), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn table_does_not_cache_search_queries() -> Result<()> {
+    let fake = FakeDatabend::new(|_sql, _database| Ok(paged_rows(&[&["value-1"]], None, None)));
+    let table = DatabendTable::new(fake.pool(), "demo", TextMapper)
+        .with_ttl_cache(std::time::Duration::from_secs(60));
+
+    let _ = table
+        .list_where("QUERY('value:abc')", "SCORE() DESC", 10)
+        .await?;
+    let _ = table
+        .list_where("QUERY('value:abc')", "SCORE() DESC", 10)
+        .await?;
+
+    assert_eq!(fake.calls().len(), 2);
+    Ok(())
+}

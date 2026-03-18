@@ -32,7 +32,7 @@ impl UsageStore {
 
     pub async fn record(&self, event: UsageEvent) -> Result<()> {
         let record = self.event_to_record(event);
-        tracing::info!(
+        tracing::debug!(
             stage = "usage_store",
             action = "record",
             status = "buffered",

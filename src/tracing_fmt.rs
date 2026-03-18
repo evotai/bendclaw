@@ -106,6 +106,10 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LocalDailyWriter {
 
 pub struct TargetFirstFormatter;
 
+fn short_target(target: &str) -> &str {
+    target.rsplit("::").next().unwrap_or(target)
+}
+
 impl<S, N> tracing_subscriber::fmt::FormatEvent<S, N> for TargetFirstFormatter
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
@@ -146,10 +150,11 @@ where
         }
 
         // Target — cyan
+        let target = short_target(event.metadata().target());
         if ansi {
-            write!(writer, " \x1b[36m{}\x1b[0m", event.metadata().target())?;
+            write!(writer, " \x1b[36m{target}\x1b[0m")?;
         } else {
-            write!(writer, " {}", event.metadata().target())?;
+            write!(writer, " {target}")?;
         }
 
         // Spans — yellow

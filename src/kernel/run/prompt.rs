@@ -268,7 +268,7 @@ impl PromptBuilder {
         self.append_recent_errors(&mut prompt, session_id).await;
 
         // 9. Runtime
-        self.append_runtime(&mut prompt);
+        self.append_runtime(&mut prompt, session_id);
 
         tracing::info!(
             stage = "prompt",
@@ -539,14 +539,23 @@ impl PromptBuilder {
         prompt.push_str(&buf);
     }
 
-    fn append_runtime(&self, prompt: &mut String) {
+    fn append_runtime(&self, prompt: &mut String, session_id: &str) {
         let (buf, src) = if let Some(ref rt) = self.runtime {
             let mut b = String::from("## Runtime\n\n");
             b.push_str(rt);
             b.push_str("\n\n");
             (b, "injected")
         } else {
-            (runtime_context::build_runtime_context(None, None), "env")
+            let ch_ctx =
+                crate::kernel::channel::context::ChannelContext::from_session_key(session_id);
+            let (ch_type, ch_chat) = match &ch_ctx {
+                Some(c) => (Some(c.channel_type.as_str()), Some(c.chat_id.as_str())),
+                None => (None, None),
+            };
+            (
+                runtime_context::build_runtime_context(ch_type, ch_chat),
+                "env",
+            )
         };
 
         let buf = truncate_layer("runtime", &buf, MAX_RUNTIME_BYTES, src);

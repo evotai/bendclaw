@@ -13,7 +13,6 @@ use crate::storage::table::Where;
 
 const REPO: &str = "agent_config";
 const CACHE_TTL: Duration = Duration::from_secs(60);
-const CACHE_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct ConfigMapper;
@@ -55,8 +54,7 @@ pub struct AgentConfigStore {
 impl AgentConfigStore {
     pub fn new(pool: Pool) -> Self {
         Self {
-            table: DatabendTable::new(pool, "agent_config", ConfigMapper)
-                .with_cache(CACHE_TTL, CACHE_CAPACITY),
+            table: DatabendTable::new(pool, "agent_config", ConfigMapper).with_ttl_cache(CACHE_TTL),
         }
     }
 

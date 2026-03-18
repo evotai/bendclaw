@@ -70,7 +70,7 @@ impl ChannelPlugin for TelegramChannel {
             supports_streaming: false,
             supports_markdown: true,
             supports_threads: false,
-            supports_reactions: false,
+            supports_reactions: true,
             max_message_len: TELEGRAM_MAX_MESSAGE_LEN,
         }
     }
@@ -239,14 +239,27 @@ impl ChannelOutbound for TelegramOutbound {
 
     async fn add_reaction(
         &self,
-        _config: &serde_json::Value,
-        _chat_id: &str,
-        _msg_id: &str,
-        _emoji: &str,
+        config: &serde_json::Value,
+        chat_id: &str,
+        msg_id: &str,
+        emoji: &str,
     ) -> Result<()> {
-        Err(ErrorCode::internal(
-            "telegram does not support reactions via Bot API",
-        ))
+        let token = Self::extract_token(config)?;
+        let url = Self::api_url(&token, "setMessageReaction");
+        let body = serde_json::json!({
+            "chat_id": chat_id,
+            "message_id": msg_id.parse::<i64>().map_err(|e| {
+                ErrorCode::internal(format!("telegram setMessageReaction: invalid message_id '{msg_id}': {e}"))
+            })?,
+            "reaction": [{"type": "emoji", "emoji": emoji}],
+        });
+        self.client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| ErrorCode::internal(format!("telegram setMessageReaction: {e}")))?;
+        Ok(())
     }
 }
 
@@ -371,6 +384,17 @@ async fn poll_updates(
                 );
                 continue;
             }
+
+            // Add thumbsup reaction to acknowledge the message.
+            let _ = send_reaction(
+                client,
+                &config.token,
+                msg.chat.id,
+                msg.message_id,
+                "\u{1F44D}",
+            )
+            .await;
+
             let event = InboundEvent::Message(InboundMessage {
                 message_id: msg.message_id.to_string(),
                 chat_id: msg.chat.id.to_string(),
@@ -386,5 +410,32 @@ async fn poll_updates(
         }
     }
 
+    Ok(())
+}
+
+async fn send_reaction(
+    client: &reqwest::Client,
+    token: &str,
+    chat_id: i64,
+    message_id: i64,
+    emoji: &str,
+) -> Result<()> {
+    let url = format!("{TELEGRAM_API}/bot{token}/setMessageReaction");
+    let body = serde_json::json!({
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "reaction": [{"type": "emoji", "emoji": emoji}],
+    });
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| ErrorCode::internal(format!("telegram setMessageReaction: {e}")))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::warn!(status = %status, body, "telegram setMessageReaction failed");
+    }
     Ok(())
 }

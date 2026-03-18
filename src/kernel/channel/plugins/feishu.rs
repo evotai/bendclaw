@@ -548,7 +548,7 @@ async fn handle_pb_frame(
     };
 
     let payload_str = String::from_utf8_lossy(&full_payload);
-    tracing::info!(msg_type, msg_id, trace_id, "feishu ws: received data frame");
+    tracing::debug!(msg_type, msg_id, trace_id, "feishu ws: received data frame");
 
     if msg_type == "event" {
         handle_event_payload(&payload_str, config, event_tx, client).await;
@@ -581,7 +581,7 @@ async fn handle_event_payload(
         .unwrap_or("");
 
     if event_type != "im.message.receive_v1" {
-        tracing::info!(event_type, "feishu ws: ignoring event type");
+        tracing::debug!(event_type, "feishu ws: ignoring event type");
         return;
     }
 
@@ -615,7 +615,6 @@ async fn handle_event_payload(
     }
 
     if let Some(inbound) = parse_feishu_message(event_data) {
-        tracing::info!(sender_id, "feishu ws: dispatching inbound message");
         if event_tx.try_send(inbound).is_err() {
             tracing::warn!("feishu ws: event channel full or receiver dropped");
         }

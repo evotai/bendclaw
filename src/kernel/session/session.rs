@@ -240,13 +240,6 @@ impl Session {
             is_remote_dispatch,
         );
 
-        tracing::info!(
-            agent_id = %self.agent_id,
-            session_id = %self.id,
-            run_id = %run_id,
-            run_index,
-            "run started"
-        );
         self.mark_running(run_id.clone(), cancel, iteration);
 
         Ok(Stream::new(

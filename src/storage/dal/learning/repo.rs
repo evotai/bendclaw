@@ -13,7 +13,6 @@ use crate::storage::table::Where;
 
 const REPO: &str = "learnings";
 const CACHE_TTL: Duration = Duration::from_secs(60);
-const CACHE_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct LearningMapper;
@@ -81,8 +80,7 @@ pub struct LearningRepo {
 impl LearningRepo {
     pub fn new(pool: Pool) -> Self {
         Self {
-            table: DatabendTable::new(pool, "learnings", LearningMapper)
-                .with_cache(CACHE_TTL, CACHE_CAPACITY),
+            table: DatabendTable::new(pool, "learnings", LearningMapper).with_ttl_cache(CACHE_TTL),
         }
     }
 
@@ -180,10 +178,7 @@ impl LearningRepo {
             "DELETE FROM learnings WHERE id = '{}'",
             sql::escape(learning_id)
         );
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
@@ -215,10 +210,7 @@ impl LearningRepo {
             .set_raw("updated_at", "NOW()")
             .where_eq("id", id)
             .build();
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
@@ -237,10 +229,7 @@ impl LearningRepo {
             .set_raw("updated_at", "NOW()")
             .where_eq("id", id)
             .build();
-        let result = self.table.pool().exec(&sql).await;
-        if result.is_ok() {
-            self.table.clear_cache();
-        }
+        let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,

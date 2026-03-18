@@ -92,7 +92,7 @@ impl UsageRepo {
             tracing::error!(count = records.len(), error = %error, "usage batch save failed");
         }
         result?;
-        tracing::info!(count = records.len(), "usage batch saved");
+        tracing::debug!(count = records.len(), "usage batch saved");
         Ok(())
     }
 

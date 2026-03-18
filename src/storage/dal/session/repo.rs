@@ -13,7 +13,6 @@ use crate::storage::table::Where;
 
 const REPO: &str = "sessions";
 const CACHE_TTL: Duration = Duration::from_secs(15);
-const CACHE_CAPACITY: usize = 128;
 
 #[derive(Clone)]
 struct SessionMapper;
@@ -47,8 +46,7 @@ pub struct SessionRepo {
 impl SessionRepo {
     pub fn new(pool: Pool) -> Self {
         Self {
-            table: DatabendTable::new(pool, "sessions", SessionMapper)
-                .with_cache(CACHE_TTL, CACHE_CAPACITY),
+            table: DatabendTable::new(pool, "sessions", SessionMapper).with_ttl_cache(CACHE_TTL),
         }
     }
 
@@ -113,9 +111,41 @@ impl SessionRepo {
         result
     }
 
-    /// Clear the read cache. Call after raw SQL writes that bypass the table layer.
-    pub fn clear_cache(&self) {
-        self.table.clear_cache();
+    pub async fn update_state(&self, session_id: &str, state: &serde_json::Value) -> Result<()> {
+        let json = serde_json::to_string(state)
+            .map_err(|e| ErrorCode::storage_serde(format!("serialize session_state: {e}")))?;
+        let sql = format!(
+            "UPDATE sessions SET session_state = PARSE_JSON('{}'), updated_at = NOW() WHERE id = '{}'",
+            sql::escape(&json),
+            sql::escape(session_id)
+        );
+        let result = self.table.exec_raw(&sql).await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "update_state",
+                serde_json::json!({"session_id": session_id}),
+                error,
+            );
+        }
+        result
+    }
+
+    pub async fn delete_by_id(&self, session_id: &str) -> Result<()> {
+        let sql = format!(
+            "DELETE FROM sessions WHERE id = '{}'",
+            sql::escape(session_id)
+        );
+        let result = self.table.exec_raw(&sql).await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "delete_by_id",
+                serde_json::json!({"session_id": session_id}),
+                error,
+            );
+        }
+        result
     }
 
     pub async fn count_by_user_search(&self, user_id: &str, search: Option<&str>) -> Result<u64> {

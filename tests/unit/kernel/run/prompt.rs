@@ -37,131 +37,153 @@ use crate::common::fake_databend::FakeDatabend;
 use crate::common::fake_databend::FakeDatabendCall;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// truncate_layer
+// truncate_layer / substitute_template
 // ═══════════════════════════════════════════════════════════════════════════════
 
-#[test]
-fn truncate_short_content_unchanged() {
-    let content = "Hello, world!";
-    let result = truncate_layer("test", content, 1024, "test");
-    assert_eq!(result, content);
+fn assert_truncate_case(name: &str, content: &str, limit: usize, expected: Expected<'_>) {
+    let result = truncate_layer("test", content, limit, "test");
+    match expected {
+        Expected::Exact(text) => assert_eq!(result, text, "{name}"),
+        Expected::Truncated { prefix, snippet } => {
+            assert!(result.starts_with(prefix), "{name}");
+            assert!(result.contains(snippet), "{name}");
+        }
+    }
+}
+
+enum Expected<'a> {
+    Exact(&'a str),
+    Truncated { prefix: &'a str, snippet: &'a str },
 }
 
 #[test]
-fn truncate_exact_limit_unchanged() {
-    let content = "abcdef";
-    let result = truncate_layer("test", content, 6, "test");
-    assert_eq!(result, content);
+fn truncate_layer_cases() {
+    let cases = [
+        (
+            "short unchanged",
+            "Hello, world!",
+            1024,
+            Expected::Exact("Hello, world!"),
+        ),
+        ("exact limit", "abcdef", 6, Expected::Exact("abcdef")),
+        ("over limit", "abcdefghij", 5, Expected::Truncated {
+            prefix: "abcde",
+            snippet: "[... truncated at 5/10 bytes ...]",
+        }),
+        ("empty", "", 1024, Expected::Exact("")),
+        ("utf8 boundary", "你好世界", 4, Expected::Truncated {
+            prefix: "你",
+            snippet: "[... truncated at 3/12 bytes ...]",
+        }),
+        ("emoji", "🚀🎉🔥", 5, Expected::Truncated {
+            prefix: "🚀",
+            snippet: "[... truncated at 4/12 bytes ...]",
+        }),
+        ("one byte", "abc", 1, Expected::Truncated {
+            prefix: "a",
+            snippet: "[... truncated at 1/3 bytes ...]",
+        }),
+        ("zero limit", "abc", 0, Expected::Truncated {
+            prefix: "",
+            snippet: "[... truncated at 0/3 bytes ...]",
+        }),
+        ("one byte over", "abcdefg", 6, Expected::Truncated {
+            prefix: "abcdef",
+            snippet: "[... truncated at 6/7 bytes ...]",
+        }),
+    ];
+
+    for (name, content, limit, expected) in cases {
+        assert_truncate_case(name, content, limit, expected);
+    }
 }
 
 #[test]
-fn truncate_over_limit() {
-    let content = "abcdefghij"; // 10 bytes
-    let result = truncate_layer("test", content, 5, "test");
-    assert!(result.starts_with("abcde"));
-    assert!(result.contains("[... truncated at 5/10 bytes ...]"));
-}
+fn substitute_template_cases() {
+    let cases = [
+        (
+            "no placeholders",
+            "Hello world",
+            serde_json::json!({"key": "val"}),
+            "Hello world",
+        ),
+        (
+            "single",
+            "Hello {name}!",
+            serde_json::json!({"name": "Alice"}),
+            "Hello Alice!",
+        ),
+        (
+            "multiple",
+            "{name} is {role}",
+            serde_json::json!({"name": "Bob", "role": "admin"}),
+            "Bob is admin",
+        ),
+        (
+            "missing key preserved",
+            "Hello {unknown}!",
+            serde_json::json!({"name": "X"}),
+            "Hello {unknown}!",
+        ),
+        (
+            "null unchanged",
+            "Hello {name}!",
+            serde_json::Value::Null,
+            "Hello {name}!",
+        ),
+        (
+            "non-object unchanged",
+            "Hello {name}!",
+            serde_json::json!("string"),
+            "Hello {name}!",
+        ),
+        (
+            "numeric",
+            "Count: {n}",
+            serde_json::json!({"n": 42}),
+            "Count: 42",
+        ),
+        (
+            "boolean",
+            "Active: {flag}",
+            serde_json::json!({"flag": true}),
+            "Active: true",
+        ),
+        (
+            "empty string",
+            "Val={v}",
+            serde_json::json!({"v": ""}),
+            "Val=",
+        ),
+        (
+            "repeated",
+            "{x} and {x}",
+            serde_json::json!({"x": "hi"}),
+            "hi and hi",
+        ),
+        (
+            "array repr",
+            "v={arr}",
+            serde_json::json!({"arr": [1, 2, 3]}),
+            "v=[1,2,3]",
+        ),
+        (
+            "object repr",
+            "v={obj}",
+            serde_json::json!({"obj": {"a": 1}}),
+            r#"v={"a":1}"#,
+        ),
+        (
+            "null repr",
+            "v={x}",
+            serde_json::json!({"x": null}),
+            "v=null",
+        ),
+    ];
 
-#[test]
-fn truncate_empty_content() {
-    let result = truncate_layer("test", "", 1024, "test");
-    assert_eq!(result, "");
-}
-
-#[test]
-fn truncate_respects_char_boundary_utf8() {
-    let content = "你好世界"; // 12 bytes (3 per char)
-    let result = truncate_layer("test", content, 4, "test");
-    assert!(result.starts_with("你"));
-    assert!(result.contains("[... truncated at 3/12 bytes ...]"));
-}
-
-#[test]
-fn truncate_multibyte_emoji() {
-    let content = "🚀🎉🔥"; // 4 bytes each = 12 bytes
-    let result = truncate_layer("test", content, 5, "test");
-    assert!(result.starts_with("🚀"));
-    assert!(result.contains("[... truncated at 4/12 bytes ...]"));
-}
-
-#[test]
-fn truncate_limit_one_byte() {
-    let content = "abc";
-    let result = truncate_layer("test", content, 1, "test");
-    assert!(result.starts_with("a"));
-    assert!(result.contains("[... truncated at 1/3 bytes ...]"));
-}
-
-#[test]
-fn truncate_limit_zero() {
-    let content = "abc";
-    let result = truncate_layer("test", content, 0, "test");
-    assert!(result.contains("[... truncated at 0/3 bytes ...]"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// substitute_template
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn substitute_no_placeholders() {
-    let result = substitute_template("Hello world", &serde_json::json!({"key": "val"}));
-    assert_eq!(result, "Hello world");
-}
-
-#[test]
-fn substitute_single_replacement() {
-    let result = substitute_template("Hello {name}!", &serde_json::json!({"name": "Alice"}));
-    assert_eq!(result, "Hello Alice!");
-}
-
-#[test]
-fn substitute_multiple_replacements() {
-    let state = serde_json::json!({"name": "Bob", "role": "admin"});
-    let result = substitute_template("{name} is {role}", &state);
-    assert_eq!(result, "Bob is admin");
-}
-
-#[test]
-fn substitute_missing_key_preserved() {
-    let result = substitute_template("Hello {unknown}!", &serde_json::json!({"name": "X"}));
-    assert_eq!(result, "Hello {unknown}!");
-}
-
-#[test]
-fn substitute_null_state_unchanged() {
-    let result = substitute_template("Hello {name}!", &serde_json::Value::Null);
-    assert_eq!(result, "Hello {name}!");
-}
-
-#[test]
-fn substitute_non_object_state_unchanged() {
-    let result = substitute_template("Hello {name}!", &serde_json::json!("string"));
-    assert_eq!(result, "Hello {name}!");
-}
-
-#[test]
-fn substitute_numeric_value() {
-    let result = substitute_template("Count: {n}", &serde_json::json!({"n": 42}));
-    assert_eq!(result, "Count: 42");
-}
-
-#[test]
-fn substitute_boolean_value() {
-    let result = substitute_template("Active: {flag}", &serde_json::json!({"flag": true}));
-    assert_eq!(result, "Active: true");
-}
-
-#[test]
-fn substitute_empty_string_value() {
-    let result = substitute_template("Val={v}", &serde_json::json!({"v": ""}));
-    assert_eq!(result, "Val=");
-}
-
-#[test]
-fn substitute_repeated_placeholder() {
-    let result = substitute_template("{x} and {x}", &serde_json::json!({"x": "hi"}));
-    assert_eq!(result, "hi and hi");
+    for (name, template, state, expected) in cases {
+        assert_eq!(substitute_template(template, &state), expected, "{name}");
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

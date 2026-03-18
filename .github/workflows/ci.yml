@@ -35,7 +35,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
 
   test-fast:
-    name: Test (${{ matrix.target }})
+    name: Fast tests (${{ matrix.target }})
     runs-on: ubuntu-latest
     needs: check
     strategy:
@@ -55,7 +55,7 @@ jobs:
           fi
 
   test-live:
-    name: Test (${{ matrix.target }})
+    name: Live tests (${{ matrix.target }})
     runs-on: ubuntu-latest
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -74,7 +74,7 @@ jobs:
         run: cargo test --test ${{ matrix.target }} --features live-tests -- --test-threads=1
 
   coverage:
-    name: Coverage
+    name: Coverage + gate
     runs-on: ubuntu-latest
     needs: check
     permissions:

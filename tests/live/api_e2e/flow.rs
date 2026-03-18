@@ -4,147 +4,40 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use anyhow::Result;
-use axum::body::Body;
-use axum::http::Request;
-use axum::http::StatusCode;
-use serde_json::Value;
-use tower::ServiceExt;
 
+use crate::common::api::TestApi;
 use crate::common::assertions::assert_event_present;
 use crate::common::assertions::assert_events_present;
 use crate::common::assertions::assert_output_eq;
 use crate::common::assertions::assert_runs_count;
 use crate::common::assertions::assert_tool_call_count;
-use crate::common::setup::chat;
-use crate::common::setup::json_body;
-use crate::common::setup::setup_agent;
 use crate::common::setup::uid;
 use crate::common::setup::TestContext;
 use crate::mocks::llm::MockLLMProvider;
 
-async fn get_runs(
-    app: &axum::Router,
-    agent_id: &str,
-    session_id: &str,
-    user: &str,
-) -> Result<Vec<Value>> {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!("/v1/agents/{agent_id}/sessions/{session_id}/runs"))
-                .header("x-user-id", user)
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let data: Value = json_body(resp).await?;
-    Ok(data["data"]
-        .as_array()
-        .context("expected runs array")?
-        .clone())
-}
-
-async fn get_run_detail(
-    app: &axum::Router,
-    agent_id: &str,
-    run_id: &str,
-    user: &str,
-) -> Result<Value> {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!("/v1/agents/{agent_id}/runs/{run_id}"))
-                .header("x-user-id", user)
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-    json_body(resp).await
-}
-
-async fn create_variable(
-    app: &axum::Router,
-    agent_id: &str,
-    user: &str,
-    body: Value,
-) -> Result<Value> {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/v1/agents/{agent_id}/variables"))
-                .header("content-type", "application/json")
-                .header("x-user-id", user)
-                .body(Body::from(serde_json::to_vec(&body)?))?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-    json_body(resp).await
-}
-
-async fn get_variable(
-    app: &axum::Router,
-    agent_id: &str,
-    user: &str,
-    var_id: &str,
-) -> Result<Value> {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri(format!("/v1/agents/{agent_id}/variables/{var_id}"))
-                .header("x-user-id", user)
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-    json_body(resp).await
-}
-
-async fn create_skill(
-    app: &axum::Router,
-    agent_id: &str,
-    user: &str,
-    body: Value,
-) -> Result<Value> {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/v1/agents/{agent_id}/skills"))
-                .header("content-type", "application/json")
-                .header("x-user-id", user)
-                .body(Body::from(serde_json::to_vec(&body)?))?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-    json_body(resp).await
-}
-
 #[tokio::test]
 async fn e2e_tool_call_persists_events_and_structured_payloads() -> Result<()> {
     let ctx = TestContext::setup().await?;
-    let app = ctx
-        .app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_single")?))
-        .await?;
+    let api = TestApi::new(
+        ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("tool_call_single")?))
+            .await?,
+    );
     let agent_id = uid("e2e-tc");
     let user = uid("user");
     let session_id = uid("session");
 
-    setup_agent(&app, &agent_id, &user).await?;
-    let resp = chat(&app, &agent_id, &session_id, &user, "run echo hello").await?;
+    api.setup_agent(&agent_id, &user).await?;
+    let resp = api
+        .chat(&agent_id, &session_id, &user, "run echo hello")
+        .await?;
     assert_output_eq(&resp, "Command executed successfully.")?;
 
-    let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
+    let runs = api.get_runs(&agent_id, &session_id, &user).await?;
     assert_runs_count(&runs, 1)?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
     assert_eq!(runs[0]["input"], "run echo hello");
 
-    let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
+    let detail = api.get_run_detail(&agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("missing run events")?;
     assert_event_present(events, "ToolStart")?;
     assert_event_present(events, "ToolEnd")?;
@@ -172,19 +65,21 @@ async fn e2e_tool_call_persists_events_and_structured_payloads() -> Result<()> {
 #[tokio::test]
 async fn e2e_phase1_audit_events_are_persisted() -> Result<()> {
     let ctx = TestContext::setup().await?;
-    let app = ctx
-        .app_with_llm(Arc::new(MockLLMProvider::from_fixture("audit_trail")?))
-        .await?;
+    let api = TestApi::new(
+        ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture("audit_trail")?))
+            .await?,
+    );
     let agent_id = uid("e2e-phase1");
     let user = uid("user");
     let session_id = uid("session");
 
-    setup_agent(&app, &agent_id, &user).await?;
-    chat(&app, &agent_id, &session_id, &user, "show audit trail").await?;
+    api.setup_agent(&agent_id, &user).await?;
+    api.chat(&agent_id, &session_id, &user, "show audit trail")
+        .await?;
 
-    let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
+    let runs = api.get_runs(&agent_id, &session_id, &user).await?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
-    let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
+    let detail = api.get_run_detail(&agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
     assert_events_present(events, &[
@@ -202,22 +97,25 @@ async fn e2e_phase1_audit_events_are_persisted() -> Result<()> {
 #[tokio::test]
 async fn e2e_parallel_tool_calls_all_persisted() -> Result<()> {
     let ctx = TestContext::setup().await?;
-    let app = ctx
-        .app_with_llm(Arc::new(MockLLMProvider::from_fixture(
+    let api = TestApi::new(
+        ctx.app_with_llm(Arc::new(MockLLMProvider::from_fixture(
             "tool_call_parallel",
         )?))
-        .await?;
+        .await?,
+    );
     let agent_id = uid("e2e-par");
     let user = uid("user");
     let session_id = uid("session");
 
-    setup_agent(&app, &agent_id, &user).await?;
-    let resp = chat(&app, &agent_id, &session_id, &user, "run two commands").await?;
+    api.setup_agent(&agent_id, &user).await?;
+    let resp = api
+        .chat(&agent_id, &session_id, &user, "run two commands")
+        .await?;
     assert_output_eq(&resp, "Both commands done.")?;
 
-    let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
+    let runs = api.get_runs(&agent_id, &session_id, &user).await?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
-    let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
+    let detail = api.get_run_detail(&agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
     assert_tool_call_count(events, 2)?;
@@ -236,26 +134,28 @@ async fn e2e_remote_skill_reads_variable_updates_last_used_and_emits_tool_output
         crate::mocks::llm::MockTurn::Text("done".into()),
     ]));
     let ctx = TestContext::setup().await?;
-    let app = ctx.app_with_llm(llm).await?;
+    let api = TestApi::new(ctx.app_with_llm(llm).await?);
     let agent_id = uid("e2e-skill");
     let user = uid("user");
     let session_id = uid("session");
 
-    setup_agent(&app, &agent_id, &user).await?;
-    let variable = create_variable(
-        &app,
-        &agent_id,
-        &user,
-        serde_json::json!({
-            "key": "API_TOKEN",
-            "value": "live-secret",
-            "secret": true
-        }),
-    )
-    .await?;
+    api.setup_agent(&agent_id, &user).await?;
+    let variable = api
+        .create_variable(
+            &agent_id,
+            &user,
+            serde_json::json!({
+                "key": "API_TOKEN",
+                "value": "live-secret",
+                "secret": true,
+            }),
+        )
+        .await?;
     let variable_id = variable["id"].as_str().context("variable id missing")?;
-    create_skill(
-        &app,
+    let script = r#"#!/usr/bin/env bash
+cat >/dev/null
+printf '%s' "$API_TOKEN""#;
+    api.create_skill(
         &agent_id,
         &user,
         serde_json::json!({
@@ -265,7 +165,7 @@ async fn e2e_remote_skill_reads_variable_updates_last_used_and_emits_tool_output
             "executable": true,
             "files": [{
                 "path": "scripts/run.sh",
-                "body": "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\""
+                "body": script,
             }],
             "requires": {
                 "bins": ["bash"],
@@ -275,12 +175,14 @@ async fn e2e_remote_skill_reads_variable_updates_last_used_and_emits_tool_output
     )
     .await?;
 
-    let resp = chat(&app, &agent_id, &session_id, &user, "run the env skill").await?;
+    let resp = api
+        .chat(&agent_id, &session_id, &user, "run the env skill")
+        .await?;
     assert_output_eq(&resp, "done")?;
 
-    let runs = get_runs(&app, &agent_id, &session_id, &user).await?;
+    let runs = api.get_runs(&agent_id, &session_id, &user).await?;
     let run_id = runs[0]["id"].as_str().context("run id missing")?;
-    let detail = get_run_detail(&app, &agent_id, run_id, &user).await?;
+    let detail = api.get_run_detail(&agent_id, run_id, &user).await?;
     let events = detail["events"].as_array().context("events missing")?;
 
     assert!(
@@ -292,7 +194,7 @@ async fn e2e_remote_skill_reads_variable_updates_last_used_and_emits_tool_output
         }),
         "missing ToolEnd with remote skill output: {events:?}"
     );
-    let variable = get_variable(&app, &agent_id, &user, variable_id).await?;
+    let variable = api.get_variable(&agent_id, &user, variable_id).await?;
     assert!(
         variable["last_used_at"].is_string(),
         "last_used_at not updated: {variable}"

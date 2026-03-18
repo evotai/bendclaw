@@ -1,8 +1,13 @@
 # BendClaw
 
 DEV_CONFIG ?= $(HOME)/.bendclaw/bendclaw_dev.toml
+CARGO ?= cargo
+NEXTEST := $(CARGO) nextest run
+LIVE_TEST_FLAGS := --features live-tests -- --test-threads=1
+COVERAGE_TARGETS := --lib --test unit --test it --test contract
+COVERAGE_CMD := $(CARGO) llvm-cov nextest $(COVERAGE_TARGETS)
 
-.PHONY: setup check build run test test-unit test-it test-contract test-live test-live-storage test-live-e2e test-all coverage coverage-core-check snapshot-review dev-env test-down ci
+.PHONY: setup check build run test test-fast test-unit test-it test-contract test-live test-live-storage test-live-e2e test-all coverage coverage-report coverage-core-check snapshot-review dev-env test-down ci
 
 setup:
 	@echo "==> checking protoc..."
@@ -33,49 +38,46 @@ build:
 	cargo build --release
 
 # Fast: unit + it + contract (no credentials needed)
-test: test-unit test-it test-contract
+test: test-fast
+
+test-fast: test-unit test-it test-contract
 
 test-unit:
-	cargo nextest run --lib --test unit --no-fail-fast
+	$(NEXTEST) --lib --test unit --no-fail-fast
 
 test-it:
-	cargo nextest run --test it --no-fail-fast
+	$(NEXTEST) --test it --no-fail-fast
 
 test-contract:
-	cargo nextest run --test contract --no-fail-fast
+	$(NEXTEST) --test contract --no-fail-fast
 
-# Requires Databend credentials
-# Runs the minimal live suite:
+# Requires Databend credentials.
+# Minimal live suite:
 # 1. Databend-backed storage contracts
 # 2. API end-to-end smoke flows
 test-live: test-live-storage test-live-e2e
 
 test-live-storage: dev-env
-	RUST_LOG=ERROR cargo test --test live-storage-contract --features live-tests -- --test-threads=1
+	RUST_LOG=ERROR $(CARGO) test --test live-storage-contract $(LIVE_TEST_FLAGS)
 
 test-live-e2e: dev-env
-	RUST_LOG=ERROR cargo test --test live-api-e2e --features live-tests -- --test-threads=1
+	RUST_LOG=ERROR $(CARGO) test --test live-api-e2e $(LIVE_TEST_FLAGS)
 
 # Everything
-test-all: test test-live
+test-all: test-fast test-live
 
-coverage:
-	cargo install cargo-llvm-cov --locked 2>/dev/null || true
-	cargo llvm-cov nextest --lib --test unit --test it --test contract \
-		--ignore-run-fail --html --output-dir coverage
-	@echo "==> coverage report: coverage/html/index.html"
+coverage: coverage-core-check
 
-coverage-core-check:
-	cargo install cargo-llvm-cov --locked 2>/dev/null || true
-	cargo llvm-cov nextest --lib --test unit --test it --test contract \
-		--ignore-run-fail --summary-only > coverage-summary.txt
+coverage-report:
+	$(CARGO) install cargo-llvm-cov --locked 2>/dev/null || true
+	$(COVERAGE_CMD) --ignore-run-fail --codecov --output-path codecov.json
+	$(CARGO) llvm-cov report --html --output-dir coverage
+	$(CARGO) llvm-cov report > coverage-summary.txt
+
+coverage-core-check: coverage-report
 	python3 scripts/check_core_coverage.py coverage-summary.txt
 
-coverage-all: dev-env
-	cargo install cargo-llvm-cov --locked 2>/dev/null || true
-	cargo llvm-cov nextest --lib --test unit --test it --test contract \
-		--ignore-run-fail --html --output-dir coverage
-	@echo "==> coverage report: coverage/html/index.html"
+coverage-all: coverage-core-check
 
 snapshot-review:
 	cargo insta review

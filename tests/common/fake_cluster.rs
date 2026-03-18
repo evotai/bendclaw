@@ -39,6 +39,32 @@ struct RegisterRequest {
     data: serde_json::Value,
 }
 
+type ServerHandle = (
+    String,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+);
+
+fn spawn_test_server(
+    label: &str,
+    listener: tokio::net::TcpListener,
+    app: Router,
+) -> Result<ServerHandle> {
+    let addr = listener
+        .local_addr()
+        .with_context(|| format!("{label} local addr"))?;
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let server_handle = tokio::spawn(async move {
+        let shutdown = async {
+            let _ = shutdown_rx.await;
+        };
+        let _ = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await;
+    });
+    Ok((format!("http://{addr}"), shutdown_tx, server_handle))
+}
+
 pub struct FakeClusterRegistry {
     base_url: String,
     nodes: Arc<Mutex<BTreeMap<String, NodeEntry>>>,
@@ -62,19 +88,11 @@ impl FakeClusterRegistry {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .context("bind fake cluster registry")?;
-        let addr = listener.local_addr().context("fake registry local addr")?;
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        let server_handle = tokio::spawn(async move {
-            let shutdown = async {
-                let _ = shutdown_rx.await;
-            };
-            let _ = axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown)
-                .await;
-        });
+        let (base_url, shutdown_tx, server_handle) =
+            spawn_test_server("fake registry", listener, app)?;
 
         Ok(Self {
-            base_url: format!("http://{addr}"),
+            base_url,
             nodes,
             shutdown_tx: Some(shutdown_tx),
             server_handle: Some(server_handle),
@@ -230,19 +248,10 @@ impl FakePeerNode {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .context("bind fake peer node")?;
-        let addr = listener.local_addr().context("fake peer local addr")?;
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        let server_handle = tokio::spawn(async move {
-            let shutdown = async {
-                let _ = shutdown_rx.await;
-            };
-            let _ = axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown)
-                .await;
-        });
+        let (base_url, shutdown_tx, server_handle) = spawn_test_server("fake peer", listener, app)?;
 
         Ok(Self {
-            base_url: format!("http://{addr}"),
+            base_url,
             requests,
             shutdown_tx: Some(shutdown_tx),
             server_handle: Some(server_handle),

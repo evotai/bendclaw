@@ -323,6 +323,17 @@ pub async fn json_body(resp: axum::response::Response) -> anyhow::Result<Value> 
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+pub fn require_status(
+    status: StatusCode,
+    expected: StatusCode,
+    context: &str,
+) -> anyhow::Result<()> {
+    if status != expected {
+        anyhow::bail!("{context}: expected {expected}, got {status}");
+    }
+    Ok(())
+}
+
 pub async fn setup_agent(app: &axum::Router, agent_id: &str, user: &str) -> anyhow::Result<()> {
     let resp = app
         .clone()
@@ -334,7 +345,11 @@ pub async fn setup_agent(app: &axum::Router, agent_id: &str, user: &str) -> anyh
                 .body(Body::empty())?,
         )
         .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
+    if resp.status() != StatusCode::OK {
+        let status = resp.status();
+        let body = json_body(resp).await?;
+        anyhow::bail!("setup failed: status={status}, body={body}");
+    }
     Ok(())
 }
 

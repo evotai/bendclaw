@@ -1,5 +1,6 @@
 //! Test support library for bendclaw.
 
+pub mod api;
 pub mod assertions;
 pub mod fake_cluster;
 pub mod fake_databend;

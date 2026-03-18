@@ -26,6 +26,7 @@ use crate::kernel::channel::plugin::ReceiverFactory;
 
 pub const FEISHU_CHANNEL_TYPE: &str = "feishu";
 const FEISHU_API: &str = "https://open.feishu.cn/open-apis";
+const FEISHU_DOMAIN: &str = "https://open.feishu.cn";
 const FEISHU_MAX_MESSAGE_LEN: usize = 30_000;
 
 const DEFAULT_PING_INTERVAL_SECS: u64 = 120;
@@ -125,6 +126,8 @@ impl ReceiverFactory for FeishuReceiverFactory {
 
         let handle = tokio::spawn(async move {
             tracing::info!(account_id = %account_id, "feishu WebSocket receiver started");
+            let mut backoff_secs = RECONNECT_DELAY_SECS;
+            const MAX_BACKOFF_SECS: u64 = 120;
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
@@ -135,17 +138,19 @@ impl ReceiverFactory for FeishuReceiverFactory {
                         match result {
                             Ok(()) => {
                                 tracing::info!(account_id = %account_id, "feishu WebSocket closed, reconnecting");
+                                backoff_secs = RECONNECT_DELAY_SECS;
                             }
                             Err(e) => {
-                                tracing::error!(account_id = %account_id, error = %e, "feishu WebSocket error, reconnecting");
+                                tracing::error!(account_id = %account_id, backoff_secs, error = %e, "feishu WebSocket error, reconnecting");
                             }
                         }
                     }
                 }
                 tokio::select! {
                     _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(Duration::from_secs(RECONNECT_DELAY_SECS)) => {}
+                    _ = tokio::time::sleep(Duration::from_secs(backoff_secs)) => {}
                 }
+                backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
             }
         });
 
@@ -263,21 +268,51 @@ async fn get_tenant_token(
         .json()
         .await
         .map_err(|e| ErrorCode::internal(format!("feishu auth response: {e}")))?;
+
+    let code = json["code"].as_i64().unwrap_or(-1);
+    if code != 0 {
+        let msg = json["msg"].as_str().unwrap_or("unknown");
+        return Err(ErrorCode::internal(format!(
+            "feishu auth failed: code={code}, msg={msg}"
+        )));
+    }
+
     json["tenant_access_token"]
         .as_str()
+        .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
-        .ok_or_else(|| ErrorCode::internal("feishu: missing tenant_access_token"))
+        .ok_or_else(|| {
+            ErrorCode::internal(format!(
+                "feishu: missing tenant_access_token in response: {json}"
+            ))
+        })
 }
 
-async fn get_ws_endpoint(client: &reqwest::Client, token: &str) -> Result<(String, u64)> {
-    let url = format!("{FEISHU_API}/callback/ws/endpoint");
+async fn get_ws_endpoint(
+    client: &reqwest::Client,
+    app_id: &str,
+    app_secret: &str,
+) -> Result<(String, u64)> {
+    let url = format!("{FEISHU_DOMAIN}/callback/ws/endpoint");
     let resp = client
         .post(&url)
-        .bearer_auth(token)
-        .json(&serde_json::json!({}))
+        .header("locale", "zh")
+        .json(&serde_json::json!({
+            "AppID": app_id,
+            "AppSecret": app_secret,
+        }))
         .send()
         .await
         .map_err(|e| ErrorCode::internal(format!("feishu ws endpoint: {e}")))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ErrorCode::internal(format!(
+            "feishu ws endpoint HTTP {status}: {body}"
+        )));
+    }
+
     let json: serde_json::Value = resp
         .json()
         .await
@@ -308,8 +343,8 @@ async fn ws_receive_loop(
     config: &FeishuConfig,
     event_tx: &InboundEventSender,
 ) -> Result<()> {
-    let token = get_tenant_token(client, &config.app_id, &config.app_secret).await?;
-    let (ws_url, ping_interval_secs) = get_ws_endpoint(client, &token).await?;
+    let (ws_url, ping_interval_secs) =
+        get_ws_endpoint(client, &config.app_id, &config.app_secret).await?;
 
     tracing::info!(url = %ws_url, ping_interval = ping_interval_secs, "feishu WebSocket connecting");
 

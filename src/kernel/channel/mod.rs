@@ -1,5 +1,6 @@
 pub mod account;
 pub mod capabilities;
+pub mod context;
 pub mod dispatch;
 pub mod dispatcher;
 pub mod lease;

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use crate::kernel::channel::context::ChannelContext;
 use crate::kernel::task::admin;
 use crate::kernel::task::input::task_create_schema;
 use crate::kernel::task::input::TaskCreateSpec;
@@ -11,6 +12,7 @@ use crate::kernel::tools::tool::ToolResult;
 use crate::kernel::tools::Impact;
 use crate::kernel::tools::OpType;
 use crate::kernel::tools::ToolId;
+use crate::storage::dal::task::TaskDelivery;
 
 pub struct TaskCreateTool {
     node_id: String,
@@ -46,7 +48,7 @@ impl Tool for TaskCreateTool {
     }
 
     fn description(&self) -> &str {
-        "Create a new scheduled task. Supports cron expressions, fixed intervals (every N seconds), or one-shot (at a specific time)."
+        "Create a new scheduled task. Supports cron expressions, fixed intervals (every N seconds), or one-shot (at a specific time). When called from a channel (e.g. Feishu/Telegram), task results are automatically delivered back to the current chat."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -58,7 +60,7 @@ impl Tool for TaskCreateTool {
         args: serde_json::Value,
         ctx: &ToolContext,
     ) -> crate::base::Result<ToolResult> {
-        let spec: TaskCreateSpec = match serde_json::from_value(args) {
+        let mut spec: TaskCreateSpec = match serde_json::from_value(args) {
             Ok(spec) => spec,
             Err(error) => {
                 return Ok(ToolResult::error(format!(
@@ -66,6 +68,16 @@ impl Tool for TaskCreateTool {
                 )))
             }
         };
+
+        // Auto-inject channel delivery from session context when not explicitly set
+        if matches!(spec.delivery, TaskDelivery::None) {
+            if let Some(ch) = ChannelContext::from_session_key(&ctx.session_id) {
+                spec.delivery = TaskDelivery::Channel {
+                    channel_account_id: ch.account_id,
+                    chat_id: ch.chat_id,
+                };
+            }
+        }
 
         match admin::create_task(&ctx.pool, spec.into_params(self.node_id.clone())).await {
             Ok(record) => Ok(ToolResult::ok(

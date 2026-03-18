@@ -2,6 +2,7 @@ use axum::routing::get;
 use axum::Router;
 use bendclaw::kernel::tools::web::WebFetchTool;
 use bendclaw::kernel::tools::web::WebSearchTool;
+use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use serde_json::json;
 

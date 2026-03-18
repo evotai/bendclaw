@@ -33,7 +33,7 @@ pub struct AgentProcess {
     session_id: Option<String>,
     agent_type: String,
     stderr_tail: Arc<Mutex<VecDeque<String>>>,
-    _stderr_task: tokio::task::JoinHandle<()>,
+    stderr_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl AgentProcess {
@@ -87,7 +87,7 @@ impl AgentProcess {
             session_id: None,
             agent_type: agent.agent_type().to_string(),
             stderr_tail,
-            _stderr_task: stderr_task,
+            stderr_task: Some(stderr_task),
         })
     }
 
@@ -122,7 +122,7 @@ impl AgentProcess {
             session_id: Some(session_id.to_string()),
             agent_type: agent.agent_type().to_string(),
             stderr_tail,
-            _stderr_task: stderr_task,
+            stderr_task: Some(stderr_task),
         })
     }
 
@@ -174,7 +174,15 @@ impl AgentProcess {
             }
         }
 
-        Err(anyhow::anyhow!(self.missing_result_message().await).into())
+        Err(anyhow::anyhow!(self.drain_stderr_and_build_message().await).into())
+    }
+
+    /// Wait for the stderr reader task to finish, then build the error message.
+    async fn drain_stderr_and_build_message(&mut self) -> String {
+        if let Some(task) = self.stderr_task.take() {
+            let _ = task.await;
+        }
+        self.missing_result_message().await
     }
 
     pub async fn send_followup(&mut self, agent: &dyn CliAgent, prompt: &str) -> Result<()> {

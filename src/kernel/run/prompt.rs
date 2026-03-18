@@ -278,6 +278,13 @@ impl PromptBuilder {
             total_size = prompt.len(),
             "prompt build"
         );
+        tracing::debug!(
+            stage = "prompt",
+            agent_id,
+            session_id,
+            content = %prompt,
+            "prompt full content"
+        );
 
         // Template substitution
         let state = self.storage.session_get_state(session_id).await?;

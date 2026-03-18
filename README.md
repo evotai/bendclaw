@@ -45,8 +45,8 @@ It's also a distributed runtime from day one. Agents collaborate across nodes, f
 
 <table align="center">
   <tr>
-    <td><img src="docs/console.png" alt="Console" height="320" /></td>
-    <td><img src="docs/chat.png" alt="Chat" height="320" /></td>
+    <td><a href="docs/console.png" target="_blank"><img src="docs/console.png" alt="Console" height="320" /></a></td>
+    <td><a href="docs/chat.png" target="_blank"><img src="docs/chat.png" alt="Chat" height="320" /></a></td>
   </tr>
 </table>
 

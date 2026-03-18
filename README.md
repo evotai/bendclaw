@@ -43,9 +43,13 @@ It's also a distributed runtime from day one. Agents collaborate across nodes, f
 
 1. Go to [app.evot.ai](https://app.evot.ai/) → **Add AgentOS** → **Your Computer**
 
-<p align="center">
-  <img src="docs/console.png" alt="evot.ai Console" width="720" />
-</p>
+<table align="center">
+  <tr>
+    <td><img src="docs/console.png" alt="Console" width="360" /></td>
+    <td><img src="docs/chat.png" alt="Chat" width="360" /></td>
+  </tr>
+</table>
+
 2. Copy and run the setup command:
 
 ```bash

@@ -338,6 +338,29 @@ async fn get_ws_endpoint(
     Ok((ws_url, ping_interval))
 }
 
+fn redact_ws_url(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .map(|mut u| {
+            let redacted: Vec<(String, String)> = u
+                .query_pairs()
+                .map(|(k, v): (std::borrow::Cow<str>, std::borrow::Cow<str>)| {
+                    let val = if k == "access_key" || k == "ticket" {
+                        "***".to_string()
+                    } else {
+                        v.to_string()
+                    };
+                    (k.to_string(), val)
+                })
+                .collect();
+            u.query_pairs_mut().clear();
+            for (k, v) in &redacted {
+                u.query_pairs_mut().append_pair(k, v);
+            }
+            u.to_string()
+        })
+        .unwrap_or_else(|_| url.to_string())
+}
+
 async fn ws_receive_loop(
     client: &reqwest::Client,
     config: &FeishuConfig,
@@ -346,7 +369,8 @@ async fn ws_receive_loop(
     let (ws_url, ping_interval_secs) =
         get_ws_endpoint(client, &config.app_id, &config.app_secret).await?;
 
-    tracing::info!(url = %ws_url, ping_interval = ping_interval_secs, "feishu WebSocket connecting");
+    let redacted_url = redact_ws_url(&ws_url);
+    tracing::info!(url = %redacted_url, ping_interval = ping_interval_secs, "feishu WebSocket connecting");
 
     let (ws_stream, _) = connect_async(&ws_url)
         .await

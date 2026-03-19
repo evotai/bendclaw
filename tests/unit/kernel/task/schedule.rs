@@ -83,6 +83,35 @@ fn schedule_cron_empty_expr_returns_none() {
     assert!(schedule.next_run_at().is_none());
 }
 
+// ── TaskSchedule::Cron with timezone ──
+
+#[test]
+fn schedule_cron_with_timezone_converts_to_utc() -> Result<()> {
+    // "0 0 9 * * *" in Asia/Shanghai should produce 01:00 UTC (Shanghai = UTC+8)
+    let schedule = TaskSchedule::Cron {
+        expr: "0 0 9 * * *".into(),
+        tz: Some("Asia/Shanghai".into()),
+    };
+    let result = schedule.next_run_at();
+    assert!(result.is_some());
+    let ts = NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S")?;
+    assert_eq!(ts.and_utc().format("%H:%M").to_string(), "01:00");
+    Ok(())
+}
+
+#[test]
+fn schedule_cron_with_invalid_tz_falls_back_to_utc() -> Result<()> {
+    let schedule = TaskSchedule::Cron {
+        expr: "0 0 9 * * *".into(),
+        tz: Some("Fake/Zone".into()),
+    };
+    let result = schedule.next_run_at();
+    assert!(result.is_some());
+    let ts = NaiveDateTime::parse_from_str(result.as_deref().unwrap(), "%Y-%m-%d %H:%M:%S")?;
+    assert_eq!(ts.and_utc().format("%H:%M").to_string(), "09:00");
+    Ok(())
+}
+
 // ── validate ──
 
 #[test]
@@ -110,6 +139,25 @@ fn validate_cron_invalid_err() {
         tz: None,
     };
     assert!(schedule.validate().is_err());
+}
+
+#[test]
+fn validate_cron_valid_tz_ok() {
+    let schedule = TaskSchedule::Cron {
+        expr: "0 0 9 * * *".into(),
+        tz: Some("America/New_York".into()),
+    };
+    assert!(schedule.validate().is_ok());
+}
+
+#[test]
+fn validate_cron_invalid_tz_err() {
+    let schedule = TaskSchedule::Cron {
+        expr: "0 0 9 * * *".into(),
+        tz: Some("Mars/Olympus".into()),
+    };
+    let err = schedule.validate().unwrap_err();
+    assert!(err.contains("unknown timezone"));
 }
 
 #[test]

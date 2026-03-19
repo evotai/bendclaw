@@ -21,11 +21,16 @@ impl TaskSchedule {
     /// Validate the schedule configuration.
     pub fn validate(&self) -> std::result::Result<(), String> {
         match self {
-            TaskSchedule::Cron { expr, .. } => {
+            TaskSchedule::Cron { expr, tz } => {
                 if expr.is_empty() {
                     return Err("schedule.expr is required".into());
                 }
                 Schedule::from_str(expr).map_err(|e| format!("invalid cron expression: {e}"))?;
+                if let Some(tz_name) = tz {
+                    tz_name
+                        .parse::<chrono_tz::Tz>()
+                        .map_err(|_| format!("unknown timezone '{tz_name}'"))?;
+                }
                 Ok(())
             }
             TaskSchedule::Every { seconds } => {
@@ -51,19 +56,27 @@ impl TaskSchedule {
                 Some(next.format("%Y-%m-%d %H:%M:%S").to_string())
             }
             TaskSchedule::At { .. } => None,
-            TaskSchedule::Cron { expr, .. } => {
+            TaskSchedule::Cron { expr, tz } => {
                 if expr.is_empty() {
                     return None;
                 }
-                match Schedule::from_str(expr) {
-                    Ok(schedule) => schedule
+                let schedule = match Schedule::from_str(expr) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!(cron_expr = expr, error = %e, "invalid cron expression");
+                        return None;
+                    }
+                };
+                match tz.as_deref().and_then(|s| s.parse::<chrono_tz::Tz>().ok()) {
+                    Some(timezone) => schedule.upcoming(timezone).next().map(|dt| {
+                        dt.with_timezone(&Utc)
+                            .format("%Y-%m-%d %H:%M:%S")
+                            .to_string()
+                    }),
+                    None => schedule
                         .upcoming(Utc)
                         .next()
                         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string()),
-                    Err(e) => {
-                        tracing::warn!(cron_expr = expr, error = %e, "invalid cron expression");
-                        None
-                    }
                 }
             }
         }

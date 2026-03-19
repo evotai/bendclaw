@@ -24,7 +24,11 @@ pub async fn auth_middleware(
     let token = extract_bearer(req.headers()).or_else(|| extract_query_param(req.uri(), "api_key"));
 
     let suffix = |s: &str| -> String {
-        if s.len() >= 2 { format!("...{}", &s[s.len()-2..]) } else { "***".to_string() }
+        if s.len() >= 2 {
+            format!("...{}", &s[s.len() - 2..])
+        } else {
+            "***".to_string()
+        }
     };
 
     match token {

@@ -392,32 +392,55 @@ impl Session {
         let Some(record) = self.res.storage.config_get(&self.agent_id).await? else {
             return Ok(());
         };
-        if let Some(total_limit) = record.token_limit_total {
-            let used = self
-                .res
-                .storage
-                .usage_summarize(UsageScope::AgentTotal {
-                    agent_id: self.agent_id.to_string(),
-                })
-                .await?
-                .total_tokens;
+        let need_total = record.token_limit_total.is_some();
+        let need_daily = record.token_limit_daily.is_some();
+        if !need_total && !need_daily {
+            return Ok(());
+        }
+
+        let total_fut = async {
+            if need_total {
+                Some(
+                    self.res
+                        .storage
+                        .usage_summarize(UsageScope::AgentTotal {
+                            agent_id: self.agent_id.to_string(),
+                        })
+                        .await,
+                )
+            } else {
+                None
+            }
+        };
+        let daily_fut = async {
+            if need_daily {
+                let day = crate::storage::time::now().date_naive().to_string();
+                Some(
+                    self.res
+                        .storage
+                        .usage_summarize(UsageScope::AgentDaily {
+                            agent_id: self.agent_id.to_string(),
+                            day,
+                        })
+                        .await,
+                )
+            } else {
+                None
+            }
+        };
+
+        let (total_result, daily_result) = tokio::join!(total_fut, daily_fut);
+
+        if let (Some(total_limit), Some(result)) = (record.token_limit_total, total_result) {
+            let used = result?.total_tokens;
             if used >= total_limit {
                 return Err(ErrorCode::quota_exceeded(format!(
                     "agent token total limit exceeded: used={used} limit={total_limit}"
                 )));
             }
         }
-        if let Some(daily_limit) = record.token_limit_daily {
-            let day = crate::storage::time::now().date_naive().to_string();
-            let used = self
-                .res
-                .storage
-                .usage_summarize(UsageScope::AgentDaily {
-                    agent_id: self.agent_id.to_string(),
-                    day,
-                })
-                .await?
-                .total_tokens;
+        if let (Some(daily_limit), Some(result)) = (record.token_limit_daily, daily_result) {
+            let used = result?.total_tokens;
             if used >= daily_limit {
                 return Err(ErrorCode::quota_exceeded(format!(
                     "agent token daily limit exceeded: used={used} limit={daily_limit}"

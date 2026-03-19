@@ -178,7 +178,11 @@ impl PromptBuilder {
             "prompt build"
         );
 
-        let config = self.storage.config_get(agent_id).await?;
+        // Phase 1: Fire all independent DB queries in parallel.
+        let (config, recall_hints, variables_text, errors_text, state) =
+            self.fetch_all(agent_id, session_id).await;
+
+        let config = config?;
         let has_config = config.is_some();
         tracing::debug!(
             stage = "prompt",
@@ -188,6 +192,7 @@ impl PromptBuilder {
             "prompt build"
         );
 
+        // Phase 2: Assemble prompt (CPU-only, no I/O).
         let mut prompt = String::with_capacity(4096);
 
         // 1. Identity (with default fallback)
@@ -246,28 +251,24 @@ impl PromptBuilder {
             prompt.push_str("\n\n");
         }
 
-        // 4. Skills (metadata only)
+        // 4. Skills (metadata only, sync)
         self.append_skills(&mut prompt, agent_id);
 
-        // 5. Tools (compact list)
+        // 5. Tools (compact list, sync)
         self.append_tools(&mut prompt);
 
-        // 5b. Cluster info (between Tools and Recall)
+        // 5b. Cluster info (reads cached peers, no DB)
         self.append_cluster_info(&mut prompt).await;
 
-        // 5c. Directive (platform-driven behavior)
+        // 5c. Directive (platform-driven behavior, sync)
         self.append_directive(&mut prompt);
 
-        // 6. Learnings / Recall Hints
-        self.append_recall_hints(&mut prompt, agent_id).await;
+        // 6-8. Append pre-fetched async layers
+        prompt.push_str(&recall_hints);
+        prompt.push_str(&variables_text);
+        prompt.push_str(&errors_text);
 
-        // 7. Variables
-        self.append_variables(&mut prompt).await;
-
-        // 8. Recent Errors
-        self.append_recent_errors(&mut prompt, session_id).await;
-
-        // 9. Runtime
+        // 9. Runtime (sync)
         self.append_runtime(&mut prompt, session_id);
 
         tracing::info!(
@@ -286,9 +287,31 @@ impl PromptBuilder {
             "prompt full content"
         );
 
-        // Template substitution
-        let state = self.storage.session_get_state(session_id).await?;
+        // Template substitution (state was fetched in parallel)
+        let state = state?;
         Ok(substitute_template(&prompt, &state))
+    }
+
+    /// Fetch all independent data sources in parallel.
+    /// Returns (config, recall_hints_text, variables_text, errors_text, session_state).
+    async fn fetch_all(
+        &self,
+        agent_id: &str,
+        session_id: &str,
+    ) -> (
+        Result<Option<crate::storage::dal::agent_config::record::AgentConfigRecord>>,
+        String,
+        String,
+        String,
+        Result<serde_json::Value>,
+    ) {
+        let config_fut = self.storage.config_get(agent_id);
+        let recall_fut = self.build_recall_hints(agent_id);
+        let vars_fut = self.build_variables_text();
+        let errors_fut = self.build_errors_text(session_id);
+        let state_fut = self.storage.session_get_state(session_id);
+
+        tokio::join!(config_fut, recall_fut, vars_fut, errors_fut, state_fut)
     }
 
     fn append_skills(&self, prompt: &mut String, agent_id: &str) {
@@ -399,24 +422,23 @@ impl PromptBuilder {
         prompt.push_str(&buf);
     }
 
-    async fn append_recall_hints(&self, prompt: &mut String, _agent_id: &str) {
+    /// Build recall hints text. Returns formatted section string (may be empty).
+    async fn build_recall_hints(&self, _agent_id: &str) -> String {
         // If text was injected directly, use it (backwards compat for tests)
         if let Some(ref s) = self.learnings {
-            if !s.is_empty() {
-                let mut buf = String::from("## Learnings\n\n");
-                buf.push_str(s);
-                buf.push_str("\n\n");
-                let buf = truncate_layer("learnings", &buf, MAX_LEARNINGS_BYTES, "injected");
-                prompt.push_str(&buf);
+            if s.is_empty() {
+                return String::new();
             }
-            return;
+            let mut buf = String::from("## Learnings\n\n");
+            buf.push_str(s);
+            buf.push_str("\n\n");
+            return truncate_layer("learnings", &buf, MAX_LEARNINGS_BYTES, "injected");
         }
 
         // If a RecallStore is available, build recall hints from it
         if let Some(ref recall) = self.recall {
             let mut buf = String::new();
 
-            // Agent learnings (all kinds, limit 10, high-confidence only)
             match recall.learnings().list(10).await {
                 Ok(records) if !records.is_empty() => {
                     let filtered: Vec<_> = records
@@ -435,7 +457,6 @@ impl PromptBuilder {
                 _ => {}
             }
 
-            // Active knowledge entries (limit 5, high-confidence only, metadata-only summaries)
             match recall.knowledge().list_active(5).await {
                 Ok(records) if !records.is_empty() => {
                     let filtered: Vec<_> = records.iter().filter(|r| r.confidence >= 0.7).collect();
@@ -454,70 +475,60 @@ impl PromptBuilder {
             if !buf.is_empty() {
                 let mut section = String::from("## Recall Hints\n\n");
                 section.push_str(&buf);
-                let section =
-                    truncate_layer("recall_hints", &section, MAX_RECALL_BYTES, "recall_store");
-                prompt.push_str(&section);
+                return truncate_layer("recall_hints", &section, MAX_RECALL_BYTES, "recall_store");
             }
-            return;
+            return String::new();
         }
 
         // Fallback: load old-style learnings from DB
         match self.storage.learning_list(LEARNINGS_LIMIT).await {
             Ok(records) if !records.is_empty() => {
                 let text = format_learnings(&records);
-                if !text.is_empty() {
-                    let mut buf = String::from("## Learnings\n\n");
-                    buf.push_str(&text);
-                    buf.push_str("\n\n");
-                    let buf = truncate_layer("learnings", &buf, MAX_LEARNINGS_BYTES, "db");
-                    prompt.push_str(&buf);
+                if text.is_empty() {
+                    return String::new();
                 }
+                let mut buf = String::from("## Learnings\n\n");
+                buf.push_str(&text);
+                buf.push_str("\n\n");
+                truncate_layer("learnings", &buf, MAX_LEARNINGS_BYTES, "db")
             }
-            Ok(_) => {}
+            Ok(_) => String::new(),
             Err(e) => {
                 tracing::warn!(error = %e, "learnings: db query failed — skipped");
+                String::new()
             }
         }
     }
 
-    async fn append_variables(&self, prompt: &mut String) {
-        // If a snapshot was provided at session creation, use it instead of
-        // querying the database live.  This keeps the prompt stable within a
-        // session even when variables are changed externally.
+    /// Build variables text. Returns formatted section string (may be empty).
+    async fn build_variables_text(&self) -> String {
+        let records: Vec<&VariableRecord>;
+        let fetched;
+
         if let Some(ref vars) = self.variables {
             if vars.is_empty() {
-                return;
+                return String::new();
             }
-            let mut buf = String::from("## Variables\n\n");
-            buf.push_str(
-                "The following variables are available as environment variables in shell commands.\n\n",
-            );
-            for v in vars {
-                if v.secret {
-                    let _ = writeln!(
-                        buf,
-                        "- `{}`: [SECRET] (available as env var `${}`)",
-                        v.key, v.key
-                    );
-                } else {
-                    let _ = writeln!(buf, "- `{}` = `{}`", v.key, v.value);
+            records = vars.iter().collect();
+        } else {
+            match self.storage.variable_list().await {
+                Ok(r) if !r.is_empty() => {
+                    fetched = r;
+                    records = fetched.iter().collect();
+                }
+                Ok(_) => return String::new(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "variables: db query failed — skipped");
+                    return String::new();
                 }
             }
-            buf.push('\n');
-            let buf = truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, "snapshot");
-            prompt.push_str(&buf);
-            return;
         }
 
-        let records = match self.storage.variable_list().await {
-            Ok(r) if !r.is_empty() => r,
-            Ok(_) => return,
-            Err(e) => {
-                tracing::warn!(error = %e, "variables: db query failed — skipped");
-                return;
-            }
+        let src = if self.variables.is_some() {
+            "snapshot"
+        } else {
+            "db"
         };
-
         let mut buf = String::from("## Variables\n\n");
         buf.push_str(
             "The following variables are available as environment variables in shell commands.\n\n",
@@ -534,9 +545,7 @@ impl PromptBuilder {
             }
         }
         buf.push('\n');
-
-        let buf = truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, "db");
-        prompt.push_str(&buf);
+        truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, src)
     }
 
     fn append_runtime(&self, prompt: &mut String, session_id: &str) {
@@ -562,7 +571,8 @@ impl PromptBuilder {
         prompt.push_str(&buf);
     }
 
-    async fn append_recent_errors(&self, prompt: &mut String, session_id: &str) {
+    /// Build recent errors text. Returns formatted section string (may be empty).
+    async fn build_errors_text(&self, session_id: &str) -> String {
         let (text, src) = if let Some(ref s) = self.recent_errors {
             (s.clone(), "injected")
         } else {
@@ -582,22 +592,22 @@ impl PromptBuilder {
                     }
                     (out, "db")
                 }
-                Ok(_) => return,
+                Ok(_) => return String::new(),
                 Err(e) => {
                     tracing::warn!(error = %e, "recent_errors: db query failed — skipped");
-                    return;
+                    return String::new();
                 }
             }
         };
 
-        if !text.is_empty() {
-            let mut buf = String::from("## Recent Errors\n\n");
-            buf.push_str("The following operations failed recently in this session. Avoid repeating the same mistakes.\n\n");
-            buf.push_str(&text);
-            buf.push_str("\n\n");
-            let buf = truncate_layer("recent_errors", &buf, MAX_ERRORS_BYTES, src);
-            prompt.push_str(&buf);
+        if text.is_empty() {
+            return String::new();
         }
+        let mut buf = String::from("## Recent Errors\n\n");
+        buf.push_str("The following operations failed recently in this session. Avoid repeating the same mistakes.\n\n");
+        buf.push_str(&text);
+        buf.push_str("\n\n");
+        truncate_layer("recent_errors", &buf, MAX_ERRORS_BYTES, src)
     }
 }
 

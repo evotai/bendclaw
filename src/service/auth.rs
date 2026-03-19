@@ -23,11 +23,31 @@ pub async fn auth_middleware(
 
     let token = extract_bearer(req.headers()).or_else(|| extract_query_param(req.uri(), "api_key"));
 
+    let suffix = |s: &str| -> String {
+        if s.len() >= 2 { format!("...{}", &s[s.len()-2..]) } else { "***".to_string() }
+    };
+
     match token {
         Some(t) if t == *expected => next.run(req).await,
-        _ => (
+        Some(t) => (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "invalid or missing api key" })),
+            Json(serde_json::json!({
+                "error": format!(
+                    "API key mismatch: AgentOS expects key ending with \"{}\", but received key ending with \"{}\"",
+                    suffix(expected),
+                    suffix(&t)
+                )
+            })),
+        )
+            .into_response(),
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": format!(
+                    "Missing API key. AgentOS expects key ending with \"{}\"",
+                    suffix(expected)
+                )
+            })),
         )
             .into_response(),
     }

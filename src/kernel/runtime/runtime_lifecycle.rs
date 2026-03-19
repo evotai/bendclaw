@@ -27,77 +27,64 @@ impl Runtime {
         self.sessions.close_all().await;
         self.sync_cancel.cancel();
 
-        let shutdown_timeout = std::time::Duration::from_secs(10);
-
-        let handle = self.sync_handle.write().take();
-        if let Some(handle) = handle {
-            if tokio::time::timeout(shutdown_timeout, handle)
-                .await
-                .is_err()
-            {
-                tracing::warn!("sync task did not finish within timeout");
-            }
+        // Abort fire-and-forget background tasks immediately — no data to preserve.
+        if let Some(handle) = self.sync_handle.write().take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.directive_handle.write().take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.heartbeat_handle.write().take() {
+            handle.abort();
         }
 
-        let lease = self.lease_handle.write().take();
-        if let Some(handle) = lease {
-            // Wait for scan loops to exit. The cancel check before the claim
-            // branch in scan_once minimizes (but doesn't eliminate) the window
-            // for new claims — cooperative cancellation can't be fully atomic.
-            if tokio::time::timeout(shutdown_timeout, handle.join())
-                .await
-                .is_err()
-            {
-                tracing::warn!("lease scan loops did not finish within timeout, aborting");
+        // Lease release and usage flush have side-effects — run them in parallel.
+        let lease_fut = async {
+            let lease = self.lease_handle.write().take();
+            if let Some(handle) = lease {
+                // Abort scan loops immediately — no need to wait for the
+                // current scan_once to finish; release_all() below handles
+                // lease cleanup independently.
                 handle.abort_all();
+                handle.release_all().await;
             }
-            // Each resource type decides via safe_to_release() whether its
-            // leases can be released now. Channels always release immediately;
-            // tasks only release if all workers have drained (checked via
-            // activity_tracker). No global drain wait — avoids delaying
-            // channel failover when task workers are slow.
-            handle.release_all().await;
-        }
-        self.supervisor.stop_all().await;
+        };
 
-        // Cluster cleanup: cancel heartbeat and deregister
-        let hb_handle = self.heartbeat_handle.write().take();
-        if let Some(handle) = hb_handle {
-            if tokio::time::timeout(shutdown_timeout, handle)
-                .await
-                .is_err()
-            {
-                tracing::warn!("heartbeat task did not finish within timeout");
+        let usage_fut = async {
+            if let Ok(agent_ids) = self.databases.list_agent_ids().await {
+                let llm = self.llm.read().clone();
+                let futs: Vec<_> = agent_ids
+                    .iter()
+                    .filter_map(|agent_id| {
+                        let pool = self.databases.agent_pool(agent_id).ok()?;
+                        let store = AgentStore::new(pool, llm.clone());
+                        let id = agent_id.clone();
+                        Some(async move {
+                            if let Err(e) = store.usage_flush().await {
+                                tracing::warn!(agent_id = %id, error = %e, "failed to flush usage on shutdown");
+                            }
+                        })
+                    })
+                    .collect();
+                futures::future::join_all(futs).await;
             }
+        };
+
+        // Best-effort: don't let slow DB calls delay shutdown.
+        if tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::join!(lease_fut, usage_fut);
+        })
+        .await
+        .is_err()
+        {
+            tracing::warn!("lease release / usage flush timed out after 2s, skipping");
         }
+
+        self.supervisor.stop_all().await;
         if let Some(ref svc) = self.cluster {
             svc.deregister().await;
         }
 
-        let directive_handle = self.directive_handle.write().take();
-        if let Some(handle) = directive_handle {
-            if tokio::time::timeout(shutdown_timeout, handle)
-                .await
-                .is_err()
-            {
-                tracing::warn!("directive task did not finish within timeout");
-            }
-        }
-
-        // Flush buffered usage records for all agents before stopping.
-        if let Ok(agent_ids) = self.databases.list_agent_ids().await {
-            let llm = self.llm.read().clone();
-            for agent_id in &agent_ids {
-                if let Ok(pool) = self.databases.agent_pool(agent_id) {
-                    let store = AgentStore::new(pool, llm.clone());
-                    if let Err(e) = store.usage_flush().await {
-                        tracing::warn!(agent_id, error = %e, "failed to flush usage on shutdown");
-                    }
-                }
-            }
-        }
-
-        // Stop trace writer quickly; pending trace ops may be dropped on shutdown.
         self.trace_writer.shutdown().await;
 
         *self.status.write() = RuntimeStatus::Stopped;

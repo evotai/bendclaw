@@ -349,12 +349,11 @@ async fn build_skill_store(
         hub_config,
     ));
 
-    if let Err(e) = store.refresh().await {
-        tracing::warn!(error = %e, "initial skill sync failed, starting with empty store");
-    }
-
     let skill_count = store.loaded_skills().len();
 
+    // Initial refresh is handled by the background sync task (first tick
+    // fires immediately), so the server can start accepting requests without
+    // waiting for git clone / DB skill sync.
     let sync_handle = crate::kernel::skills::remote::sync::spawn_sync_task(
         store.clone(),
         sync_interval_secs,

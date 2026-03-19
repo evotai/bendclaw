@@ -169,21 +169,14 @@ pub fn spawn_sync_task(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let base_interval = std::time::Duration::from_secs(interval_secs);
-        let mut interval = tokio::time::interval(base_interval);
-        interval.tick().await;
         let mut consecutive_errors: u64 = 0;
+        // First refresh fires immediately so the server starts without
+        // blocking on skill sync, yet skills become available quickly.
+        let mut next_sleep = std::time::Duration::ZERO;
         loop {
-            let sleep_dur = if consecutive_errors > 0 {
-                // Exponential backoff: 60s, 120s, 240s, capped at 300s
-                let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
-                std::time::Duration::from_secs(secs)
-            } else {
-                base_interval
-            };
-
             tokio::select! {
                 _ = cancel.cancelled() => { tracing::info!("skill sync task cancelled"); break; }
-                _ = tokio::time::sleep(sleep_dur) => {
+                _ = tokio::time::sleep(next_sleep) => {
                     if let Err(e) = store.refresh().await {
                         consecutive_errors += 1;
                         if consecutive_errors == 1 || consecutive_errors.is_multiple_of(20) {
@@ -193,11 +186,15 @@ pub fn spawn_sync_task(
                                 "skill sync failed"
                             );
                         }
+                        // Exponential backoff: 60s, 120s, 240s, capped at 300s
+                        let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
+                        next_sleep = std::time::Duration::from_secs(secs);
                     } else {
                         if consecutive_errors > 0 {
                             tracing::info!(consecutive_errors, "skill sync recovered");
                         }
                         consecutive_errors = 0;
+                        next_sleep = base_interval;
                     }
                 }
             }

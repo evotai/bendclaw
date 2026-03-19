@@ -98,6 +98,7 @@ impl LeaseServiceHandle {
     /// Release all DB leases held by this instance (best-effort, for shutdown).
     /// Skips resource types where `safe_to_release()` returns false.
     pub async fn release_all(&self) {
+        let mut futs = Vec::new();
         for (i, resource) in self.resources.iter().enumerate() {
             if !resource.safe_to_release() {
                 tracing::info!(
@@ -109,18 +110,26 @@ impl LeaseServiceHandle {
             }
             let held = self.held_maps[i].lock().await;
             for (id, lease) in held.iter() {
-                if let Err(e) = release_sql(&lease.pool, resource.table(), id, &lease.token).await {
-                    tracing::warn!(
-                        table = resource.table(),
-                        resource_id = %id,
-                        error = %e,
-                        "failed to release lease on shutdown"
-                    );
-                }
-                resource.on_released(id, &lease.pool).await;
+                let table = resource.table().to_string();
+                let id = id.clone();
+                let token = lease.token.clone();
+                let pool = lease.pool.clone();
+                let resource = resource.clone();
+                futs.push(async move {
+                    if let Err(e) = release_sql(&pool, &table, &id, &token).await {
+                        tracing::warn!(
+                            table,
+                            resource_id = %id,
+                            error = %e,
+                            "failed to release lease on shutdown"
+                        );
+                    }
+                    resource.on_released(&id, &pool).await;
+                });
             }
             self.lease_counts[i].store(0, Ordering::Relaxed);
         }
+        futures::future::join_all(futs).await;
     }
 
     /// Wait for all scan loops to finish (call after cancellation).

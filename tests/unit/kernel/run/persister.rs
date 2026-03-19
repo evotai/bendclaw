@@ -2,11 +2,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bendclaw::base::ErrorCode;
 use bendclaw::kernel::agent_store::AgentStore;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::run::persist_op::spawn_persist_writer;
+use bendclaw::kernel::run::persist_op::PersistOp;
+use bendclaw::kernel::run::persist_op::PersistWriter;
 use bendclaw::kernel::run::persister::status_from_reason;
 use bendclaw::kernel::run::persister::TurnPersister;
 use bendclaw::kernel::run::result::ContentBlock;
@@ -14,67 +15,23 @@ use bendclaw::kernel::run::result::Reason;
 use bendclaw::kernel::run::result::Result as AgentResult;
 use bendclaw::kernel::run::result::Usage as AgentUsage;
 use bendclaw::kernel::trace::TraceRecorder;
-use bendclaw::llm::message::ChatMessage;
-use bendclaw::llm::provider::LLMProvider;
-use bendclaw::llm::provider::LLMResponse;
-use bendclaw::llm::stream::ResponseStream;
-use bendclaw::llm::tool::ToolSchema;
 use bendclaw::storage::dal::run::record::RunStatus;
 use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
+use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 
 use crate::common::fake_databend::paged_rows;
 use crate::common::fake_databend::FakeDatabend;
 use crate::common::fake_databend::FakeDatabendCall;
 
-struct PricingLLM;
-
-#[async_trait]
-impl LLMProvider for PricingLLM {
-    async fn chat(
-        &self,
-        _model: &str,
-        _messages: &[ChatMessage],
-        _tools: &[ToolSchema],
-        _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
-        Err(ErrorCode::internal("not used in persister tests"))
-    }
-
-    fn chat_stream(
-        &self,
-        _model: &str,
-        _messages: &[ChatMessage],
-        _tools: &[ToolSchema],
-        _temperature: f64,
-    ) -> ResponseStream {
-        let (_writer, stream) = ResponseStream::channel(1);
-        stream
-    }
-
-    fn pricing(&self, _model: &str) -> Option<(f64, f64)> {
-        Some((1.0, 2.0))
-    }
-
-    fn default_model(&self) -> &str {
-        "mock"
-    }
-
-    fn default_temperature(&self) -> f64 {
-        0.0
-    }
-}
-
 fn make_client() -> FakeDatabend {
     FakeDatabend::new(|_sql, _database| Ok(paged_rows(&[], None, None)))
 }
 
-fn make_persister(
-    client: &FakeDatabend,
-    writer: &bendclaw::kernel::run::persist_op::PersistWriter,
-) -> TurnPersister {
+fn make_persister(client: &FakeDatabend, writer: &PersistWriter) -> TurnPersister {
     let pool = client.pool();
-    let storage = Arc::new(AgentStore::new(pool.clone(), Arc::new(PricingLLM)));
+    let llm = Arc::new(MockLLMProvider::with_text("unused"));
+    let storage = Arc::new(AgentStore::new(pool.clone(), llm));
     let trace = TraceRecorder::new(
         Arc::new(TraceRepo::new(pool.clone())),
         Arc::new(SpanRepo::new(pool)),
@@ -97,6 +54,21 @@ fn make_persister(
     )
 }
 
+fn make_result(text: &str, reason: Reason, tokens: u64) -> AgentResult {
+    AgentResult {
+        content: vec![ContentBlock::text(text)],
+        iterations: 1,
+        usage: AgentUsage {
+            prompt_tokens: tokens,
+            completion_tokens: tokens / 2,
+            total_tokens: tokens + tokens / 2,
+            ..AgentUsage::default()
+        },
+        stop_reason: reason,
+        messages: Vec::new(),
+    }
+}
+
 fn recorded_sqls(client: &FakeDatabend) -> Vec<String> {
     client
         .calls()
@@ -108,15 +80,20 @@ fn recorded_sqls(client: &FakeDatabend) -> Vec<String> {
         .collect()
 }
 
-/// Wait for background writer to drain all queued ops.
-async fn drain(writer: &bendclaw::kernel::run::persist_op::PersistWriter) {
-    writer.shutdown().await;
-    // Also give trace writer time to flush (fire-and-forget)
+/// Send a Flush barrier and wait — ensures all preceding ops are processed
+/// without destroying the writer.
+async fn flush(writer: &PersistWriter) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    writer.send(PersistOp::Flush(tx));
+    let _ = rx.await;
+    // Give trace writer (fire-and-forget) time to flush
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 }
 
+// ── status_from_reason ───────────────────────────────────────────────────
+
 #[test]
-fn status_from_reason_maps_terminal_run_status() {
+fn status_from_reason_maps_all_variants() {
     assert_eq!(status_from_reason(&Reason::EndTurn), RunStatus::Completed);
     assert_eq!(
         status_from_reason(&Reason::MaxIterations),
@@ -127,149 +104,120 @@ fn status_from_reason_maps_terminal_run_status() {
     assert_eq!(status_from_reason(&Reason::Error), RunStatus::Error);
 }
 
+// ── persist_success ──────────────────────────────────────────────────────
+
 #[tokio::test]
-async fn persist_success_updates_run_events_usage_and_trace() -> Result<()> {
+async fn persist_success_writes_usage_events_run_and_trace() -> Result<()> {
     let client = make_client();
     let writer = spawn_persist_writer();
     let persister = make_persister(&client, &writer);
-    let result = AgentResult {
-        content: vec![ContentBlock::text("done")],
-        iterations: 3,
-        usage: AgentUsage {
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            reasoning_tokens: 2,
-            total_tokens: 15,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            ttft_ms: 7,
-        },
-        stop_reason: Reason::EndTurn,
-        messages: Vec::new(),
-    };
 
-    let text = persister.persist_success(result, "mock-provider", "mock-model", &[Event::Start])?;
+    let text = persister.persist_success(
+        make_result("done", Reason::EndTurn, 10),
+        "provider-1",
+        "model-1",
+        &[Event::Start],
+    )?;
     assert_eq!(text, "done");
 
-    drain(&writer).await;
+    flush(&writer).await;
 
     let sqls = recorded_sqls(&client);
-    assert!(sqls.iter().any(|sql| sql.starts_with("INSERT INTO usage ")));
+    assert!(sqls.iter().any(|s| s.starts_with("INSERT INTO usage ")));
     assert!(sqls
         .iter()
-        .any(|sql| sql.starts_with("INSERT INTO run_events ") && sql.contains("'Start'")));
-    assert!(sqls.iter().any(|sql| {
-        sql.starts_with("INSERT INTO run_events ") && sql.contains("'run.completed'")
-    }));
-    assert!(sqls.iter().any(|sql| {
-        sql.contains("UPDATE runs SET status = 'COMPLETED'") && sql.contains("output = 'done'")
+        .any(|s| s.starts_with("INSERT INTO run_events ") && s.contains("'Start'")));
+    assert!(sqls
+        .iter()
+        .any(|s| { s.starts_with("INSERT INTO run_events ") && s.contains("'run.completed'") }));
+    assert!(sqls.iter().any(|s| {
+        s.contains("UPDATE runs SET status = 'COMPLETED'") && s.contains("output = 'done'")
     }));
     assert!(sqls
         .iter()
-        .any(|sql| sql.contains("UPDATE traces SET status = 'completed'")));
+        .any(|s| s.contains("UPDATE traces SET status = 'completed'")));
     Ok(())
 }
 
 #[tokio::test]
-async fn persist_success_pauses_run_for_timeout_reason() -> Result<()> {
+async fn persist_success_pauses_on_timeout() -> Result<()> {
     let client = make_client();
     let writer = spawn_persist_writer();
     let persister = make_persister(&client, &writer);
-    let result = AgentResult {
-        content: vec![ContentBlock::text("partial")],
-        iterations: 5,
-        usage: AgentUsage {
-            prompt_tokens: 3,
-            completion_tokens: 2,
-            reasoning_tokens: 0,
-            total_tokens: 5,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            ttft_ms: 0,
-        },
-        stop_reason: Reason::Timeout,
-        messages: Vec::new(),
-    };
 
-    let _ = persister.persist_success(result, "mock-provider", "mock-model", &[Event::Start])?;
+    persister.persist_success(make_result("partial", Reason::Timeout, 6), "p", "m", &[
+        Event::Start,
+    ])?;
 
-    drain(&writer).await;
+    flush(&writer).await;
 
     let sqls = recorded_sqls(&client);
-    assert!(sqls.iter().any(|sql| {
-        sql.contains("UPDATE runs SET status = 'PAUSED'") && sql.contains("stop_reason = 'timeout'")
+    assert!(sqls.iter().any(|s| {
+        s.contains("UPDATE runs SET status = 'PAUSED'") && s.contains("stop_reason = 'timeout'")
     }));
     assert!(sqls
         .iter()
-        .any(|sql| sql.contains("UPDATE traces SET status = 'completed'")));
+        .any(|s| s.contains("UPDATE traces SET status = 'completed'")));
     Ok(())
 }
 
 #[tokio::test]
-async fn persist_error_marks_run_failed_and_persists_failure_event() {
+async fn persist_success_returns_text_synchronously() {
+    let client = make_client();
+    let writer = spawn_persist_writer();
+    let persister = make_persister(&client, &writer);
+
+    let text = persister
+        .persist_success(make_result("fast", Reason::EndTurn, 0), "p", "m", &[])
+        .expect("sync call should not fail");
+    assert_eq!(text, "fast");
+    writer.shutdown().await;
+}
+
+// ── persist_error ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn persist_error_writes_events_run_and_trace() {
     let client = make_client();
     let writer = spawn_persist_writer();
     let persister = make_persister(&client, &writer);
 
     persister.persist_error(&ErrorCode::internal("boom"), &[Event::Start]);
 
-    drain(&writer).await;
+    flush(&writer).await;
 
     let sqls = recorded_sqls(&client);
     assert!(sqls
         .iter()
-        .any(|sql| { sql.starts_with("INSERT INTO run_events ") && sql.contains("'run.failed'") }));
+        .any(|s| s.starts_with("INSERT INTO run_events ") && s.contains("'run.failed'")));
     assert!(sqls
         .iter()
-        .any(|sql| sql.contains("UPDATE runs SET status = 'ERROR'") && sql.contains("boom")));
+        .any(|s| s.contains("UPDATE runs SET status = 'ERROR'") && s.contains("boom")));
     assert!(sqls
         .iter()
-        .any(|sql| sql.contains("UPDATE traces SET status = 'failed'")));
+        .any(|s| s.contains("UPDATE traces SET status = 'failed'")));
 }
 
+// ── persist_cancelled ────────────────────────────────────────────────────
+
 #[tokio::test]
-async fn persist_cancelled_marks_run_cancelled_and_persists_cancel_event() {
+async fn persist_cancelled_writes_events_run_and_trace() {
     let client = make_client();
     let writer = spawn_persist_writer();
     let persister = make_persister(&client, &writer);
 
     persister.persist_cancelled(&[Event::Start]);
 
-    drain(&writer).await;
+    flush(&writer).await;
 
     let sqls = recorded_sqls(&client);
-    assert!(sqls.iter().any(|sql| {
-        sql.starts_with("INSERT INTO run_events ") && sql.contains("'run.cancelled'")
-    }));
     assert!(sqls
         .iter()
-        .any(|sql| sql
-            == "UPDATE runs SET status = 'CANCELLED', updated_at = NOW() WHERE id = 'run-1'"));
+        .any(|s| { s.starts_with("INSERT INTO run_events ") && s.contains("'run.cancelled'") }));
+    assert!(sqls.iter().any(
+        |s| s == "UPDATE runs SET status = 'CANCELLED', updated_at = NOW() WHERE id = 'run-1'"
+    ));
     assert!(sqls
         .iter()
-        .any(|sql| sql.contains("UPDATE traces SET status = 'failed'")));
-}
-
-#[tokio::test]
-async fn persist_success_returns_text_immediately() {
-    let client = make_client();
-    let writer = spawn_persist_writer();
-    let persister = make_persister(&client, &writer);
-    let result = AgentResult {
-        content: vec![ContentBlock::text("fast")],
-        iterations: 1,
-        usage: AgentUsage::default(),
-        stop_reason: Reason::EndTurn,
-        messages: Vec::new(),
-    };
-
-    // persist_success is synchronous — returns before any DB write
-    let text = persister
-        .persist_success(result, "p", "m", &[])
-        .expect("should not fail");
-    assert_eq!(text, "fast");
-
-    // At this point no SQL should have been executed yet (background queue)
-    // (We can't strictly guarantee timing, but the sync return is the key assertion)
-    writer.shutdown().await;
+        .any(|s| s.contains("UPDATE traces SET status = 'failed'")));
 }

@@ -3,7 +3,7 @@
 
 # Unique identifier for this bendclaw instance.
 # Must match the AgentOS ID assigned in the console (e.g. "aos_abc12345").
-instance_id = "aos_abc12345"
+node_id = "aos_abc12345"
 
 [server]
 bind_addr = "127.0.0.1:8787"

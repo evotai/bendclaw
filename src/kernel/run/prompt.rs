@@ -373,6 +373,7 @@ impl PromptBuilder {
             "\nCall tools when they would help accomplish the task.\
              \nPrefer `grep` over shell for searching file contents (regex pattern matching).\
              \nPrefer `glob` over shell for finding files by name pattern.\
+             \nWhen a first-class tool exists for an action, use the tool directly instead of shell.\
              \nUse memory_write for user or session preferences.\
              \nUse learning_write for reusable agent-level lessons.\
              \nSearch memory, knowledge, or learning when prior context may help.\

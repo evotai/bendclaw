@@ -1,4 +1,5 @@
 mod fetch;
+pub mod html;
 mod search;
 
 pub use fetch::WebFetchTool;

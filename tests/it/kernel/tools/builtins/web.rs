@@ -1,3 +1,4 @@
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 use bendclaw::kernel::tools::web::WebFetchTool;
@@ -125,6 +126,61 @@ fn web_fetch_summarize_long_multibyte_url_safely() {
 }
 
 #[tokio::test]
+async fn web_fetch_truncates_large_success_body() -> Result<(), Box<dyn std::error::Error>> {
+    async fn large_ok() -> (axum::http::StatusCode, String) {
+        (axum::http::StatusCode::OK, "x".repeat(200_000))
+    }
+
+    let app = Router::new().route("/", get(large_ok));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let tool = WebFetchTool;
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({ "url": format!("http://{addr}/") }), &ctx)
+        .await?;
+
+    assert!(result.success);
+    assert!(result.output.len() < 200_000);
+    assert!(result.output.contains("[truncated:"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_fetch_truncates_large_error_body() -> Result<(), Box<dyn std::error::Error>> {
+    async fn large_err() -> (axum::http::StatusCode, String) {
+        (
+            axum::http::StatusCode::NOT_FOUND,
+            "e".repeat(50_000),
+        )
+    }
+
+    let app = Router::new().route("/", get(large_err));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let tool = WebFetchTool;
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({ "url": format!("http://{addr}/") }), &ctx)
+        .await?;
+
+    assert!(!result.success);
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(err.contains("404"));
+    assert!(err.contains("[truncated:"));
+    assert!(err.len() < 50_000);
+    Ok(())
+}
+
+#[tokio::test]
 async fn web_search_success_formats_results_and_caps_count(
 ) -> Result<(), Box<dyn std::error::Error>> {
     async fn search() -> axum::Json<serde_json::Value> {
@@ -199,5 +255,87 @@ async fn web_search_success_formats_results_and_caps_count(
     assert!(result.output.contains("Databend"));
     assert!(result.output.contains("https://databend.com"));
     assert!(result.output.contains("Cloud data warehouse"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_fetch_converts_html_to_markdown() -> Result<(), Box<dyn std::error::Error>> {
+    async fn html_page() -> impl IntoResponse {
+        (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            "<html><head><title>Title</title></head><body><article><h1>Title</h1><p>Hello <strong>world</strong>.</p></article></body></html>",
+        )
+    }
+
+    let app = Router::new().route("/", get(html_page));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+
+    let tool = WebFetchTool;
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({ "url": format!("http://{addr}/") }), &ctx)
+        .await?;
+
+    assert!(result.success);
+    // Should contain markdown, not raw HTML tags
+    assert!(result.output.contains("Title"));
+    assert!(result.output.contains("world"));
+    assert!(!result.output.contains("<article>"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_fetch_json_not_converted() -> Result<(), Box<dyn std::error::Error>> {
+    async fn json_api() -> impl IntoResponse {
+        (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"key":"value"}"#,
+        )
+    }
+
+    let app = Router::new().route("/", get(json_api));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+
+    let tool = WebFetchTool;
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({ "url": format!("http://{addr}/") }), &ctx)
+        .await?;
+
+    assert!(result.success);
+    assert_eq!(result.output, r#"{"key":"value"}"#);
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_fetch_html_conversion_failure_falls_back() -> Result<(), Box<dyn std::error::Error>> {
+    // Serve a content-type of text/html but with content that readability can't extract
+    async fn bad_html() -> impl IntoResponse {
+        (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/html")],
+            "",
+        )
+    }
+
+    let app = Router::new().route("/", get(bad_html));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+
+    let tool = WebFetchTool;
+    let ctx = test_tool_context();
+    let result = tool
+        .execute_with_context(json!({ "url": format!("http://{addr}/") }), &ctx)
+        .await?;
+
+    // Should succeed with fallback to raw text (empty in this case)
+    assert!(result.success);
     Ok(())
 }

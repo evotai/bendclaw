@@ -48,6 +48,8 @@ tar = "0.4"
 native-tls = "0.2.18"
 openssl = { version = "0.10", features = ["vendored"] }
 prost = "0.14.3"
+readability = "0.3"
+htmd = "0.5"
 regex = "1"
 globset = "0.4"
 ignore = "0.4"

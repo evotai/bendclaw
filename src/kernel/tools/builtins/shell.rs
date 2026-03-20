@@ -72,7 +72,9 @@ impl Tool for ShellTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a shell command in the workspace directory."
+        "Execute shell commands. Use for running builds, tests, git operations, \
+         API calls via CLI tools, and other command-line tasks. \
+         Commands run in a subprocess with captured output."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

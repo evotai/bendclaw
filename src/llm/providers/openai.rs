@@ -279,6 +279,11 @@ async fn drive_stream(
         for data in parser.feed(&chunk) {
             match data {
                 SseData::Done => {
+                    for tc in tool_calls.drain() {
+                        writer
+                            .tool_end(tc.index, &tc.id, &tc.name, &tc.arguments)
+                            .await;
+                    }
                     writer
                         .done_with_provider(
                             &finish_reason,

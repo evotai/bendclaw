@@ -279,7 +279,6 @@ async fn drive_stream(
         for data in parser.feed(&chunk) {
             match data {
                 SseData::Done => {
-                    // Emit tool_end for any accumulated tool calls before signalling done
                     for tc in tool_calls.drain() {
                         writer
                             .tool_end(tc.index, &tc.id, &tc.name, &tc.arguments)

@@ -35,7 +35,7 @@ impl Tool for FileReadTool {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file within the workspace."
+        "Read the contents of a file. Accepts absolute paths or paths relative to the working directory."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -44,7 +44,7 @@ impl Tool for FileReadTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file within the workspace"
+                    "description": "Path to the file (absolute or relative to working directory)"
                 }
             },
             "required": ["path"]
@@ -61,9 +61,9 @@ impl Tool for FileReadTool {
             None => return Ok(ToolResult::error("Missing 'path' parameter")),
         };
 
-        let full_path = match ctx.workspace.resolve_safe_path(path) {
+        let full_path = match ctx.workspace.resolve_search_path(path) {
             Some(p) => p,
-            None => return Ok(ToolResult::error("Path escapes workspace directory")),
+            None => return Ok(ToolResult::error("Path is not accessible")),
         };
 
         match tokio::fs::read_to_string(&full_path).await {

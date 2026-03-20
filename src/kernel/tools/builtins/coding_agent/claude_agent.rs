@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use serde_json::json;
 use tokio::process::Command;
@@ -7,11 +8,41 @@ use crate::kernel::tools::cli_agent::AgentEvent;
 use crate::kernel::tools::cli_agent::AgentOptions;
 use crate::kernel::tools::cli_agent::CliAgent;
 
+/// Custom command parsed from `BENDCLAW_CLAUDE_COMMAND` env var.
+/// Supports multi-word commands like `ccr claude`.
+/// Falls back to `claude` when the env var is unset or empty.
+static CUSTOM_COMMAND: LazyLock<Vec<String>> = LazyLock::new(|| {
+    std::env::var("BENDCLAW_CLAUDE_COMMAND")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.split_whitespace().map(String::from).collect())
+        .unwrap_or_default()
+});
+
 pub struct ClaudeCodeAgent;
 
 impl CliAgent for ClaudeCodeAgent {
     fn agent_type(&self) -> &str {
         "claude"
+    }
+
+    fn command_name(&self) -> &str {
+        if CUSTOM_COMMAND.is_empty() {
+            "claude"
+        } else {
+            &CUSTOM_COMMAND[0]
+        }
+    }
+
+    fn base_command(&self) -> Command {
+        if CUSTOM_COMMAND.is_empty() {
+            return Command::new("claude");
+        }
+        let mut cmd = Command::new(&CUSTOM_COMMAND[0]);
+        if CUSTOM_COMMAND.len() > 1 {
+            cmd.args(&CUSTOM_COMMAND[1..]);
+        }
+        cmd
     }
 
     fn build_command(&self, cwd: &Path, _prompt: &str, opts: &AgentOptions) -> Command {

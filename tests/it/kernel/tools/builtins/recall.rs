@@ -20,7 +20,9 @@ fn make_tool() -> (LearningWriteTool, FakeDatabend) {
 #[tokio::test]
 async fn learning_write_success() -> Result<(), Box<dyn std::error::Error>> {
     let (tool, fake) = make_tool();
-    let ctx = test_tool_context();
+    let mut ctx = test_tool_context();
+    let writer = bendclaw::kernel::writer::tool_op::spawn_tool_writer();
+    ctx.tool_writer = writer.clone();
 
     let result = tool
         .execute_with_context(
@@ -37,6 +39,8 @@ async fn learning_write_success() -> Result<(), Box<dyn std::error::Error>> {
             &ctx,
         )
         .await?;
+
+    writer.shutdown().await;
 
     assert!(result.success);
     assert!(result.output.contains("Read AGENTS first"));

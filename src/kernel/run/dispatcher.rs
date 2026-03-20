@@ -17,6 +17,9 @@ use crate::kernel::OperationMeta;
 use crate::kernel::OperationTracker;
 use crate::llm::message::ToolCall;
 
+/// Hard upper limit on any tool/skill output (~64K tokens).
+const MAX_TOOL_OUTPUT: usize = 256_000;
+
 /// Semantic result of a single tool/skill call.
 #[derive(Debug, Clone)]
 pub enum ToolCallResult {
@@ -244,9 +247,9 @@ impl ToolDispatcher {
         if !result.success {
             let msg = result.error.unwrap_or_else(|| "unknown error".into());
             tracing::warn!(tool = name, error = %msg, "tool returned error");
-            return ToolCallResult::ToolError(msg, meta);
+            return ToolCallResult::ToolError(truncate_output(msg), meta);
         }
-        ToolCallResult::Success(result.output, meta)
+        ToolCallResult::Success(truncate_output(result.output), meta)
     }
 
     async fn run_skill(&self, name: &str, arguments: &str, timeout: Duration) -> ToolCallResult {
@@ -266,13 +269,20 @@ impl ToolDispatcher {
         let meta = tracker.finish();
         if let Some(ref err) = out.error {
             tracing::warn!(skill = name, error = %err, "skill returned error");
-            return ToolCallResult::ToolError(err.clone(), meta);
+            return ToolCallResult::ToolError(truncate_output(err.clone()), meta);
         }
         let text = match out.data {
             Some(serde_json::Value::String(s)) => s,
             Some(other) => other.to_string(),
             None => "OK".into(),
         };
-        ToolCallResult::Success(text, meta)
+        ToolCallResult::Success(truncate_output(text), meta)
     }
+}
+
+fn truncate_output(text: String) -> String {
+    if text.len() <= MAX_TOOL_OUTPUT {
+        return text;
+    }
+    crate::base::truncate_with_notice(&text, MAX_TOOL_OUTPUT)
 }

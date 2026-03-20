@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
@@ -16,8 +18,11 @@ use crate::llm::tokens::count_tokens;
 use crate::llm::tool::ToolSchema;
 use crate::llm::usage::TokenUsage;
 
-/// Maximum characters per chunk for staged summarization (~2K tokens).
-const CHUNK_SIZE: usize = 8_000;
+/// Maximum characters per chunk for staged summarization (~10K tokens).
+const CHUNK_SIZE: usize = 40_000;
+
+/// Minimum interval between compaction attempts.
+const COMPACTION_COOLDOWN: Duration = Duration::from_secs(60);
 
 /// Metadata returned when compaction occurs.
 pub struct CompactionResult {
@@ -45,6 +50,7 @@ pub struct Compactor {
     cancel: CancellationToken,
     checkpoint_done: bool,
     compaction_failures: u32,
+    last_compaction_at: Option<Instant>,
     last_error: Option<String>,
 }
 
@@ -62,6 +68,7 @@ impl Compactor {
             cancel,
             checkpoint_done: false,
             compaction_failures: 0,
+            last_compaction_at: None,
             last_error: None,
         }
     }
@@ -134,7 +141,31 @@ impl Compactor {
 
         tracing::info!(total_tokens, max_context_tokens, "compaction triggered");
 
-        // 4. Find split point: keep tail messages within budget
+        // 4. Cooldown: skip expensive summarization if recent compaction was ineffective
+        if self.compaction_failures > 0 {
+            if let Some(last) = self.last_compaction_at {
+                if last.elapsed() < COMPACTION_COOLDOWN {
+                    tracing::info!(
+                        elapsed_secs = last.elapsed().as_secs(),
+                        failures = self.compaction_failures,
+                        "skipping compaction: cooldown active after ineffective compaction"
+                    );
+                    if checkpoint_usage.is_some() {
+                        return Some(CompactionResult {
+                            messages_before,
+                            messages_after: messages.len(),
+                            summary_len: 0,
+                            token_usage: TokenUsage::default(),
+                            checkpoint_usage,
+                            duration_ms: compact_start.elapsed().as_millis() as u64,
+                        });
+                    }
+                    return None;
+                }
+            }
+        }
+
+        // 5. Find split point: keep tail messages within budget
         let plan = plan_compaction_split(messages, &msg_tokens, max_context_tokens)?;
         let split = plan.split_index;
 
@@ -212,6 +243,18 @@ impl Compactor {
             );
         } else {
             self.compaction_failures = 0;
+        }
+
+        // Token-level effectiveness check: if tokens barely dropped, apply cooldown
+        let post_tokens: usize = messages.iter().map(|m| count_tokens(&m.text())).sum();
+        if post_tokens > total_tokens * 9 / 10 {
+            self.compaction_failures += 1;
+            self.last_compaction_at = Some(Instant::now());
+            tracing::warn!(
+                pre_tokens = total_tokens,
+                post_tokens,
+                "compaction ineffective: token count barely reduced"
+            );
         }
 
         Some(CompactionResult {
@@ -302,16 +345,10 @@ impl Compactor {
             return self.summarize_single(&transcript).await;
         }
 
-        let futures: Vec<_> = chunks
-            .iter()
-            .map(|chunk| self.summarize_single(chunk))
-            .collect();
-        let chunk_results: Vec<(Option<String>, TokenUsage)> =
-            futures::future::join_all(futures).await;
-
         let mut total_usage = TokenUsage::default();
         let mut partial_summaries = Vec::new();
-        for (text, usage) in chunk_results {
+        for chunk in &chunks {
+            let (text, usage) = self.summarize_single(chunk).await;
             total_usage += &usage;
             if let Some(t) = text {
                 partial_summaries.push(t);

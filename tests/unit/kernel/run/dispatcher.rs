@@ -370,6 +370,108 @@ async fn execute_calls_timeout_and_cancel_paths() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn execute_calls_truncates_large_tool_output() -> Result<()> {
+    let large_output = "x".repeat(300_000);
+    let d = dispatcher(
+        vec![Arc::new(MockTool {
+            name: "big_tool".to_string(),
+            behavior: MockToolBehavior::Ok(large_output),
+        })],
+        Arc::new(MockSkillExecutor::new(MockSkillBehavior::OkString(
+            "ok".to_string(),
+        ))),
+        CancellationToken::new(),
+    );
+
+    let calls = vec![ToolCall {
+        id: "tc1".into(),
+        name: "big_tool".into(),
+        arguments: "{}".into(),
+    }];
+
+    let parsed = d.parse_calls(&calls);
+    let outcomes = d
+        .execute_calls(&parsed, Instant::now() + Duration::from_secs(2))
+        .await;
+
+    match &outcomes[0].result {
+        ToolCallResult::Success(out, _) => {
+            assert!(out.len() < 300_000);
+            assert!(out.contains("[truncated:"));
+        }
+        _ => anyhow::bail!("expected success"),
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn execute_calls_truncates_large_tool_error() -> Result<()> {
+    let large_error = "e".repeat(300_000);
+    let d = dispatcher(
+        vec![Arc::new(MockTool {
+            name: "err_tool".to_string(),
+            behavior: MockToolBehavior::ToolError(large_error),
+        })],
+        Arc::new(MockSkillExecutor::new(MockSkillBehavior::OkString(
+            "ok".to_string(),
+        ))),
+        CancellationToken::new(),
+    );
+
+    let calls = vec![ToolCall {
+        id: "tc1".into(),
+        name: "err_tool".into(),
+        arguments: "{}".into(),
+    }];
+
+    let parsed = d.parse_calls(&calls);
+    let outcomes = d
+        .execute_calls(&parsed, Instant::now() + Duration::from_secs(2))
+        .await;
+
+    match &outcomes[0].result {
+        ToolCallResult::ToolError(msg, _) => {
+            assert!(msg.len() < 300_000);
+            assert!(msg.contains("[truncated:"));
+        }
+        _ => anyhow::bail!("expected tool error"),
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn execute_calls_truncates_large_skill_output() -> Result<()> {
+    let large_output = "s".repeat(300_000);
+    let d = dispatcher(
+        vec![],
+        Arc::new(MockSkillExecutor::new(MockSkillBehavior::OkString(
+            large_output,
+        ))),
+        CancellationToken::new(),
+    );
+
+    let calls = vec![ToolCall {
+        id: "tc1".into(),
+        name: "big_skill".into(),
+        arguments: "{}".into(),
+    }];
+
+    let parsed = d.parse_calls(&calls);
+    let outcomes = d
+        .execute_calls(&parsed, Instant::now() + Duration::from_secs(2))
+        .await;
+
+    match &outcomes[0].result {
+        ToolCallResult::Success(out, _) => {
+            assert!(out.len() < 300_000);
+            assert!(out.contains("[truncated:"));
+        }
+        _ => anyhow::bail!("expected success"),
+    }
+    Ok(())
+}
+
 #[test]
 fn memory_tool_schemas_filters_by_ids() {
     let d = dispatcher(

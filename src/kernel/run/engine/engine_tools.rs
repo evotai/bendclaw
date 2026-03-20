@@ -14,6 +14,9 @@ use crate::kernel::OperationMeta;
 use crate::llm::message::ToolCall;
 use crate::observability::server_log;
 
+/// Max bytes for span error messages stored in trace DB.
+const MAX_SPAN_ERROR: usize = 2_000;
+
 impl Engine {
     pub(super) async fn dispatch_tools(&mut self, tool_calls: &[ToolCall], state: &RunLoopState) {
         let parsed_calls = self.dispatcher.parse_calls(tool_calls);
@@ -237,15 +240,16 @@ impl Engine {
                 serde_json::json!({"tool_call_id": p.call.id, "duration_ms": meta.duration_ms}),
             ));
         } else {
-            let err = error_text.unwrap_or_default();
+            let err_full = error_text.unwrap_or_default();
+            let err = crate::base::truncate_bytes_on_char_boundary(err_full, MAX_SPAN_ERROR);
             span.fail(
                 meta.duration_ms,
                 "tool_error",
-                err,
+                &err,
                 &SpanMeta::ToolFailed {
                     tool_call_id: p.call.id.clone(),
                     duration_ms: meta.duration_ms,
-                    error: err.to_string(),
+                    error: err.clone(),
                     impact: meta.impact.clone(),
                     summary: meta.summary.clone(),
                 }

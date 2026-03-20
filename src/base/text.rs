@@ -32,3 +32,16 @@ pub fn truncate_bytes_on_char_boundary(text: &str, max_bytes: usize) -> String {
     let end = text.floor_char_boundary(max_bytes);
     text[..end].to_string()
 }
+
+/// Truncate text to `max_bytes` on a char boundary, appending a notice if truncated.
+pub fn truncate_with_notice(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let truncated = truncate_bytes_on_char_boundary(text, max_bytes);
+    format!(
+        "{truncated}\n\n[truncated: showing {}/{} bytes]",
+        truncated.len(),
+        text.len()
+    )
+}

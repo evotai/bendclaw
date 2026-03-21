@@ -83,6 +83,13 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         trace_writer: bendclaw::kernel::trace::TraceWriter::noop(),
         persist_writer: bendclaw::kernel::writer::BackgroundWriter::noop("persist"),
         channel_message_writer: bendclaw::kernel::writer::BackgroundWriter::noop("channel_message"),
+        outbound_queue: bendclaw::kernel::channel::delivery::outbound_queue::OutboundQueue::noop(),
+        rate_limiter: std::sync::Arc::new(
+            bendclaw::kernel::channel::delivery::rate_limit::OutboundRateLimiter::new(
+                bendclaw::kernel::channel::delivery::rate_limit::RateLimitConfig::default(),
+            ),
+        ),
+        health_monitor_handle: parking_lot::RwLock::new(None),
         tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
     }))
 }

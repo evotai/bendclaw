@@ -1,4 +1,5 @@
 pub mod account;
+pub mod delivery;
 pub mod capabilities;
 pub mod context;
 pub mod dispatch;

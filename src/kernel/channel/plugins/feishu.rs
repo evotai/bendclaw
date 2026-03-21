@@ -24,6 +24,7 @@ use crate::kernel::channel::plugin::ChannelPlugin;
 use crate::kernel::channel::plugin::InboundEventSender;
 use crate::kernel::channel::plugin::InboundKind;
 use crate::kernel::channel::plugin::ReceiverFactory;
+use crate::observability::log::slog;
 
 pub const FEISHU_CHANNEL_TYPE: &str = "feishu";
 const FEISHU_API: &str = "https://open.feishu.cn/open-apis";
@@ -170,23 +171,23 @@ impl ReceiverFactory for FeishuReceiverFactory {
         let account_id = account.channel_account_id.clone();
 
         let handle = tokio::spawn(async move {
-            tracing::info!(account_id = %account_id, "feishu WebSocket receiver started");
+            slog!(info, "feishu_ws", "receiver_started", account_id = %account_id,);
             let mut backoff_secs = RECONNECT_DELAY_SECS;
             const MAX_BACKOFF_SECS: u64 = 120;
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
-                        tracing::info!(account_id = %account_id, "feishu receiver cancelled");
+                        slog!(info, "feishu_ws", "receiver_cancelled", account_id = %account_id,);
                         return;
                     }
                     result = ws_receive_loop(&client, &config, &event_tx) => {
                         match result {
                             Ok(()) => {
-                                tracing::info!(account_id = %account_id, "feishu WebSocket closed, reconnecting");
+                                slog!(info, "feishu_ws", "closed_reconnecting", account_id = %account_id,);
                                 backoff_secs = RECONNECT_DELAY_SECS;
                             }
                             Err(e) => {
-                                tracing::error!(account_id = %account_id, backoff_secs, error = %e, "feishu WebSocket error, reconnecting");
+                                slog!(error, "feishu_ws", "error_reconnecting", account_id = %account_id, backoff_secs, error = %e,);
                             }
                         }
                     }
@@ -292,7 +293,7 @@ impl ChannelOutbound for FeishuOutbound {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            tracing::warn!(status = %status, body, "feishu edit_message failed");
+            slog!(warn, "feishu_outbound", "edit_failed", http_status = %status, body,);
         }
         Ok(())
     }
@@ -450,7 +451,7 @@ async fn ws_receive_loop(
         get_ws_endpoint(client, &config.app_id, &config.app_secret).await?;
 
     let redacted_url = redact_ws_url(&ws_url);
-    tracing::info!(url = %redacted_url, ping_interval = ping_interval_secs, "feishu WebSocket connecting");
+    slog!(info, "feishu_ws", "connecting", url = %redacted_url, ping_interval = ping_interval_secs,);
 
     let connector = build_native_tls_connector()?;
     let (ws_stream, _) =
@@ -462,7 +463,7 @@ async fn ws_receive_loop(
     let mut ping_interval = tokio::time::interval(Duration::from_secs(ping_interval_secs));
     ping_interval.tick().await;
 
-    tracing::info!("feishu WebSocket connected");
+    slog!(info, "feishu_ws", "connected",);
 
     let mut msg_cache: HashMap<String, Vec<Option<Vec<u8>>>> = HashMap::new();
 
@@ -482,7 +483,7 @@ async fn ws_receive_loop(
                         let _ = write.send(Message::Pong(data)).await;
                     }
                     Some(Ok(Message::Close(_))) | None => {
-                        tracing::info!("feishu WebSocket closed by server");
+                        slog!(info, "feishu_ws", "closed_by_server",);
                         return Ok(());
                     }
                     Some(Err(e)) => {
@@ -507,7 +508,7 @@ async fn ws_receive_loop(
                 if write.send(Message::Binary(encoded)).await.is_err() {
                     return Err(ErrorCode::internal("feishu ws ping failed"));
                 }
-                tracing::debug!("feishu ws ping sent");
+                slog!(debug, "feishu_ws", "ping_sent",);
             }
         }
     }
@@ -523,7 +524,7 @@ async fn handle_pb_frame(
     let frame = match PbFrame::decode(data) {
         Ok(f) => f,
         Err(e) => {
-            tracing::warn!(error = %e, "feishu ws: failed to decode protobuf frame");
+            slog!(warn, "feishu_ws", "decode_failed", error = %e,);
             return None;
         }
     };
@@ -531,7 +532,7 @@ async fn handle_pb_frame(
     if frame.method == FRAME_METHOD_CONTROL {
         let msg_type = frame.get_header("type").unwrap_or("");
         if msg_type == "pong" {
-            tracing::debug!("feishu ws: received pong");
+            slog!(debug, "feishu_ws", "pong_received",);
         }
         return None;
     }
@@ -579,10 +580,10 @@ async fn handle_pb_frame(
     let payload_str = String::from_utf8_lossy(&full_payload);
 
     if msg_type == "event" {
-        tracing::info!(msg_id, trace_id, "feishu ws: event received");
+        slog!(info, "feishu_ws", "event_received", msg_id, trace_id,);
         handle_event_payload(&payload_str, config, event_tx, client).await;
     } else {
-        tracing::debug!(msg_type, msg_id, trace_id, "feishu ws: received data frame");
+        slog!(debug, "feishu_ws", "data_frame_received", msg_type, msg_id, trace_id,);
     }
 
     // Build response frame
@@ -601,7 +602,7 @@ async fn handle_event_payload(
     let json: serde_json::Value = match serde_json::from_str(payload) {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "feishu ws: invalid JSON in event payload");
+            slog!(warn, "feishu_ws", "invalid_json", error = %e,);
             return;
         }
     };
@@ -612,7 +613,7 @@ async fn handle_event_payload(
         .unwrap_or("");
 
     if event_type != "im.message.receive_v1" {
-        tracing::debug!(event_type, "feishu ws: ignoring event type");
+        slog!(debug, "feishu_ws", "event_ignored", event_type,);
         return;
     }
 
@@ -625,7 +626,7 @@ async fn handle_event_payload(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     if !is_allowed(&config.allow_from, sender_id) {
-        tracing::warn!(sender_id, "feishu: sender not in allow_from, denied");
+        slog!(warn, "feishu_ws", "sender_denied", sender_id,);
         return;
     }
 
@@ -646,13 +647,20 @@ async fn handle_event_payload(
     }
 
     if let Some(inbound) = parse_feishu_message(event_data) {
-        if event_tx.try_send(inbound).is_err() {
-            tracing::warn!("feishu ws: event channel full or receiver dropped");
-        } else {
-            tracing::info!("feishu: message queued for dispatch");
+        use crate::kernel::channel::delivery::backpressure::BackpressureResult;
+        match event_tx.send(inbound) {
+            BackpressureResult::Accepted => {
+                slog!(info, "feishu_ws", "message_queued",);
+            }
+            BackpressureResult::Busy => {
+                slog!(warn, "feishu_ws", "channel_busy",);
+            }
+            BackpressureResult::Rejected => {
+                slog!(warn, "feishu_ws", "channel_full",);
+            }
         }
     } else {
-        tracing::debug!("feishu ws: unsupported message type, skipping");
+        slog!(debug, "feishu_ws", "unsupported_type",);
     }
 }
 
@@ -678,7 +686,9 @@ async fn add_reaction(
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        tracing::warn!(status = %status, body, "feishu add reaction failed");
+        slog!(warn, "feishu_outbound", "reaction_failed", http_status = %status, body, message_id = message_id, emoji_type,);
+    } else {
+        slog!(info, "feishu_outbound", "reaction_sent", message_id = message_id, emoji_type,);
     }
     Ok(())
 }

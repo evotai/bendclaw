@@ -158,6 +158,14 @@ build_agent_errors!(
     ),
     (1702, cluster_dispatch, CLUSTER_DISPATCH, "ClusterDispatch"),
     (1703, cluster_collect, CLUSTER_COLLECT, "ClusterCollect"),
+    (1800, channel_send, CHANNEL_SEND, "ChannelSend"),
+    (
+        1801,
+        channel_rate_limited,
+        CHANNEL_RATE_LIMITED,
+        "ChannelRateLimited"
+    ),
+    (1802, channel_timeout, CHANNEL_TIMEOUT, "ChannelTimeout"),
 );
 
 macro_rules! impl_from_for_error_code {

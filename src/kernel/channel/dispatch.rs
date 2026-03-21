@@ -1,19 +1,13 @@
 use std::sync::Arc;
-use std::time::Instant;
-
-use tokio_stream::StreamExt;
 
 use crate::base::new_id;
-use crate::base::truncate_bytes_on_char_boundary;
 use crate::kernel::channel::account::ChannelAccount;
+use crate::kernel::channel::delivery;
 use crate::kernel::channel::dispatcher::ChannelDispatcher;
 use crate::kernel::channel::message::InboundEvent;
-use crate::kernel::channel::stream_delivery::StreamDelivery;
-use crate::kernel::channel::stream_delivery::StreamDeliveryConfig;
 use crate::kernel::channel::writer::ChannelMessageOp;
-use crate::kernel::run::event::Delta;
-use crate::kernel::run::event::Event;
 use crate::kernel::runtime::Runtime;
+use crate::observability::log::{slog, channel_log};
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
 
@@ -25,12 +19,11 @@ pub async fn dispatch_inbound(
     event: InboundEvent,
 ) {
     if let Err(e) = try_dispatch_inbound(runtime, &account, &event).await {
-        tracing::error!(
+        slog!(error, "channel", "dispatch_failed",
             agent_id = %account.agent_id,
             channel_type = %account.channel_type,
             account_id = %account.channel_account_id,
             error = %e,
-            "channel dispatch failed"
         );
     }
 }
@@ -47,11 +40,10 @@ async fn try_dispatch_inbound(
     // Works for all channel types. Empty/absent allow_from = allow all.
     if let Some(sender_id) = event_sender_id(event) {
         if !is_sender_allowed(&account.config, sender_id) {
-            tracing::debug!(
+            slog!(debug, "channel", "sender_denied",
                 channel_type = %account.channel_type,
                 account_id = %account.channel_account_id,
                 sender_id,
-                "sender not in allow_from, dropping message"
             );
             return Ok(());
         }
@@ -81,25 +73,30 @@ async fn try_dispatch_inbound(
                     &msg.message_id,
                 )
                 .await
-                .unwrap_or(false)
+                .unwrap_or_else(|e| {
+                    slog!(warn, "channel", "dedup_check_failed",
+                        message_id = %msg.message_id,
+                        channel_type = %account.channel_type,
+                        error = %e,
+                    );
+                    false
+                })
         {
-            tracing::debug!(
+            slog!(debug, "channel", "dedup_skipped",
                 message_id = %msg.message_id,
                 channel_type = %account.channel_type,
-                "duplicate inbound message, skipping"
             );
             return Ok(());
         }
     }
 
-    tracing::info!(
+    channel_log!(info, "inbound", "accepted",
         channel_type = %account.channel_type,
         account_id = %account.channel_account_id,
         chat_id,
         sender_id = event_sender_id(event).unwrap_or(""),
         message_id = event_message_id(event).unwrap_or(""),
         input_bytes = input.len(),
-        "channel inbound accepted"
     );
 
     // Record inbound message (fire-and-forget via background writer).
@@ -134,20 +131,16 @@ async fn try_dispatch_inbound(
     // Send typing indicator.
     if let Some(ref ob) = outbound {
         match ob.send_typing(&account.config, chat_id).await {
-            Ok(()) => tracing::debug!(
+            Ok(()) => channel_log!(debug, "typing", "sent",
                 channel_type = %account.channel_type,
                 account_id = %account.channel_account_id,
                 chat_id,
-                send_type = "typing",
-                "channel outbound sent"
             ),
-            Err(error) => tracing::warn!(
+            Err(error) => channel_log!(warn, "typing", "failed",
                 channel_type = %account.channel_type,
                 account_id = %account.channel_account_id,
                 chat_id,
-                send_type = "typing",
                 error = %error,
-                "channel outbound failed"
             ),
         }
     }
@@ -157,11 +150,10 @@ async fn try_dispatch_inbound(
         .get_or_create_session(&account.agent_id, &session_key, &account.user_id)
         .await?;
 
-    tracing::info!(
+    slog!(info, "channel", "session_ready",
         channel_type = %account.channel_type,
         chat_id,
         session_id = %session_key,
-        "channel dispatch: session ready, starting LLM"
     );
 
     let trace_id = new_id();
@@ -175,86 +167,29 @@ async fn try_dispatch_inbound(
     let supports_edit = caps.as_ref().map(|c| c.supports_edit).unwrap_or(false);
     let max_len = caps.as_ref().map(|c| c.max_message_len).unwrap_or(4096);
 
-    let (output_text, platform_msg_id) = if supports_edit {
-        if let Some(ref ob) = outbound {
-            // Streaming path: deliver incrementally via draft edits.
-            let delivery = StreamDelivery::new(
-                StreamDeliveryConfig {
-                    throttle_ms: 800,
-                    min_initial_chars: 20,
-                    max_message_len: max_len,
-                    show_tool_progress: true,
-                },
-                ob.clone(),
-                account.config.clone(),
-                chat_id.to_string(),
-            );
-            let text = delivery.deliver(&mut run_stream).await?;
-            let _ = run_stream.finish().await;
-            // StreamDelivery already sent + finalized the message via send_draft/finalize_draft,
-            // so we don't have a separate platform_msg_id to record here.
-            (text, String::new())
-        } else {
-            let _ = run_stream.finish().await;
-            (String::new(), String::new())
+    let (output_text, platform_msg_id) = if let Some(ref ob) = outbound {
+        let result = delivery::deliver_outbound(
+            ob,
+            &runtime.rate_limiter,
+            &runtime.outbound_queue,
+            &account.channel_type,
+            &account.external_account_id,
+            &account.config,
+            chat_id,
+            supports_edit,
+            max_len,
+            &mut run_stream,
+        )
+        .await?;
+        let _ = run_stream.finish().await;
+        match result {
+            Some(r) => (r.text, r.platform_message_id),
+            None => return Ok(()),
         }
     } else {
-        // Non-streaming path: collect all text, then send once.
-        let mut output_text = String::new();
-        while let Some(ev) = run_stream.next().await {
-            if let Event::StreamDelta(Delta::Text { content }) = &ev {
-                output_text.push_str(content);
-            }
-        }
         let _ = run_stream.finish().await;
-
-        if output_text.trim().is_empty() {
-            return Ok(());
-        }
-
-        if output_text.len() > max_len {
-            output_text = truncate_bytes_on_char_boundary(&output_text, max_len);
-        }
-
-        let msg_id = if let Some(ref ob) = outbound {
-            let started = Instant::now();
-            match ob.send_text(&account.config, chat_id, &output_text).await {
-                Ok(msg_id) => {
-                    tracing::info!(
-                        channel_type = %account.channel_type,
-                        account_id = %account.channel_account_id,
-                        chat_id,
-                        send_type = "text",
-                        message_id = %msg_id,
-                        output_bytes = output_text.len(),
-                        elapsed_ms = started.elapsed().as_millis() as u64,
-                        "channel outbound sent"
-                    );
-                    msg_id
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        channel_type = %account.channel_type,
-                        account_id = %account.channel_account_id,
-                        chat_id,
-                        send_type = "text",
-                        output_bytes = output_text.len(),
-                        elapsed_ms = started.elapsed().as_millis() as u64,
-                        error = %error,
-                        "channel outbound failed"
-                    );
-                    String::new()
-                }
-            }
-        } else {
-            String::new()
-        };
-        (output_text, msg_id)
-    };
-
-    if output_text.trim().is_empty() {
         return Ok(());
-    }
+    };
 
     // Record outbound message (fire-and-forget via background writer).
     runtime

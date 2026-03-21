@@ -6,6 +6,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::base::Result;
 use crate::kernel::channel::account::ChannelAccount;
+use crate::kernel::channel::delivery::backpressure::BackpressureConfig;
+use crate::kernel::channel::delivery::backpressure::BackpressureSender;
 use crate::kernel::channel::message::InboundEvent;
 use crate::kernel::channel::plugin::InboundKind;
 use crate::kernel::channel::registry::ChannelRegistry;
@@ -51,8 +53,9 @@ impl ChannelSupervisor {
 
         let cancel = CancellationToken::new();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<InboundEvent>(1024);
+        let bp_sender = BackpressureSender::new(event_tx, BackpressureConfig::default());
 
-        let handle = factory.spawn(account, event_tx, cancel.clone()).await?;
+        let handle = factory.spawn(account, bp_sender, cancel.clone()).await?;
 
         // Spawn consumer that dispatches events to the handler.
         let handler = self.event_handler.clone();
@@ -101,5 +104,10 @@ impl ChannelSupervisor {
             Some(slot) => !slot.handle.is_finished(),
             None => false,
         }
+    }
+
+    /// Return the IDs of all tracked channel accounts.
+    pub async fn tracked_account_ids(&self) -> Vec<String> {
+        self.receivers.lock().await.keys().cloned().collect()
     }
 }

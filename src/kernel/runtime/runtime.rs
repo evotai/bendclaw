@@ -6,6 +6,8 @@ use parking_lot::RwLock;
 use super::ActivityGuard;
 use super::ActivityTracker;
 use super::SuspendStatus;
+use crate::kernel::channel::delivery::outbound_queue::OutboundQueue;
+use crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter;
 use crate::kernel::channel::registry::ChannelRegistry;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
@@ -46,6 +48,9 @@ pub struct Runtime {
     pub(crate) trace_writer: crate::kernel::trace::TraceWriter,
     pub(crate) persist_writer: crate::kernel::run::persist_op::PersistWriter,
     pub(crate) channel_message_writer: crate::kernel::channel::ChannelMessageWriter,
+    pub(crate) outbound_queue: OutboundQueue,
+    pub(crate) rate_limiter: Arc<OutboundRateLimiter>,
+    pub(crate) health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) tool_writer: crate::kernel::writer::tool_op::ToolWriter,
 }
 
@@ -70,6 +75,9 @@ pub struct RuntimeParts {
     pub trace_writer: crate::kernel::trace::TraceWriter,
     pub persist_writer: crate::kernel::run::persist_op::PersistWriter,
     pub channel_message_writer: crate::kernel::channel::ChannelMessageWriter,
+    pub outbound_queue: OutboundQueue,
+    pub rate_limiter: Arc<OutboundRateLimiter>,
+    pub health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
 }
 
@@ -115,6 +123,9 @@ impl Runtime {
             trace_writer: parts.trace_writer,
             persist_writer: parts.persist_writer,
             channel_message_writer: parts.channel_message_writer,
+            outbound_queue: parts.outbound_queue,
+            rate_limiter: parts.rate_limiter,
+            health_monitor_handle: parts.health_monitor_handle,
             tool_writer: parts.tool_writer,
         }
     }

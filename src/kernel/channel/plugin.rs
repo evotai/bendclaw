@@ -8,9 +8,10 @@ use super::account::ChannelAccount;
 use super::capabilities::ChannelCapabilities;
 use super::message::InboundEvent;
 use crate::base::Result;
+use crate::kernel::channel::delivery::backpressure::BackpressureSender;
 
 /// Sender for pushing inbound events from long-lived connections (WebSocket, polling).
-pub type InboundEventSender = tokio::sync::mpsc::Sender<InboundEvent>;
+pub type InboundEventSender = BackpressureSender;
 
 /// Describes how a channel receives inbound events.
 pub enum InboundKind {

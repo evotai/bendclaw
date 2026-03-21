@@ -180,6 +180,13 @@ impl ChannelOutbound for GitHubOutbound {
             .send()
             .await
             .map_err(|e| ErrorCode::internal(format!("github reaction: {e}")))?;
+        tracing::info!(
+            channel_type = "github",
+            chat_id,
+            message_id = msg_id,
+            emoji,
+            "reaction sent"
+        );
         Ok(())
     }
 }

@@ -237,6 +237,14 @@ async fn construct(
     let trace_writer = crate::kernel::trace::TraceWriter::spawn();
     let persist_writer = crate::kernel::run::persist_op::spawn_persist_writer();
     let channel_message_writer = crate::kernel::channel::spawn_channel_message_writer();
+    let outbound_queue = crate::kernel::channel::delivery::outbound_queue::spawn_outbound_queue(
+        crate::kernel::channel::delivery::outbound_queue::OutboundQueueConfig::default(),
+    );
+    let rate_limiter = Arc::new(
+        crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter::new(
+            crate::kernel::channel::delivery::rate_limit::RateLimitConfig::default(),
+        ),
+    );
     let tool_writer = crate::kernel::writer::tool_op::spawn_tool_writer();
 
     // Directive cache (opt-in)
@@ -319,6 +327,9 @@ async fn construct(
             trace_writer,
             persist_writer,
             channel_message_writer,
+            outbound_queue,
+            rate_limiter,
+            health_monitor_handle: RwLock::new(None),
             tool_writer,
         })
     });
@@ -336,8 +347,21 @@ async fn construct(
     lease_builder.register(Arc::new(
         crate::kernel::task::lease::TaskLeaseResource::new(runtime.clone(), http_client),
     ));
-    let lease_handle = lease_builder.spawn(sync_cancel);
+    let lease_handle = lease_builder.spawn(sync_cancel.clone());
     *runtime.lease_handle.write() = Some(lease_handle);
+
+    // Spawn channel health monitor.
+    {
+        use crate::kernel::channel::delivery::health::ChannelHealthMonitor;
+        use crate::kernel::channel::delivery::health::HealthMonitorConfig;
+
+        let monitor = Arc::new(ChannelHealthMonitor::new(
+            runtime.supervisor().clone(),
+            HealthMonitorConfig::default(),
+        ));
+        let handle = monitor.spawn(vec![], sync_cancel);
+        *runtime.health_monitor_handle.write() = Some(handle);
+    }
 
     Ok(runtime)
 }

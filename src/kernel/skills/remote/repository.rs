@@ -176,7 +176,10 @@ impl SkillRepository for DatabendSkillRepository {
             ])
             .await?;
 
-        if !skill.files.is_empty() {
+        // Build file list: skill.files + SKILL.md (from skill.content).
+        let skill_md_content;
+        let has_files = !skill.files.is_empty() || !skill.content.is_empty();
+        if has_files {
             let columns = &[
                 "skill_name",
                 "agent_id",
@@ -186,7 +189,7 @@ impl SkillRepository for DatabendSkillRepository {
                 "sha256",
                 "updated_at",
             ];
-            let rows: Vec<Vec<SqlVal<'_>>> = skill
+            let mut rows: Vec<Vec<SqlVal<'_>>> = skill
                 .files
                 .iter()
                 .map(|f| {
@@ -207,6 +210,27 @@ impl SkillRepository for DatabendSkillRepository {
                     ]
                 })
                 .collect();
+
+            // Surface skill.content as SKILL.md so the file tree is complete.
+            if !skill.content.is_empty() {
+                skill_md_content = skill.content.clone();
+                rows.push(vec![
+                    SqlVal::Str(&skill.name),
+                    match &agent_id_val {
+                        Some(v) => SqlVal::Str(v),
+                        None => SqlVal::Null,
+                    },
+                    match &created_by_val {
+                        Some(v) => SqlVal::Str(v),
+                        None => SqlVal::Null,
+                    },
+                    SqlVal::Str("SKILL.md"),
+                    SqlVal::Str(&skill_md_content),
+                    SqlVal::Str(""),
+                    SqlVal::Raw("NOW()"),
+                ]);
+            }
+
             self.files.insert_batch(columns, &rows).await?;
         }
 

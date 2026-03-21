@@ -259,6 +259,13 @@ impl ChannelOutbound for TelegramOutbound {
             .send()
             .await
             .map_err(|e| ErrorCode::internal(format!("telegram setMessageReaction: {e}")))?;
+        tracing::info!(
+            channel_type = "telegram",
+            chat_id,
+            message_id = msg_id,
+            emoji,
+            "reaction sent"
+        );
         Ok(())
     }
 
@@ -414,7 +421,9 @@ async fn poll_updates(
                 attachments: vec![],
                 timestamp: msg.date,
             });
-            if event_tx.send(event).await.is_err() {
+            if let crate::kernel::channel::delivery::backpressure::BackpressureResult::Rejected =
+                event_tx.send(event)
+            {
                 tracing::warn!("telegram: event receiver dropped");
             }
         }

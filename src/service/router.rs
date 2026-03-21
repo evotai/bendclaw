@@ -12,7 +12,6 @@ use axum::routing::post;
 use axum::routing::put;
 use axum::Router;
 use tower_http::cors::AllowOrigin;
-use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -129,22 +128,36 @@ fn set_private_network_header(response: &mut Response) {
 }
 
 fn build_cors(auth: &AuthConfig) -> CorsLayer {
-    if auth.is_enabled() {
-        let origins: Vec<axum::http::HeaderValue> = auth
-            .allowed_origins()
-            .into_iter()
-            .filter_map(|o| o.parse().ok())
-            .collect();
-        CorsLayer::new()
-            .allow_origin(AllowOrigin::list(origins))
-            .allow_methods(Any)
-            .allow_headers(Any)
-    } else {
-        CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any)
-    }
+    // Always use an explicit origin list instead of `*`.
+    // Chrome's Private Network Access preflights are always credentialed,
+    // and CORS rejects `Access-Control-Allow-Origin: *` for credentialed requests.
+    let origins: Vec<axum::http::HeaderValue> = auth
+        .allowed_origins()
+        .into_iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
+
+    use axum::http::header;
+    let allowed_headers = [
+        header::AUTHORIZATION,
+        header::CONTENT_TYPE,
+        header::ACCEPT,
+        header::ORIGIN,
+        header::HeaderName::from_static("x-request-id"),
+        header::HeaderName::from_static("x-user-id"),
+    ];
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers(allowed_headers)
+        .allow_credentials(true)
 }
 
 pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Router {
@@ -327,6 +340,8 @@ pub fn api_router(state: AppState, _log_level: &str, auth: &AuthConfig) -> Route
             "/v1/agents/{agent_id}/feedback/{feedback_id}",
             delete(v1::feedback::delete_feedback),
         )
+        // System
+        .route("/v1/system/upgrade", post(v1::system::upgrade))
         // Channels
         .route(
             "/v1/agents/{agent_id}/channels/accounts",

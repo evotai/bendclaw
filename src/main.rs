@@ -154,17 +154,18 @@ async fn cmd_run(
     .build()
     .await?;
 
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
+
     let state = AppState {
         runtime: runtime.clone(),
         auth_key: config.auth.api_key.clone(),
+        shutdown_token: shutdown_token.clone(),
     };
 
     let api_router = bendclaw::service::api_router(state, &config.log.level, &config.auth);
 
     let api_bind = &config.server.bind_addr;
     let api_listener = tokio::net::TcpListener::bind(api_bind).await?;
-
-    let shutdown_token = tokio_util::sync::CancellationToken::new();
 
     let admin_listener = if let Some(ref admin) = config.admin {
         let admin_state = bendclaw::service::AdminState {

@@ -100,11 +100,20 @@ impl UpdateCliStyle {
 }
 
 pub async fn fetch_latest_release() -> Result<GitHubRelease> {
+    fetch_release_by_tag("latest").await
+}
+
+pub async fn fetch_release_by_tag(tag: &str) -> Result<GitHubRelease> {
+    let url = if tag == "latest" {
+        format!("{GITHUB_API}/repos/{GITHUB_REPO}/releases/latest")
+    } else {
+        format!("{GITHUB_API}/repos/{GITHUB_REPO}/releases/tags/{tag}")
+    };
     let client = reqwest::Client::builder()
         .build()
         .context("failed to build HTTP client")?;
     let mut req = client
-        .get(format!("{GITHUB_API}/repos/{GITHUB_REPO}/releases/latest"))
+        .get(url)
         .header(reqwest::header::USER_AGENT, user_agent())
         .header(reqwest::header::ACCEPT, "application/vnd.github+json");
 

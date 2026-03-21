@@ -33,6 +33,24 @@ pub fn truncate_bytes_on_char_boundary(text: &str, max_bytes: usize) -> String {
     text[..end].to_string()
 }
 
+/// Truncate keeping head (70%) + tail (30%) on char boundaries.
+/// Tail often contains error messages, so this is more useful than head-only truncation.
+pub fn truncate_head_tail(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let marker = "\n... [truncated] ...\n";
+    let usable = max_bytes.saturating_sub(marker.len());
+    if usable == 0 {
+        return marker[..max_bytes].to_string();
+    }
+    let head_budget = usable * 7 / 10;
+    let tail_budget = usable - head_budget;
+    let head_end = text.floor_char_boundary(head_budget);
+    let tail_start = text.ceil_char_boundary(text.len().saturating_sub(tail_budget));
+    format!("{}{marker}{}", &text[..head_end], &text[tail_start..])
+}
+
 /// Truncate text to `max_bytes` on a char boundary, appending a notice if truncated.
 pub fn truncate_with_notice(text: &str, max_bytes: usize) -> String {
     if text.len() <= max_bytes {

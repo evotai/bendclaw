@@ -34,6 +34,7 @@ fn workspace_from_variable_records_builds_env_and_lookups() -> Result<()> {
             variable("v2", "LOG_LEVEL", "debug", false),
         ],
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -62,6 +63,7 @@ fn workspace_secret_variable_helpers_return_expected_ids() -> Result<()> {
             variable("v3", "BRAVE_API_KEY", "brave-secret", true),
         ],
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );

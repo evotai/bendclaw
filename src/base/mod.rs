@@ -20,4 +20,5 @@ pub use message_types::Role;
 pub use message_types::ToolCall;
 pub use text::truncate_bytes_on_char_boundary;
 pub use text::truncate_chars_with_ellipsis;
+pub use text::truncate_head_tail;
 pub use text::truncate_with_notice;

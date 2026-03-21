@@ -91,7 +91,7 @@ impl LeaseResource for ChannelLeaseResource {
                     lease_token: account.lease_token,
                     lease_node_id: account.lease_node_id,
                     lease_expires_at: account.lease_expires_at,
-                    context: String::new(),
+                    context: account.channel_type,
                     release_fn: None,
                 });
             }

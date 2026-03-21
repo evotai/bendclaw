@@ -6,4 +6,5 @@ mod github;
 mod http_api;
 mod lease;
 mod message;
+mod stream_delivery;
 mod telegram;

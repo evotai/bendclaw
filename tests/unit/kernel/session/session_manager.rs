@@ -62,6 +62,7 @@ fn test_session(session_id: &str, agent_id: &str) -> Arc<Session> {
         vec!["PATH".into(), "HOME".into()],
         std::collections::HashMap::new(),
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ));

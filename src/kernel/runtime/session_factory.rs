@@ -119,6 +119,7 @@ impl Runtime {
             self.config.workspace.safe_env_vars.clone(),
             variable_records.clone(),
             Duration::from_secs(self.config.workspace.command_timeout_secs),
+            Duration::from_secs(self.config.workspace.max_command_timeout_secs),
             self.config.workspace.max_output_bytes,
             resolver,
         ));

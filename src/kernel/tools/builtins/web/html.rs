@@ -6,7 +6,11 @@ use std::io::Cursor;
 /// allowing the caller to fall back to the raw text.
 pub fn html_to_markdown(html: &str) -> Option<String> {
     let mut cursor = Cursor::new(html.as_bytes());
-    let article = readability::extractor::extract(&mut cursor, &reqwest::Url::parse("https://example.com").ok()?).ok()?;
+    let article = readability::extractor::extract(
+        &mut cursor,
+        &reqwest::Url::parse("https://example.com").ok()?,
+    )
+    .ok()?;
 
     let md = htmd::convert(&article.content).ok()?;
     let trimmed = md.trim();

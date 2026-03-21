@@ -15,6 +15,7 @@ fn test_ws(dir: std::path::PathBuf) -> Workspace {
         vec!["PATH".into(), "HOME".into()],
         HashMap::new(),
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     )
@@ -82,6 +83,7 @@ fn build_env_includes_user_env() -> Result<()> {
         vec!["PATH".into()],
         user_env,
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -101,6 +103,7 @@ fn build_env_user_env_overrides_safe_var() -> Result<()> {
         vec!["PATH".into()],
         user_env,
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -122,6 +125,7 @@ fn has_variable_true() -> Result<()> {
         vec![],
         user_env,
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -199,6 +203,7 @@ async fn exec_user_env_visible() -> Result<()> {
         vec!["PATH".into()],
         user_env,
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -217,6 +222,7 @@ async fn exec_idle_timeout() -> Result<()> {
         vec!["PATH".into()],
         HashMap::new(),
         Duration::from_millis(100),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );
@@ -261,6 +267,7 @@ fn test_ws_open(dir: std::path::PathBuf) -> Workspace {
         vec!["PATH".into(), "HOME".into()],
         HashMap::new(),
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(OpenResolver),
     )
@@ -358,6 +365,7 @@ async fn exec_with_env_overrides_user_env() -> Result<()> {
         vec!["PATH".into()],
         user_env,
         Duration::from_secs(5),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     );

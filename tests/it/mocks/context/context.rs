@@ -16,6 +16,7 @@ pub fn test_workspace(dir: std::path::PathBuf) -> Arc<Workspace> {
         vec!["PATH".into(), "HOME".into()],
         HashMap::new(),
         std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ))

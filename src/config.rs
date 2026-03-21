@@ -45,8 +45,10 @@ pub struct WorkspaceConfig {
     /// Root directory for all workspace data. Default: "~/.evotai/workspace"
     /// Internal layout: {root_dir}/skills/, {root_dir}/{user_id}/{agent_id}/{session_id}/
     pub root_dir: String,
-    /// Command idle timeout in seconds (no output = timeout). Default: 30
+    /// Command idle timeout in seconds (no output = timeout). Default: 60
     pub command_timeout_secs: u64,
+    /// Max total command execution time in seconds. Default: 300
+    pub max_command_timeout_secs: u64,
     /// Max output bytes from command execution. Default: 1MB
     pub max_output_bytes: usize,
     /// Allowlisted system env vars inherited by subprocess. Default: PATH, HOME, etc.
@@ -70,7 +72,8 @@ impl Default for WorkspaceConfig {
     fn default() -> Self {
         Self {
             root_dir: dirs_default_workspace_dir(),
-            command_timeout_secs: 30,
+            command_timeout_secs: 60,
+            max_command_timeout_secs: 300,
             max_output_bytes: 1_048_576,
             safe_env_vars: default_safe_env_vars(),
             sandbox: false,

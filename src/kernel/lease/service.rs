@@ -295,6 +295,7 @@ async fn scan_once(
                     tracing::info!(
                         table,
                         resource_id = %entry.id,
+                        context = %entry.context,
                         "lease claimed"
                     );
                     held_map.insert(entry.id.clone(), HeldLease {

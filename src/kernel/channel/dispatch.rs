@@ -8,6 +8,8 @@ use crate::base::truncate_bytes_on_char_boundary;
 use crate::kernel::channel::account::ChannelAccount;
 use crate::kernel::channel::dispatcher::ChannelDispatcher;
 use crate::kernel::channel::message::InboundEvent;
+use crate::kernel::channel::stream_delivery::StreamDelivery;
+use crate::kernel::channel::stream_delivery::StreamDeliveryConfig;
 use crate::kernel::channel::writer::ChannelMessageOp;
 use crate::kernel::run::event::Delta;
 use crate::kernel::run::event::Event;
@@ -166,62 +168,93 @@ async fn try_dispatch_inbound(
     let mut run_stream = session.run(&input, &trace_id, None, "", "", false).await?;
     let run_id = run_stream.run_id().to_string();
 
-    let mut output_text = String::new();
-    while let Some(ev) = run_stream.next().await {
-        if let Event::StreamDelta(Delta::Text { content }) = &ev {
-            output_text.push_str(content);
+    let caps = runtime
+        .channels()
+        .get(&account.channel_type)
+        .map(|e| e.plugin.capabilities());
+    let supports_edit = caps.as_ref().map(|c| c.supports_edit).unwrap_or(false);
+    let max_len = caps.as_ref().map(|c| c.max_message_len).unwrap_or(4096);
+
+    let (output_text, platform_msg_id) = if supports_edit {
+        if let Some(ref ob) = outbound {
+            // Streaming path: deliver incrementally via draft edits.
+            let delivery = StreamDelivery::new(
+                StreamDeliveryConfig {
+                    throttle_ms: 800,
+                    min_initial_chars: 20,
+                    max_message_len: max_len,
+                    show_tool_progress: true,
+                },
+                ob.clone(),
+                account.config.clone(),
+                chat_id.to_string(),
+            );
+            let text = delivery.deliver(&mut run_stream).await?;
+            let _ = run_stream.finish().await;
+            // StreamDelivery already sent + finalized the message via send_draft/finalize_draft,
+            // so we don't have a separate platform_msg_id to record here.
+            (text, String::new())
+        } else {
+            let _ = run_stream.finish().await;
+            (String::new(), String::new())
         }
-    }
-    let _ = run_stream.finish().await;
+    } else {
+        // Non-streaming path: collect all text, then send once.
+        let mut output_text = String::new();
+        while let Some(ev) = run_stream.next().await {
+            if let Event::StreamDelta(Delta::Text { content }) = &ev {
+                output_text.push_str(content);
+            }
+        }
+        let _ = run_stream.finish().await;
+
+        if output_text.trim().is_empty() {
+            return Ok(());
+        }
+
+        if output_text.len() > max_len {
+            output_text = truncate_bytes_on_char_boundary(&output_text, max_len);
+        }
+
+        let msg_id = if let Some(ref ob) = outbound {
+            let started = Instant::now();
+            match ob.send_text(&account.config, chat_id, &output_text).await {
+                Ok(msg_id) => {
+                    tracing::info!(
+                        channel_type = %account.channel_type,
+                        account_id = %account.channel_account_id,
+                        chat_id,
+                        send_type = "text",
+                        message_id = %msg_id,
+                        output_bytes = output_text.len(),
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "channel outbound sent"
+                    );
+                    msg_id
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        channel_type = %account.channel_type,
+                        account_id = %account.channel_account_id,
+                        chat_id,
+                        send_type = "text",
+                        output_bytes = output_text.len(),
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        error = %error,
+                        "channel outbound failed"
+                    );
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        };
+        (output_text, msg_id)
+    };
 
     if output_text.trim().is_empty() {
         return Ok(());
     }
-
-    // Truncate to channel's max message length.
-    let max_len = runtime
-        .channels()
-        .get(&account.channel_type)
-        .map(|e| e.plugin.capabilities().max_message_len)
-        .unwrap_or(4096);
-    if output_text.len() > max_len {
-        output_text = truncate_bytes_on_char_boundary(&output_text, max_len);
-    }
-
-    // Send reply.
-    let platform_msg_id = if let Some(ref ob) = outbound {
-        let started = Instant::now();
-        match ob.send_text(&account.config, chat_id, &output_text).await {
-            Ok(msg_id) => {
-                tracing::info!(
-                    channel_type = %account.channel_type,
-                    account_id = %account.channel_account_id,
-                    chat_id,
-                    send_type = "text",
-                    message_id = %msg_id,
-                    output_bytes = output_text.len(),
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                    "channel outbound sent"
-                );
-                msg_id
-            }
-            Err(error) => {
-                tracing::warn!(
-                    channel_type = %account.channel_type,
-                    account_id = %account.channel_account_id,
-                    chat_id,
-                    send_type = "text",
-                    output_bytes = output_text.len(),
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                    error = %error,
-                    "channel outbound failed"
-                );
-                String::new()
-            }
-        }
-    } else {
-        String::new()
-    };
 
     // Record outbound message (fire-and-forget via background writer).
     runtime

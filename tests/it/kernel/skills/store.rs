@@ -79,6 +79,7 @@ fn make_workspace(root: &std::path::Path, vars: &[(&str, &str)]) -> Arc<Workspac
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect(),
         Duration::from_secs(10),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ))

@@ -44,6 +44,7 @@ fn test_workspace_with_vars(variables: HashMap<String, String>) -> Arc<Workspace
         vec!["PATH".into(), "HOME".into()],
         variables,
         Duration::from_secs(10),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ))
@@ -58,6 +59,7 @@ fn test_workspace_with_variable_records(records: Vec<VariableRecord>) -> Arc<Wor
         vec!["PATH".into(), "HOME".into()],
         records,
         Duration::from_secs(10),
+        Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ))

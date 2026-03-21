@@ -117,7 +117,7 @@ impl ChannelPlugin for FeishuChannel {
         ChannelCapabilities {
             channel_kind: ChannelKind::Conversational,
             inbound_mode: InboundMode::WebSocket,
-            supports_edit: false,
+            supports_edit: true,
             supports_streaming: false,
             supports_markdown: true,
             supports_threads: false,
@@ -268,14 +268,33 @@ impl ChannelOutbound for FeishuOutbound {
 
     async fn edit_message(
         &self,
-        _config: &serde_json::Value,
+        config: &serde_json::Value,
         _chat_id: &str,
-        _msg_id: &str,
-        _text: &str,
+        msg_id: &str,
+        text: &str,
     ) -> Result<()> {
-        Err(ErrorCode::internal(
-            "feishu channel does not support edit_message",
-        ))
+        let (app_id, app_secret) = Self::extract_credentials(config)?;
+        let token = get_tenant_token(&self.client, &app_id, &app_secret).await?;
+        let url = format!("{FEISHU_API}/im/v1/messages/{msg_id}");
+        let content = serde_json::json!({ "text": text }).to_string();
+        let body = serde_json::json!({
+            "msg_type": "text",
+            "content": content,
+        });
+        let resp = self
+            .client
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| ErrorCode::internal(format!("feishu edit_message: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            tracing::warn!(status = %status, body, "feishu edit_message failed");
+        }
+        Ok(())
     }
 
     async fn add_reaction(
@@ -288,6 +307,16 @@ impl ChannelOutbound for FeishuOutbound {
         Err(ErrorCode::internal(
             "feishu channel does not support reactions",
         ))
+    }
+
+    async fn update_draft(
+        &self,
+        config: &serde_json::Value,
+        chat_id: &str,
+        msg_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        self.edit_message(config, chat_id, msg_id, text).await
     }
 }
 

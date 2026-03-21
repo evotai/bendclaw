@@ -80,6 +80,40 @@ pub trait ChannelOutbound: Send + Sync {
         msg_id: &str,
         emoji: &str,
     ) -> Result<()>;
+
+    /// Send an initial placeholder message, return platform message ID.
+    /// Default: falls back to send_text().
+    async fn send_draft(
+        &self,
+        config: &serde_json::Value,
+        chat_id: &str,
+        text: &str,
+    ) -> Result<String> {
+        self.send_text(config, chat_id, text).await
+    }
+
+    /// Update a draft message in-place. No-op by default.
+    async fn update_draft(
+        &self,
+        config: &serde_json::Value,
+        chat_id: &str,
+        msg_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        let _ = (config, chat_id, msg_id, text);
+        Ok(())
+    }
+
+    /// Finalize a draft into its permanent form. Default: edit_message().
+    async fn finalize_draft(
+        &self,
+        config: &serde_json::Value,
+        chat_id: &str,
+        msg_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        self.edit_message(config, chat_id, msg_id, text).await
+    }
 }
 
 /// Webhook verification + parsing for webhook-mode channels.

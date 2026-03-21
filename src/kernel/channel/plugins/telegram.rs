@@ -261,6 +261,16 @@ impl ChannelOutbound for TelegramOutbound {
             .map_err(|e| ErrorCode::internal(format!("telegram setMessageReaction: {e}")))?;
         Ok(())
     }
+
+    async fn update_draft(
+        &self,
+        config: &serde_json::Value,
+        chat_id: &str,
+        msg_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        self.edit_message(config, chat_id, msg_id, text).await
+    }
 }
 
 // ── Long polling ──

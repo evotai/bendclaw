@@ -24,7 +24,7 @@ fn capabilities() {
     let caps = ch.capabilities();
     assert_eq!(caps.channel_kind, ChannelKind::Conversational);
     assert_eq!(caps.inbound_mode, InboundMode::WebSocket);
-    assert!(!caps.supports_edit);
+    assert!(caps.supports_edit);
     assert!(!caps.supports_streaming);
     assert!(caps.supports_markdown);
     assert!(!caps.supports_threads);
@@ -69,10 +69,12 @@ async fn outbound_add_reaction_returns_error() {
 }
 
 #[tokio::test]
-async fn outbound_edit_message_returns_error() {
+async fn outbound_edit_message_does_not_panic() {
     let ch = FeishuChannel::new();
     let outbound = ch.outbound();
-    let result = outbound
+    // edit_message now calls the real Feishu API, so it will fail with a network error
+    // but should not panic.
+    let _ = outbound
         .edit_message(
             &serde_json::json!({"app_id": "id", "app_secret": "secret"}),
             "chat_1",
@@ -80,5 +82,18 @@ async fn outbound_edit_message_returns_error() {
             "new text",
         )
         .await;
-    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn outbound_update_draft_does_not_panic() {
+    let ch = FeishuChannel::new();
+    let outbound = ch.outbound();
+    let _ = outbound
+        .update_draft(
+            &serde_json::json!({"app_id": "id", "app_secret": "secret"}),
+            "chat_1",
+            "msg_1",
+            "updated text",
+        )
+        .await;
 }

@@ -153,10 +153,7 @@ async fn web_fetch_truncates_large_success_body() -> Result<(), Box<dyn std::err
 #[tokio::test]
 async fn web_fetch_truncates_large_error_body() -> Result<(), Box<dyn std::error::Error>> {
     async fn large_err() -> (axum::http::StatusCode, String) {
-        (
-            axum::http::StatusCode::NOT_FOUND,
-            "e".repeat(50_000),
-        )
+        (axum::http::StatusCode::NOT_FOUND, "e".repeat(50_000))
     }
 
     let app = Router::new().route("/", get(large_err));
@@ -226,6 +223,7 @@ async fn web_search_success_formats_results_and_caps_count(
             updated_at: String::new(),
         }],
         std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(300),
         1_048_576,
         std::sync::Arc::new(bendclaw::kernel::session::workspace::SandboxResolver),
     );
@@ -271,7 +269,9 @@ async fn web_fetch_converts_html_to_markdown() -> Result<(), Box<dyn std::error:
     let app = Router::new().route("/", get(html_page));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
 
     let tool = WebFetchTool;
     let ctx = test_tool_context();
@@ -300,7 +300,9 @@ async fn web_fetch_json_not_converted() -> Result<(), Box<dyn std::error::Error>
     let app = Router::new().route("/", get(json_api));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
 
     let tool = WebFetchTool;
     let ctx = test_tool_context();
@@ -327,7 +329,9 @@ async fn web_fetch_html_conversion_failure_falls_back() -> Result<(), Box<dyn st
     let app = Router::new().route("/", get(bad_html));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    tokio::spawn(async move { axum::serve(listener, app).await.expect("serve"); });
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
 
     let tool = WebFetchTool;
     let ctx = test_tool_context();

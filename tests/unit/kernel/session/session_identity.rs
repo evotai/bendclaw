@@ -24,6 +24,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         vec!["PATH".into(), "HOME".into()],
         std::collections::HashMap::new(),
         std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(300),
         1_048_576,
         Arc::new(SandboxResolver),
     ));

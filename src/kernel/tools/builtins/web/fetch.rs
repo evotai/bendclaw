@@ -130,7 +130,10 @@ impl Tool for WebFetchTool {
             } else {
                 text.to_string()
             };
-            Ok(ToolResult::ok(truncate_with_notice(&output, MAX_FETCH_BODY)))
+            Ok(ToolResult::ok(truncate_with_notice(
+                &output,
+                MAX_FETCH_BODY,
+            )))
         } else {
             let truncated = truncate_with_notice(&text, MAX_ERROR_BODY);
             Ok(ToolResult::error(format!("HTTP {status}: {truncated}")))

@@ -9,6 +9,7 @@ pub mod outbound;
 pub mod plugin;
 pub mod plugins;
 pub mod registry;
+pub mod stream_delivery;
 pub mod supervisor;
 pub mod writer;
 

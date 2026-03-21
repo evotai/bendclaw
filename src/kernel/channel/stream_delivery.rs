@@ -50,6 +50,7 @@ impl StreamDelivery {
         let mut draft_msg_id: Option<String> = None;
         let mut last_edit = Instant::now();
         let mut tool_status = String::new();
+        let mut draft_broken = false;
 
         while let Some(ev) = stream.next().await {
             match &ev {
@@ -65,6 +66,7 @@ impl StreamDelivery {
                         {
                             Ok(id) => {
                                 draft_msg_id = Some(id);
+                                draft_broken = false;
                                 last_edit = Instant::now();
                             }
                             Err(e) => {
@@ -72,22 +74,35 @@ impl StreamDelivery {
                             }
                         }
                     } else if draft_msg_id.is_some()
+                        && !draft_broken
                         && last_edit.elapsed().as_millis() as u64 >= self.config.throttle_ms
+                        && self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
+                            .await
+                            .is_err()
                     {
-                        self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
-                            .await;
+                        draft_broken = true;
                     }
                 }
                 Event::ToolStart { name, .. } if self.config.show_tool_progress => {
                     tool_status = format!("\u{1F527} {name}...");
-                    self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
-                        .await;
+                    if !draft_broken
+                        && self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
+                            .await
+                            .is_err()
+                    {
+                        draft_broken = true;
+                    }
                 }
                 Event::ToolEnd { name, success, .. } if self.config.show_tool_progress => {
                     let icon = if *success { "\u{2705}" } else { "\u{274C}" };
                     tool_status = format!("{icon} {name}");
-                    self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
-                        .await;
+                    if !draft_broken
+                        && self.try_update(&draft_msg_id, &text_buf, &tool_status, &mut last_edit)
+                            .await
+                            .is_err()
+                    {
+                        draft_broken = true;
+                    }
                 }
                 Event::ReasonStart => {
                     tool_status.clear();
@@ -96,15 +111,30 @@ impl StreamDelivery {
             }
         }
 
-        // Finalize the draft with clean text (no cursor indicator).
+        // Finalize: if draft is broken or finalize fails, send as new message.
+        let final_text = self.truncate(&text_buf);
         if let Some(ref msg_id) = draft_msg_id {
-            let final_text = self.truncate(&text_buf);
-            if let Err(e) = self
+            if draft_broken {
+                if let Err(e) = self
+                    .outbound
+                    .send_text(&self.channel_config, &self.chat_id, &final_text)
+                    .await
+                {
+                    tracing::warn!(error = %e, "stream_delivery: fallback send_text failed");
+                }
+            } else if let Err(e) = self
                 .outbound
                 .finalize_draft(&self.channel_config, &self.chat_id, msg_id, &final_text)
                 .await
             {
-                tracing::warn!(error = %e, "stream_delivery: finalize_draft failed");
+                tracing::warn!(error = %e, "stream_delivery: finalize_draft failed, sending new message");
+                if let Err(e2) = self
+                    .outbound
+                    .send_text(&self.channel_config, &self.chat_id, &final_text)
+                    .await
+                {
+                    tracing::warn!(error = %e2, "stream_delivery: fallback send_text failed");
+                }
             }
         }
 
@@ -117,9 +147,9 @@ impl StreamDelivery {
         text_buf: &str,
         tool_status: &str,
         last_edit: &mut Instant,
-    ) {
+    ) -> std::result::Result<(), ()> {
         let Some(ref msg_id) = draft_msg_id else {
-            return;
+            return Ok(());
         };
         let display = self.compose_display(text_buf, tool_status);
         if let Err(e) = self
@@ -128,8 +158,11 @@ impl StreamDelivery {
             .await
         {
             tracing::warn!(error = %e, "stream_delivery: update_draft failed");
+            *last_edit = Instant::now();
+            return Err(());
         }
         *last_edit = Instant::now();
+        Ok(())
     }
 
     fn compose_display(&self, text: &str, tool_status: &str) -> String {

@@ -155,7 +155,7 @@ make coverage   # generate HTML coverage report
 
 ## Community
 
-- [GitHub Issues](https://github.com/datafuselabs/evot-ai/issues) — bug reports & feature requests
+- [GitHub Issues](https://github.com/EvotAI/bendclaw/issues) — bug reports & feature requests
 - [Twitter @Evot_AI](https://twitter.com/Evot_AI) — updates & announcements
 - team@evot.ai — reach the team directly
 

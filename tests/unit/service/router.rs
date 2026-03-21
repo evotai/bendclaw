@@ -23,6 +23,7 @@ fn test_app_state(auth_key: &str) -> AppState {
     AppState {
         runtime: test_runtime(fake),
         auth_key: auth_key.to_string(),
+        shutdown_token: tokio_util::sync::CancellationToken::new(),
     }
 }
 

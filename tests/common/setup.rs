@@ -230,6 +230,7 @@ pub async fn spawn_test_node(mut options: TestNodeOptions) -> anyhow::Result<Tes
     let state = bendclaw::service::state::AppState {
         runtime: runtime.clone(),
         auth_key: options.auth_key,
+        shutdown_token: tokio_util::sync::CancellationToken::new(),
     };
     let router = bendclaw::service::api_router(state, "info", &auth);
 
@@ -286,6 +287,7 @@ pub async fn app_with_root_pool_and_llm(
     let state = AppState {
         runtime,
         auth_key: String::new(),
+        shutdown_token: tokio_util::sync::CancellationToken::new(),
     };
     Ok(bendclaw::service::api_router(
         state,

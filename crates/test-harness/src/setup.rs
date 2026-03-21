@@ -68,6 +68,7 @@ impl TestContext {
         let state = AppState {
             runtime,
             auth_key: String::new(),
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
         };
         Ok(bendclaw::service::api_router(
             state,

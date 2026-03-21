@@ -561,7 +561,7 @@ async fn ws_receive_loop(
                 if write.send(Message::Binary(encoded)).await.is_err() {
                     return Err(ErrorCode::internal("feishu ws ping failed"));
                 }
-                slog!(debug, "feishu_ws", "ping_sent",);
+                slog!(info, "feishu_ws", "ping_sent",);
             }
         }
     }
@@ -586,12 +586,13 @@ async fn handle_pb_frame(
     if frame.method == FRAME_METHOD_CONTROL {
         let msg_type = frame.get_header("type").unwrap_or("");
         if msg_type == "pong" {
-            slog!(debug, "feishu_ws", "pong_received",);
+            slog!(info, "feishu_ws", "pong_received",);
         }
         return None;
     }
 
     if frame.method != FRAME_METHOD_DATA {
+        slog!(info, "feishu_ws", "unknown_method", method = frame.method,);
         return None;
     }
 
@@ -639,7 +640,7 @@ async fn handle_pb_frame(
         handle_event_payload(&payload_str, config, event_tx, client).await;
     } else {
         slog!(
-            debug,
+            info,
             "feishu_ws",
             "data_frame_received",
             msg_type,
@@ -675,7 +676,7 @@ async fn handle_event_payload(
         .unwrap_or("");
 
     if event_type != "im.message.receive_v1" {
-        slog!(debug, "feishu_ws", "event_ignored", event_type,);
+        slog!(info, "feishu_ws", "event_ignored", event_type,);
         return;
     }
 
@@ -722,7 +723,7 @@ async fn handle_event_payload(
             }
         }
     } else {
-        slog!(debug, "feishu_ws", "unsupported_type",);
+        slog!(info, "feishu_ws", "unsupported_type",);
     }
 }
 

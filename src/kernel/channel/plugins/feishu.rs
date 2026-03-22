@@ -542,7 +542,9 @@ async fn ws_receive_loop(
                     Some(Err(e)) => {
                         return Err(ErrorCode::internal(format!("feishu ws read: {e}")));
                     }
-                    _ => {}
+                    Some(Ok(other)) => {
+                        slog!(warn, "feishu_ws", "unexpected_ws_msg", msg_type = %format!("{:?}", std::mem::discriminant(&other)),);
+                    }
                 }
             }
             _ = ping_interval.tick() => {

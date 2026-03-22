@@ -43,6 +43,10 @@ impl Tool for FileEditTool {
         "Apply a search-and-replace edit to a file. Accepts absolute paths or paths relative to the working directory."
     }
 
+    fn hint(&self) -> &str {
+        "edit a file by string replacement"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -108,11 +112,16 @@ impl Tool for FileEditTool {
 
         match tokio::fs::write(&full_path, &new_content).await {
             Ok(()) => {
-                tracing::info!(path, "file edited");
+                tracing::info!(
+                    stage = "file_edit",
+                    status = "completed",
+                    path,
+                    "file_edit completed"
+                );
                 Ok(ToolResult::ok(format!("Edited {path} successfully")))
             }
             Err(e) => {
-                tracing::warn!(path, error = %e, "file edit failed");
+                tracing::warn!(stage = "file_edit", status = "failed", path, error = %e, "file_edit failed");
                 Ok(ToolResult::error(format!("Failed to write file: {e}")))
             }
         }

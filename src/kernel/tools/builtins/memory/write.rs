@@ -49,6 +49,10 @@ impl Tool for MemoryWriteTool {
         "Write a memory entry. Use scope 'user' for personal, 'shared' for tenant-shared, 'session' for temporary."
     }
 
+    fn hint(&self) -> &str {
+        "save user or session preferences"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

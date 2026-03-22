@@ -56,6 +56,10 @@ impl Tool for SkillCreateTool {
         "Create a new executable skill with a SKILL.md and an entry-point script."
     }
 
+    fn hint(&self) -> &str {
+        "create a new skill"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -156,7 +160,7 @@ impl Tool for SkillCreateTool {
 
         self.store.insert(&skill, &ctx.agent_id);
 
-        tracing::info!(skill = %name, version = %version, "skill created by agent");
+        tracing::info!(stage = "skill_create", status = "completed", skill = %name, version = %version, "skill_create completed");
         Ok(ToolResult::ok(format!(
             "Skill '{name}' created (v{version})"
         )))

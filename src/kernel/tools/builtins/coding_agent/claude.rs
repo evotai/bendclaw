@@ -48,6 +48,10 @@ impl Tool for ClaudeCodeTool {
          or code generation."
     }
 
+    fn hint(&self) -> &str {
+        "run Claude Code for coding tasks"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -102,7 +106,7 @@ impl Tool for ClaudeCodeTool {
                         .await;
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "claude resume failed, starting fresh");
+                    tracing::warn!(stage = "cli_agent", status = "resume_failed", agent = "claude", error = %e, "cli_agent resume_failed");
                 }
             }
         }

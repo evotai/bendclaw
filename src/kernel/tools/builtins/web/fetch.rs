@@ -53,6 +53,10 @@ impl Tool for WebFetchTool {
          Also works for JSON/text APIs."
     }
 
+    fn hint(&self) -> &str {
+        "fetch a URL and return content as markdown"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -97,7 +101,7 @@ impl Tool for WebFetchTool {
         let resp = match client.get(url).send().await {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!(url, error = %e, "web_fetch failed");
+                tracing::warn!(stage = "web_fetch", status = "failed", url, error = %e, "web_fetch failed");
                 return Ok(ToolResult::error(format!("Request failed: {e}")));
             }
         };
@@ -119,7 +123,7 @@ impl Tool for WebFetchTool {
         };
 
         let text = String::from_utf8_lossy(&body);
-        tracing::info!(url, status = %status, body_len = body.len(), "web_fetch succeeded");
+        tracing::info!(stage = "web_fetch", status = "completed", url, http_status = %status, body_len = body.len(), "web_fetch completed");
 
         if status.is_success() {
             let output = if content_type.contains("text/html") {

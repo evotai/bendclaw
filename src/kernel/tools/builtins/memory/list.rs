@@ -44,6 +44,10 @@ impl Tool for MemoryListTool {
         "List all memories for the current user (including tenant-shared)."
     }
 
+    fn hint(&self) -> &str {
+        "list stored memory keys"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -67,7 +71,12 @@ impl Tool for MemoryListTool {
 
         match self.storage.list(&ctx.user_id, limit).await {
             Ok(entries) => {
-                tracing::info!(count = entries.len(), "memory list completed");
+                tracing::info!(
+                    stage = "memory_list",
+                    status = "completed",
+                    count = entries.len(),
+                    "memory_list completed"
+                );
                 if entries.is_empty() {
                     return Ok(ToolResult::ok("No memories found."));
                 }
@@ -86,7 +95,7 @@ impl Tool for MemoryListTool {
                 Ok(ToolResult::ok(output.trim()))
             }
             Err(e) => {
-                tracing::warn!(error = %e, "memory list failed");
+                tracing::warn!(stage = "memory_list", status = "failed", error = %e, "memory_list failed");
                 Ok(ToolResult::error(format!("Failed to list memories: {e}")))
             }
         }

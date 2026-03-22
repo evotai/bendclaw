@@ -54,6 +54,24 @@ impl ToolRegistry {
         specs
     }
 
+    /// Returns `"- tool_name: hint"` lines for all tools that have a non-empty hint, sorted by name.
+    pub fn tool_hints(&self) -> Vec<String> {
+        let mut hints: Vec<String> = self
+            .tools
+            .values()
+            .filter_map(|t| {
+                let h = t.hint();
+                if h.is_empty() {
+                    None
+                } else {
+                    Some(format!("- {}: {}", t.name(), h))
+                }
+            })
+            .collect();
+        hints.sort();
+        hints
+    }
+
     pub fn tool_schemas(&self) -> Vec<ToolSchema> {
         let mut schemas: Vec<ToolSchema> = self
             .tools

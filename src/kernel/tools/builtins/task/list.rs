@@ -40,6 +40,10 @@ impl Tool for TaskListTool {
         "List scheduled tasks. Returns id, name, enabled, status, schedule, and next_run_at for each task."
     }
 
+    fn hint(&self) -> &str {
+        "list all scheduled tasks"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

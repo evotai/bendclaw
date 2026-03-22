@@ -43,6 +43,10 @@ impl Tool for ListDirTool {
         "List the contents of a directory. Accepts absolute paths or paths relative to the working directory."
     }
 
+    fn hint(&self) -> &str {
+        "list directory contents"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -74,7 +78,7 @@ impl Tool for ListDirTool {
         let mut read_dir = match tokio::fs::read_dir(&full_path).await {
             Ok(rd) => rd,
             Err(e) => {
-                tracing::warn!(path, error = %e, "list_dir failed");
+                tracing::warn!(stage = "list_dir", status = "failed", path, error = %e, "list_dir failed");
                 return Ok(ToolResult::error(format!("Failed to read directory: {e}")));
             }
         };
@@ -103,7 +107,13 @@ impl Tool for ListDirTool {
 
         entries.sort();
         let output = entries.join("\n");
-        tracing::info!(path, count = entries.len(), "list_dir succeeded");
+        tracing::info!(
+            stage = "list_dir",
+            status = "completed",
+            path,
+            count = entries.len(),
+            "list_dir completed"
+        );
         Ok(ToolResult::ok(output))
     }
 }

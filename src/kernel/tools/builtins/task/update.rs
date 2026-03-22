@@ -49,6 +49,10 @@ impl Tool for TaskUpdateTool {
         "Update an existing scheduled task. Only provided fields are changed."
     }
 
+    fn hint(&self) -> &str {
+        "update fields of an existing scheduled task"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         task_update_schema()
     }

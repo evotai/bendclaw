@@ -1,8 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::json;
 
+use super::cache::WebCache;
+use super::duckduckgo;
 use crate::base::Result;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
@@ -11,28 +14,128 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
-/// Search the web using the Brave Search API.
+
+/// Which search backend to use.
+#[derive(Clone, Debug, Default)]
+pub enum SearchProvider {
+    Brave,
+    DuckDuckGo,
+    /// Try Brave if API key is available, fall back to DuckDuckGo.
+    #[default]
+    Auto,
+}
+
+const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+
+/// Search the web using Brave (with API key) or DuckDuckGo (zero-config fallback).
 #[derive(Clone)]
 pub struct WebSearchTool {
     client: reqwest::Client,
-    base_url: String,
+    brave_base_url: String,
+    provider: SearchProvider,
+    cache: Arc<WebCache>,
 }
 
 impl WebSearchTool {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(brave_base_url: impl Into<String>) -> Self {
         Self {
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .user_agent("bendclaw/0.1")
                 .build()
                 .unwrap_or_default(),
-            base_url: base_url.into(),
+            brave_base_url: brave_base_url.into(),
+            provider: SearchProvider::Auto,
+            cache: Arc::new(WebCache::new(DEFAULT_CACHE_TTL)),
         }
+    }
+
+    pub fn with_provider(mut self, provider: SearchProvider) -> Self {
+        self.provider = provider;
+        self
+    }
+
+    pub fn with_cache(mut self, cache: Arc<WebCache>) -> Self {
+        self.cache = cache;
+        self
     }
 
     fn extract_query(args: &serde_json::Value) -> &str {
         args.get("query").and_then(|v| v.as_str()).unwrap_or("")
     }
+
+    /// Resolve the Brave API key: workspace variable first, then env var.
+    fn resolve_brave_key(ctx: &ToolContext) -> Option<BraveKey> {
+        if let Some(v) = ctx.workspace.variable("BRAVE_API_KEY") {
+            return Some(BraveKey {
+                value: v.value.clone(),
+                secret: v.secret,
+                id: Some(v.id.clone()),
+            });
+        }
+        std::env::var("BRAVE_API_KEY").ok().map(|value| BraveKey {
+            value,
+            secret: false,
+            id: None,
+        })
+    }
+
+    /// Execute a Brave search. Returns `Ok(output)` on success, `Err(msg)` on failure.
+    async fn brave_search(
+        &self,
+        query: &str,
+        count: u32,
+        api_key: &str,
+    ) -> std::result::Result<String, String> {
+        let resp = self
+            .client
+            .get(&self.brave_base_url)
+            .header("X-Subscription-Token", api_key)
+            .query(&[("q", query), ("count", &count.to_string())])
+            .send()
+            .await
+            .map_err(|e| format!("Brave search request failed: {e}"))?;
+
+        let status = resp.status();
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Brave response: {e}"))?;
+
+        if !status.is_success() {
+            return Err(format!("Brave API HTTP {status}: {body}"));
+        }
+
+        let results = body
+            .get("web")
+            .and_then(|w| w.get("results"))
+            .and_then(|r| r.as_array());
+
+        match results {
+            Some(items) => {
+                let lines: Vec<String> = items
+                    .iter()
+                    .map(|item| {
+                        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                        let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let desc = item
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        format!("{title}\n{url}\n{desc}")
+                    })
+                    .collect();
+                Ok(lines.join("\n\n"))
+            }
+            None => Ok("No results found.".to_string()),
+        }
+    }
+}
+
+struct BraveKey {
+    value: String,
+    secret: bool,
+    id: Option<String>,
 }
 
 impl Default for WebSearchTool {
@@ -62,16 +165,24 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the web using the Brave Search API and return results."
+        "Search the web for current information, news, documentation, or any topic. \
+         Returns relevant results with titles, URLs, and descriptions. \
+         Use this when you need up-to-date information beyond your training data. \
+         Be specific with queries for better results."
+    }
+
+    fn hint(&self) -> &str {
+        "search the web for current information"
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
+        let year = chrono::Utc::now().format("%Y");
         json!({
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query"
+                    "description": format!("The search query. Be specific and use keywords for better results. For example, use 'Rust async runtime tokio {year}' instead of 'tell me about async in Rust'.")
                 },
                 "count": {
                     "type": "integer",
@@ -98,78 +209,115 @@ impl Tool for WebSearchTool {
             .unwrap_or(5)
             .min(10) as u32;
 
-        let api_key = match ctx.workspace.variable("BRAVE_API_KEY") {
-            Some(v) => v,
-            None => {
-                return Ok(ToolResult::error(
-                    "No BRAVE_API_KEY variable configured. Add it via the variables API.",
-                ));
-            }
-        };
-
-        let resp = match self
-            .client
-            .get(&self.base_url)
-            .header("X-Subscription-Token", api_key.value.as_str())
-            .query(&[("q", query), ("count", &count.to_string())])
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!(query, error = %e, "web_search request failed");
-                return Ok(ToolResult::error(format!("Search request failed: {e}")));
-            }
-        };
-
-        let status = resp.status();
-        let body: serde_json::Value = match resp.json().await {
-            Ok(j) => j,
-            Err(e) => {
-                return Ok(ToolResult::error(format!(
-                    "Failed to parse search response: {e}"
-                )));
-            }
-        };
-
-        if !status.is_success() {
-            return Ok(ToolResult::error(format!(
-                "Brave API HTTP {status}: {body}"
-            )));
+        // Check cache first
+        let cache_key = WebCache::search_key(query, count);
+        if let Some(cached) = self.cache.get(&cache_key) {
+            tracing::info!(
+                stage = "web_search",
+                status = "cache_hit",
+                query,
+                count,
+                "web_search cache_hit"
+            );
+            return Ok(ToolResult::ok(cached));
         }
 
-        // Format results
-        let results = body
-            .get("web")
-            .and_then(|w| w.get("results"))
-            .and_then(|r| r.as_array());
+        let brave_key = Self::resolve_brave_key(ctx);
 
-        let output = match results {
-            Some(items) => {
-                let mut lines = Vec::new();
-                for item in items {
-                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                    let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                    let desc = item
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    lines.push(format!("{title}\n{url}\n{desc}"));
+        let output = match &self.provider {
+            SearchProvider::Brave => {
+                let key = match &brave_key {
+                    Some(k) => k,
+                    None => {
+                        tracing::warn!(
+                            stage = "web_search",
+                            status = "no_api_key",
+                            provider = "brave",
+                            "web_search no_api_key"
+                        );
+                        return Ok(ToolResult::error(
+                            "No BRAVE_API_KEY variable configured. \
+                             Add it via the variables API or set the BRAVE_API_KEY env var.",
+                        ));
+                    }
+                };
+                match self.brave_search(query, count, &key.value).await {
+                    Ok(output) => output,
+                    Err(e) => {
+                        tracing::warn!(stage = "web_search", status = "failed", provider = "brave", query, error = %e, "web_search failed");
+                        return Ok(ToolResult::error(e));
+                    }
                 }
-                lines.join("\n\n")
             }
-            None => "No results found.".to_string(),
+            SearchProvider::DuckDuckGo => {
+                match duckduckgo::search(&self.client, query, count).await {
+                    Ok(results) => duckduckgo::format_results(&results),
+                    Err(e) => {
+                        tracing::warn!(stage = "web_search", status = "failed", provider = "duckduckgo", query, error = %e, "web_search failed");
+                        return Ok(ToolResult::error(e));
+                    }
+                }
+            }
+            SearchProvider::Auto => {
+                if let Some(key) = &brave_key {
+                    match self.brave_search(query, count, &key.value).await {
+                        Ok(output) => output,
+                        Err(e) => {
+                            tracing::warn!(stage = "web_search", status = "fallback", provider = "brave->duckduckgo", query, error = %e, "web_search fallback");
+                            match duckduckgo::search(&self.client, query, count).await {
+                                Ok(results) => duckduckgo::format_results(&results),
+                                Err(e2) => {
+                                    tracing::warn!(stage = "web_search", status = "failed", provider = "brave+duckduckgo", query, error = %e2, "web_search failed");
+                                    return Ok(ToolResult::error(format!(
+                                        "Brave: {e}; DuckDuckGo: {e2}"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    tracing::info!(
+                        stage = "web_search",
+                        status = "no_api_key",
+                        provider = "auto->duckduckgo",
+                        query,
+                        "web_search no_api_key"
+                    );
+                    match duckduckgo::search(&self.client, query, count).await {
+                        Ok(results) => duckduckgo::format_results(&results),
+                        Err(e) => {
+                            tracing::warn!(stage = "web_search", status = "failed", provider = "duckduckgo", query, error = %e, "web_search failed");
+                            return Ok(ToolResult::error(e));
+                        }
+                    }
+                }
+            }
         };
 
-        tracing::info!(query, count, "web_search succeeded");
-        if api_key.secret {
-            let pool = ctx.pool.clone();
-            let id = api_key.id.clone();
-            crate::base::spawn_fire_and_forget("variable_touch_last_used", async move {
-                let repo = crate::storage::dal::variable::VariableRepo::new(pool);
-                let _ = repo.touch_last_used(&id).await;
-            });
+        tracing::info!(
+            stage = "web_search",
+            status = "completed",
+            query,
+            count,
+            "web_search completed"
+        );
+
+        // Touch secret variable last-used timestamp
+        if let Some(key) = brave_key {
+            if key.secret {
+                if let Some(id) = key.id {
+                    let pool = ctx.pool.clone();
+                    crate::base::spawn_fire_and_forget("variable_touch_last_used", async move {
+                        let repo = crate::storage::dal::variable::VariableRepo::new(pool);
+                        let _ = repo.touch_last_used(&id).await;
+                    });
+                }
+            }
         }
+
+        // Store in cache
+        self.cache.insert(cache_key, output.clone());
+
         Ok(ToolResult::ok(output))
     }
 }

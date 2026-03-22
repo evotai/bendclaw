@@ -72,6 +72,10 @@ impl Tool for DatabendTool {
         "Execute SQL queries and manage Databend databases, tables, stages, and functions."
     }
 
+    fn hint(&self) -> &str {
+        "query or execute SQL on Databend"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -116,12 +120,17 @@ impl Tool for DatabendTool {
         };
 
         let sql = action.to_sql();
-        tracing::info!(sql = %sql, "databend tool executing");
+        tracing::info!(stage = "databend", status = "executing", sql = %sql, "databend executing");
 
         if action.returns_rows() {
             match self.pool.query_all(&sql).await {
                 Ok(rows) => {
-                    tracing::info!(rows = rows.len(), "query returned");
+                    tracing::info!(
+                        stage = "databend",
+                        status = "completed",
+                        rows = rows.len(),
+                        "databend completed"
+                    );
                     Ok(ToolResult::ok(format_rows(&rows)))
                 }
                 Err(e) => Ok(ToolResult::error(e.to_string())),

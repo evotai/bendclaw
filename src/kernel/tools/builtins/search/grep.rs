@@ -36,6 +36,10 @@ impl Tool for GrepTool {
         "Search file contents using a regex pattern. Returns matching lines with file paths and line numbers."
     }
 
+    fn hint(&self) -> &str {
+        "search file contents with regex — prefer over shell"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -150,7 +154,14 @@ impl Tool for GrepTool {
         if truncated {
             output.push_str(&format!("\n\n(truncated at {MAX_MATCHES} matches)"));
         }
-        tracing::info!(pattern, path, matches = result.len(), "grep completed");
+        tracing::info!(
+            stage = "grep",
+            status = "completed",
+            pattern,
+            path,
+            matches = result.len(),
+            "grep completed"
+        );
         Ok(ToolResult::ok(output))
     }
 }

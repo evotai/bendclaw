@@ -46,6 +46,10 @@ impl Tool for CodexExecTool {
          or shell-based workflows. Subsequent calls can resume the same session."
     }
 
+    fn hint(&self) -> &str {
+        "run Codex for coding tasks"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -90,7 +94,7 @@ impl Tool for CodexExecTool {
             match AgentProcess::resume(&AGENT, cwd.as_ref(), &sid, prompt, &opts).await {
                 Ok(p) => p,
                 Err(e) => {
-                    tracing::warn!(error = %e, "codex resume failed, starting fresh");
+                    tracing::warn!(stage = "cli_agent", status = "resume_failed", agent = "codex", error = %e, "cli_agent resume_failed");
                     match AgentProcess::spawn(&AGENT, cwd.as_ref(), prompt, &opts).await {
                         Ok(p) => p,
                         Err(e) => return Ok(ToolResult::error(format!("{e}"))),

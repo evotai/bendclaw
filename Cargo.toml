@@ -53,6 +53,7 @@ htmd = "0.5"
 regex = "1"
 globset = "0.4"
 ignore = "0.4"
+dashmap = "6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

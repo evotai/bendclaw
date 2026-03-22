@@ -45,6 +45,10 @@ impl Tool for LearningSearchTool {
         "Search the agent's learnings for retrieval strategies, patterns, and corrections."
     }
 
+    fn hint(&self) -> &str {
+        "search agent learnings"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -80,7 +84,13 @@ impl Tool for LearningSearchTool {
 
         match self.store.learnings().search(query, max_results).await {
             Ok(results) => {
-                tracing::info!(query, results = results.len(), "learning search completed");
+                tracing::info!(
+                    stage = "learning_search",
+                    status = "completed",
+                    query,
+                    results = results.len(),
+                    "learning_search completed"
+                );
                 if results.is_empty() {
                     return Ok(ToolResult::ok("No learnings found."));
                 }
@@ -94,7 +104,7 @@ impl Tool for LearningSearchTool {
                 Ok(ToolResult::ok(output.trim()))
             }
             Err(e) => {
-                tracing::warn!(query, error = %e, "learning search failed");
+                tracing::warn!(stage = "learning_search", status = "failed", query, error = %e, "learning_search failed");
                 Ok(ToolResult::error(format!("Search failed: {e}")))
             }
         }

@@ -58,6 +58,10 @@ impl Tool for LearningWriteTool {
         "Write a reusable agent-level learning. Use this for durable corrections, workflows, retrieval tactics, constraints, or patterns. Use memory_write instead for user or session preferences."
     }
 
+    fn hint(&self) -> &str {
+        "save a reusable agent-level lesson"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

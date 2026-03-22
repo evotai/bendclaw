@@ -179,6 +179,7 @@ impl Session {
         let full_prompt = {
             let mut pb = PromptBuilder::new(self.res.storage.clone(), self.res.skills.clone())
                 .with_tools(self.res.tools.clone())
+                .with_tool_hints(self.res.tool_registry.tool_hints())
                 .with_variables(self.res.variables.clone())
                 .with_cached_config(self.res.cached_config.clone())
                 .with_cwd(self.res.workspace.cwd().to_path_buf());

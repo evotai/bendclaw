@@ -77,6 +77,10 @@ impl Tool for ShellTool {
          Commands run in a subprocess with captured output."
     }
 
+    fn hint(&self) -> &str {
+        "execute a shell command"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -112,12 +116,14 @@ impl Tool for ShellTool {
         }
 
         tracing::info!(
+            stage = "shell",
+            status = "completed",
             command,
             exit_code = output.exit_code,
             stdout_len = output.stdout.len(),
             stderr_len = output.stderr.len(),
             variable_count = ctx.workspace.build_env().len(),
-            "shell command executed"
+            "shell completed"
         );
 
         Ok(ToolResult {

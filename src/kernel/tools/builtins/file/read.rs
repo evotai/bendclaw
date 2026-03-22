@@ -38,6 +38,10 @@ impl Tool for FileReadTool {
         "Read the contents of a file. Accepts absolute paths or paths relative to the working directory."
     }
 
+    fn hint(&self) -> &str {
+        "read file contents"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -68,11 +72,17 @@ impl Tool for FileReadTool {
 
         match tokio::fs::read_to_string(&full_path).await {
             Ok(contents) => {
-                tracing::info!(path, size_bytes = contents.len(), "file read succeeded");
+                tracing::info!(
+                    stage = "file_read",
+                    status = "completed",
+                    path,
+                    size_bytes = contents.len(),
+                    "file_read completed"
+                );
                 Ok(ToolResult::ok(contents))
             }
             Err(e) => {
-                tracing::warn!(path, error = %e, "file read failed");
+                tracing::warn!(stage = "file_read", status = "failed", path, error = %e, "file_read failed");
                 Ok(ToolResult::error(format!("Failed to read file: {e}")))
             }
         }

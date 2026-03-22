@@ -48,6 +48,10 @@ impl Tool for TaskToggleTool {
         "Toggle a task's enabled state (enable if disabled, disable if enabled). Returns the updated task."
     }
 
+    fn hint(&self) -> &str {
+        "enable or disable a scheduled task"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

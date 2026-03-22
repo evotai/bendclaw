@@ -48,6 +48,10 @@ impl Tool for ClusterNodesTool {
         "Discover available peer nodes in the cluster. Returns a list of nodes with their node_id, endpoint, load, and status. Refreshes the peer cache."
     }
 
+    fn hint(&self) -> &str {
+        "list cluster peer nodes"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -62,31 +66,37 @@ impl Tool for ClusterNodesTool {
         ctx: &ToolContext,
     ) -> Result<ToolResult> {
         tracing::info!(
+            stage = "cluster_nodes",
+            status = "started",
             user_id = %ctx.user_id,
             agent_id = %ctx.agent_id,
             run_id = %ctx.run_id,
-            "cluster_nodes tool started"
+            "cluster_nodes started"
         );
         match self.service.refresh_peers().await {
             Ok(nodes) => {
                 let json =
                     serde_json::to_string_pretty(&nodes).unwrap_or_else(|_| "[]".to_string());
                 tracing::info!(
+                    stage = "cluster_nodes",
+                    status = "completed",
                     user_id = %ctx.user_id,
                     agent_id = %ctx.agent_id,
                     run_id = %ctx.run_id,
                     node_count = nodes.len(),
-                    "cluster_nodes tool completed"
+                    "cluster_nodes completed"
                 );
                 Ok(ToolResult::ok(json))
             }
             Err(e) => {
                 tracing::warn!(
+                    stage = "cluster_nodes",
+                    status = "failed",
                     user_id = %ctx.user_id,
                     agent_id = %ctx.agent_id,
                     run_id = %ctx.run_id,
                     error = %e,
-                    "cluster_nodes tool failed"
+                    "cluster_nodes failed"
                 );
                 Ok(ToolResult::error(format!("Failed to discover nodes: {e}")))
             }

@@ -53,6 +53,10 @@ impl Tool for SkillRemoveTool {
         "Remove a previously created skill."
     }
 
+    fn hint(&self) -> &str {
+        "remove a skill"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -96,7 +100,7 @@ impl Tool for SkillRemoveTool {
 
         self.store.evict(&name, &ctx.agent_id);
 
-        tracing::info!(skill = %name, "skill removed by agent");
+        tracing::info!(stage = "skill_remove", status = "completed", skill = %name, "skill_remove completed");
         Ok(ToolResult::ok(format!("Skill '{name}' removed")))
     }
 }

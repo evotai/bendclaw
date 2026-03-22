@@ -46,6 +46,10 @@ impl Tool for MemoryDeleteTool {
         "Delete a memory entry by its ID."
     }
 
+    fn hint(&self) -> &str {
+        "delete a memory entry"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -72,11 +76,16 @@ impl Tool for MemoryDeleteTool {
 
         match self.storage.delete(&ctx.user_id, id).await {
             Ok(()) => {
-                tracing::info!(id, "memory deleted");
+                tracing::info!(
+                    stage = "memory_delete",
+                    status = "completed",
+                    id,
+                    "memory_delete completed"
+                );
                 Ok(ToolResult::ok(format!("Memory '{}' deleted.", id)))
             }
             Err(e) => {
-                tracing::warn!(id, error = %e, "memory delete failed");
+                tracing::warn!(stage = "memory_delete", status = "failed", id, error = %e, "memory_delete failed");
                 Ok(ToolResult::error(format!("Failed to delete memory: {e}")))
             }
         }

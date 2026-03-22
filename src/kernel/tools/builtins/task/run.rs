@@ -43,6 +43,10 @@ impl Tool for TaskRunTool {
         "Trigger a scheduled task for immediate execution (trial run). The task will be picked up by the scheduler on the next cycle. Does not affect the regular schedule."
     }
 
+    fn hint(&self) -> &str {
+        "trigger a task for immediate trial execution"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

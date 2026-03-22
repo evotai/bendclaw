@@ -51,6 +51,10 @@ impl Tool for SkillReadTool {
         "Read skill documentation and reference files."
     }
 
+    fn hint(&self) -> &str {
+        "read a skill's full instructions"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -70,15 +74,22 @@ impl Tool for SkillReadTool {
         ctx: &ToolContext,
     ) -> Result<ToolResult> {
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        tracing::info!(path, "skill_read: request received");
+        tracing::info!(
+            stage = "skill_read",
+            status = "started",
+            path,
+            "skill_read started"
+        );
 
         match self.store.read_skill(&ctx.agent_id, path) {
             Some(content) => {
                 let raw_size = content.len();
                 tracing::info!(
+                    stage = "skill_read",
+                    status = "loaded",
                     path,
                     raw_size,
-                    "skill_read: raw content loaded from catalog"
+                    "skill_read loaded"
                 );
 
                 let sanitized = sanitize_skill_content(&content);
@@ -86,17 +97,21 @@ impl Tool for SkillReadTool {
                 if !sanitized.warnings.is_empty() {
                     let labels: Vec<&str> = sanitized.warnings.iter().map(|w| w.pattern).collect();
                     tracing::warn!(
+                        stage = "skill_read",
+                        status = "sanitized",
                         path,
                         raw_size,
                         sanitized_size,
                         patterns = ?labels,
-                        "skill_read: content sanitized — patterns removed"
+                        "skill_read sanitized"
                     );
                 } else {
                     tracing::info!(
+                        stage = "skill_read",
+                        status = "clean",
                         path,
                         sanitized_size,
-                        "skill_read: content clean, no sanitization needed"
+                        "skill_read clean"
                     );
                 }
 
@@ -108,12 +123,14 @@ impl Tool for SkillReadTool {
                     let truncated = &sanitized.content[..end];
                     let dropped = sanitized_size - end;
                     tracing::warn!(
+                        stage = "skill_read",
+                        status = "truncated",
                         path,
                         original_size = sanitized_size,
                         truncated_size = end,
                         dropped_bytes = dropped,
                         max = MAX_SKILL_CONTENT_BYTES,
-                        "skill_read: content TRUNCATED"
+                        "skill_read truncated"
                     );
                     format!("{truncated}\n\n[... truncated at {end}/{sanitized_size} bytes ...]")
                 } else {
@@ -121,14 +138,21 @@ impl Tool for SkillReadTool {
                 };
 
                 tracing::info!(
+                    stage = "skill_read",
+                    status = "completed",
                     path,
                     output_size = output.len(),
-                    "skill_read: returning content to LLM"
+                    "skill_read completed"
                 );
                 Ok(ToolResult::ok(output))
             }
             None => {
-                tracing::warn!(path, "skill_read: skill not found in catalog");
+                tracing::warn!(
+                    stage = "skill_read",
+                    status = "not_found",
+                    path,
+                    "skill_read not_found"
+                );
                 Ok(ToolResult::ok(format!("Skill not found: {path}")))
             }
         }

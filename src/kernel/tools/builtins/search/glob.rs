@@ -36,6 +36,10 @@ impl Tool for GlobTool {
         "Find files by name pattern. Returns matching file paths relative to workspace."
     }
 
+    fn hint(&self) -> &str {
+        "find files by name pattern — prefer over shell"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -118,7 +122,14 @@ impl Tool for GlobTool {
         if truncated {
             output.push_str(&format!("\n\n(truncated at {MAX_RESULTS} results)"));
         }
-        tracing::info!(pattern, path, files = result.len(), "glob completed");
+        tracing::info!(
+            stage = "glob",
+            status = "completed",
+            pattern,
+            path,
+            files = result.len(),
+            "glob completed"
+        );
         Ok(ToolResult::ok(output))
     }
 }

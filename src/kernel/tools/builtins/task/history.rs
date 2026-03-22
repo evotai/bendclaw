@@ -43,6 +43,10 @@ impl Tool for TaskHistoryTool {
         "List execution history for a task. Returns recent runs with status, output, errors, and duration."
     }
 
+    fn hint(&self) -> &str {
+        "view execution history for a task"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

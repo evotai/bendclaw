@@ -47,6 +47,10 @@ impl Tool for MemorySearchTool {
         "Search memories by semantic similarity or keywords. Returns relevant memories with scores."
     }
 
+    fn hint(&self) -> &str {
+        "search memory for relevant context"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -98,7 +102,13 @@ impl Tool for MemorySearchTool {
 
         match self.storage.search(query, &ctx.user_id, opts).await {
             Ok(results) => {
-                tracing::info!(query, results = results.len(), "memory search completed");
+                tracing::info!(
+                    stage = "memory_search",
+                    status = "completed",
+                    query,
+                    results = results.len(),
+                    "memory_search completed"
+                );
                 if results.is_empty() {
                     return Ok(ToolResult::ok("No memories found."));
                 }
@@ -112,7 +122,7 @@ impl Tool for MemorySearchTool {
                 Ok(ToolResult::ok(output.trim()))
             }
             Err(e) => {
-                tracing::warn!(query, error = %e, "memory search failed");
+                tracing::warn!(stage = "memory_search", status = "failed", query, error = %e, "memory_search failed");
                 Ok(ToolResult::error(format!("Search failed: {e}")))
             }
         }

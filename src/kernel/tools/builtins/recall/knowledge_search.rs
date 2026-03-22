@@ -45,6 +45,10 @@ impl Tool for KnowledgeSearchTool {
         "Search the agent's knowledge base for known sources, files, schemas, and discoveries."
     }
 
+    fn hint(&self) -> &str {
+        "search knowledge base"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -80,7 +84,13 @@ impl Tool for KnowledgeSearchTool {
 
         match self.store.knowledge().search(query, max_results).await {
             Ok(results) => {
-                tracing::info!(query, results = results.len(), "knowledge search completed");
+                tracing::info!(
+                    stage = "knowledge_search",
+                    status = "completed",
+                    query,
+                    results = results.len(),
+                    "knowledge_search completed"
+                );
                 if results.is_empty() {
                     return Ok(ToolResult::ok("No knowledge entries found."));
                 }
@@ -94,7 +104,7 @@ impl Tool for KnowledgeSearchTool {
                 Ok(ToolResult::ok(output.trim()))
             }
             Err(e) => {
-                tracing::warn!(query, error = %e, "knowledge search failed");
+                tracing::warn!(stage = "knowledge_search", status = "failed", query, error = %e, "knowledge_search failed");
                 Ok(ToolResult::error(format!("Search failed: {e}")))
             }
         }

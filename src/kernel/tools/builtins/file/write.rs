@@ -43,6 +43,10 @@ impl Tool for FileWriteTool {
         "Write contents to a file. Accepts absolute paths or paths relative to the working directory."
     }
 
+    fn hint(&self) -> &str {
+        "create or overwrite a file"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -90,14 +94,20 @@ impl Tool for FileWriteTool {
 
         match tokio::fs::write(&full_path, content).await {
             Ok(()) => {
-                tracing::info!(path, bytes = content.len(), "file written");
+                tracing::info!(
+                    stage = "file_write",
+                    status = "completed",
+                    path,
+                    bytes = content.len(),
+                    "file_write completed"
+                );
                 Ok(ToolResult::ok(format!(
                     "Written {} bytes to {path}",
                     content.len()
                 )))
             }
             Err(e) => {
-                tracing::warn!(path, error = %e, "file write failed");
+                tracing::warn!(stage = "file_write", status = "failed", path, error = %e, "file_write failed");
                 Ok(ToolResult::error(format!("Failed to write file: {e}")))
             }
         }

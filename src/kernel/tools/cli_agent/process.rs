@@ -138,7 +138,7 @@ impl AgentProcess {
                 line = self.stdout_lines.next_line() => {
                     match line {
                         Err(e) => {
-                            tracing::warn!(agent = %self.agent_type, error = %e, "stdout read error");
+                            tracing::warn!(stage = "cli_agent", status = "stdout_error", agent = %self.agent_type, error = %e, "cli_agent stdout_error");
                             break;
                         }
                         Ok(None) => break,
@@ -168,7 +168,7 @@ impl AgentProcess {
                     }
                 }
                 _ = cancel.cancelled() => {
-                    tracing::info!(agent = %self.agent_type, "cancelled");
+                    tracing::info!(stage = "cli_agent", status = "cancelled", agent = %self.agent_type, "cli_agent cancelled");
                     return Err(anyhow::anyhow!("interrupted").into());
                 }
             }
@@ -233,7 +233,7 @@ fn spawn_stderr_task(
                     if line.is_empty() {
                         continue;
                     }
-                    tracing::warn!(agent = %agent_type, stderr = %line, "cli stderr");
+                    tracing::warn!(stage = "cli_agent", status = "stderr", agent = %agent_type, stderr = %line, "cli_agent stderr");
                     let mut tail = stderr_tail.lock().await;
                     if tail.len() >= 20 {
                         tail.pop_front();
@@ -242,7 +242,7 @@ fn spawn_stderr_task(
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    tracing::warn!(agent = %agent_type, error = %e, "stderr read error");
+                    tracing::warn!(stage = "cli_agent", status = "stderr_error", agent = %agent_type, error = %e, "cli_agent stderr_error");
                     break;
                 }
             }

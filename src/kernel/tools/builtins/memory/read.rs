@@ -46,6 +46,10 @@ impl Tool for MemoryReadTool {
         "Read a specific memory entry by its key."
     }
 
+    fn hint(&self) -> &str {
+        "read a memory entry by key"
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -72,7 +76,7 @@ impl Tool for MemoryReadTool {
 
         match self.storage.get(&ctx.user_id, key).await {
             Ok(Some(entry)) => {
-                tracing::info!(key, scope = %entry.scope, "memory read");
+                tracing::info!(stage = "memory_read", status = "completed", key, scope = %entry.scope, "memory_read completed");
                 Ok(ToolResult::ok(format!(
                     "[{}] {}\n\n{}",
                     entry.scope, entry.key, entry.content
@@ -80,7 +84,7 @@ impl Tool for MemoryReadTool {
             }
             Ok(None) => Ok(ToolResult::ok(format!("Memory '{}' not found.", key))),
             Err(e) => {
-                tracing::warn!(key, error = %e, "memory read failed");
+                tracing::warn!(stage = "memory_read", status = "failed", key, error = %e, "memory_read failed");
                 Ok(ToolResult::error(format!("Failed to read memory: {e}")))
             }
         }

@@ -131,6 +131,7 @@ async fn try_dispatch_inbound(
     }
 
     channel_log!(info, "inbound", "accepted",
+        msg = format!("channel \u{2190} {}", account.channel_type),
         input_preview = %crate::base::truncate_bytes_on_char_boundary(&input, 100),
         input_bytes = input.len(),
         channel_type = %account.channel_type,
@@ -227,6 +228,7 @@ async fn try_dispatch_inbound(
     };
 
     channel_log!(info, "outbound", "sent",
+        msg = format!("channel \u{2192} {}", account.channel_type),
         output_preview = %crate::base::truncate_bytes_on_char_boundary(&output_text, 100),
         output_bytes = output_text.len(),
         channel_type = %account.channel_type,

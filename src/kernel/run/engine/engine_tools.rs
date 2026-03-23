@@ -73,6 +73,7 @@ impl Engine {
                 self.iteration.load(std::sync::atomic::Ordering::Relaxed),
             );
             run_log!(info, tool_ctx, "tool", "started",
+                msg = format!("    tool [{}] started", p.call.name),
                 tool_name = %p.call.name,
                 tool_kind = %p.kind.as_str(),
                 bytes = p.arguments.to_string().len() as u64,
@@ -140,6 +141,7 @@ impl Engine {
             );
             if success {
                 run_log!(info, result_ctx, "tool", "completed",
+                    msg = format!("    tool [{}] completed {}ms", p.call.name, meta.duration_ms),
                     tool_name = %p.call.name,
                     tool_kind = %p.kind.as_str(),
                     summary = %meta.summary,
@@ -149,6 +151,7 @@ impl Engine {
                 );
             } else {
                 run_log!(error, result_ctx, "tool", "failed",
+                    msg = format!("    tool [{}] failed", p.call.name),
                     tool_name = %p.call.name,
                     tool_kind = %p.kind.as_str(),
                     error = %error_text.as_deref().unwrap_or(""),

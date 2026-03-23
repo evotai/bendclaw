@@ -230,6 +230,13 @@ impl ServerFields {
     }
 }
 
+/// Return the first 8 characters of a run ID for compact log display.
+pub fn short_run_id(run_id: &str) -> &str {
+    let end = run_id.len().min(8);
+    // Ensure we don't split a multi-byte char (run IDs are ASCII, but be safe).
+    &run_id[..end]
+}
+
 pub fn preview_text(text: &str) -> String {
     const MAX_PREVIEW_CHARS: usize = 200;
     let preview: String = text.chars().take(MAX_PREVIEW_CHARS).collect();

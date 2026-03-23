@@ -166,6 +166,11 @@ impl Session {
             run_index,
         );
         run_log!(info, run_ctx, "run", "started",
+            msg = format!("─── RUN {} {} user={} ───",
+                server_log::short_run_id(&run_id),
+                &self.id,
+                &self.user_id,
+            ),
             input_preview = %server_log::preview_text(user_message),
             user_id = %self.user_id,
             run_index,
@@ -190,6 +195,11 @@ impl Session {
         };
 
         run_log!(info, run_ctx, "prompt", "built",
+            msg = format!("  prompt: {}B tools={} history={}",
+                full_prompt.len(),
+                self.res.tools.len(),
+                history.len(),
+            ),
             bytes = full_prompt.len() as u64,
             user_id = %self.user_id,
             tool_count = self.res.tools.len(),

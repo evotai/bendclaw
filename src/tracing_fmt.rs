@@ -104,6 +104,94 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LocalDailyWriter {
 
 pub struct TargetFirstFormatter;
 
+/// Fields hidden from human-readable text output (still present in JSON).
+const HIDDEN_FIELDS: &[&str] = &[
+    "stage",
+    "status",
+    "session_id",
+    "agent_id",
+    "tool_call_id",
+    "tool_kind",
+    "operation",
+];
+
+/// A tracing field visitor that collects the message and visible fields,
+/// skipping fields in `HIDDEN_FIELDS` and zero-value numerics.
+struct HumanFieldVisitor {
+    message: String,
+    fields: String,
+}
+
+impl HumanFieldVisitor {
+    fn new() -> Self {
+        Self {
+            message: String::new(),
+            fields: String::new(),
+        }
+    }
+
+    fn is_hidden(field: &str) -> bool {
+        HIDDEN_FIELDS.contains(&field)
+    }
+}
+
+impl tracing::field::Visit for HumanFieldVisitor {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            use std::fmt::Write;
+            write!(self.message, "{value:?}").ok();
+        } else if !Self::is_hidden(field.name()) {
+            use std::fmt::Write;
+            write!(self.fields, " {}={:?}", field.name(), value).ok();
+        }
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "message" {
+            self.message.push_str(value);
+        } else if !Self::is_hidden(field.name()) {
+            use std::fmt::Write;
+            if value.contains(' ') {
+                write!(self.fields, " {}=\"{}\"", field.name(), value).ok();
+            } else {
+                write!(self.fields, " {}={}", field.name(), value).ok();
+            }
+        }
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        if Self::is_hidden(field.name()) || value == 0 {
+            return;
+        }
+        use std::fmt::Write;
+        write!(self.fields, " {}={}", field.name(), value).ok();
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        if Self::is_hidden(field.name()) || value == 0 {
+            return;
+        }
+        use std::fmt::Write;
+        write!(self.fields, " {}={}", field.name(), value).ok();
+    }
+
+    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+        if Self::is_hidden(field.name()) || value == 0.0 {
+            return;
+        }
+        use std::fmt::Write;
+        write!(self.fields, " {}={}", field.name(), value).ok();
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        if Self::is_hidden(field.name()) {
+            return;
+        }
+        use std::fmt::Write;
+        write!(self.fields, " {}={}", field.name(), value).ok();
+    }
+}
+
 impl<S, N> tracing_subscriber::fmt::FormatEvent<S, N> for TargetFirstFormatter
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
@@ -123,7 +211,7 @@ where
             write!(
                 writer,
                 "\x1b[2m{}\x1b[0m",
-                Local::now().format("%Y-%m-%dT%H:%M:%S%.3f")
+                Local::now().format("%H:%M:%S%.3f")
             )?;
         } else {
             write!(writer, "{}", Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"))?;
@@ -166,14 +254,16 @@ where
             write!(writer, ":")?;
         }
 
-        // Message — bold for ERROR/WARN, normal otherwise
+        // Collect fields with our custom visitor that filters noise.
+        let mut visitor = HumanFieldVisitor::new();
+        event.record(&mut visitor);
+
+        // Message + visible fields
         write!(writer, " ")?;
         if ansi && (level <= tracing::Level::WARN) {
-            write!(writer, "\x1b[1m")?;
-            ctx.field_format().format_fields(writer.by_ref(), event)?;
-            write!(writer, "\x1b[0m")?;
+            write!(writer, "\x1b[1m{}{}\x1b[0m", visitor.message, visitor.fields)?;
         } else {
-            ctx.field_format().format_fields(writer.by_ref(), event)?;
+            write!(writer, "{}{}", visitor.message, visitor.fields)?;
         }
         writeln!(writer)
     }

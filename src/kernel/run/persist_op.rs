@@ -211,6 +211,14 @@ async fn handle_op(op: PersistOp) {
             }
 
             run_log!(info, ctx, "run", "completed",
+                msg = format!("─── RUN END {} {} iters {}ms tokens={} (prompt={} comp={}) ───",
+                    crate::observability::server_log::short_run_id(&run_id),
+                    iterations,
+                    duration_ms,
+                    usage.total_tokens,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                ),
                 model = %model,
                 provider = %provider,
                 status = %status.as_str(),

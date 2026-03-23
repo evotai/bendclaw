@@ -218,14 +218,25 @@ async fn scan_once(
     let scan_start = std::time::Instant::now();
     let entries = resource.discover().await?;
     let discover_ms = scan_start.elapsed().as_millis() as u64;
-    slog!(
-        info,
-        "lease",
-        "resources_discovered",
-        table = resource.table(),
-        count = entries.len(),
-        discover_ms,
-    );
+    if entries.is_empty() {
+        slog!(
+            debug,
+            "lease",
+            "resources_discovered",
+            table = resource.table(),
+            count = 0u64,
+            discover_ms,
+        );
+    } else {
+        slog!(
+            info,
+            "lease",
+            "resources_discovered",
+            table = resource.table(),
+            count = entries.len(),
+            discover_ms,
+        );
+    }
     let mut seen_ids = HashSet::new();
     let lease_secs = resource.lease_secs();
     let table = resource.table();

@@ -72,6 +72,7 @@ impl Engine {
         let payload = self.audit_payload(iteration);
         self.emit_audit("turn.started", payload).await;
         run_log!(info, self.ops_ctx(iteration), "turn", "started",
+            msg = format!("  iter-{iteration}"),
             tool_strategy = %format!("{:?}", self.ctx.tool_view.strategy()),
             max_context_tokens = state.max_context_tokens(),
             message_count = self.ctx.messages.len(),
@@ -121,6 +122,7 @@ impl Engine {
                 );
                 self.emit_audit("turn.completed", payload).await;
                 run_log!(error, self.ops_ctx(iteration), "turn", "failed",
+                    msg = format!("  iter-{iteration} FAILED"),
                     finish_reason = %turn.finish_reason(),
                     error = %err,
                     tool_calls = turn.tool_calls().len(),
@@ -146,6 +148,7 @@ impl Engine {
                 payload.insert("reason".to_string(), serde_json::json!(reason.as_str()));
                 self.emit_audit("turn.completed", payload).await;
                 run_log!(warn, self.ops_ctx(iteration), "turn", "aborted",
+                    msg = format!("  iter-{iteration} aborted"),
                     reason = %reason.as_str(),
                     finish_reason = %turn.finish_reason(),
                     tool_calls = turn.tool_calls().len(),
@@ -167,6 +170,7 @@ impl Engine {
                 );
                 self.emit_audit("turn.completed", payload).await;
                 run_log!(info, self.ops_ctx(iteration), "turn", "tool_dispatch",
+                    msg = format!("  iter-{iteration} dispatched"),
                     finish_reason = %turn.finish_reason(),
                     tool_calls = turn.tool_calls().len(),
                     tokens = turn.usage().total_tokens,
@@ -190,6 +194,7 @@ impl Engine {
                 );
                 self.emit_audit("turn.completed", payload).await;
                 run_log!(info, self.ops_ctx(iteration), "turn", "done",
+                    msg = format!("  iter-{iteration} done"),
                     finish_reason = %turn.finish_reason(),
                     tool_calls = turn.tool_calls().len(),
                     tokens = turn.usage().total_tokens,

@@ -53,6 +53,7 @@ impl Engine {
             .map(|body| body.len() as u64)
             .unwrap_or(0);
         run_log!(info, self.ops_ctx(iteration), "llm", "request",
+            msg = format!("    llm \u{2192} {}", self.ctx.model),
             model = %self.ctx.model.to_string(),
             tool_strategy = %format!("{:?}", self.ctx.tool_view.strategy()),
             tool_count = active_tools.len(),
@@ -140,6 +141,7 @@ impl Engine {
             );
             payload.insert("bytes".to_string(), serde_json::json!(turn.bytes()));
             run_log!(error, self.ops_ctx(iteration), "llm", "failed",
+                msg = format!("    llm \u{2717} {} {ms}ms", turn.finish_reason()),
                 model = %turn.model().unwrap_or(self.ctx.model.as_ref()),
                 provider = %turn.provider().unwrap_or(""),
                 finish_reason = %turn.finish_reason(),
@@ -210,6 +212,7 @@ impl Engine {
             );
             payload.insert("bytes".to_string(), serde_json::json!(turn.bytes()));
             run_log!(info, self.ops_ctx(iteration), "llm", "completed",
+                msg = format!("    llm \u{2190} {} {ms}ms", turn.finish_reason()),
                 model = %turn.model().unwrap_or(self.ctx.model.as_ref()),
                 provider = %turn.provider().unwrap_or(""),
                 finish_reason = %turn.finish_reason(),

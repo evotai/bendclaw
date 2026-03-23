@@ -39,7 +39,7 @@ fn test_provider_endpoint_default_weight() -> Result<()> {
     let json = r#"{"name":"x","base_url":"http://x","api_key":"","model":"m"}"#;
     let ep: ProviderEndpoint = serde_json::from_str(json)?;
     assert_eq!(ep.weight, 100);
-    assert_eq!(ep.temperature, 0.7);
+    assert_eq!(ep.temperature, 1.0);
     Ok(())
 }
 

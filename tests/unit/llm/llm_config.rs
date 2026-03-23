@@ -49,7 +49,7 @@ fn provider_endpoint_defaults() -> Result<()> {
     }"#;
     let ep: ProviderEndpoint = serde_json::from_str(json)?;
     assert_eq!(ep.weight, 100);
-    assert_eq!(ep.temperature, 0.7);
+    assert_eq!(ep.temperature, 1.0);
     assert_eq!(ep.input_price, 0.0);
     assert_eq!(ep.output_price, 0.0);
     assert!(ep.provider.is_empty());

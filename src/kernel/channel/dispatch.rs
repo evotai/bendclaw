@@ -54,11 +54,50 @@ async fn try_dispatch_inbound(
         return Ok(());
     }
 
-    let session_key = ChannelDispatcher::session_key(
+    let base_key = ChannelDispatcher::session_key(
         &account.channel_type,
         &account.external_account_id,
         chat_id,
     );
+
+    // Get outbound interface (needed for both commands and normal flow).
+    let outbound = runtime
+        .channels()
+        .get(&account.channel_type)
+        .map(|e| e.plugin.outbound());
+
+    // Handle channel slash commands before session dispatch.
+    let trimmed = input.trim();
+    if trimmed == "/new" || trimmed == "/clear" {
+        // Close old session if it exists in memory.
+        let old_key = runtime
+            .resolve_channel_session_key(&base_key, &account.agent_id)
+            .await;
+        if let Some(session) = runtime.sessions().get(&old_key) {
+            session.close().await;
+            runtime.sessions().remove(&old_key);
+        }
+        // Rotate to a new session key.
+        let new_key = runtime.rotate_channel_session_key(&base_key);
+        channel_log!(info, "command", "new_session",
+            channel_type = %account.channel_type,
+            account_id = %account.channel_account_id,
+            chat_id,
+            old_session = %old_key,
+            new_session = %new_key,
+        );
+        if let Some(ref ob) = outbound {
+            let _ = ob
+                .send_text(&account.config, chat_id, "新会话已开始。")
+                .await;
+        }
+        return Ok(());
+    }
+
+    // Resolve current session key for this chat (may have #timestamp suffix).
+    let session_key = runtime
+        .resolve_channel_session_key(&base_key, &account.agent_id)
+        .await;
 
     let pool = runtime.databases().agent_pool(&account.agent_id)?;
     let msg_repo = ChannelMessageRepo::new(pool.clone());
@@ -123,12 +162,6 @@ async fn try_dispatch_inbound(
                 },
             });
     }
-
-    // Get outbound interface.
-    let outbound = runtime
-        .channels()
-        .get(&account.channel_type)
-        .map(|e| e.plugin.outbound());
 
     // Send typing indicator.
     if let Some(ref ob) = outbound {

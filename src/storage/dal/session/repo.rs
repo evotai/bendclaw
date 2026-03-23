@@ -223,6 +223,33 @@ impl SessionRepo {
         }
         result
     }
+
+    /// Find the most recent session matching a base key (exact or with `#timestamp` suffix).
+    pub async fn latest_by_prefix(&self, prefix: &str) -> Result<Option<SessionRecord>> {
+        let result = async {
+            let query = format!(
+                "SELECT {} FROM sessions WHERE id = '{}' OR id LIKE '{}#%' ORDER BY created_at DESC LIMIT 1",
+                SessionMapper.columns(),
+                sql::escape(prefix),
+                sql::escape_like(prefix),
+            );
+            let rows = self.table.pool().query_all(&query).await?;
+            match rows.first() {
+                Some(row) => Ok(Some(SessionMapper.parse(row)?)),
+                None => Ok(None),
+            }
+        }
+        .await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "latest_by_prefix",
+                serde_json::json!({"prefix": prefix}),
+                error,
+            );
+        }
+        result
+    }
 }
 
 fn parse_variant_json(raw: &str) -> crate::base::Result<serde_json::Value> {

@@ -339,6 +339,7 @@ async fn construct(
             rate_limiter,
             health_monitor_handle: RwLock::new(None),
             tool_writer,
+            channel_session_keys: RwLock::new(HashMap::new()),
         })
     });
 

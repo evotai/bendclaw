@@ -91,5 +91,6 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         ),
         health_monitor_handle: parking_lot::RwLock::new(None),
         tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        channel_session_keys: parking_lot::RwLock::new(HashMap::new()),
     }))
 }

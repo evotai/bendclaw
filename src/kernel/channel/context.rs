@@ -12,8 +12,11 @@ pub struct ChannelContext {
 impl ChannelContext {
     /// Parse a session key into channel context.
     /// Returns `None` for non-channel sessions (e.g. API sessions like "s1").
+    /// Handles optional `#timestamp` suffix: `feishu:acct:chat#1711180800`
     pub fn from_session_key(session_key: &str) -> Option<Self> {
-        let parts: Vec<&str> = session_key.splitn(3, ':').collect();
+        // Strip optional #suffix (session generation marker)
+        let base = session_key.split('#').next().unwrap_or(session_key);
+        let parts: Vec<&str> = base.splitn(3, ':').collect();
         if parts.len() == 3 && parts.iter().all(|p| !p.is_empty()) {
             Some(Self {
                 channel_type: parts[0].to_string(),

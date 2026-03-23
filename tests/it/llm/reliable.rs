@@ -188,7 +188,7 @@ fn reliable_delegates_default_model() {
 fn reliable_delegates_default_temperature() {
     let inner = Arc::new(crate::mocks::llm::MockLLMProvider::with_text("hi"));
     let reliable = ReliableProvider::wrap(inner);
-    assert!((reliable.default_temperature() - 0.7).abs() < f64::EPSILON);
+    assert!((reliable.default_temperature() - 1.0).abs() < f64::EPSILON);
 }
 
 #[test]

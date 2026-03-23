@@ -52,6 +52,7 @@ pub struct Runtime {
     pub(crate) rate_limiter: Arc<OutboundRateLimiter>,
     pub(crate) health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub(crate) channel_session_keys: RwLock<HashMap<String, String>>,
 }
 
 pub struct RuntimeParts {
@@ -79,6 +80,7 @@ pub struct RuntimeParts {
     pub rate_limiter: Arc<OutboundRateLimiter>,
     pub health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub channel_session_keys: RwLock<HashMap<String, String>>,
 }
 
 impl Runtime {
@@ -127,6 +129,7 @@ impl Runtime {
             rate_limiter: parts.rate_limiter,
             health_monitor_handle: parts.health_monitor_handle,
             tool_writer: parts.tool_writer,
+            channel_session_keys: parts.channel_session_keys,
         }
     }
 
@@ -282,6 +285,44 @@ impl Runtime {
 
     pub fn temperature(&self) -> f64 {
         self.llm.read().default_temperature()
+    }
+
+    // ── Channel session key resolution ──
+
+    /// Resolve the current session key for a channel base key.
+    /// Checks in-memory cache first, then DB for the latest session with this prefix.
+    /// Falls back to the base key itself (backward compatible).
+    pub async fn resolve_channel_session_key(&self, base_key: &str, agent_id: &str) -> String {
+        // 1. Check in-memory cache
+        if let Some(key) = self.channel_session_keys.read().get(base_key) {
+            return key.clone();
+        }
+        // 2. Query DB for latest session with this prefix
+        if let Ok(pool) = self.databases.agent_pool(agent_id) {
+            let repo = crate::storage::dal::session::repo::SessionRepo::new(pool);
+            if let Ok(Some(record)) = repo.latest_by_prefix(base_key).await {
+                self.channel_session_keys
+                    .write()
+                    .insert(base_key.to_string(), record.id.clone());
+                return record.id;
+            }
+        }
+        // 3. Fallback: use base key (no prior session exists)
+        base_key.to_string()
+    }
+
+    /// Rotate to a new session key for a channel base key.
+    /// Returns the new session key with `#timestamp` suffix.
+    pub fn rotate_channel_session_key(&self, base_key: &str) -> String {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let new_key = format!("{base_key}#{ts}");
+        self.channel_session_keys
+            .write()
+            .insert(base_key.to_string(), new_key.clone());
+        new_key
     }
 }
 

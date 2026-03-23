@@ -43,11 +43,8 @@ impl Tool for LearningSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the agent's learnings for retrieval strategies, patterns, and corrections."
-    }
-
-    fn hint(&self) -> &str {
-        "search past corrections and workflow patterns — call before starting a task"
+        "Search the agent's learnings for retrieval strategies, patterns, and corrections. \
+         Call at the start of a task to retrieve relevant prior context."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

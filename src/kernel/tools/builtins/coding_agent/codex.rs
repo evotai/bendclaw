@@ -47,10 +47,6 @@ impl Tool for CodexExecTool {
          or shell-based workflows. Subsequent calls can resume the same session."
     }
 
-    fn hint(&self) -> &str {
-        "run Codex for coding tasks"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

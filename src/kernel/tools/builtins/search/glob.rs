@@ -34,11 +34,8 @@ impl Tool for GlobTool {
     }
 
     fn description(&self) -> &str {
-        "Find files by name pattern. Returns matching file paths relative to workspace."
-    }
-
-    fn hint(&self) -> &str {
-        "find files by name pattern — prefer over shell"
+        "Find files by name pattern. Returns matching file paths relative to workspace. \
+         ALWAYS use this instead of shell find commands."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

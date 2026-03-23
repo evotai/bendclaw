@@ -51,11 +51,9 @@ impl Tool for WebFetchTool {
 
     fn description(&self) -> &str {
         "Fetch a URL and return its content. HTML pages are converted to readable markdown. \
-         Also works for JSON/text APIs."
-    }
-
-    fn hint(&self) -> &str {
-        "fetch full page content — use after web_search to read a specific URL"
+         Also works for JSON/text APIs. \
+         Use after web_search to read a specific URL — do not guess URLs from memory. \
+         You MUST include the relevant data in your response — quote specific facts, numbers, or passages."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

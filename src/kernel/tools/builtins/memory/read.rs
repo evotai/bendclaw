@@ -44,11 +44,7 @@ impl Tool for MemoryReadTool {
     }
 
     fn description(&self) -> &str {
-        "Read a specific memory entry by its key."
-    }
-
-    fn hint(&self) -> &str {
-        "read memory by exact key — use memory_search if key is unknown"
+        "Read a specific memory entry by its key. Use memory_search if key is unknown."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

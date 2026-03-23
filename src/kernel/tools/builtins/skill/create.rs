@@ -57,10 +57,6 @@ impl Tool for SkillCreateTool {
         "Create a new executable skill with a SKILL.md and an entry-point script."
     }
 
-    fn hint(&self) -> &str {
-        "create a new skill"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

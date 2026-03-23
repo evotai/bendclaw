@@ -55,10 +55,6 @@ impl Tool for ChannelSendTool {
         "Send a message to an external channel. Requires a channel account to be configured for the agent."
     }
 
-    fn hint(&self) -> &str {
-        "send a message to a channel"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

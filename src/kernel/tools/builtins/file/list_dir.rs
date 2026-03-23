@@ -44,10 +44,6 @@ impl Tool for ListDirTool {
         "List the contents of a directory. Accepts absolute paths or paths relative to the working directory."
     }
 
-    fn hint(&self) -> &str {
-        "list directory contents"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

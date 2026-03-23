@@ -41,11 +41,8 @@ impl Tool for FileEditTool {
     }
 
     fn description(&self) -> &str {
-        "Apply a search-and-replace edit to a file. old_string must match exactly and appear exactly once."
-    }
-
-    fn hint(&self) -> &str {
-        "edit a file — old_string must be unique; call file_read first"
+        "Apply a search-and-replace edit to a file. old_string must match exactly and appear exactly once. \
+         Always call file_read first to see current content."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

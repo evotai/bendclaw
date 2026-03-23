@@ -36,11 +36,8 @@ impl Tool for FileReadTool {
     }
 
     fn description(&self) -> &str {
-        "Read the contents of a file. Accepts absolute paths or paths relative to the working directory."
-    }
-
-    fn hint(&self) -> &str {
-        "read file contents — call before file_edit or file_write on existing files"
+        "Read the contents of a file. Accepts absolute paths or paths relative to the working directory. \
+         Always read a file before editing or overwriting it."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

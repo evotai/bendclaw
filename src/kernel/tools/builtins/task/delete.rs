@@ -47,10 +47,6 @@ impl Tool for TaskDeleteTool {
         "Permanently delete a scheduled task by its ID."
     }
 
-    fn hint(&self) -> &str {
-        "permanently delete a scheduled task"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

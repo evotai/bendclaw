@@ -52,10 +52,6 @@ impl Tool for SkillReadTool {
         "Read skill documentation and reference files."
     }
 
-    fn hint(&self) -> &str {
-        "read a skill's full instructions"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

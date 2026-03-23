@@ -73,10 +73,6 @@ impl Tool for DatabendTool {
         "Execute SQL queries and manage Databend databases, tables, stages, and functions."
     }
 
-    fn hint(&self) -> &str {
-        "query or execute SQL on Databend"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

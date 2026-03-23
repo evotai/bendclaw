@@ -47,10 +47,6 @@ impl Tool for MemoryDeleteTool {
         "Delete a memory entry by its ID."
     }
 
-    fn hint(&self) -> &str {
-        "delete a memory entry"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

@@ -43,10 +43,6 @@ impl Tool for TaskGetTool {
         "Get full details of a scheduled task by its ID."
     }
 
-    fn hint(&self) -> &str {
-        "get details of a scheduled task by ID"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

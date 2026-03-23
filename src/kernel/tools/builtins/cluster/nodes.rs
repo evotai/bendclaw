@@ -49,10 +49,6 @@ impl Tool for ClusterNodesTool {
         "Discover available peer nodes in the cluster. Returns a list of nodes with their node_id, endpoint, load, and status. Refreshes the peer cache."
     }
 
-    fn hint(&self) -> &str {
-        "list cluster peer nodes"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

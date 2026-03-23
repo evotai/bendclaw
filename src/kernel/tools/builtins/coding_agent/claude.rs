@@ -46,11 +46,7 @@ impl Tool for ClaudeCodeTool {
     fn description(&self) -> &str {
         "Delegate a coding task to Claude Code CLI. Supports multi-turn: subsequent calls \
          resume the same session automatically. Use for complex multi-file edits, refactoring, \
-         or code generation."
-    }
-
-    fn hint(&self) -> &str {
-        "delegate multi-file edits or refactors — use file_edit for single-file changes"
+         or code generation. Use file_edit for single-file changes."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

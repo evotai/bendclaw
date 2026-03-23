@@ -51,10 +51,6 @@ impl Tool for TaskCreateTool {
         "Create a new scheduled task. Supports cron expressions, fixed intervals (every N seconds), or one-shot (at a specific time). When called from a channel (e.g. Feishu/Telegram), task results are automatically delivered back to the current chat."
     }
 
-    fn hint(&self) -> &str {
-        "create a scheduled task (cron, interval, or one-shot)"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         task_create_schema()
     }

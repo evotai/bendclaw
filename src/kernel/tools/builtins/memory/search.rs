@@ -45,11 +45,8 @@ impl Tool for MemorySearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search memories by semantic similarity or keywords. Returns relevant memories with scores."
-    }
-
-    fn hint(&self) -> &str {
-        "search user/session memory — call at task start for prior preferences or facts"
+        "Search memories by semantic similarity or keywords. Returns relevant memories with scores. \
+         Call at the start of a task to retrieve prior user preferences or facts."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

@@ -45,10 +45,6 @@ impl Tool for MemoryListTool {
         "List all memories for the current user (including tenant-shared)."
     }
 
-    fn hint(&self) -> &str {
-        "list stored memory keys"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

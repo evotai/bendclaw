@@ -166,17 +166,16 @@ impl Session {
             run_index,
         );
         run_log!(info, run_ctx, "run", "started",
-            bytes = user_message.len() as u64,
+            input_preview = %server_log::preview_text(user_message),
             user_id = %self.user_id,
             run_index,
             parent_run_id = %parent_run_id.unwrap_or(""),
-            input_preview = %server_log::preview_text(user_message),
+            bytes = user_message.len() as u64,
         );
 
         let full_prompt = {
             let mut pb = PromptBuilder::new(self.res.storage.clone(), self.res.skills.clone())
                 .with_tools(self.res.tools.clone())
-                .with_tool_hints(self.res.tool_registry.tool_hints())
                 .with_variables(self.res.variables.clone())
                 .with_cached_config(self.res.cached_config.clone())
                 .with_cwd(self.res.workspace.cwd().to_path_buf());

@@ -55,10 +55,6 @@ impl Tool for ClusterCollectTool {
         "Collect results from previously dispatched subtasks. Polls until all are complete or timeout."
     }
 
-    fn hint(&self) -> &str {
-        "collect results from dispatched subtasks"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

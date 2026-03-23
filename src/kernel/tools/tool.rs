@@ -104,11 +104,6 @@ pub trait Tool: OperationClassifier + Send + Sync {
     fn description(&self) -> &str;
     fn parameters_schema(&self) -> serde_json::Value;
 
-    /// One-line usage hint for the system prompt tools section.
-    fn hint(&self) -> &str {
-        ""
-    }
-
     async fn execute_with_context(
         &self,
         args: serde_json::Value,

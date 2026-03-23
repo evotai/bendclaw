@@ -34,11 +34,8 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Search file contents using a regex pattern. Returns matching lines with file paths and line numbers."
-    }
-
-    fn hint(&self) -> &str {
-        "search file contents with regex — prefer over shell"
+        "Search file contents using a regex pattern. Returns matching lines with file paths and line numbers. \
+         ALWAYS use this instead of shell grep/rg/ag commands."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

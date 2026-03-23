@@ -113,22 +113,27 @@ impl WebSearchTool {
             .and_then(|r| r.as_array());
 
         match results {
-            Some(items) => {
+            Some(items) if !items.is_empty() => {
                 let lines: Vec<String> = items
                     .iter()
-                    .map(|item| {
+                    .enumerate()
+                    .map(|(i, item)| {
                         let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
                         let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
                         let desc = item
                             .get("description")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
-                        format!("{title}\n{url}\n{desc}")
+                        format!("{}. {title}\n{url}\n{desc}", i + 1)
                     })
                     .collect();
-                Ok(lines.join("\n\n"))
+                Ok(format!(
+                    "Found {} results:\n\n{}",
+                    lines.len(),
+                    lines.join("\n\n")
+                ))
             }
-            None => Ok("No results found.".to_string()),
+            _ => Ok("No results found.".to_string()),
         }
     }
 }
@@ -168,12 +173,10 @@ impl Tool for WebSearchTool {
     fn description(&self) -> &str {
         "Search the web for current information, news, documentation, or any topic. \
          Returns relevant results with titles, URLs, and descriptions. \
-         Use this when you need up-to-date information beyond your training data. \
-         Be specific with queries for better results."
-    }
-
-    fn hint(&self) -> &str {
-        "search the web for current information"
+         Always search first — do not construct URLs from memory. \
+         Be specific with queries for better results. \
+         Only use web_fetch when you need full page content from a URL found in search results. \
+         You MUST include the relevant data in your response — quote specific facts, numbers, or passages."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

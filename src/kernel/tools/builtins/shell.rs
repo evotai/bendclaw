@@ -75,11 +75,8 @@ impl Tool for ShellTool {
     fn description(&self) -> &str {
         "Execute shell commands. Use for running builds, tests, git operations, \
          API calls via CLI tools, and other command-line tasks. \
-         Commands run in a subprocess with captured output."
-    }
-
-    fn hint(&self) -> &str {
-        "execute shell commands — NOT for file search/read; use grep/glob/file_read instead"
+         Commands run in a subprocess with captured output. \
+         When a first-class tool exists (grep, glob, file_read, web_search), use that tool instead."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

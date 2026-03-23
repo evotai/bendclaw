@@ -41,11 +41,7 @@ impl Tool for FileWriteTool {
     }
 
     fn description(&self) -> &str {
-        "Write contents to a file. Overwrites the entire file. For partial changes, use file_edit."
-    }
-
-    fn hint(&self) -> &str {
-        "overwrite a file — use file_edit for partial changes"
+        "Write contents to a file. Overwrites the entire file. Use file_edit for partial changes."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

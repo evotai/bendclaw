@@ -52,11 +52,8 @@ impl Tool for ClusterDispatchTool {
     }
 
     fn description(&self) -> &str {
-        "Dispatch a subtask to a remote bendclaw node by node_id. Returns a dispatch_id for tracking. Use cluster_nodes first to discover available nodes."
-    }
-
-    fn hint(&self) -> &str {
-        "dispatch subtask to peer node — call cluster_nodes first; no nested dispatch"
+        "Dispatch a subtask to a remote bendclaw node by node_id. Returns a dispatch_id for tracking. \
+         Use cluster_nodes first to discover available nodes. No nested dispatch."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

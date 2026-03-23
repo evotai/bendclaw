@@ -54,10 +54,6 @@ impl Tool for SkillRemoveTool {
         "Remove a previously created skill."
     }
 
-    fn hint(&self) -> &str {
-        "remove a skill"
-    }
-
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",

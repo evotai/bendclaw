@@ -114,6 +114,7 @@ fn result_text_extracts_text_blocks() {
         iterations: 1,
         usage: Usage::default(),
         stop_reason: Reason::EndTurn,
+        checkpoint: None,
         messages: vec![],
     };
     assert_eq!(r.text(), "hello world");
@@ -266,6 +267,7 @@ fn result_text_empty_content() {
         iterations: 0,
         usage: Usage::default(),
         stop_reason: Reason::EndTurn,
+        checkpoint: None,
         messages: vec![],
     };
     assert_eq!(r.text(), "");
@@ -281,6 +283,7 @@ fn result_text_thinking_only_returns_empty() {
         iterations: 1,
         usage: Usage::default(),
         stop_reason: Reason::EndTurn,
+        checkpoint: None,
         messages: vec![],
     };
     assert_eq!(r.text(), "");
@@ -324,6 +327,7 @@ fn result_serde_roundtrip() -> Result<()> {
             ttft_ms: 50,
         },
         stop_reason: Reason::MaxIterations,
+        checkpoint: None,
         messages: vec![],
     };
     let json = serde_json::to_string(&r)?;

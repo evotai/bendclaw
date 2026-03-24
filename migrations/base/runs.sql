@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS runs (
     session_id     VARCHAR   NOT NULL   COMMENT 'FK → sessions.id',
     agent_id       VARCHAR   NOT NULL DEFAULT '' COMMENT 'Agent identifier',
     user_id        VARCHAR   NOT NULL   COMMENT 'Who initiated the run',
+    kind           VARCHAR   NOT NULL DEFAULT 'user_turn' COMMENT 'user_turn | session_checkpoint',
     parent_run_id  VARCHAR   NOT NULL DEFAULT '' COMMENT 'Parent run id when continued/retried',
     node_id        VARCHAR   NOT NULL DEFAULT '' COMMENT 'Bendclaw node that executed this run',
     status         VARCHAR   NOT NULL DEFAULT 'RUNNING' COMMENT 'PENDING | RUNNING | PAUSED | COMPLETED | CANCELLED | ERROR',
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS runs (
     error          VARCHAR   NOT NULL DEFAULT '' COMMENT 'Final error message when status=ERROR',
     metrics        VARCHAR   NOT NULL DEFAULT '' COMMENT 'JSON RunMetrics: tokens, timing, cost',
     stop_reason    VARCHAR   NOT NULL DEFAULT '' COMMENT 'end_turn | max_iterations | timeout | aborted | error',
+    checkpoint_through_run_id VARCHAR NOT NULL DEFAULT '' COMMENT 'For session_checkpoint rows: last user_turn run_id covered by the summary',
     iterations     UINT32    NOT NULL DEFAULT 0 COMMENT 'Number of LLM reasoning turns',
     created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMP NOT NULL DEFAULT NOW()

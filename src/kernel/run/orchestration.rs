@@ -12,6 +12,7 @@ pub fn assistant_message_from_turn(
     turn: &LLMResponse,
     model: &str,
     max_duration: Duration,
+    run_id: &str,
 ) -> Message {
     let ttft_ms = turn.ttft_ms().unwrap_or(0);
     let reasoning_meta = OperationMeta::begin(OpType::Reasoning)
@@ -34,6 +35,7 @@ pub fn assistant_message_from_turn(
     };
 
     Message::assistant_with_metrics(turn.text(), tool_calls, reasoning_meta, metrics)
+        .with_run_id(run_id)
 }
 
 pub fn record_assistant_turn(
@@ -42,16 +44,25 @@ pub fn record_assistant_turn(
     state: &mut RunLoopState,
     model: &str,
     max_duration: Duration,
+    run_id: &str,
 ) {
-    messages.push(assistant_message_from_turn(turn, model, max_duration));
+    messages.push(assistant_message_from_turn(
+        turn,
+        model,
+        max_duration,
+        run_id,
+    ));
     if !turn.has_tool_calls() {
         state.record_final_response(turn.content_blocks());
     }
 }
 
-pub fn aborted_tool_result_messages(tool_calls: &[ToolCall]) -> Vec<Message> {
+pub fn aborted_tool_result_messages(tool_calls: &[ToolCall], run_id: &str) -> Vec<Message> {
     tool_calls
         .iter()
-        .map(|tool_call| Message::tool_result(&tool_call.id, &tool_call.name, "aborted", false))
+        .map(|tool_call| {
+            Message::tool_result(&tool_call.id, &tool_call.name, "aborted", false)
+                .with_run_id(run_id)
+        })
         .collect()
 }

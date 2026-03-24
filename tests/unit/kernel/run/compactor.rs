@@ -81,7 +81,9 @@ async fn compact_returns_none_when_within_budget() {
     let mut compactor = Compactor::new(llm, "mock".into(), CancellationToken::new());
 
     let mut messages = vec![Message::user("short"), Message::assistant("ok")];
-    let res = compactor.compact(&mut messages, 100_000).await;
+    let res = compactor
+        .compact(&mut messages, 100_000, "run-current")
+        .await;
     assert!(res.is_none());
 }
 
@@ -98,7 +100,7 @@ async fn compact_triggers_with_small_context_budget() {
     ];
     let before = messages.len();
 
-    let res = compactor.compact(&mut messages, 256).await;
+    let res = compactor.compact(&mut messages, 256, "run-current").await;
     assert!(res.is_some());
 
     if let Some(r) = res {
@@ -125,7 +127,7 @@ async fn compact_preserves_system_and_existing_compaction_messages() {
     ];
 
     let res = compactor
-        .compact(&mut messages, 256)
+        .compact(&mut messages, 256, "run-current")
         .await
         .expect("compaction");
 
@@ -157,7 +159,7 @@ async fn compact_keeps_assistant_and_tool_result_paired_in_tail() {
     ];
 
     let _ = compactor
-        .compact(&mut messages, 6000)
+        .compact(&mut messages, 6000, "run-current")
         .await
         .expect("compaction");
 
@@ -184,12 +186,12 @@ async fn compaction_failure_guard_skips_after_three_failures() {
 
     for _ in 0..3 {
         let mut messages = vec![Message::user("token ".repeat(5000))];
-        let res = compactor.compact(&mut messages, 512).await;
+        let res = compactor.compact(&mut messages, 512, "run-current").await;
         assert!(res.is_some());
     }
 
     let mut messages = vec![Message::user("token ".repeat(5000))];
-    let guarded = compactor.compact(&mut messages, 512).await;
+    let guarded = compactor.compact(&mut messages, 512, "run-current").await;
     // After 3 failures, compaction should be skipped (returns None due to cooldown)
     assert!(guarded.is_none());
 }
@@ -210,7 +212,7 @@ async fn compaction_result_messages_before_matches_input_len() -> Result<()> {
     let before = messages.len();
 
     let res = compactor
-        .compact(&mut messages, 256)
+        .compact(&mut messages, 256, "run-current")
         .await
         .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     assert_eq!(res.messages_before, before);
@@ -230,7 +232,7 @@ async fn compaction_result_token_usage_has_nonzero_tokens_when_summary_produced(
     ];
 
     let res = compactor
-        .compact(&mut messages, 256)
+        .compact(&mut messages, 256, "run-current")
         .await
         .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     // MockLLMProvider returns usage; when a summary was produced token_usage should be non-zero
@@ -256,7 +258,7 @@ async fn compaction_result_messages_after_less_than_before_on_success() -> Resul
     ];
 
     let res = compactor
-        .compact(&mut messages, 256)
+        .compact(&mut messages, 256, "run-current")
         .await
         .ok_or_else(|| anyhow::anyhow!("expected Some compaction result"))?;
     assert!(res.messages_after < res.messages_before);
@@ -279,7 +281,7 @@ async fn compaction_token_effectiveness_check_increments_failures() {
         Message::user(big),
     ];
 
-    let res = compactor.compact(&mut messages, 256).await;
+    let res = compactor.compact(&mut messages, 256, "run-current").await;
     assert!(res.is_some());
 
     // Second call: if token effectiveness check triggered, cooldown should block
@@ -289,7 +291,7 @@ async fn compaction_token_effectiveness_check_increments_failures() {
         Message::assistant("token ".repeat(5000)),
         Message::user("token ".repeat(5000)),
     ];
-    let res2 = compactor.compact(&mut messages2, 256).await;
+    let res2 = compactor.compact(&mut messages2, 256, "run-current").await;
     // If cooldown is active, returns None; otherwise Some
     // Either way, the compactor should not panic
     let _ = res2;
@@ -310,7 +312,7 @@ async fn compaction_sequential_chunks_produce_valid_summary() {
     ];
 
     let res = compactor
-        .compact(&mut messages, 256)
+        .compact(&mut messages, 256, "run-current")
         .await
         .expect("compaction should occur");
 
@@ -318,4 +320,46 @@ async fn compaction_sequential_chunks_produce_valid_summary() {
     assert!(messages
         .iter()
         .any(|m| matches!(m, Message::CompactionSummary { .. })));
+}
+
+#[tokio::test]
+async fn compaction_emits_checkpoint_when_only_completed_runs_are_dropped() {
+    let llm = Arc::new(MockLLMProvider::with_text("checkpoint summary"));
+    let mut compactor = Compactor::new(llm, "mock".into(), CancellationToken::new());
+
+    let big = "token ".repeat(5000);
+    let mut messages = vec![
+        Message::user(big.clone()).with_run_id("run-prev"),
+        Message::assistant(big).with_run_id("run-prev"),
+        Message::user("tail").with_run_id("run-current"),
+    ];
+
+    let res = compactor
+        .compact(&mut messages, 6000, "run-current")
+        .await
+        .expect("compaction should occur");
+
+    let checkpoint = res.checkpoint.expect("checkpoint should be emitted");
+    assert_eq!(checkpoint.through_run_id, "run-prev");
+    assert_eq!(checkpoint.summary_text, "checkpoint summary");
+}
+
+#[tokio::test]
+async fn compaction_skips_checkpoint_when_current_run_messages_are_dropped() {
+    let llm = Arc::new(MockLLMProvider::with_text("checkpoint summary"));
+    let mut compactor = Compactor::new(llm, "mock".into(), CancellationToken::new());
+
+    let big = "token ".repeat(3000);
+    let mut messages = vec![
+        Message::user(big.clone()).with_run_id("run-prev"),
+        Message::assistant(big.clone()).with_run_id("run-prev"),
+        Message::user(big).with_run_id("run-current"),
+    ];
+
+    let res = compactor
+        .compact(&mut messages, 256, "run-current")
+        .await
+        .expect("compaction should occur");
+
+    assert!(res.checkpoint.is_none());
 }

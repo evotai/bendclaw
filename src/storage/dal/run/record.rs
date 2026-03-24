@@ -36,6 +36,29 @@ impl std::fmt::Display for RunStatus {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RunKind {
+    #[serde(rename = "user_turn")]
+    UserTurn,
+    #[serde(rename = "session_checkpoint")]
+    SessionCheckpoint,
+}
+
+impl RunKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::UserTurn => "user_turn",
+            Self::SessionCheckpoint => "session_checkpoint",
+        }
+    }
+}
+
+impl std::fmt::Display for RunKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RunMetrics {
     pub prompt_tokens: u64,
@@ -55,6 +78,7 @@ pub struct RunRecord {
     pub session_id: String,
     pub agent_id: String,
     pub user_id: String,
+    pub kind: String,
     pub parent_run_id: String,
     pub node_id: String,
     pub status: String,
@@ -63,12 +87,17 @@ pub struct RunRecord {
     pub error: String,
     pub metrics: String,
     pub stop_reason: String,
+    pub checkpoint_through_run_id: String,
     pub iterations: u32,
     pub created_at: String,
     pub updated_at: String,
 }
 
 impl RunRecord {
+    pub fn is_session_checkpoint(&self) -> bool {
+        self.kind == RunKind::SessionCheckpoint.as_str()
+    }
+
     pub fn parse_metrics(&self) -> crate::base::Result<RunMetrics> {
         if self.metrics.is_empty() {
             return Ok(RunMetrics::default());

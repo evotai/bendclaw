@@ -34,6 +34,7 @@ pub use databases::AgentDatabases;
 pub use feedback::FeedbackRecord;
 pub use feedback::FeedbackRepo;
 pub use pool::Pool;
+pub use run::RunKind;
 pub use run::RunMetrics;
 pub use run::RunRecord;
 pub use run::RunRepo;

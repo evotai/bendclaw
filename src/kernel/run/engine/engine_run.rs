@@ -109,6 +109,7 @@ impl Engine {
             abort_reason,
             self.ctx.model.as_ref(),
             self.ctx.max_duration,
+            self.ctx.run_id.as_ref(),
         ) {
             TurnTransition::Error(reason) => {
                 let err = llm_error.unwrap_or_default();
@@ -257,6 +258,7 @@ impl Engine {
             iterations,
             usage,
             stop_reason,
+            checkpoint: self.latest_checkpoint.clone(),
             messages: self.ctx.messages.clone(),
         })
     }
@@ -291,7 +293,9 @@ impl Engine {
                 content: msg.text(),
             })
             .await;
-            self.ctx.messages.push(msg);
+            self.ctx
+                .messages
+                .push(msg.with_run_id(self.ctx.run_id.to_string()));
         }
     }
 }

@@ -1,3 +1,4 @@
+pub mod checkpoint;
 pub mod compaction_rules;
 pub mod compactor;
 pub(crate) mod context;
@@ -17,6 +18,7 @@ pub mod runtime_context;
 pub mod transition;
 pub mod usage;
 
+pub use checkpoint::CompactionCheckpoint;
 pub use event::Delta;
 pub use event::Event;
 pub use result::ContentBlock;

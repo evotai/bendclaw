@@ -68,7 +68,12 @@ impl TurnPersister {
         events: &[Event],
     ) -> Result<String> {
         let response_text = result.text();
+        let checkpoint = result.checkpoint.clone();
         let duration_ms = self.start.elapsed().as_millis() as u64;
+        let storage = self.storage.clone();
+        let session_id = self.session_id.clone();
+        let agent_id = self.agent_id.clone();
+        let user_id = self.user_id.clone();
 
         let metrics = RunMetrics {
             prompt_tokens: result.usage.prompt_tokens,
@@ -126,12 +131,12 @@ impl TurnPersister {
         let event_records = self.build_event_records(&all_events);
 
         self.writer.send(PersistOp::RunSuccess {
-            storage: self.storage,
+            storage,
             trace: Box::new(self.trace),
             run_id: self.run_id,
-            session_id: self.session_id,
-            agent_id: self.agent_id,
-            user_id: self.user_id,
+            session_id,
+            agent_id,
+            user_id,
             response_text: response_text.clone(),
             error_text,
             status,
@@ -145,6 +150,17 @@ impl TurnPersister {
             event_records,
             events: events.to_vec(),
         });
+
+        if let Some(checkpoint) = checkpoint {
+            self.writer.send(PersistOp::SaveCheckpoint {
+                storage: self.storage,
+                session_id: self.session_id,
+                agent_id: self.agent_id.to_string(),
+                user_id: self.user_id.to_string(),
+                summary_text: checkpoint.summary_text,
+                through_run_id: checkpoint.through_run_id,
+            });
+        }
 
         Ok(response_text)
     }

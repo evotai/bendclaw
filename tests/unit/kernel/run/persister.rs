@@ -64,6 +64,7 @@ fn make_result(text: &str, reason: Reason, tokens: u64) -> AgentResult {
             ..AgentUsage::default()
         },
         stop_reason: reason,
+        checkpoint: None,
         messages: Vec::new(),
     }
 }

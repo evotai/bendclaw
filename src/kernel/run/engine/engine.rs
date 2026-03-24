@@ -5,6 +5,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::kernel::run::checkpoint::CompactionCheckpoint;
 use crate::kernel::run::compactor::Compactor;
 use crate::kernel::run::context::Context;
 use crate::kernel::run::dispatcher::ToolDispatcher;
@@ -31,6 +32,7 @@ pub(crate) struct Engine {
     pub(super) abort_policy: AbortPolicy,
     pub(super) inbox: mpsc::Receiver<Message>,
     pub(super) loop_span_id: String,
+    pub(super) latest_checkpoint: Option<CompactionCheckpoint>,
 }
 
 impl Engine {
@@ -69,6 +71,7 @@ impl Engine {
             trace: Trace::new(trace_recorder),
             inbox,
             loop_span_id: String::new(),
+            latest_checkpoint: None,
         }
     }
     pub(super) fn ops_ctx(&self, turn: u32) -> server_log::ServerCtx<'_> {

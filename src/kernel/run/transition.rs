@@ -21,6 +21,7 @@ pub enum TurnTransition {
     Done,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn apply_turn_result(
     messages: &mut Vec<Message>,
     state: &mut RunLoopState,
@@ -29,6 +30,7 @@ pub fn apply_turn_result(
     abort_reason: Option<Reason>,
     model: &str,
     max_duration: Duration,
+    run_id: &str,
 ) -> TurnTransition {
     if let Some(err) = llm_error {
         messages.push(Message::operation_event(
@@ -42,11 +44,11 @@ pub fn apply_turn_result(
         return TurnTransition::Error(Reason::Error);
     }
 
-    record_assistant_turn(messages, turn, state, model, max_duration);
+    record_assistant_turn(messages, turn, state, model, max_duration, run_id);
 
     if turn.has_tool_calls() && state.should_continue() {
         if let Some(reason) = abort_reason {
-            messages.extend(aborted_tool_result_messages(turn.tool_calls()));
+            messages.extend(aborted_tool_result_messages(turn.tool_calls(), run_id));
             return TurnTransition::Abort(reason);
         }
         state.reset_max_tokens_streak();
@@ -57,7 +59,7 @@ pub fn apply_turn_result(
     if turn.finish_reason() == "max_tokens" && !turn.has_tool_calls() {
         let streak = state.increment_max_tokens_streak();
         if streak < MAX_CONTINUATIONS {
-            messages.push(Message::user("Continue from where you left off."));
+            messages.push(Message::user("Continue from where you left off.").with_run_id(run_id));
             state.force_continue();
             return TurnTransition::Continue;
         }

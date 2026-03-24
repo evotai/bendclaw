@@ -35,11 +35,15 @@ pub enum Message {
     },
     User {
         content: Vec<Content>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_run_id: Option<String>,
     },
     Assistant {
         content: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<ToolCall>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_run_id: Option<String>,
         operation: OperationMeta,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         metrics: Option<MessageMetrics>,
@@ -49,6 +53,8 @@ pub enum Message {
         name: String,
         output: String,
         success: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_run_id: Option<String>,
         operation: OperationMeta,
     },
     Memory {
@@ -84,15 +90,20 @@ impl Message {
     pub fn user(text: impl Into<String>) -> Self {
         Self::User {
             content: vec![Content::text(text)],
+            origin_run_id: None,
         }
     }
     pub fn user_multimodal(parts: Vec<Content>) -> Self {
-        Self::User { content: parts }
+        Self::User {
+            content: parts,
+            origin_run_id: None,
+        }
     }
     pub fn assistant(text: impl Into<String>) -> Self {
         Self::Assistant {
             content: text.into(),
             tool_calls: Vec::new(),
+            origin_run_id: None,
             operation: OperationMeta::new(OpType::Reasoning),
             metrics: None,
         }
@@ -101,6 +112,7 @@ impl Message {
         Self::Assistant {
             content: text.into(),
             tool_calls,
+            origin_run_id: None,
             operation: OperationMeta::new(OpType::Reasoning),
             metrics: None,
         }
@@ -113,6 +125,7 @@ impl Message {
         Self::Assistant {
             content: text.into(),
             tool_calls,
+            origin_run_id: None,
             operation,
             metrics: None,
         }
@@ -126,6 +139,7 @@ impl Message {
         Self::Assistant {
             content: text.into(),
             tool_calls,
+            origin_run_id: None,
             operation,
             metrics: Some(metrics),
         }
@@ -141,6 +155,7 @@ impl Message {
             name: name.into(),
             output: output.into(),
             success,
+            origin_run_id: None,
             operation: OperationMeta::new(OpType::Execute),
         }
     }
@@ -156,6 +171,7 @@ impl Message {
             name: name.into(),
             output: output.into(),
             success,
+            origin_run_id: None,
             operation,
         }
     }
@@ -193,6 +209,24 @@ impl Message {
             message: msg.into(),
         }
     }
+    pub fn with_run_id(mut self, run_id: impl Into<String>) -> Self {
+        let run_id = Some(run_id.into());
+        match &mut self {
+            Self::User { origin_run_id, .. } => *origin_run_id = run_id,
+            Self::Assistant { origin_run_id, .. } => *origin_run_id = run_id,
+            Self::ToolResult { origin_run_id, .. } => *origin_run_id = run_id,
+            _ => {}
+        }
+        self
+    }
+    pub fn origin_run_id(&self) -> Option<&str> {
+        match self {
+            Self::User { origin_run_id, .. }
+            | Self::Assistant { origin_run_id, .. }
+            | Self::ToolResult { origin_run_id, .. } => origin_run_id.as_deref(),
+            _ => None,
+        }
+    }
     pub fn role(&self) -> Option<Role> {
         match self {
             Self::System { .. } | Self::CompactionSummary { .. } => Some(Role::System),
@@ -205,7 +239,7 @@ impl Message {
     pub fn text(&self) -> String {
         match self {
             Self::System { content } => content.clone(),
-            Self::User { content } => content
+            Self::User { content, .. } => content
                 .iter()
                 .filter_map(|c| match c {
                     Content::Text { text } => Some(text.as_str()),

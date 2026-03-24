@@ -13,7 +13,7 @@ pub fn to_chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
         .filter_map(|m| match m {
             Message::System { content } => Some(ChatMessage::system(content).with_cache_control()),
 
-            Message::User { content } => Some(ChatMessage::user_multimodal(content.clone())),
+            Message::User { content, .. } => Some(ChatMessage::user_multimodal(content.clone())),
 
             Message::Assistant {
                 content,

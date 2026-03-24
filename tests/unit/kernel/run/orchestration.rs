@@ -48,18 +48,21 @@ fn loop_state() -> RunLoopState {
 #[test]
 fn assistant_message_from_turn_keeps_tool_calls_and_metrics() {
     let turn = tool_turn();
-    let message = assistant_message_from_turn(&turn, "mock-model", Duration::from_secs(60));
+    let message =
+        assistant_message_from_turn(&turn, "mock-model", Duration::from_secs(60), "run-1");
 
     match message {
         Message::Assistant {
             content,
             tool_calls,
+            origin_run_id,
             operation,
             metrics,
         } => {
             assert_eq!(content, "use tool");
             assert_eq!(tool_calls.len(), 1);
             assert_eq!(tool_calls[0].name, "shell");
+            assert_eq!(origin_run_id.as_deref(), Some("run-1"));
             assert_eq!(operation.summary, "mock-model -> 15 tokens");
             let metrics = metrics.expect("assistant metrics");
             assert_eq!(metrics.input_tokens, 10);
@@ -82,9 +85,11 @@ fn record_assistant_turn_without_tool_calls_sets_final_content() {
         &mut state,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].origin_run_id(), Some("run-1"));
     assert!(!state.should_continue());
     assert_eq!(state.final_content().len(), 2);
     match &state.final_content()[1] {
@@ -105,9 +110,11 @@ fn record_assistant_turn_with_tool_calls_keeps_loop_open() {
         &mut state,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].origin_run_id(), Some("run-1"));
     assert!(state.should_continue());
     assert!(state.final_content().is_empty());
 }
@@ -127,7 +134,7 @@ fn aborted_tool_result_messages_returns_one_failed_tool_result_per_call() {
         },
     ];
 
-    let messages = aborted_tool_result_messages(&tool_calls);
+    let messages = aborted_tool_result_messages(&tool_calls, "run-1");
 
     assert_eq!(messages.len(), 2);
     for (message, tool_call) in messages.iter().zip(tool_calls.iter()) {
@@ -143,6 +150,7 @@ fn aborted_tool_result_messages_returns_one_failed_tool_result_per_call() {
                 assert_eq!(name, &tool_call.name);
                 assert_eq!(output, "aborted");
                 assert!(!success);
+                assert_eq!(message.origin_run_id(), Some("run-1"));
             }
             other => panic!("expected tool result, got {other:?}"),
         }

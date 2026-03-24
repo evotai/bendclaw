@@ -58,6 +58,7 @@ fn apply_turn_result_records_error_and_returns_error_transition() {
         None,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(transition, TurnTransition::Error(Reason::Error));
@@ -88,10 +89,12 @@ fn apply_turn_result_returns_done_and_records_final_content() {
         None,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(transition, TurnTransition::Done);
     assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].origin_run_id(), Some("run-1"));
     assert!(!state.should_continue());
     assert_eq!(state.final_content().len(), 2);
 }
@@ -110,10 +113,12 @@ fn apply_turn_result_returns_dispatch_for_tool_turn() {
         None,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(transition, TurnTransition::DispatchTools);
     assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].origin_run_id(), Some("run-1"));
     assert!(state.should_continue());
     assert!(matches!(
         &messages[0],
@@ -135,6 +140,7 @@ fn apply_turn_result_returns_abort_and_appends_aborted_tool_results() {
         Some(Reason::Timeout),
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(transition, TurnTransition::Abort(Reason::Timeout));
@@ -143,6 +149,7 @@ fn apply_turn_result_returns_abort_and_appends_aborted_tool_results() {
         &messages[1],
         Message::ToolResult { output, success, .. } if output == "aborted" && !success
     ));
+    assert_eq!(messages[1].origin_run_id(), Some("run-1"));
     assert!(state.should_continue());
 }
 
@@ -172,6 +179,7 @@ fn max_tokens_triggers_continue_with_continuation_message() {
         None,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
 
     assert_eq!(transition, TurnTransition::Continue);
@@ -179,6 +187,8 @@ fn max_tokens_triggers_continue_with_continuation_message() {
     // assistant message + user continuation prompt
     assert_eq!(messages.len(), 2);
     assert!(matches!(&messages[1], Message::User { .. }));
+    assert_eq!(messages[0].origin_run_id(), Some("run-1"));
+    assert_eq!(messages[1].origin_run_id(), Some("run-1"));
 }
 
 #[test]
@@ -197,6 +207,7 @@ fn max_tokens_fifth_consecutive_triggers_done() {
             None,
             "mock-model",
             Duration::from_secs(60),
+            "run-1",
         );
         if i < 4 {
             assert_eq!(transition, TurnTransition::Continue, "iteration {i}");
@@ -222,6 +233,7 @@ fn non_max_tokens_turn_resets_streak() {
             None,
             "mock-model",
             Duration::from_secs(60),
+            "run-1",
         );
     }
 
@@ -235,6 +247,7 @@ fn non_max_tokens_turn_resets_streak() {
         None,
         "mock-model",
         Duration::from_secs(60),
+        "run-1",
     );
     assert_eq!(transition, TurnTransition::DispatchTools);
 
@@ -250,6 +263,7 @@ fn non_max_tokens_turn_resets_streak() {
             None,
             "mock-model",
             Duration::from_secs(60),
+            "run-1",
         );
         if i < 4 {
             assert_eq!(transition, TurnTransition::Continue, "iteration {i}");

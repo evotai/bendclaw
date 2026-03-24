@@ -214,6 +214,7 @@ fn make_run_record(metrics_json: &str) -> bendclaw::storage::RunRecord {
         session_id: "sess-1".into(),
         agent_id: "agent-1".into(),
         user_id: "user-1".into(),
+        kind: "user_turn".into(),
         parent_run_id: String::new(),
         node_id: String::new(),
         status: "COMPLETED".into(),
@@ -222,6 +223,7 @@ fn make_run_record(metrics_json: &str) -> bendclaw::storage::RunRecord {
         error: String::new(),
         metrics: metrics_json.into(),
         stop_reason: "end_turn".into(),
+        checkpoint_through_run_id: String::new(),
         iterations: 3,
         created_at: "2026-01-01T00:00:00Z".into(),
         updated_at: "2026-01-01T00:00:00Z".into(),
@@ -236,6 +238,7 @@ fn run_record_serde_roundtrip() -> anyhow::Result<()> {
     assert_eq!(parsed.id, "run-001");
     assert_eq!(parsed.session_id, "sess-1");
     assert_eq!(parsed.agent_id, "agent-1");
+    assert_eq!(parsed.kind, "user_turn");
     assert_eq!(parsed.status, "COMPLETED");
     assert_eq!(parsed.iterations, 3);
     Ok(())

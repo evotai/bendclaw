@@ -186,13 +186,16 @@ impl Engine {
                 payload,
             )
             .await;
-            self.ctx.messages.push(Message::tool_result_with_operation(
-                &p.call.id,
-                &p.call.name,
-                &output,
-                success,
-                meta,
-            ));
+            self.ctx.messages.push(
+                Message::tool_result_with_operation(
+                    &p.call.id,
+                    &p.call.name,
+                    &output,
+                    success,
+                    meta,
+                )
+                .with_run_id(self.ctx.run_id.to_string()),
+            );
         }
     }
 
@@ -258,7 +261,11 @@ impl Engine {
     pub(super) async fn try_compact(&mut self, state: &mut RunLoopState) {
         if let Some(info) = self
             .compactor
-            .compact(&mut self.ctx.messages, state.max_context_tokens())
+            .compact(
+                &mut self.ctx.messages,
+                state.max_context_tokens(),
+                self.ctx.run_id.as_ref(),
+            )
             .await
         {
             state.add_token_usage(&info.token_usage);
@@ -268,6 +275,9 @@ impl Engine {
                 summary_len: info.summary_len,
             })
             .await;
+            if let Some(checkpoint) = info.checkpoint {
+                self.latest_checkpoint = Some(checkpoint);
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ use crate::kernel::writer::BackgroundWriter;
 use crate::observability::log::run_log;
 use crate::observability::log::slog;
 use crate::observability::server_log;
+use crate::storage::dal::run::record::RunKind;
 use crate::storage::dal::run::record::RunRecord;
 use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
@@ -67,6 +68,14 @@ pub enum PersistOp {
         duration_ms: u64,
         event_records: Vec<RunEventRecord>,
     },
+    SaveCheckpoint {
+        storage: Arc<AgentStore>,
+        session_id: String,
+        agent_id: String,
+        user_id: String,
+        summary_text: String,
+        through_run_id: String,
+    },
 }
 
 pub type PersistWriter = BackgroundWriter<PersistOp>;
@@ -115,6 +124,7 @@ async fn handle_op(op: PersistOp) {
                     session_id: session_id.clone(),
                     agent_id: agent_id.clone(),
                     user_id,
+                    kind: RunKind::UserTurn.as_str().to_string(),
                     parent_run_id,
                     node_id,
                     status: RunStatus::Running.as_str().to_string(),
@@ -123,6 +133,7 @@ async fn handle_op(op: PersistOp) {
                     error: String::new(),
                     metrics: String::new(),
                     stop_reason: String::new(),
+                    checkpoint_through_run_id: String::new(),
                     iterations: 0,
                     created_at: String::new(),
                     updated_at: String::new(),
@@ -304,6 +315,42 @@ async fn handle_op(op: PersistOp) {
             }
 
             trace.fail_trace(duration_ms);
+        }
+        PersistOp::SaveCheckpoint {
+            storage,
+            session_id,
+            agent_id,
+            user_id,
+            summary_text,
+            through_run_id,
+        } => {
+            let run_id = crate::kernel::new_run_id();
+            if let Err(e) = storage
+                .run_insert(&RunRecord {
+                    id: run_id.clone(),
+                    session_id: session_id.clone(),
+                    agent_id,
+                    user_id,
+                    kind: RunKind::SessionCheckpoint.as_str().to_string(),
+                    parent_run_id: String::new(),
+                    node_id: String::new(),
+                    status: RunStatus::Completed.as_str().to_string(),
+                    input: String::new(),
+                    output: summary_text,
+                    error: String::new(),
+                    metrics: String::new(),
+                    stop_reason: String::new(),
+                    checkpoint_through_run_id: through_run_id,
+                    iterations: 0,
+                    created_at: String::new(),
+                    updated_at: String::new(),
+                })
+                .await
+            {
+                slog!(warn, "persist", "checkpoint_insert_failed",
+                    run_id = %run_id, session_id = %session_id, error = %e,
+                );
+            }
         }
     }
 }

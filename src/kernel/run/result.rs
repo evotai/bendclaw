@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::kernel::run::checkpoint::CompactionCheckpoint;
 use crate::kernel::Message;
 use crate::llm::usage::TokenUsage;
 
@@ -39,6 +40,9 @@ pub struct Result {
     pub usage: Usage,
     /// Why the loop stopped.
     pub stop_reason: Reason,
+    /// Optional persistent checkpoint emitted by compaction during this run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<CompactionCheckpoint>,
     /// All messages produced during the session (system, user, assistant, tool_result, etc.).
     pub messages: Vec<Message>,
 }
@@ -63,6 +67,7 @@ impl Result {
             iterations: 0,
             usage: Usage::default(),
             stop_reason: Reason::Aborted,
+            checkpoint: None,
             messages: Vec::new(),
         }
     }

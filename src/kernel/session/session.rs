@@ -27,6 +27,7 @@ use crate::kernel::run::prompt::PromptBuilder;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::run::usage::UsageScope;
 use crate::kernel::runtime::agent_config::AgentConfig;
+use crate::kernel::session::history_loader::SessionHistoryLoader;
 use crate::kernel::session::session_manager::SessionInfo;
 use crate::kernel::session::session_manager::TurnStats;
 use crate::kernel::session::session_stream::Stream;
@@ -154,7 +155,7 @@ impl Session {
             &self.res.config.node_id,
         )?;
 
-        history.push(Message::user(user_message));
+        history.push(Message::user(user_message).with_run_id(run_id.clone()));
 
         let trace = self
             .create_trace(&run_id, trace_id, parent_trace_id, origin_node_id)
@@ -459,17 +460,8 @@ impl Session {
         if !self.history.lock().is_empty() {
             return Ok(());
         }
-        let mut seeded = Vec::new();
-        let runs = self.res.storage.run_list_by_session(&self.id, 1000).await?;
-        for run in runs.into_iter().rev() {
-            if !run.input.is_empty() {
-                seeded.push(Message::user(run.input));
-            }
-            if !run.output.is_empty() {
-                seeded.push(Message::assistant(run.output));
-            }
-        }
-        *self.history.lock() = seeded;
+        let loader = SessionHistoryLoader::new(self.res.storage.clone());
+        *self.history.lock() = loader.load(&self.id, 1000).await?;
         Ok(())
     }
 

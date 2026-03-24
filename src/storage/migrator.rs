@@ -19,10 +19,9 @@ const BASE_MIGRATIONS: &[&str] = &[
 
 /// Alter migrations — ALTER TABLE, DROP, etc. that depend on base tables.
 /// Executed strictly in order after all base migrations complete.
-const ALTER_MIGRATIONS: &[&str] = &[
-    // Future migrations go here, e.g.:
-    // include_str!("../../migrations/alter/0001_add_column.sql"),
-];
+const ALTER_MIGRATIONS: &[&str] = &[include_str!(
+    "../../migrations/alter/0001_runs_checkpoint_fields.sql"
+)];
 
 /// Run all agent migrations against the pool's current database.
 pub async fn run_agent(pool: &Pool) {

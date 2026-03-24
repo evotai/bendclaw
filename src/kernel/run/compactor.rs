@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::kernel::run::checkpoint::CompactionCheckpoint;
 use crate::kernel::run::compaction_rules::plan_compaction_split;
 use crate::kernel::Message;
 use crate::kernel::OpType;
@@ -25,6 +26,8 @@ pub struct CompactionResult {
     pub messages_before: usize,
     pub messages_after: usize,
     pub summary_len: usize,
+    /// Optional persistent checkpoint derived from the compaction.
+    pub checkpoint: Option<CompactionCheckpoint>,
     /// Tokens consumed by compaction LLM calls.
     pub token_usage: TokenUsage,
     /// Duration of the compaction in milliseconds.
@@ -64,6 +67,7 @@ impl Compactor {
         &mut self,
         messages: &mut Vec<Message>,
         max_context_tokens: usize,
+        current_run_id: &str,
     ) -> Option<CompactionResult> {
         let compact_tracker = OperationMeta::begin(OpType::Compaction);
         let compact_start = compact_tracker.start_time();
@@ -161,7 +165,9 @@ impl Compactor {
         let summary_len = summary.as_ref().map(|s| s.len()).unwrap_or(0);
 
         let mut compacted = system;
+        let mut checkpoint = None;
         if let Some(text) = summary {
+            checkpoint = build_checkpoint(&dropped, current_run_id, &text);
             let meta = compact_tracker
                 .summary(format!(
                     "{} -> {} messages, {} -> ~{} tokens",
@@ -213,6 +219,7 @@ impl Compactor {
             messages_before,
             messages_after,
             summary_len,
+            checkpoint,
             token_usage,
             duration_ms: compact_start.elapsed().as_millis() as u64,
         })
@@ -319,4 +326,24 @@ impl Compactor {
 
         chunks
     }
+}
+
+fn build_checkpoint(
+    dropped: &[&Message],
+    current_run_id: &str,
+    summary_text: &str,
+) -> Option<CompactionCheckpoint> {
+    let mut last_run_id = None;
+    for msg in dropped {
+        let run_id = msg.origin_run_id()?;
+        if run_id == current_run_id {
+            return None;
+        }
+        last_run_id = Some(run_id);
+    }
+
+    last_run_id.map(|through_run_id| CompactionCheckpoint {
+        summary_text: summary_text.to_string(),
+        through_run_id: through_run_id.to_string(),
+    })
 }

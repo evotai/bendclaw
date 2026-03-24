@@ -281,6 +281,7 @@ const ALL_MIGRATIONS: &[&str] = &[
     include_str!("../../../migrations/base/tasks.sql"),
     include_str!("../../../migrations/base/feedback.sql"),
     include_str!("../../../migrations/base/channels.sql"),
+    include_str!("../../../migrations/alter/0001_runs_checkpoint_fields.sql"),
 ];
 
 async fn run_migration(pool: &Pool, sql: &str) -> anyhow::Result<()> {

@@ -1,3 +1,4 @@
+use super::record::RunKind;
 use super::record::RunRecord;
 use super::record::RunStatus;
 use crate::base::Result;
@@ -18,7 +19,7 @@ impl RowMapper for RunMapper {
     type Entity = RunRecord;
 
     fn columns(&self) -> &str {
-        "id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<RunRecord> {
@@ -27,17 +28,19 @@ impl RowMapper for RunMapper {
             session_id: sql::col(row, 1),
             agent_id: sql::col(row, 2),
             user_id: sql::col(row, 3),
-            parent_run_id: sql::col(row, 4),
-            node_id: sql::col(row, 5),
-            status: sql::col(row, 6),
-            input: sql::col(row, 7),
-            output: sql::col(row, 8),
-            error: sql::col(row, 9),
-            metrics: sql::col(row, 10),
-            stop_reason: sql::col(row, 11),
-            iterations: sql::col_u32(row, 12)?,
-            created_at: sql::col(row, 13),
-            updated_at: sql::col(row, 14),
+            kind: sql::col(row, 4),
+            parent_run_id: sql::col(row, 5),
+            node_id: sql::col(row, 6),
+            status: sql::col(row, 7),
+            input: sql::col(row, 8),
+            output: sql::col(row, 9),
+            error: sql::col(row, 10),
+            metrics: sql::col(row, 11),
+            stop_reason: sql::col(row, 12),
+            checkpoint_through_run_id: sql::col(row, 13),
+            iterations: sql::col_u32(row, 14)?,
+            created_at: sql::col(row, 15),
+            updated_at: sql::col(row, 16),
         })
     }
 }
@@ -62,6 +65,7 @@ impl RunRepo {
                 ("session_id", SqlVal::Str(&record.session_id)),
                 ("agent_id", SqlVal::Str(&record.agent_id)),
                 ("user_id", SqlVal::Str(&record.user_id)),
+                ("kind", SqlVal::Str(&record.kind)),
                 ("parent_run_id", SqlVal::Str(&record.parent_run_id)),
                 ("node_id", SqlVal::Str(&record.node_id)),
                 ("status", SqlVal::Str(&record.status)),
@@ -70,6 +74,10 @@ impl RunRepo {
                 ("error", SqlVal::Str(&record.error)),
                 ("metrics", SqlVal::Str(&record.metrics)),
                 ("stop_reason", SqlVal::Str(&record.stop_reason)),
+                (
+                    "checkpoint_through_run_id",
+                    SqlVal::Str(&record.checkpoint_through_run_id),
+                ),
                 ("iterations", SqlVal::Raw(&record.iterations.to_string())),
                 ("created_at", SqlVal::Raw("NOW()")),
                 ("updated_at", SqlVal::Raw("NOW()")),
@@ -146,7 +154,7 @@ impl RunRepo {
     }
 
     pub async fn count_for_session(&self, session_id: &str, status: Option<&str>) -> Result<u64> {
-        let condition = session_condition(session_id, status);
+        let condition = visible_session_condition(session_id, status);
         let result = async {
             let query = format!("SELECT COUNT(*) FROM runs WHERE {condition}");
             let row = self.table.pool().query_row(&query).await?;
@@ -172,7 +180,7 @@ impl RunRepo {
         limit: u64,
         offset: u64,
     ) -> Result<Vec<RunRecord>> {
-        let condition = session_condition(session_id, status);
+        let condition = visible_session_condition(session_id, status);
         let result = async {
             let query = format!(
                 "SELECT {} FROM runs WHERE {condition} ORDER BY created_at {order} LIMIT {limit} OFFSET {offset}",
@@ -200,13 +208,10 @@ impl RunRepo {
     }
 
     pub async fn list_by_session(&self, session_id: &str, limit: u32) -> Result<Vec<RunRecord>> {
+        let condition = visible_session_condition(session_id, None);
         let result = self
             .table
-            .list(
-                &[Where("session_id", SqlVal::Str(session_id))],
-                "created_at DESC",
-                limit as u64,
-            )
+            .list_where(&condition, "created_at DESC", limit as u64)
             .await;
         if let Err(error) = &result {
             repo_error(
@@ -218,11 +223,40 @@ impl RunRepo {
         }
         result
     }
+
+    pub async fn load_latest_checkpoint(&self, session_id: &str) -> Result<Option<RunRecord>> {
+        let sid = sql::escape(session_id);
+        let condition = format!(
+            "session_id = '{sid}' AND kind = '{}'",
+            RunKind::SessionCheckpoint.as_str()
+        );
+        let result = async {
+            let mut rows = self
+                .table
+                .list_where(&condition, "created_at DESC", 1)
+                .await?;
+            Ok(rows.pop())
+        }
+        .await;
+        if let Err(error) = &result {
+            repo_error(
+                REPO,
+                "load_latest_checkpoint",
+                serde_json::json!({"session_id": session_id}),
+                error,
+            );
+        }
+        result
+    }
 }
 
-fn session_condition(session_id: &str, status: Option<&str>) -> String {
-    let mut condition = format!("session_id = '{}'", sql::escape(session_id));
-    if let Some(status) = status {
+fn visible_session_condition(session_id: &str, status: Option<&str>) -> String {
+    let mut condition = format!(
+        "session_id = '{}' AND kind != '{}'",
+        sql::escape(session_id),
+        RunKind::SessionCheckpoint.as_str()
+    );
+    if let Some(status) = status.filter(|status| !status.is_empty()) {
         condition.push_str(&format!(" AND status = '{}'", sql::escape(status)));
     }
     condition

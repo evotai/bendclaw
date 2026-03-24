@@ -193,6 +193,10 @@ impl AgentStore {
         self.runs.list_by_session(session_id, limit).await
     }
 
+    pub async fn run_load_latest_checkpoint(&self, session_id: &str) -> Result<Option<RunRecord>> {
+        self.runs.load_latest_checkpoint(session_id).await
+    }
+
     pub async fn run_events_insert_batch(&self, records: &[RunEventRecord]) -> Result<()> {
         self.run_events.insert_batch(records).await
     }

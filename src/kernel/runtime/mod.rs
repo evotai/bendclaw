@@ -18,6 +18,4 @@ pub use runtime::Runtime;
 pub use runtime::RuntimeParts;
 pub use runtime::RuntimeStatus;
 pub use runtime_builder::Builder;
-pub use session_router::merge_followup;
-pub use session_router::wait_until_idle;
 pub use session_router::SubmitResult;

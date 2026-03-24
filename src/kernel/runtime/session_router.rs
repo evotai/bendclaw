@@ -317,32 +317,6 @@ pub async fn wait_until_idle(
     }
 }
 
-/// Merge a queued followup into a new run if the session is now idle.
-pub async fn merge_followup(
-    runtime: &Arc<Runtime>,
-    agent_id: &str,
-    session_id: &str,
-    user_id: &str,
-    trace_id: &str,
-) -> Option<Stream> {
-    let session = runtime.sessions().get(session_id)?;
-    if !session.is_idle() {
-        return None;
-    }
-    let followup = session.take_followup()?;
-    let stream = session
-        .run(&followup, trace_id, None, "", "", false)
-        .await
-        .ok()?;
-    runtime.turn_coordinator.store_snapshot(
-        session_id,
-        RunSnapshot::from_input(session_id, stream.run_id(), &followup),
-    );
-    let _ = agent_id;
-    let _ = user_id;
-    Some(stream)
-}
-
 fn normalize_control_input(input: &str) -> String {
     input.trim().to_lowercase()
 }

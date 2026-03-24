@@ -102,6 +102,19 @@ pub enum Event {
 
     /// A user message was injected into the running engine via the inbox channel.
     MessageInjected { content: String },
+
+    /// The active task was revised: current run was cancelled and restarted.
+    TaskRevised {
+        previous_run_id: String,
+        message: String,
+    },
+
+    /// A clarification is required before proceeding with a new request.
+    DecisionRequired {
+        question_id: String,
+        message: String,
+        options: Vec<String>,
+    },
 }
 
 impl Event {
@@ -133,6 +146,8 @@ impl Event {
             Self::AppData(_) => "AppData".to_string(),
             Self::Progress { .. } => "Progress".to_string(),
             Self::MessageInjected { .. } => "MessageInjected".to_string(),
+            Self::TaskRevised { .. } => "TaskRevised".to_string(),
+            Self::DecisionRequired { .. } => "DecisionRequired".to_string(),
         }
     }
 }

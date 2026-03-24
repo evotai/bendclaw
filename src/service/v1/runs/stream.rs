@@ -233,6 +233,31 @@ pub fn map_event_to_sse(
             });
             (event_name, payload)
         }
+        Event::MessageInjected { content } => {
+            let mut payload = base_event_payload(agent_id, session_id, run_id, "MessageInjected");
+            payload["content"] = serde_json::Value::String(content.clone());
+            ("MessageInjected", payload)
+        }
+        Event::TaskRevised {
+            previous_run_id,
+            message,
+        } => {
+            let mut payload = base_event_payload(agent_id, session_id, run_id, "TaskRevised");
+            payload["previous_run_id"] = serde_json::Value::String(previous_run_id.clone());
+            payload["message"] = serde_json::Value::String(message.clone());
+            ("TaskRevised", payload)
+        }
+        Event::DecisionRequired {
+            question_id,
+            message,
+            options,
+        } => {
+            let mut payload = base_event_payload(agent_id, session_id, run_id, "DecisionRequired");
+            payload["question_id"] = serde_json::Value::String(question_id.clone());
+            payload["message"] = serde_json::Value::String(message.clone());
+            payload["options"] = serde_json::json!(options);
+            ("DecisionRequired", payload)
+        }
         _ => return None,
     };
 

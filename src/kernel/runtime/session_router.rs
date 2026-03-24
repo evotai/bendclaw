@@ -252,6 +252,7 @@ impl Runtime {
                 Ok(SubmitResult::Queued)
             }
             DecisionResolution::CancelAndSwitch => {
+                let old_run_id = decision.active_run_id.clone();
                 session.cancel_current();
                 let became_idle = wait_until_idle(
                     self,
@@ -265,7 +266,7 @@ impl Runtime {
                         session_id = %session_id,
                     );
                 }
-                let stream = session
+                let mut stream = session
                     .run(
                         &decision.candidate_input,
                         trace_id,
@@ -279,6 +280,10 @@ impl Runtime {
                     session_id,
                     RunSnapshot::from_input(session_id, stream.run_id(), &decision.candidate_input),
                 );
+                stream.prepend_event(Event::TaskRevised {
+                    previous_run_id: old_run_id,
+                    message: "Task revised: switching to new request.".to_string(),
+                });
                 Ok(SubmitResult::Started {
                     stream,
                     preamble: Some("Switching to your new request.".to_string()),

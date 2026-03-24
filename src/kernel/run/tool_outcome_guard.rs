@@ -41,7 +41,10 @@ fn build_grounding_message(report: &ToolDispatchReport) -> Option<String> {
     ];
 
     if !report.succeeded.is_empty() {
-        lines.push(format!("Successful tools: {}.", join_names(&report.succeeded)));
+        lines.push(format!(
+            "Successful tools: {}.",
+            join_names(&report.succeeded)
+        ));
     }
     if !report.failed.is_empty() {
         lines.push(format!("Failed tools: {}.", join_names(&report.failed)));

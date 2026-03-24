@@ -261,7 +261,11 @@ where
         // Message + visible fields
         write!(writer, " ")?;
         if ansi && (level <= tracing::Level::WARN) {
-            write!(writer, "\x1b[1m{}{}\x1b[0m", visitor.message, visitor.fields)?;
+            write!(
+                writer,
+                "\x1b[1m{}{}\x1b[0m",
+                visitor.message, visitor.fields
+            )?;
         } else {
             write!(writer, "{}{}", visitor.message, visitor.fields)?;
         }

@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 
 use tokio_stream::StreamExt;
 
 use crate::base::truncate_bytes_on_char_boundary;
+use crate::kernel::channel::delivery::block_coalescer::BlockCoalescer;
 use crate::kernel::channel::delivery::fallback::FallbackDelivery;
 use crate::kernel::channel::delivery::outbound_queue::OutboundQueue;
 use crate::kernel::channel::delivery::outbound_queue::QueuedMessage;
@@ -20,6 +22,32 @@ use crate::observability::log::channel_log;
 pub struct OutboundResult {
     pub text: String,
     pub platform_message_id: String,
+}
+
+pub(crate) struct TypingRefresher {
+    last: Instant,
+    interval: Duration,
+}
+
+impl TypingRefresher {
+    pub fn new(interval: Duration) -> Self {
+        Self {
+            last: Instant::now(),
+            interval,
+        }
+    }
+
+    pub async fn tick(
+        &mut self,
+        outbound: &dyn ChannelOutbound,
+        config: &serde_json::Value,
+        chat_id: &str,
+    ) {
+        if self.last.elapsed() >= self.interval {
+            let _ = outbound.send_typing(config, chat_id).await;
+            self.last = Instant::now();
+        }
+    }
 }
 
 /// Deliver outbound response to a channel.
@@ -79,6 +107,7 @@ async fn deliver_streaming<S>(
 where
     S: tokio_stream::Stream<Item = Event> + Unpin,
 {
+    let mut refresher = TypingRefresher::new(Duration::from_secs(4));
     let delivery = FallbackDelivery::new(
         StreamDeliveryConfig {
             throttle_ms: 800,
@@ -91,6 +120,16 @@ where
         chat_id.to_string(),
         RetryConfig::default(),
     );
+
+    // Wrap the stream to tick typing indicator on each event before delivery.
+    // We collect events and drive delivery manually via a wrapper approach.
+    // Since FallbackDelivery takes ownership of the stream, we pre-drain
+    // with typing ticks then hand off.
+    // Instead, tick typing before calling deliver (once), then let delivery run.
+    refresher
+        .tick(outbound.as_ref(), channel_config, chat_id)
+        .await;
+
     let result = delivery.deliver(run_stream).await?;
     if result.text.trim().is_empty() {
         return Ok(None);
@@ -115,29 +154,99 @@ async fn deliver_non_streaming<S>(
 where
     S: tokio_stream::Stream<Item = Event> + Unpin,
 {
-    let mut output_text = String::new();
+    let mut coalescer = BlockCoalescer::new(800, 1200);
+    let mut refresher = TypingRefresher::new(Duration::from_secs(4));
+    let mut all_text = String::new();
+    let mut last_msg_id = String::new();
+
     while let Some(ev) = run_stream.next().await {
-        if let Event::StreamDelta(Delta::Text { content }) = &ev {
-            output_text.push_str(content);
+        refresher
+            .tick(outbound.as_ref(), channel_config, chat_id)
+            .await;
+
+        match &ev {
+            Event::StreamDelta(Delta::Text { content }) => {
+                all_text.push_str(content);
+                if let Some(block) = coalescer.push(content) {
+                    let block = truncate_bytes_on_char_boundary(&block, max_message_len);
+                    last_msg_id = send_block(
+                        outbound,
+                        outbound_queue,
+                        channel_type,
+                        account_id,
+                        channel_config,
+                        chat_id,
+                        block,
+                    )
+                    .await;
+                }
+            }
+            Event::StreamDelta(Delta::ToolCallStart { .. }) | Event::ReasonEnd { .. } => {
+                if let Some(block) = coalescer.flush_if_ready() {
+                    let block = truncate_bytes_on_char_boundary(&block, max_message_len);
+                    last_msg_id = send_block(
+                        outbound,
+                        outbound_queue,
+                        channel_type,
+                        account_id,
+                        channel_config,
+                        chat_id,
+                        block,
+                    )
+                    .await;
+                }
+            }
+            _ => {}
         }
     }
 
-    if output_text.trim().is_empty() {
+    // Send remaining buffer
+    let remaining = coalescer.take();
+    if !remaining.is_empty() {
+        let remaining = truncate_bytes_on_char_boundary(&remaining, max_message_len);
+        last_msg_id = send_block(
+            outbound,
+            outbound_queue,
+            channel_type,
+            account_id,
+            channel_config,
+            chat_id,
+            remaining,
+        )
+        .await;
+    }
+
+    if all_text.trim().is_empty() {
         return Ok(None);
     }
 
-    if output_text.len() > max_message_len {
-        output_text = truncate_bytes_on_char_boundary(&output_text, max_message_len);
+    Ok(Some(OutboundResult {
+        text: all_text,
+        platform_message_id: last_msg_id,
+    }))
+}
+
+async fn send_block(
+    outbound: &Arc<dyn ChannelOutbound>,
+    outbound_queue: &OutboundQueue,
+    channel_type: &str,
+    account_id: &str,
+    channel_config: &serde_json::Value,
+    chat_id: &str,
+    text: String,
+) -> String {
+    if text.trim().is_empty() {
+        return String::new();
     }
 
     let started = Instant::now();
     let ob = outbound.clone();
     let cfg = channel_config.clone();
     let cid = chat_id.to_string();
-    let txt = output_text.clone();
+    let txt = text.clone();
     let retry_cfg = RetryConfig::default();
 
-    let msg_id = match send_with_retry(
+    match send_with_retry(
         || {
             let ob = ob.clone();
             let cfg = cfg.clone();
@@ -156,7 +265,7 @@ where
                 chat_id,
                 send_type = "text",
                 message_id = %msg_id,
-                output_bytes = output_text.len(),
+                output_bytes = text.len(),
                 elapsed_ms = started.elapsed().as_millis() as u64,
             );
             msg_id
@@ -167,7 +276,7 @@ where
                 account_id = %account_id,
                 chat_id,
                 send_type = "text",
-                output_bytes = output_text.len(),
+                output_bytes = text.len(),
                 elapsed_ms = started.elapsed().as_millis() as u64,
                 error = %error,
             );
@@ -175,16 +284,11 @@ where
                 outbound: outbound.clone(),
                 config: channel_config.clone(),
                 chat_id: chat_id.to_string(),
-                text: output_text.clone(),
+                text,
                 attempt: 1,
-                next_attempt_at: Instant::now() + std::time::Duration::from_secs(2),
+                next_attempt_at: Instant::now() + Duration::from_secs(2),
             });
             String::new()
         }
-    };
-
-    Ok(Some(OutboundResult {
-        text: output_text,
-        platform_message_id: msg_id,
-    }))
+    }
 }

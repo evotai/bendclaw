@@ -114,7 +114,13 @@ fn canonical_json(value: &serde_json::Value) -> String {
             keys.sort();
             let entries: Vec<String> = keys
                 .iter()
-                .map(|k| format!("{}:{}", serde_json::json!(k), canonical_json(&map[k.as_str()])))
+                .map(|k| {
+                    format!(
+                        "{}:{}",
+                        serde_json::json!(k),
+                        canonical_json(&map[k.as_str()])
+                    )
+                })
                 .collect();
             format!("{{{}}}", entries.join(","))
         }

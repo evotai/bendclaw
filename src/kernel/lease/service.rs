@@ -125,8 +125,7 @@ impl LeaseServiceHandle {
             }
             self.lease_counts[i].store(0, Ordering::Relaxed);
         }
-        crate::base::runtime::join_bounded(futs, crate::base::runtime::CONCURRENCY_SHUTDOWN)
-            .await;
+        crate::base::runtime::join_bounded(futs, crate::base::runtime::CONCURRENCY_SHUTDOWN).await;
     }
 
     /// Wait for all scan loops to finish (call after cancellation).

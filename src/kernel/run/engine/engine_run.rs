@@ -4,6 +4,7 @@ use std::time::Instant;
 use super::engine::Engine;
 use crate::base::Result;
 use crate::kernel::run::event::Event;
+use crate::kernel::run::inbox::InboxItem;
 use crate::kernel::run::result::ContentBlock;
 use crate::kernel::run::result::Reason;
 use crate::kernel::run::result::Result as AgentResult;
@@ -24,6 +25,20 @@ pub(super) enum StepOutcome {
 }
 
 impl Engine {
+    /// Drain all pending inbox items, applying them to state/messages.
+    pub(super) fn drain_inbox(&mut self, state: &mut RunLoopState) {
+        while let Ok(item) = self.inbox.try_recv() {
+            match item {
+                InboxItem::Message(msg) => {
+                    self.ctx.messages.push(msg);
+                }
+                InboxItem::Yield => {
+                    state.request_yield();
+                }
+            }
+        }
+    }
+
     pub async fn run(&mut self) -> Result<AgentResult> {
         let mut state = RunLoopState::new(RunLoopConfig::from_context(&self.ctx), Instant::now());
 
@@ -39,6 +54,10 @@ impl Engine {
         self.loop_span_id = loop_span.span_id.clone();
 
         while state.should_continue() {
+            self.drain_inbox(&mut state);
+            if !state.should_continue() {
+                break;
+            }
             if !state.is_finalizing() {
                 if let Some(reason) = self.check_abort(&state) {
                     if state.should_attempt_finalization(&reason) {
@@ -73,8 +92,7 @@ impl Engine {
 
         let stop_reason = state.stop_reason().cloned().unwrap_or(Reason::EndTurn);
         let (content, iterations, usage) = state.into_finish();
-        self.finish(content, iterations, usage, stop_reason)
-            .await
+        self.finish(content, iterations, usage, stop_reason).await
     }
 
     async fn step(&mut self, state: &mut RunLoopState) -> Result<StepOutcome> {

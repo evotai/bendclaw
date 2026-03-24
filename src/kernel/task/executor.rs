@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::kernel::run::result::Reason;
 use crate::kernel::channel::send_text_to_account;
 use crate::kernel::channel::ChannelRegistry;
+use crate::kernel::run::result::Reason;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::session_stream::FinishedRunOutput;
 use crate::kernel::task::execution;
@@ -108,10 +108,7 @@ async fn run_task_prompt(
     // Enrich prompt with channel delivery context so the LLM knows where to send.
     let prompt = enrich_prompt_with_delivery(&task.prompt, &task.delivery, runtime, agent_id).await;
 
-    let stream = match session
-        .run(&prompt, &task.id, None, "", "", false)
-        .await
-    {
+    let stream = match session.run(&prompt, &task.id, None, "", "", false).await {
         Ok(s) => s,
         Err(e) => {
             return (
@@ -167,7 +164,8 @@ async fn enrich_prompt_with_delivery(
             channel_account_id,
             chat_id,
         } => {
-            match resolve_channel_delivery_context(runtime, agent_id, channel_account_id, chat_id).await
+            match resolve_channel_delivery_context(runtime, agent_id, channel_account_id, chat_id)
+                .await
             {
                 Some(ctx) => format!(
                     "{prompt}\n\n\
@@ -176,7 +174,10 @@ async fn enrich_prompt_with_delivery(
                     ctx.channel_type, ctx.chat_id
                 ),
                 None => {
-                    slog!(warn, "task", "channel_context_unavailable",
+                    slog!(
+                        warn,
+                        "task",
+                        "channel_context_unavailable",
                         agent_id,
                         channel_account_id,
                         chat_id,

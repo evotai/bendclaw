@@ -5,6 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bendclaw::base::ErrorCode;
 use bendclaw::kernel::agent_store::AgentStore;
+use bendclaw::kernel::run::InboxItem;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::session::session::SessionState;
 use bendclaw::kernel::session::workspace::SandboxResolver;
@@ -110,11 +111,13 @@ fn invalidate_by_agent_evicts_idle_and_marks_running_sessions_stale() {
     let idle = test_session("idle", "a1");
     let running = test_session("running", "a1");
     let other = test_session("other", "a2");
+    let (inbox_tx, _inbox_rx) = tokio::sync::mpsc::channel::<InboxItem>(1);
     *running.state.lock() = SessionState::Running {
         run_id: "r1".into(),
         cancel: CancellationToken::new(),
         started_at: std::time::Instant::now(),
         iteration: Arc::new(AtomicU32::new(1)),
+        inbox_tx,
     };
 
     manager.insert(idle.clone());

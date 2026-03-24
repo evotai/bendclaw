@@ -1,4 +1,5 @@
 pub mod backpressure;
+pub mod block_coalescer;
 pub mod fallback;
 pub mod health;
 pub mod outbound;

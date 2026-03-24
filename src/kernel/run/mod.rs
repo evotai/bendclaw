@@ -6,6 +6,7 @@ pub mod dispatcher;
 pub(crate) mod engine;
 pub mod event;
 pub mod fmt;
+pub mod inbox;
 pub mod loop_guard;
 pub mod orchestration;
 pub mod persist_op;
@@ -22,6 +23,7 @@ pub mod usage;
 
 pub use event::Delta;
 pub use event::Event;
+pub use inbox::InboxItem;
 pub use result::ContentBlock;
 pub use result::Reason;
 pub use result::Result;

@@ -181,8 +181,7 @@ impl ToolDispatcher {
             })
             .collect();
 
-        crate::base::runtime::join_bounded(futures, crate::base::runtime::CONCURRENCY_TOOLS)
-            .await
+        crate::base::runtime::join_bounded(futures, crate::base::runtime::CONCURRENCY_TOOLS).await
     }
 
     fn begin_tracker(

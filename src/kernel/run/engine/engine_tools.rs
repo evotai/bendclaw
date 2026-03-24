@@ -30,7 +30,10 @@ impl Engine {
         state: &mut RunLoopState,
     ) -> Option<Reason> {
         if self.tool_call_limit.is_exceeded() {
-            slog!(warn, "run", "max_tool_calls",
+            slog!(
+                warn,
+                "run",
+                "max_tool_calls",
                 current = self.tool_call_limit.count(),
                 batch = tool_calls.len() as u32,
                 max = self.tool_call_limit.limit(),
@@ -54,7 +57,10 @@ impl Engine {
             ..ToolDispatchReport::default()
         };
         if !skipped_calls.is_empty() {
-            slog!(warn, "run", "max_tool_calls_truncated",
+            slog!(
+                warn,
+                "run",
+                "max_tool_calls_truncated",
                 current = self.tool_call_limit.count(),
                 batch = (allowed_budget + skipped_calls.len()) as u32,
                 allowed = allowed_budget as u32,
@@ -114,12 +120,12 @@ impl Engine {
             .await;
         for outcome in &results {
             match outcome.result {
-                ToolCallResult::Success(..) => {
-                    dispatch_report.succeeded.push(outcome.parsed.call.name.clone())
-                }
-                ToolCallResult::ToolError(..) | ToolCallResult::InfraError(..) => {
-                    dispatch_report.failed.push(outcome.parsed.call.name.clone())
-                }
+                ToolCallResult::Success(..) => dispatch_report
+                    .succeeded
+                    .push(outcome.parsed.call.name.clone()),
+                ToolCallResult::ToolError(..) | ToolCallResult::InfraError(..) => dispatch_report
+                    .failed
+                    .push(outcome.parsed.call.name.clone()),
             }
         }
         // Merge blocked results so they get proper ToolEnd events and messages.

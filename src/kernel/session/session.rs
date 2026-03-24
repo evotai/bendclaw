@@ -23,6 +23,7 @@ use crate::kernel::run::context::Context;
 use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::engine::Engine;
 use crate::kernel::run::event::Event;
+use crate::kernel::run::inbox::InboxItem;
 use crate::kernel::run::persister::TurnPersister;
 use crate::kernel::run::prompt::PromptBuilder;
 use crate::kernel::run::result::Result as AgentResult;
@@ -55,6 +56,7 @@ pub enum SessionState {
         cancel: CancellationToken,
         started_at: Instant,
         iteration: Arc<AtomicU32>,
+        inbox_tx: mpsc::Sender<InboxItem>,
     },
 }
 
@@ -85,6 +87,7 @@ pub struct Session {
     history: Arc<Mutex<Vec<Message>>>,
     last_active: Mutex<Instant>,
     stale: AtomicBool,
+    queued_followup: Mutex<Option<String>>,
 }
 
 impl Session {
@@ -98,7 +101,16 @@ impl Session {
             history: Arc::new(Mutex::new(Vec::new())),
             last_active: Mutex::new(Instant::now()),
             stale: AtomicBool::new(false),
+            queued_followup: Mutex::new(None),
         }
+    }
+
+    pub fn queue_followup(&self, input: String) {
+        *self.queued_followup.lock() = Some(input);
+    }
+
+    pub fn take_followup(&self) -> Option<String> {
+        self.queued_followup.lock().take()
     }
 
     pub async fn run(
@@ -238,7 +250,7 @@ impl Session {
         let llm = self.res.llm.read().clone();
         let usage_model = llm.default_model().to_string();
 
-        let (engine_task, events, cancel, iteration) = self.spawn_engine(
+        let (engine_task, events, cancel, iteration, inbox_tx) = self.spawn_engine(
             &run_id,
             &full_prompt,
             history,
@@ -248,7 +260,7 @@ impl Session {
             is_remote_dispatch,
         );
 
-        self.mark_running(run_id.clone(), cancel, iteration);
+        self.mark_running(run_id.clone(), cancel, iteration, inbox_tx);
 
         Ok(Stream::new(
             engine_task,
@@ -320,6 +332,7 @@ impl Session {
         mpsc::Receiver<Event>,
         CancellationToken,
         Arc<AtomicU32>,
+        mpsc::Sender<InboxItem>,
     ) {
         let tool_view = ProgressiveToolView::new(self.res.tools.clone());
         let ctx = Context {
@@ -359,6 +372,7 @@ impl Session {
             self.res.storage.pool().clone(),
         ));
         let (tx, rx) = Engine::create_channel();
+        let (inbox_tx, inbox_rx) = Engine::create_inbox();
         let event_tx = tx.clone();
         let dispatcher = ToolDispatcher::new(
             self.res.tool_registry.clone(),
@@ -392,11 +406,12 @@ impl Session {
             iteration.clone(),
             trace,
             tx,
+            inbox_rx,
         );
         let events = rx;
         let task = tokio::spawn(async move { engine.run().await });
 
-        (task, events, cancel, iteration)
+        (task, events, cancel, iteration, inbox_tx)
     }
 
     async fn enforce_token_limits(&self) -> Result<()> {
@@ -480,13 +495,44 @@ impl Session {
         Ok(())
     }
 
-    fn mark_running(&self, run_id: String, cancel: CancellationToken, iteration: Arc<AtomicU32>) {
+    fn mark_running(
+        &self,
+        run_id: String,
+        cancel: CancellationToken,
+        iteration: Arc<AtomicU32>,
+        inbox_tx: mpsc::Sender<InboxItem>,
+    ) {
         *self.state.lock() = SessionState::Running {
             run_id,
             cancel,
             started_at: Instant::now(),
             iteration,
+            inbox_tx,
         };
+    }
+
+    /// Inject a user message into the running engine's inbox.
+    /// Returns true if the message was sent successfully.
+    pub fn inject_message(&self, msg: &str) -> bool {
+        let state = self.state.lock();
+        if let SessionState::Running { inbox_tx, .. } = &*state {
+            inbox_tx
+                .try_send(InboxItem::Message(Message::user(msg)))
+                .is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Send a yield signal to the running engine.
+    /// Returns true if the signal was sent successfully.
+    pub fn steer_yield(&self) -> bool {
+        let state = self.state.lock();
+        if let SessionState::Running { inbox_tx, .. } = &*state {
+            inbox_tx.try_send(InboxItem::Yield).is_ok()
+        } else {
+            false
+        }
     }
 
     pub fn cancel_current(&self) {
@@ -503,7 +549,7 @@ impl Session {
                 run_id: active_run_id,
                 cancel,
                 ..
-            } if active_run_id == run_id => {
+            } if active_run_id.as_str() == run_id => {
                 cancel.cancel();
                 true
             }

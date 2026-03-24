@@ -9,6 +9,7 @@ use crate::kernel::run::compactor::Compactor;
 use crate::kernel::run::context::Context;
 use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::event::Event;
+use crate::kernel::run::inbox::InboxItem;
 use crate::kernel::run::loop_guard::LoopGuard;
 use crate::kernel::run::run_loop::AbortPolicy;
 use crate::kernel::run::tool_call_limit::ToolCallLimitTracker;
@@ -28,6 +29,7 @@ pub(crate) struct Engine {
     pub(super) cancel: CancellationToken,
     pub(super) iteration: Arc<AtomicU32>,
     pub(super) tx: mpsc::Sender<Event>,
+    pub(super) inbox: mpsc::Receiver<InboxItem>,
     pub(super) trace: Trace,
     pub(super) abort_policy: AbortPolicy,
     pub(super) loop_guard: LoopGuard,
@@ -43,6 +45,11 @@ impl Engine {
         mpsc::channel(EVENT_CAPACITY)
     }
 
+    /// Create the inbox channel for injecting messages into a running engine.
+    pub fn create_inbox() -> (mpsc::Sender<InboxItem>, mpsc::Receiver<InboxItem>) {
+        mpsc::channel(16)
+    }
+
     /// Build the engine from a pre-created `tx` (from `create_channel`).
     pub fn from_tx(
         ctx: Context,
@@ -52,7 +59,8 @@ impl Engine {
         iteration: Arc<AtomicU32>,
         trace_recorder: TraceRecorder,
         tx: mpsc::Sender<Event>,
-        ) -> Self {
+        inbox: mpsc::Receiver<InboxItem>,
+    ) -> Self {
         Self {
             abort_policy: AbortPolicy::new(ctx.max_iterations, ctx.max_tool_calls),
             loop_guard: LoopGuard::default(),
@@ -65,6 +73,7 @@ impl Engine {
             cancel,
             iteration,
             tx,
+            inbox,
             trace: Trace::new(trace_recorder),
             loop_span_id: String::new(),
         }

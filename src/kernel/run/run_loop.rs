@@ -274,6 +274,7 @@ pub struct RunLoopState {
     consecutive_max_tokens: u32,
     finalizing: bool,
     stop_reason: Option<Reason>,
+    yield_requested: bool,
 }
 
 impl RunLoopState {
@@ -289,11 +290,16 @@ impl RunLoopState {
             consecutive_max_tokens: 0,
             finalizing: false,
             stop_reason: None,
+            yield_requested: false,
         }
     }
 
     pub fn should_continue(&self) -> bool {
-        self.has_tool_calls
+        self.has_tool_calls && !self.yield_requested
+    }
+
+    pub fn request_yield(&mut self) {
+        self.yield_requested = true;
     }
     pub fn deadline(&self) -> Instant {
         self.deadline

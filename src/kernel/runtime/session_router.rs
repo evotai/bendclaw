@@ -5,6 +5,7 @@ use crate::base::Result;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::session_stream::Stream;
 
+#[allow(clippy::large_enum_variant)]
 pub enum SubmitResult {
     Started {
         stream: Stream,
@@ -18,6 +19,7 @@ pub enum SubmitResult {
 }
 
 impl Runtime {
+    #[allow(clippy::too_many_arguments)]
     pub async fn submit_turn(
         self: &Arc<Self>,
         agent_id: &str,

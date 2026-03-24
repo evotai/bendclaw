@@ -89,7 +89,8 @@ impl Runtime {
         }
 
         self.supervisor.stop_all().await;
-        if let Some(ref svc) = *self.cluster.read() {
+        let cluster_svc = self.cluster.read().clone();
+        if let Some(ref svc) = cluster_svc {
             svc.deregister().await;
         }
 

@@ -302,7 +302,7 @@ impl Session {
         trace
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn spawn_engine(
         &self,
         run_id: &str,

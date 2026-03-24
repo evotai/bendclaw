@@ -46,6 +46,7 @@ impl Engine {
     }
 
     /// Build the engine from a pre-created `tx` (from `create_channel`).
+    #[allow(clippy::too_many_arguments)]
     pub fn from_tx(
         ctx: Context,
         dispatcher: ToolDispatcher,

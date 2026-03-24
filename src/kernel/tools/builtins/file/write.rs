@@ -9,7 +9,6 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 
 /// Write file contents to the session workspace.
 pub struct FileWriteTool;
@@ -41,7 +40,8 @@ impl Tool for FileWriteTool {
     }
 
     fn description(&self) -> &str {
-        "Write contents to a file. Overwrites the entire file. Use file_edit for partial changes."
+        "Write contents to a file. Prefer file_edit for modifying existing files. \
+         Accepts absolute or workspace-relative paths. Creates parent directories as needed."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -50,7 +50,7 @@ impl Tool for FileWriteTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file (absolute or relative to working directory)"
+                    "description": "Path to the file within the workspace"
                 },
                 "content": {
                     "type": "string",
@@ -76,9 +76,9 @@ impl Tool for FileWriteTool {
             None => return Ok(ToolResult::error("Missing 'content' parameter")),
         };
 
-        let full_path = match ctx.workspace.resolve_search_path(path) {
+        let full_path = match ctx.workspace.resolve_safe_path(path) {
             Some(p) => p,
-            None => return Ok(ToolResult::error("Path is not accessible")),
+            None => return Ok(ToolResult::error("Path escapes workspace directory")),
         };
 
         if let Some(parent) = full_path.parent() {
@@ -91,14 +91,14 @@ impl Tool for FileWriteTool {
 
         match tokio::fs::write(&full_path, content).await {
             Ok(()) => {
-                slog!(debug, "file", "completed", path, bytes = content.len(),);
+                tracing::info!(path, bytes = content.len(), "file written");
                 Ok(ToolResult::ok(format!(
                     "Written {} bytes to {path}",
                     content.len()
                 )))
             }
             Err(e) => {
-                slog!(warn, "file", "failed", path, error = %e,);
+                tracing::warn!(path, error = %e, "file write failed");
                 Ok(ToolResult::error(format!("Failed to write file: {e}")))
             }
         }

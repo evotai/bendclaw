@@ -9,7 +9,6 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 
 /// Search-and-replace edit within a file in the session workspace.
 pub struct FileEditTool;
@@ -41,8 +40,8 @@ impl Tool for FileEditTool {
     }
 
     fn description(&self) -> &str {
-        "Apply a search-and-replace edit to a file. old_string must match exactly and appear exactly once. \
-         Always call file_read first to see current content."
+        "Apply a search-and-replace edit to a file. Use this instead of shell sed/awk. \
+         Accepts absolute or workspace-relative paths. The old_string must match exactly once."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -51,7 +50,7 @@ impl Tool for FileEditTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the file (absolute or relative to working directory)"
+                    "description": "Path to the file within the workspace"
                 },
                 "old_string": {
                     "type": "string",
@@ -86,9 +85,9 @@ impl Tool for FileEditTool {
             None => return Ok(ToolResult::error("Missing 'new_string' parameter")),
         };
 
-        let full_path = match ctx.workspace.resolve_search_path(path) {
+        let full_path = match ctx.workspace.resolve_safe_path(path) {
             Some(p) => p,
-            None => return Ok(ToolResult::error("Path is not accessible")),
+            None => return Ok(ToolResult::error("Path escapes workspace directory")),
         };
 
         let content = match tokio::fs::read_to_string(&full_path).await {
@@ -110,11 +109,11 @@ impl Tool for FileEditTool {
 
         match tokio::fs::write(&full_path, &new_content).await {
             Ok(()) => {
-                slog!(debug, "file", "completed", path,);
+                tracing::info!(path, "file edited");
                 Ok(ToolResult::ok(format!("Edited {path} successfully")))
             }
             Err(e) => {
-                slog!(warn, "file", "failed", path, error = %e,);
+                tracing::warn!(path, error = %e, "file edit failed");
                 Ok(ToolResult::error(format!("Failed to write file: {e}")))
             }
         }

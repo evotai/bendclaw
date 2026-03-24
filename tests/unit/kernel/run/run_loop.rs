@@ -136,7 +136,7 @@ fn turn_loop_state_delegates_abort_decisions_to_policy() {
     );
     state.begin_iteration();
 
-    let policy = AbortPolicy::new(1, 200);
+    let policy = AbortPolicy::new(1);
     let max = state.check_abort(&policy, false, start + Duration::from_secs(1));
     assert_eq!(max.signal, AbortSignal::MaxIterations);
     assert_eq!(max.reason, Some(Reason::MaxIterations));
@@ -157,7 +157,7 @@ fn turn_loop_state_abort_decision_carries_aborted_reason() {
         start,
     );
 
-    let policy = AbortPolicy::new(5, 200);
+    let policy = AbortPolicy::new(5);
     let aborted = state.check_abort(&policy, true, start);
     assert_eq!(aborted.signal, AbortSignal::Aborted);
     assert_eq!(aborted.reason, Some(Reason::Aborted));
@@ -167,7 +167,7 @@ fn turn_loop_state_abort_decision_carries_aborted_reason() {
 fn decide_cancel_or_timeout_prefers_cancel() {
     let now = Instant::now();
     let deadline = now - Duration::from_secs(1);
-    let policy = AbortPolicy::new(5, 200);
+    let policy = AbortPolicy::new(5);
 
     let d = policy.check_cancel_or_timeout(true, now, deadline);
     assert_eq!(d.signal, AbortSignal::Aborted);
@@ -176,7 +176,7 @@ fn decide_cancel_or_timeout_prefers_cancel() {
 #[test]
 fn decide_cancel_or_timeout_handles_timeout_and_none() {
     let now = Instant::now();
-    let policy = AbortPolicy::new(5, 200);
+    let policy = AbortPolicy::new(5);
     let timeout = policy.check_cancel_or_timeout(false, now, now - Duration::from_secs(1));
     assert_eq!(timeout.signal, AbortSignal::Timeout);
 
@@ -187,7 +187,7 @@ fn decide_cancel_or_timeout_handles_timeout_and_none() {
 #[test]
 fn decide_abort_checks_iterations_after_time_cancel() {
     let now = Instant::now();
-    let policy = AbortPolicy::new(5, 200);
+    let policy = AbortPolicy::new(5);
 
     let max = policy.check(false, now, now + Duration::from_secs(1), 5);
     assert_eq!(max.signal, AbortSignal::MaxIterations);
@@ -198,7 +198,7 @@ fn decide_abort_checks_iterations_after_time_cancel() {
 
 #[test]
 fn reason_from_abort_maps_signals() {
-    let policy = AbortPolicy::new(1, 200);
+    let policy = AbortPolicy::new(1);
     let now = Instant::now();
     let deadline = now + Duration::from_secs(10);
 
@@ -344,37 +344,4 @@ fn turn_loop_state_set_ttft() {
     assert_eq!(state.usage().ttft_ms, 0);
     state.set_ttft(123);
     assert_eq!(state.usage().ttft_ms, 123);
-}
-
-// ── Tool call budget ──
-
-#[test]
-fn tool_calls_count_accumulates() {
-    let mut state = RunLoopState::default();
-    assert_eq!(state.tool_calls_count(), 0);
-    state.add_tool_calls(3);
-    assert_eq!(state.tool_calls_count(), 3);
-    state.add_tool_calls(5);
-    assert_eq!(state.tool_calls_count(), 8);
-}
-
-#[test]
-fn finalization_only_applies_to_budget_reasons_without_final_content() {
-    let mut state = RunLoopState::default();
-    assert!(state.should_attempt_finalization(&Reason::MaxIterations));
-    assert!(state.should_attempt_finalization(&Reason::MaxToolCalls));
-    assert!(!state.should_attempt_finalization(&Reason::Timeout));
-
-    state.record_final_response(vec![ContentBlock::text("done")]);
-    assert!(!state.should_attempt_finalization(&Reason::MaxIterations));
-}
-
-#[test]
-fn begin_finalization_sets_stop_reason_and_disables_tools_for_next_turn() {
-    let mut state = RunLoopState::default();
-    state.begin_finalization(Reason::MaxIterations);
-
-    assert!(state.is_finalizing());
-    assert_eq!(state.stop_reason(), Some(&Reason::MaxIterations));
-    assert!(state.should_continue());
 }

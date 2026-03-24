@@ -28,27 +28,9 @@ impl Engine {
                     .with_cache_control(),
             );
         }
-        if state.is_finalizing() {
-            chat_messages.push(
-                crate::llm::message::ChatMessage::system(
-                    "Tool execution is no longer available for this run. \
-                     Produce the best possible final answer using only verified results already present. \
-                     If work is incomplete, say what remains incomplete. \
-                     Do not claim any action succeeded unless a successful tool result already confirmed it.",
-                )
-                .with_cache_control(),
-            );
-        }
-        if let Some(grounding) = self.tool_outcome_guard.take_grounding() {
-            chat_messages.push(crate::llm::message::ChatMessage::system(grounding));
-        }
         chat_messages.extend(to_chat_messages(&self.ctx.messages));
 
-        let active_tools = if state.is_finalizing() {
-            Vec::new()
-        } else {
-            self.ctx.tool_view.tool_schemas()
-        };
+        let active_tools = self.ctx.tool_view.tool_schemas();
         let mut request_payload = self.audit_payload(iteration);
         request_payload.insert(
             "model".to_string(),

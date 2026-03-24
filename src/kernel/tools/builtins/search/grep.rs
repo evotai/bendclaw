@@ -8,7 +8,6 @@ use crate::kernel::tools::ToolContext;
 use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 
 const MAX_MATCHES: usize = 200;
 const MAX_FILE_SIZE: u64 = 1_048_576; // 1MB
@@ -34,8 +33,10 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Search file contents using a regex pattern. Returns matching lines with file paths and line numbers. \
-         ALWAYS use this instead of shell grep/rg/ag commands."
+        "Search file contents using a regex pattern. \
+         ALWAYS use this tool for content search. NEVER use shell with grep or rg. \
+         Supports absolute paths, respects .gitignore. \
+         Returns matching lines with file paths and line numbers."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -44,15 +45,15 @@ impl Tool for GrepTool {
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Regex pattern to search for"
+                    "description": "Regular expression pattern to search for."
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory or file path to search in (relative to working directory, default: '.')"
+                    "description": "Absolute or relative path to search in. Defaults to the workspace directory."
                 },
                 "file_pattern": {
                     "type": "string",
-                    "description": "Glob pattern to filter files, e.g. '*.rs', '*.py'"
+                    "description": "Optional glob to filter files (e.g. '*.rs', '*.py')."
                 }
             },
             "required": ["pattern"]
@@ -71,7 +72,7 @@ impl Tool for GrepTool {
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
         let file_pattern = args.get("file_pattern").and_then(|v| v.as_str());
 
-        let full_path = match ctx.workspace.resolve_search_path(path) {
+        let full_path = match ctx.workspace.resolve_safe_path(path) {
             Some(p) => p,
             None => return Ok(ToolResult::error("Path escapes workspace directory")),
         };
@@ -144,7 +145,12 @@ impl Tool for GrepTool {
         .unwrap_or_default();
 
         if result.is_empty() {
-            return Ok(ToolResult::ok("No matches found."));
+            let hint = if path == "." {
+                "No matches found. The default search path is the workspace directory (not user home). Try providing an absolute path."
+            } else {
+                "No matches found. Verify the path exists, or try searching a parent directory."
+            };
+            return Ok(ToolResult::ok(hint));
         }
 
         let truncated = result.len() >= MAX_MATCHES;
@@ -152,14 +158,7 @@ impl Tool for GrepTool {
         if truncated {
             output.push_str(&format!("\n\n(truncated at {MAX_MATCHES} matches)"));
         }
-        slog!(
-            info,
-            "search",
-            "completed",
-            pattern,
-            path,
-            matches = result.len(),
-        );
+        tracing::info!(pattern, path, matches = result.len(), "grep completed");
         Ok(ToolResult::ok(output))
     }
 }

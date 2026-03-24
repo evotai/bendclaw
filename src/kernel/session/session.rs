@@ -23,7 +23,6 @@ use crate::kernel::run::context::Context;
 use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::engine::Engine;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::inbox::InboxItem;
 use crate::kernel::run::persister::TurnPersister;
 use crate::kernel::run::prompt::PromptBuilder;
 use crate::kernel::run::result::Result as AgentResult;
@@ -56,7 +55,7 @@ pub enum SessionState {
         cancel: CancellationToken,
         started_at: Instant,
         iteration: Arc<AtomicU32>,
-        inbox_tx: mpsc::Sender<InboxItem>,
+        inbox_tx: mpsc::Sender<Message>,
     },
 }
 
@@ -87,7 +86,6 @@ pub struct Session {
     history: Arc<Mutex<Vec<Message>>>,
     last_active: Mutex<Instant>,
     stale: AtomicBool,
-    queued_followup: Mutex<Option<String>>,
 }
 
 impl Session {
@@ -101,16 +99,7 @@ impl Session {
             history: Arc::new(Mutex::new(Vec::new())),
             last_active: Mutex::new(Instant::now()),
             stale: AtomicBool::new(false),
-            queued_followup: Mutex::new(None),
         }
-    }
-
-    pub fn queue_followup(&self, input: String) {
-        *self.queued_followup.lock() = Some(input);
-    }
-
-    pub fn take_followup(&self) -> Option<String> {
-        self.queued_followup.lock().take()
     }
 
     pub async fn run(
@@ -332,7 +321,7 @@ impl Session {
         mpsc::Receiver<Event>,
         CancellationToken,
         Arc<AtomicU32>,
-        mpsc::Sender<InboxItem>,
+        mpsc::Sender<Message>,
     ) {
         let tool_view = ProgressiveToolView::new(self.res.tools.clone());
         let ctx = Context {
@@ -347,7 +336,6 @@ impl Session {
             temperature: llm.default_temperature(),
             checkpoint: Arc::new(self.res.config.checkpoint.clone()),
             max_iterations: self.res.config.max_iterations,
-            max_tool_calls: self.res.config.max_tool_calls,
             max_context_tokens: self.res.config.max_context_tokens,
             max_duration: Duration::from_secs(self.res.config.max_duration_secs),
             tool_view,
@@ -372,7 +360,6 @@ impl Session {
             self.res.storage.pool().clone(),
         ));
         let (tx, rx) = Engine::create_channel();
-        let (inbox_tx, inbox_rx) = Engine::create_inbox();
         let event_tx = tx.clone();
         let dispatcher = ToolDispatcher::new(
             self.res.tool_registry.clone(),
@@ -397,6 +384,8 @@ impl Session {
             cancel.clone(),
             event_tx,
         );
+
+        let (inbox_tx, inbox_rx) = Engine::create_inbox();
 
         let mut engine = Engine::from_tx(
             ctx,
@@ -500,7 +489,7 @@ impl Session {
         run_id: String,
         cancel: CancellationToken,
         iteration: Arc<AtomicU32>,
-        inbox_tx: mpsc::Sender<InboxItem>,
+        inbox_tx: mpsc::Sender<Message>,
     ) {
         *self.state.lock() = SessionState::Running {
             run_id,
@@ -511,25 +500,11 @@ impl Session {
         };
     }
 
-    /// Inject a user message into the running engine's inbox.
-    /// Returns true if the message was sent successfully.
+    /// Inject a user message into the running engine. Returns true if sent.
     pub fn inject_message(&self, msg: &str) -> bool {
         let state = self.state.lock();
         if let SessionState::Running { inbox_tx, .. } = &*state {
-            inbox_tx
-                .try_send(InboxItem::Message(Message::user(msg)))
-                .is_ok()
-        } else {
-            false
-        }
-    }
-
-    /// Send a yield signal to the running engine.
-    /// Returns true if the signal was sent successfully.
-    pub fn steer_yield(&self) -> bool {
-        let state = self.state.lock();
-        if let SessionState::Running { inbox_tx, .. } = &*state {
-            inbox_tx.try_send(InboxItem::Yield).is_ok()
+            inbox_tx.try_send(Message::user(msg)).is_ok()
         } else {
             false
         }
@@ -549,7 +524,7 @@ impl Session {
                 run_id: active_run_id,
                 cancel,
                 ..
-            } if active_run_id.as_str() == run_id => {
+            } if active_run_id == run_id => {
                 cancel.cancel();
                 true
             }

@@ -154,11 +154,25 @@ pub async fn download_asset(asset: GitHubReleaseAsset) -> Result<Vec<u8>> {
         anyhow::bail!("asset download failed: HTTP {status}: {body}");
     }
 
-    Ok(resp
-        .bytes()
-        .await
-        .context("failed to read asset bytes")?
-        .to_vec())
+    let total = resp.content_length().unwrap_or(0);
+    let mut bytes = Vec::with_capacity(total as usize);
+    let mut stream = resp.bytes_stream();
+    let mut downloaded: u64 = 0;
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("failed to read download chunk")?;
+        downloaded += chunk.len() as u64;
+        bytes.extend_from_slice(&chunk);
+        if total > 0 {
+            let pct = (downloaded * 100) / total;
+            eprint!("\rDownloading... {pct}% ({downloaded}/{total} bytes)");
+        } else {
+            eprint!("\rDownloading... {downloaded} bytes");
+        }
+    }
+    eprintln!();
+
+    Ok(bytes)
 }
 
 pub fn extract_binary(archive: &[u8]) -> Result<Vec<u8>> {

@@ -7,6 +7,7 @@ use crate::kernel::channel::dispatcher::ChannelDispatcher;
 use crate::kernel::channel::message::InboundEvent;
 use crate::kernel::channel::writer::ChannelMessageOp;
 use crate::kernel::runtime::Runtime;
+use crate::kernel::runtime::SubmitTurnResult;
 use crate::observability::log::channel_log;
 use crate::observability::log::slog;
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
@@ -181,20 +182,11 @@ async fn try_dispatch_inbound(
         }
     }
 
-    // Run the session.
-    let session = runtime
-        .get_or_create_session(&account.agent_id, &session_key, &account.user_id)
-        .await?;
-
     slog!(debug, "channel", "session_ready",
         channel_type = %account.channel_type,
         chat_id,
         session_id = %session_key,
     );
-
-    let trace_id = new_id();
-    let mut run_stream = session.run(&input, &trace_id, None, "", "", false).await?;
-    let run_id = run_stream.run_id().to_string();
 
     let caps = runtime
         .channels()
@@ -203,62 +195,188 @@ async fn try_dispatch_inbound(
     let supports_edit = caps.as_ref().map(|c| c.supports_edit).unwrap_or(false);
     let max_len = caps.as_ref().map(|c| c.max_message_len).unwrap_or(4096);
 
-    let (output_text, platform_msg_id) = if let Some(ref ob) = outbound {
-        let result = delivery::deliver_outbound(
-            ob,
-            &runtime.rate_limiter,
-            &runtime.outbound_queue,
-            &account.channel_type,
-            &account.external_account_id,
-            &account.config,
-            chat_id,
-            supports_edit,
-            max_len,
-            &mut run_stream,
-        )
-        .await?;
-        let _ = run_stream.finish().await;
-        match result {
-            Some(r) => (r.text, r.platform_message_id),
-            None => return Ok(()),
+    let mut pending_input = Some(input);
+    loop {
+        let trace_id = new_id();
+        let submit = runtime
+            .submit_turn(
+                &account.agent_id,
+                &session_key,
+                &account.user_id,
+                pending_input.take().unwrap_or_default(),
+                &trace_id,
+                None,
+                "",
+                "",
+                false,
+            )
+            .await?;
+
+        match submit {
+            SubmitTurnResult::StatusReply { message }
+            | SubmitTurnResult::CancelledCurrent { message }
+            | SubmitTurnResult::WaitingForDecision { message, .. }
+            | SubmitTurnResult::FollowupQueued { message }
+            | SubmitTurnResult::MessageInjected { message }
+            | SubmitTurnResult::ContinuedCurrent { message } => {
+                send_control_reply(
+                    runtime,
+                    outbound.as_ref(),
+                    &msg_repo,
+                    account,
+                    &session_key,
+                    chat_id,
+                    &message,
+                )
+                .await;
+                break;
+            }
+            SubmitTurnResult::Started {
+                mut stream,
+                preamble,
+                ..
+            } => {
+                if let Some(ref text) = preamble {
+                    if let Some(ref ob) = outbound {
+                        let _ = ob.send_text(&account.config, chat_id, text).await;
+                    }
+                }
+
+                let run_id = stream.run_id().to_string();
+                let (output_text, platform_msg_id) = if let Some(ref ob) = outbound {
+                    let result = delivery::deliver_outbound(
+                        ob,
+                        &runtime.rate_limiter,
+                        &runtime.outbound_queue,
+                        &account.channel_type,
+                        &account.external_account_id,
+                        &account.config,
+                        chat_id,
+                        supports_edit,
+                        max_len,
+                        &mut stream,
+                    )
+                    .await?;
+                    let _ = stream.finish().await;
+                    match result {
+                        Some(r) => (r.text, r.platform_message_id),
+                        None => {
+                            let next = runtime.complete_turn(&session_key, &run_id).await;
+                            if let Some(next_input) = next {
+                                pending_input = Some(next_input);
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                } else {
+                    let _ = stream.finish().await;
+                    let next = runtime.complete_turn(&session_key, &run_id).await;
+                    if let Some(next_input) = next {
+                        pending_input = Some(next_input);
+                        continue;
+                    }
+                    break;
+                };
+
+                channel_log!(info, "outbound", "sent",
+                    msg = format!("channel \u{2192} {}", account.channel_type),
+                    output_preview = %crate::base::truncate_bytes_on_char_boundary(&output_text, 100),
+                    output_bytes = output_text.len(),
+                    channel_type = %account.channel_type,
+                    account_id = %account.channel_account_id,
+                    chat_id,
+                    message_id = %platform_msg_id,
+                );
+
+                runtime
+                    .channel_message_writer
+                    .send(ChannelMessageOp::Insert {
+                        repo: msg_repo.clone(),
+                        record: ChannelMessageRecord {
+                            id: new_id(),
+                            channel_type: account.channel_type.clone(),
+                            account_id: account.external_account_id.clone(),
+                            chat_id: chat_id.to_string(),
+                            session_id: session_key.clone(),
+                            direction: "outbound".into(),
+                            sender_id: "agent".into(),
+                            text: output_text,
+                            platform_message_id: platform_msg_id,
+                            run_id: run_id.clone(),
+                            attachments: "[]".into(),
+                            created_at: String::new(),
+                        },
+                    });
+
+                let next = runtime.complete_turn(&session_key, &run_id).await;
+                if let Some(next_input) = next {
+                    pending_input = Some(next_input);
+                    continue;
+                }
+                break;
+            }
         }
-    } else {
-        let _ = run_stream.finish().await;
-        return Ok(());
-    };
-
-    channel_log!(info, "outbound", "sent",
-        msg = format!("channel \u{2192} {}", account.channel_type),
-        output_preview = %crate::base::truncate_bytes_on_char_boundary(&output_text, 100),
-        output_bytes = output_text.len(),
-        channel_type = %account.channel_type,
-        account_id = %account.channel_account_id,
-        chat_id,
-        message_id = %platform_msg_id,
-    );
-
-    // Record outbound message (fire-and-forget via background writer).
-    runtime
-        .channel_message_writer
-        .send(ChannelMessageOp::Insert {
-            repo: msg_repo,
-            record: ChannelMessageRecord {
-                id: new_id(),
-                channel_type: account.channel_type.clone(),
-                account_id: account.external_account_id.clone(),
-                chat_id: chat_id.to_string(),
-                session_id: session_key,
-                direction: "outbound".into(),
-                sender_id: "agent".into(),
-                text: output_text,
-                platform_message_id: platform_msg_id,
-                run_id,
-                attachments: "[]".into(),
-                created_at: String::new(),
-            },
-        });
+    }
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_control_reply(
+    runtime: &Arc<Runtime>,
+    outbound: Option<&Arc<dyn crate::kernel::channel::plugin::ChannelOutbound>>,
+    msg_repo: &ChannelMessageRepo,
+    account: &ChannelAccount,
+    session_key: &str,
+    chat_id: &str,
+    message: &str,
+) {
+    if let Some(ob) = outbound {
+        match ob.send_text(&account.config, chat_id, message).await {
+            Ok(platform_message_id) => {
+                channel_log!(info, "outbound", "sent",
+                    msg = format!("channel \u{2192} {} (control)", account.channel_type),
+                    output_preview = %crate::base::truncate_bytes_on_char_boundary(message, 100),
+                    output_bytes = message.len(),
+                    channel_type = %account.channel_type,
+                    account_id = %account.channel_account_id,
+                    chat_id,
+                    message_id = %platform_message_id,
+                );
+                runtime
+                    .channel_message_writer
+                    .send(ChannelMessageOp::Insert {
+                        repo: msg_repo.clone(),
+                        record: ChannelMessageRecord {
+                            id: new_id(),
+                            channel_type: account.channel_type.clone(),
+                            account_id: account.external_account_id.clone(),
+                            chat_id: chat_id.to_string(),
+                            session_id: session_key.to_string(),
+                            direction: "outbound".into(),
+                            sender_id: "agent".into(),
+                            text: message.to_string(),
+                            platform_message_id,
+                            run_id: String::new(),
+                            attachments: "[]".into(),
+                            created_at: String::new(),
+                        },
+                    });
+            }
+            Err(error) => {
+                channel_log!(warn, "outbound", "failed",
+                    msg = format!("channel \u{2192} {} (control)", account.channel_type),
+                    output_preview = %crate::base::truncate_bytes_on_char_boundary(message, 100),
+                    output_bytes = message.len(),
+                    channel_type = %account.channel_type,
+                    account_id = %account.channel_account_id,
+                    chat_id,
+                    error = %error,
+                );
+            }
+        }
+    }
 }
 
 /// Extract sender_id from any inbound event variant.

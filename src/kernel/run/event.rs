@@ -99,6 +99,9 @@ pub enum Event {
         tool_call_id: Option<String>,
         message: String,
     },
+
+    /// A user message was injected into the running engine via the inbox channel.
+    MessageInjected { content: String },
 }
 
 impl Event {
@@ -129,6 +132,7 @@ impl Event {
             Self::Audit { name, .. } => name.clone(),
             Self::AppData(_) => "AppData".to_string(),
             Self::Progress { .. } => "Progress".to_string(),
+            Self::MessageInjected { .. } => "MessageInjected".to_string(),
         }
     }
 }

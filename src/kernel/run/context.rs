@@ -28,7 +28,6 @@ pub(crate) struct Context {
 
     // ── Limits ──
     pub max_iterations: u32,
-    pub max_tool_calls: u32,
     pub max_context_tokens: usize,
     pub max_duration: Duration,
     pub checkpoint: Arc<CheckpointConfig>,

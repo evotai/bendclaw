@@ -9,7 +9,6 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 
 /// List directory contents within the session workspace.
 pub struct ListDirTool;
@@ -41,7 +40,7 @@ impl Tool for ListDirTool {
     }
 
     fn description(&self) -> &str {
-        "List the contents of a directory. Accepts absolute paths or paths relative to the working directory."
+        "List the contents of a directory. Accepts absolute or workspace-relative paths."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -50,7 +49,7 @@ impl Tool for ListDirTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the directory (absolute or relative to working directory)"
+                    "description": "Path to the directory within the workspace"
                 }
             },
             "required": ["path"]
@@ -67,15 +66,15 @@ impl Tool for ListDirTool {
             None => return Ok(ToolResult::error("Missing 'path' parameter")),
         };
 
-        let full_path = match ctx.workspace.resolve_search_path(path) {
+        let full_path = match ctx.workspace.resolve_safe_path(path) {
             Some(p) => p,
-            None => return Ok(ToolResult::error("Path is not accessible")),
+            None => return Ok(ToolResult::error("Path escapes workspace directory")),
         };
 
         let mut read_dir = match tokio::fs::read_dir(&full_path).await {
             Ok(rd) => rd,
             Err(e) => {
-                slog!(warn, "file", "failed", path, error = %e,);
+                tracing::warn!(path, error = %e, "list_dir failed");
                 return Ok(ToolResult::error(format!("Failed to read directory: {e}")));
             }
         };
@@ -104,7 +103,7 @@ impl Tool for ListDirTool {
 
         entries.sort();
         let output = entries.join("\n");
-        slog!(debug, "file", "completed", path, count = entries.len(),);
+        tracing::info!(path, count = entries.len(), "list_dir succeeded");
         Ok(ToolResult::ok(output))
     }
 }

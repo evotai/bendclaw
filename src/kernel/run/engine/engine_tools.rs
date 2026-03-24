@@ -5,11 +5,7 @@ use crate::kernel::run::dispatcher::DispatchOutcome;
 use crate::kernel::run::dispatcher::ParsedToolCall;
 use crate::kernel::run::dispatcher::ToolCallResult;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::loop_guard::LoopGuardVerdict;
-use crate::kernel::run::orchestration::aborted_tool_result_messages;
-use crate::kernel::run::result::Reason;
 use crate::kernel::run::run_loop::RunLoopState;
-use crate::kernel::run::tool_outcome_guard::ToolDispatchReport;
 use crate::kernel::tools::id::CHECKPOINT_MEMORY_TOOLS;
 use crate::kernel::trace::SpanMeta;
 use crate::kernel::trace::TraceSpan;
@@ -28,119 +24,17 @@ impl Engine {
         &mut self,
         tool_calls: &[ToolCall],
         state: &mut RunLoopState,
-    ) -> Option<Reason> {
-        if self.tool_call_limit.is_exceeded() {
-            slog!(
-                warn,
-                "run",
-                "max_tool_calls",
-                current = self.tool_call_limit.count(),
-                batch = tool_calls.len() as u32,
-                max = self.tool_call_limit.limit(),
-            );
-            self.ctx
-                .messages
-                .extend(aborted_tool_result_messages(tool_calls));
-            return Some(Reason::MaxToolCalls);
-        }
-
-        let remaining_budget = self.tool_call_limit.remaining() as usize;
-        let allowed_budget = remaining_budget.min(tool_calls.len());
-        let (tool_calls, skipped_calls) = tool_calls.split_at(allowed_budget);
-        let mut dispatch_report = ToolDispatchReport {
-            requested: tool_calls
-                .iter()
-                .map(|call| call.name.clone())
-                .chain(skipped_calls.iter().map(|call| call.name.clone()))
-                .collect(),
-            skipped: skipped_calls.iter().map(|call| call.name.clone()).collect(),
-            ..ToolDispatchReport::default()
-        };
-        if !skipped_calls.is_empty() {
-            slog!(
-                warn,
-                "run",
-                "max_tool_calls_truncated",
-                current = self.tool_call_limit.count(),
-                batch = (allowed_budget + skipped_calls.len()) as u32,
-                allowed = allowed_budget as u32,
-                max = self.tool_call_limit.limit(),
-            );
-            self.ctx
-                .messages
-                .extend(aborted_tool_result_messages(skipped_calls));
-        }
-        if tool_calls.is_empty() {
-            self.tool_outcome_guard.record(dispatch_report);
-            return Some(Reason::MaxToolCalls);
-        }
-
-        let parsed_calls = self.dispatcher.parse_calls(tool_calls);
-
-        // LoopGuard: check+record per call so duplicates within the same batch are caught.
-        let mut allowed_calls = Vec::with_capacity(parsed_calls.len());
-        let mut blocked_results = Vec::new();
-        for p in &parsed_calls {
-            match self.loop_guard.check(&p.call.name, &p.arguments) {
-                LoopGuardVerdict::Allow => {
-                    self.loop_guard.record(&p.call.name, &p.arguments);
-                    allowed_calls.push(p.clone());
-                }
-                LoopGuardVerdict::Warn(ref msg) => {
-                    let reason = msg.as_str();
-                    slog!(warn, "tool", "loop_guard_warn", tool = %p.call.name, reason = %reason,);
-                    self.ctx.messages.push(Message::note(msg));
-                    self.loop_guard.record(&p.call.name, &p.arguments);
-                    allowed_calls.push(p.clone());
-                }
-                LoopGuardVerdict::Block(ref msg) => {
-                    let reason = msg.as_str();
-                    slog!(warn, "tool", "loop_guard_block", tool = %p.call.name, reason = %reason,);
-                    dispatch_report.blocked.push(p.call.name.clone());
-                    let tracker = OperationMeta::begin(crate::kernel::OpType::Reasoning)
-                        .summary(format!("blocked: {}", p.call.name))
-                        .finish();
-                    blocked_results.push(DispatchOutcome {
-                        parsed: p.clone(),
-                        result: ToolCallResult::InfraError(
-                            format!("blocked by loop guard: {msg}"),
-                            tracker,
-                        ),
-                    });
-                    // Record blocked calls too so the window stays accurate.
-                    self.loop_guard.record(&p.call.name, &p.arguments);
-                }
-            }
-        }
-
-        let spans = self.emit_tool_starts(&allowed_calls).await;
-        let mut results = self
+    ) {
+        let parsed = self.dispatcher.parse_calls(tool_calls);
+        let spans = self.emit_tool_starts(&parsed).await;
+        let results = self
             .dispatcher
-            .execute_calls(&allowed_calls, state.deadline())
+            .execute_calls(&parsed, state.deadline())
             .await;
-        for outcome in &results {
-            match outcome.result {
-                ToolCallResult::Success(..) => dispatch_report
-                    .succeeded
-                    .push(outcome.parsed.call.name.clone()),
-                ToolCallResult::ToolError(..) | ToolCallResult::InfraError(..) => dispatch_report
-                    .failed
-                    .push(outcome.parsed.call.name.clone()),
-            }
-        }
-        // Merge blocked results so they get proper ToolEnd events and messages.
-        results.extend(blocked_results);
         self.apply_tool_results(results, &spans).await;
-        self.tool_outcome_guard.record(dispatch_report);
-
-        let executed_calls = allowed_calls.len() as u32;
-        self.tool_call_limit.increment(executed_calls);
-        state.add_tool_calls(executed_calls);
-
-        let invoked: Vec<String> = parsed_calls.iter().map(|p| p.call.name.clone()).collect();
+        let invoked: Vec<String> = parsed.iter().map(|p| p.call.name.clone()).collect();
         self.ctx.tool_view.note_invoked_batch(&invoked);
         self.ctx.tool_view.advance();
-        None
     }
 
     async fn emit_tool_starts(

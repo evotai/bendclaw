@@ -75,8 +75,6 @@ pub enum Reason {
     EndTurn,
     /// Hit the maximum iteration limit.
     MaxIterations,
-    /// Hit the maximum tool call limit.
-    MaxToolCalls,
     /// Hit the time deadline.
     Timeout,
     /// Cancelled via `CancellationToken`.
@@ -90,7 +88,6 @@ impl Reason {
         match self {
             Self::EndTurn => "end_turn",
             Self::MaxIterations => "max_iterations",
-            Self::MaxToolCalls => "max_tool_calls",
             Self::Timeout => "timeout",
             Self::Aborted => "aborted",
             Self::Error => "error",

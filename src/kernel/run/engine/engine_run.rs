@@ -4,12 +4,12 @@ use std::time::Instant;
 use super::engine::Engine;
 use crate::base::Result;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::inbox::InboxItem;
 use crate::kernel::run::result::ContentBlock;
 use crate::kernel::run::result::Reason;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::run::result::Usage;
 use crate::kernel::run::run_loop::AbortSignal;
+use crate::kernel::run::run_loop::LLMResponse;
 use crate::kernel::run::run_loop::RunLoopConfig;
 use crate::kernel::run::run_loop::RunLoopState;
 use crate::kernel::run::transition::apply_turn_result;
@@ -25,20 +25,6 @@ pub(super) enum StepOutcome {
 }
 
 impl Engine {
-    /// Drain all pending inbox items, applying them to state/messages.
-    pub(super) fn drain_inbox(&mut self, state: &mut RunLoopState) {
-        while let Ok(item) = self.inbox.try_recv() {
-            match item {
-                InboxItem::Message(msg) => {
-                    self.ctx.messages.push(msg);
-                }
-                InboxItem::Yield => {
-                    state.request_yield();
-                }
-            }
-        }
-    }
-
     pub async fn run(&mut self) -> Result<AgentResult> {
         let mut state = RunLoopState::new(RunLoopConfig::from_context(&self.ctx), Instant::now());
 
@@ -54,24 +40,10 @@ impl Engine {
         self.loop_span_id = loop_span.span_id.clone();
 
         while state.should_continue() {
-            self.drain_inbox(&mut state);
-            if !state.should_continue() {
-                break;
+            if let Some(reason) = self.check_abort(&state) {
+                return self.abort(state, reason).await;
             }
-            if !state.is_finalizing() {
-                if let Some(reason) = self.check_abort(&state) {
-                    if state.should_attempt_finalization(&reason) {
-                        run_log!(warn, self.ops_ctx(state.iterations()), "run", "finalizing",
-                            msg = "budget reached, running one final no-tool completion turn".to_string(),
-                            reason = %reason.as_str(),
-                            iterations = state.iterations(),
-                        );
-                        state.begin_finalization(reason);
-                        continue;
-                    }
-                    return self.abort(state, reason).await;
-                }
-            }
+            self.drain_inbox().await;
             self.try_compact(&mut state).await;
             match self.step(&mut state).await? {
                 StepOutcome::Continue => {}
@@ -90,9 +62,9 @@ impl Engine {
             }
         }
 
-        let stop_reason = state.stop_reason().cloned().unwrap_or(Reason::EndTurn);
         let (content, iterations, usage) = state.into_finish();
-        self.finish(content, iterations, usage, stop_reason).await
+        self.finish(content, iterations, usage, Reason::EndTurn)
+            .await
     }
 
     async fn step(&mut self, state: &mut RunLoopState) -> Result<StepOutcome> {
@@ -140,134 +112,95 @@ impl Engine {
         ) {
             TurnTransition::Error(reason) => {
                 let err = llm_error.unwrap_or_default();
-                let mut payload = self.audit_payload(iteration);
-                payload.insert("status".to_string(), serde_json::json!("failed"));
-                payload.insert(
-                    "finish_reason".to_string(),
-                    serde_json::json!(turn.finish_reason()),
-                );
-                payload.insert(
-                    "tool_calls".to_string(),
-                    serde_json::json!(turn.tool_calls().len() as u64),
-                );
-                self.emit_audit("turn.completed", payload).await;
-                run_log!(error, self.ops_ctx(iteration), "turn", "failed",
-                    msg = format!("  iter-{iteration} FAILED"),
-                    finish_reason = %turn.finish_reason(),
-                    error = %err,
-                    tool_calls = turn.tool_calls().len(),
-                    tokens = turn.usage().total_tokens,
-                    bytes = turn.bytes(),
-                    chunk_count = turn.chunk_count(),
-                );
-
-                self.emit(Event::TurnEnd { iteration }).await;
+                self.emit_turn_end(iteration, "failed", &turn, &[(
+                    "error",
+                    serde_json::json!(err),
+                )])
+                .await;
                 Ok(StepOutcome::Error(reason))
             }
             TurnTransition::Abort(reason) => {
-                let mut payload = self.audit_payload(iteration);
-                payload.insert("status".to_string(), serde_json::json!("aborted"));
-                payload.insert(
-                    "finish_reason".to_string(),
-                    serde_json::json!(turn.finish_reason()),
-                );
-                payload.insert(
-                    "tool_calls".to_string(),
-                    serde_json::json!(turn.tool_calls().len() as u64),
-                );
-                payload.insert("reason".to_string(), serde_json::json!(reason.as_str()));
-                self.emit_audit("turn.completed", payload).await;
-                run_log!(warn, self.ops_ctx(iteration), "turn", "aborted",
-                    msg = format!("  iter-{iteration} aborted"),
-                    reason = %reason.as_str(),
-                    finish_reason = %turn.finish_reason(),
-                    tool_calls = turn.tool_calls().len(),
-                );
-                self.emit(Event::TurnEnd { iteration }).await;
+                self.emit_turn_end(iteration, "aborted", &turn, &[(
+                    "reason",
+                    serde_json::json!(reason.as_str()),
+                )])
+                .await;
                 Ok(StepOutcome::Abort(reason))
             }
             TurnTransition::DispatchTools => {
-                if let Some(reason) = self.dispatch_tools(turn.tool_calls(), state).await {
-                    let mut payload = self.audit_payload(iteration);
-                    payload.insert("status".to_string(), serde_json::json!("aborted"));
-                    payload.insert("reason".to_string(), serde_json::json!(reason.as_str()));
-                    self.emit_audit("turn.completed", payload).await;
-                    run_log!(warn, self.ops_ctx(iteration), "turn", "aborted",
-                        msg = format!("  iter-{iteration} aborted"),
-                        reason = %reason.as_str(),
-                        finish_reason = %turn.finish_reason(),
-                        tool_calls = turn.tool_calls().len(),
-                    );
-                    self.emit(Event::TurnEnd { iteration }).await;
-                    return Ok(StepOutcome::Abort(reason));
-                }
-                let mut payload = self.audit_payload(iteration);
-                payload.insert("status".to_string(), serde_json::json!("tool_dispatch"));
-                payload.insert(
-                    "finish_reason".to_string(),
-                    serde_json::json!(turn.finish_reason()),
-                );
-                payload.insert(
-                    "tool_calls".to_string(),
-                    serde_json::json!(turn.tool_calls().len() as u64),
-                );
-                self.emit_audit("turn.completed", payload).await;
-                run_log!(info, self.ops_ctx(iteration), "turn", "tool_dispatch",
-                    msg = format!("  iter-{iteration} dispatched"),
-                    finish_reason = %turn.finish_reason(),
-                    tool_calls = turn.tool_calls().len(),
-                    tokens = turn.usage().total_tokens,
-                    bytes = turn.bytes(),
-                    chunk_count = turn.chunk_count(),
-                );
-
-                self.emit(Event::TurnEnd { iteration }).await;
+                self.dispatch_tools(turn.tool_calls(), state).await;
+                self.emit_turn_end(iteration, "tool_dispatch", &turn, &[])
+                    .await;
                 Ok(StepOutcome::Continue)
             }
             TurnTransition::Continue => {
-                let mut payload = self.audit_payload(iteration);
-                payload.insert("status".to_string(), serde_json::json!("continue"));
-                payload.insert(
-                    "finish_reason".to_string(),
-                    serde_json::json!(turn.finish_reason()),
-                );
-                self.emit_audit("turn.completed", payload).await;
-                run_log!(info, self.ops_ctx(iteration), "turn", "continue",
-                    msg = format!("  iter-{iteration} max_tokens continuation"),
-                    finish_reason = %turn.finish_reason(),
-                    tokens = turn.usage().total_tokens,
-                    bytes = turn.bytes(),
-                    chunk_count = turn.chunk_count(),
-                );
-
-                self.emit(Event::TurnEnd { iteration }).await;
+                self.emit_turn_end(iteration, "continue", &turn, &[]).await;
                 Ok(StepOutcome::Continue)
             }
             TurnTransition::Done => {
-                let mut payload = self.audit_payload(iteration);
-                payload.insert("status".to_string(), serde_json::json!("done"));
-                payload.insert(
-                    "finish_reason".to_string(),
-                    serde_json::json!(turn.finish_reason()),
-                );
-                payload.insert(
-                    "tool_calls".to_string(),
-                    serde_json::json!(turn.tool_calls().len() as u64),
-                );
-                self.emit_audit("turn.completed", payload).await;
-                run_log!(info, self.ops_ctx(iteration), "turn", "done",
-                    msg = format!("  iter-{iteration} done"),
-                    finish_reason = %turn.finish_reason(),
-                    tool_calls = turn.tool_calls().len(),
-                    tokens = turn.usage().total_tokens,
-                    bytes = turn.bytes(),
-                    chunk_count = turn.chunk_count(),
-                );
-
-                self.emit(Event::TurnEnd { iteration }).await;
+                self.emit_turn_end(iteration, "done", &turn, &[]).await;
                 Ok(StepOutcome::Done)
             }
         }
+    }
+
+    async fn emit_turn_end(
+        &self,
+        iteration: u32,
+        status: &str,
+        turn: &LLMResponse,
+        extra: &[(&str, serde_json::Value)],
+    ) {
+        let mut payload = self.audit_payload(iteration);
+        payload.insert("status".to_string(), serde_json::json!(status));
+        payload.insert(
+            "finish_reason".to_string(),
+            serde_json::json!(turn.finish_reason()),
+        );
+        payload.insert(
+            "tool_calls".to_string(),
+            serde_json::json!(turn.tool_calls().len() as u64),
+        );
+        for (k, v) in extra {
+            payload.insert(k.to_string(), v.clone());
+        }
+        self.emit_audit("turn.completed", payload).await;
+
+        let log_level = match status {
+            "failed" => "error",
+            "aborted" => "warn",
+            _ => "info",
+        };
+        // Use a single structured log call — level is always captured as a field
+        // since the run_log! macro requires a literal level token.
+        match log_level {
+            "error" => run_log!(error, self.ops_ctx(iteration), "turn", status,
+                msg = format!("  iter-{iteration} {status}"),
+                finish_reason = %turn.finish_reason(),
+                tool_calls = turn.tool_calls().len(),
+                tokens = turn.usage().total_tokens,
+                bytes = turn.bytes(),
+                chunk_count = turn.chunk_count(),
+            ),
+            "warn" => run_log!(warn, self.ops_ctx(iteration), "turn", status,
+                msg = format!("  iter-{iteration} {status}"),
+                finish_reason = %turn.finish_reason(),
+                tool_calls = turn.tool_calls().len(),
+                tokens = turn.usage().total_tokens,
+                bytes = turn.bytes(),
+                chunk_count = turn.chunk_count(),
+            ),
+            _ => run_log!(info, self.ops_ctx(iteration), "turn", status,
+                msg = format!("  iter-{iteration} {status}"),
+                finish_reason = %turn.finish_reason(),
+                tool_calls = turn.tool_calls().len(),
+                tokens = turn.usage().total_tokens,
+                bytes = turn.bytes(),
+                chunk_count = turn.chunk_count(),
+            ),
+        }
+
+        self.emit(Event::TurnEnd { iteration }).await;
     }
 
     fn check_abort(&self, state: &RunLoopState) -> Option<Reason> {
@@ -345,15 +278,20 @@ impl Engine {
                 reason = "timeout",
                 max_duration_secs = self.ctx.max_duration.as_secs(),
             ),
-            AbortSignal::MaxToolCalls => slog!(
-                warn,
-                "run",
-                "aborted",
-                reason = "max_tool_calls",
-                tool_calls = state.tool_calls_count(),
-                max = self.ctx.max_tool_calls,
-            ),
             _ => {}
+        }
+    }
+
+    async fn drain_inbox(&mut self) {
+        while let Ok(msg) = self.inbox.try_recv() {
+            slog!(info, "run", "message_injected",
+                session_id = %self.ctx.session_id,
+            );
+            self.emit(Event::MessageInjected {
+                content: msg.text(),
+            })
+            .await;
+            self.ctx.messages.push(msg);
         }
     }
 }

@@ -216,7 +216,7 @@ pub fn map_event_to_sse(
         } => {
             let event_name = match stop_reason.as_str() {
                 "end_turn" => "RunCompleted",
-                "timeout" | "max_iterations" | "max_tool_calls" => "RunPaused",
+                "timeout" | "max_iterations" => "RunPaused",
                 "aborted" => "RunCancelled",
                 _ => "RunError",
             };

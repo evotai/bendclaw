@@ -140,13 +140,19 @@ pub fn classify_task_run_output(
 
     match finished.stop_reason {
         Reason::EndTurn => ("ok".to_string(), text, None),
-        reason => (
-            "error".to_string(),
+        Reason::MaxIterations | Reason::Timeout => (
+            "partial".to_string(),
             text,
             Some(format!(
                 "agent stopped before completing the task: {}",
-                reason.as_str()
+                finished.stop_reason.as_str()
             )),
+        ),
+        Reason::Aborted => ("cancelled".to_string(), text, None),
+        reason => (
+            "error".to_string(),
+            text,
+            Some(format!("agent encountered an error: {}", reason.as_str())),
         ),
     }
 }

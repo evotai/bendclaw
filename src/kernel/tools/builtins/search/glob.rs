@@ -8,7 +8,6 @@ use crate::kernel::tools::ToolContext;
 use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 
 const MAX_RESULTS: usize = 500;
 
@@ -34,8 +33,10 @@ impl Tool for GlobTool {
     }
 
     fn description(&self) -> &str {
-        "Find files by name pattern. Returns matching file paths relative to workspace. \
-         ALWAYS use this instead of shell find commands."
+        "Find files by name pattern. \
+         ALWAYS use this tool to find files. NEVER use shell with find or ls for file discovery. \
+         Supports absolute paths, respects .gitignore. \
+         Returns matching file paths sorted by path."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -44,11 +45,11 @@ impl Tool for GlobTool {
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern to match file names, e.g. '*.rs', '*.test.ts', 'Cargo.toml'"
+                    "description": "Glob pattern to match file names, e.g. '*.rs', '*.test.ts', 'Cargo.toml'."
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory to search in (relative to working directory, default: '.')"
+                    "description": "Absolute or relative path to search in. Defaults to the workspace directory."
                 }
             },
             "required": ["pattern"]
@@ -66,7 +67,7 @@ impl Tool for GlobTool {
         };
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let full_path = match ctx.workspace.resolve_search_path(path) {
+        let full_path = match ctx.workspace.resolve_safe_path(path) {
             Some(p) => p,
             None => return Ok(ToolResult::error("Path escapes workspace directory")),
         };
@@ -112,7 +113,12 @@ impl Tool for GlobTool {
         .unwrap_or_default();
 
         if result.is_empty() {
-            return Ok(ToolResult::ok("No files found."));
+            let hint = if path == "." {
+                "No files found. The default search path is the workspace directory (not user home). Try providing an absolute path."
+            } else {
+                "No files found. Verify the path exists, or try searching a parent directory."
+            };
+            return Ok(ToolResult::ok(hint));
         }
 
         let truncated = result.len() >= MAX_RESULTS;
@@ -120,14 +126,7 @@ impl Tool for GlobTool {
         if truncated {
             output.push_str(&format!("\n\n(truncated at {MAX_RESULTS} results)"));
         }
-        slog!(
-            info,
-            "search",
-            "completed",
-            pattern,
-            path,
-            files = result.len(),
-        );
+        tracing::info!(pattern, path, files = result.len(), "glob completed");
         Ok(ToolResult::ok(output))
     }
 }

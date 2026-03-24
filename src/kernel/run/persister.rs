@@ -265,7 +265,7 @@ impl TurnPersister {
 pub fn status_from_reason(reason: &Reason) -> RunStatus {
     match reason {
         Reason::EndTurn => RunStatus::Completed,
-        Reason::MaxIterations | Reason::MaxToolCalls | Reason::Timeout => RunStatus::Paused,
+        Reason::MaxIterations | Reason::Timeout => RunStatus::Paused,
         Reason::Aborted => RunStatus::Cancelled,
         Reason::Error => RunStatus::Error,
     }

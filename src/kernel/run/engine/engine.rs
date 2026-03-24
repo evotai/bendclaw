@@ -9,17 +9,15 @@ use crate::kernel::run::compactor::Compactor;
 use crate::kernel::run::context::Context;
 use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::inbox::InboxItem;
-use crate::kernel::run::loop_guard::LoopGuard;
 use crate::kernel::run::run_loop::AbortPolicy;
-use crate::kernel::run::tool_call_limit::ToolCallLimitTracker;
-use crate::kernel::run::tool_outcome_guard::ToolOutcomeGuard;
 use crate::kernel::trace::Trace;
 use crate::kernel::trace::TraceRecorder;
+use crate::kernel::Message;
 use crate::observability::audit;
 use crate::observability::server_log;
 
 pub(super) const EVENT_CAPACITY: usize = 128;
+pub(super) const INBOX_CAPACITY: usize = 16;
 
 pub(crate) struct Engine {
     pub(super) ctx: Context,
@@ -29,12 +27,9 @@ pub(crate) struct Engine {
     pub(super) cancel: CancellationToken,
     pub(super) iteration: Arc<AtomicU32>,
     pub(super) tx: mpsc::Sender<Event>,
-    pub(super) inbox: mpsc::Receiver<InboxItem>,
     pub(super) trace: Trace,
     pub(super) abort_policy: AbortPolicy,
-    pub(super) loop_guard: LoopGuard,
-    pub(super) tool_call_limit: ToolCallLimitTracker,
-    pub(super) tool_outcome_guard: ToolOutcomeGuard,
+    pub(super) inbox: mpsc::Receiver<Message>,
     pub(super) loop_span_id: String,
 }
 
@@ -45,9 +40,9 @@ impl Engine {
         mpsc::channel(EVENT_CAPACITY)
     }
 
-    /// Create the inbox channel for injecting messages into a running engine.
-    pub fn create_inbox() -> (mpsc::Sender<InboxItem>, mpsc::Receiver<InboxItem>) {
-        mpsc::channel(16)
+    /// Create the inbox channel for message injection. Returns `(tx, rx)`.
+    pub fn create_inbox() -> (mpsc::Sender<Message>, mpsc::Receiver<Message>) {
+        mpsc::channel(INBOX_CAPACITY)
     }
 
     /// Build the engine from a pre-created `tx` (from `create_channel`).
@@ -59,13 +54,10 @@ impl Engine {
         iteration: Arc<AtomicU32>,
         trace_recorder: TraceRecorder,
         tx: mpsc::Sender<Event>,
-        inbox: mpsc::Receiver<InboxItem>,
+        inbox: mpsc::Receiver<Message>,
     ) -> Self {
         Self {
-            abort_policy: AbortPolicy::new(ctx.max_iterations, ctx.max_tool_calls),
-            loop_guard: LoopGuard::default(),
-            tool_call_limit: ToolCallLimitTracker::new(ctx.max_tool_calls),
-            tool_outcome_guard: ToolOutcomeGuard::default(),
+            abort_policy: AbortPolicy::new(ctx.max_iterations),
             ctx,
             compactor,
             dispatcher,
@@ -73,8 +65,8 @@ impl Engine {
             cancel,
             iteration,
             tx,
-            inbox,
             trace: Trace::new(trace_recorder),
+            inbox,
             loop_span_id: String::new(),
         }
     }

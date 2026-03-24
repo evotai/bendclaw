@@ -2,11 +2,14 @@ mod activity;
 pub mod agent_config;
 mod agent_setup;
 mod commands;
+pub mod pending_decision;
 pub mod runtime;
 pub mod runtime_builder;
 mod runtime_lifecycle;
 mod session_factory;
 mod session_router;
+pub mod turn_coordinator_state;
+pub mod turn_relation;
 
 pub use activity::ActivityGuard;
 pub use activity::ActivityTracker;

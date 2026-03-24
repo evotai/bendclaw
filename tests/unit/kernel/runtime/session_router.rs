@@ -9,6 +9,8 @@ use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::pending_decision::DecisionOption;
 use bendclaw::kernel::runtime::pending_decision::PendingDecision;
 use bendclaw::kernel::runtime::turn_relation::RunSnapshot;
+use bendclaw::kernel::runtime::turn_relation::TurnRelation;
+use bendclaw::kernel::runtime::turn_relation::TurnRelationClassifier;
 use bendclaw::kernel::runtime::SubmitResult;
 use bendclaw::kernel::session::session::SessionState;
 use bendclaw::kernel::session::workspace::SandboxResolver;
@@ -256,6 +258,66 @@ async fn pending_decision_continue_queues_followup() {
     assert!(runtime.turn_coordinator().get_decision("s1").is_none());
 }
 
+// ── Append path with custom classifier ───────────────────────────────────────
+
+struct AppendClassifier;
+
+#[async_trait]
+impl TurnRelationClassifier for AppendClassifier {
+    async fn classify(
+        &self,
+        _llm: &Arc<dyn LLMProvider>,
+        _model: &str,
+        _snapshot: &RunSnapshot,
+        _new_input: &str,
+    ) -> TurnRelation {
+        TurnRelation::Append
+    }
+}
+
+#[tokio::test]
+async fn running_session_append_classifier_queues_followup() {
+    let fake = FakeDatabend::new(|_sql, _database| {
+        Ok(bendclaw::storage::pool::QueryResponse {
+            id: String::new(),
+            state: "Succeeded".to_string(),
+            error: None,
+            data: Vec::new(),
+            next_uri: None,
+            final_uri: None,
+            schema: Vec::new(),
+        })
+    });
+    let runtime = test_runtime(fake);
+    runtime
+        .turn_coordinator()
+        .set_classifier(Arc::new(AppendClassifier));
+
+    let session = make_session("s1", "a1");
+    set_running(&session, "r1");
+    runtime.sessions().insert(session);
+
+    runtime
+        .turn_coordinator()
+        .store_snapshot("s1", RunSnapshot::from_input("s1", "r1", "list databases"));
+
+    let result = runtime
+        .submit_turn(
+            "a1",
+            "s1",
+            "u1",
+            "also show sizes",
+            "t1",
+            None,
+            "",
+            "",
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(result, SubmitResult::Queued));
+}
 #[tokio::test]
 async fn pending_decision_append_queues_followup() {
     let fake = FakeDatabend::new(|_sql, _database| {

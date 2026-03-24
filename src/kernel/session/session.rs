@@ -56,6 +56,7 @@ pub enum SessionState {
         started_at: Instant,
         iteration: Arc<AtomicU32>,
         inbox_tx: mpsc::Sender<Message>,
+        event_inject_tx: mpsc::Sender<Event>,
     },
 }
 
@@ -241,6 +242,8 @@ impl Session {
         let llm = self.res.llm.read().clone();
         let usage_model = llm.default_model().to_string();
 
+        let (event_inject_tx, event_inject_rx) = mpsc::channel::<Event>(16);
+
         let (engine_task, events, cancel, iteration, inbox_tx) = self.spawn_engine(
             &run_id,
             &full_prompt,
@@ -251,11 +254,12 @@ impl Session {
             is_remote_dispatch,
         );
 
-        self.mark_running(run_id.clone(), cancel, iteration, inbox_tx);
+        self.mark_running(run_id.clone(), cancel, iteration, inbox_tx, event_inject_tx);
 
         Ok(Stream::new(
             engine_task,
             events,
+            event_inject_rx,
             self.state.clone(),
             self.history.clone(),
             TurnPersister::new(
@@ -492,6 +496,7 @@ impl Session {
         cancel: CancellationToken,
         iteration: Arc<AtomicU32>,
         inbox_tx: mpsc::Sender<Message>,
+        event_inject_tx: mpsc::Sender<Event>,
     ) {
         *self.state.lock() = SessionState::Running {
             run_id,
@@ -499,6 +504,7 @@ impl Session {
             started_at: Instant::now(),
             iteration,
             inbox_tx,
+            event_inject_tx,
         };
     }
 
@@ -507,6 +513,19 @@ impl Session {
         let state = self.state.lock();
         if let SessionState::Running { inbox_tx, .. } = &*state {
             inbox_tx.try_send(Message::user(msg)).is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Inject an event into the active run's stream. Returns true if sent.
+    pub fn inject_event(&self, event: Event) -> bool {
+        let state = self.state.lock();
+        if let SessionState::Running {
+            event_inject_tx, ..
+        } = &*state
+        {
+            event_inject_tx.try_send(event).is_ok()
         } else {
             false
         }

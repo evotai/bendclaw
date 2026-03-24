@@ -184,10 +184,11 @@ impl Runtime {
                     .map(|s| s.summary.clone())
                     .unwrap_or_else(|| "the current task".to_string());
                 let question_text = clarification_template(&active_summary);
+                let question_id = new_id();
                 let decision = PendingDecision {
                     session_id: session_id.to_string(),
                     active_run_id,
-                    question_id: new_id(),
+                    question_id: question_id.clone(),
                     question_text: question_text.clone(),
                     candidate_input: input.to_string(),
                     options: vec![
@@ -198,6 +199,15 @@ impl Runtime {
                     created_at: std::time::Instant::now(),
                 };
                 self.turn_coordinator.store_decision(decision);
+                session.inject_event(Event::DecisionRequired {
+                    question_id,
+                    message: question_text.clone(),
+                    options: vec![
+                        "continue".to_string(),
+                        "switch".to_string(),
+                        "append".to_string(),
+                    ],
+                });
                 Ok(SubmitResult::Control {
                     message: question_text,
                 })

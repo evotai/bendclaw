@@ -28,6 +28,7 @@ pub struct FinishedRunOutput {
 pub struct Stream {
     task: JoinHandle<Result<AgentResult>>,
     events: mpsc::Receiver<Event>,
+    injected: mpsc::Receiver<Event>,
     state: Arc<Mutex<SessionState>>,
     history: Arc<Mutex<Vec<Message>>>,
     persister: TurnPersister,
@@ -42,6 +43,7 @@ impl Stream {
     pub(crate) fn new(
         task: JoinHandle<Result<AgentResult>>,
         events: mpsc::Receiver<Event>,
+        injected: mpsc::Receiver<Event>,
         state: Arc<Mutex<SessionState>>,
         history: Arc<Mutex<Vec<Message>>>,
         persister: TurnPersister,
@@ -52,6 +54,7 @@ impl Stream {
         Self {
             task,
             events,
+            injected,
             state,
             history,
             persister,
@@ -79,6 +82,10 @@ impl Stream {
     pub async fn finish_output(mut self) -> Result<FinishedRunOutput> {
         while let Some(event) = self.events.recv().await {
             self.collect_runtime_info(&event);
+            self.collected_events.push(event);
+        }
+        // Drain any injected events that arrived before the stream closed.
+        while let Ok(event) = self.injected.try_recv() {
             self.collected_events.push(event);
         }
         *self.state.lock() = SessionState::Idle;
@@ -143,6 +150,11 @@ impl tokio_stream::Stream for Stream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Option<Self::Item>> {
         if let Some(event) = self.yield_first.pop_front() {
+            self.collected_events.push(event.clone());
+            return Poll::Ready(Some(event));
+        }
+        // Drain any externally injected events (e.g. DecisionRequired) before engine events.
+        if let Poll::Ready(Some(event)) = self.injected.poll_recv(cx) {
             self.collected_events.push(event.clone());
             return Poll::Ready(Some(event));
         }

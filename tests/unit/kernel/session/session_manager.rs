@@ -116,6 +116,7 @@ fn invalidate_by_agent_evicts_idle_and_marks_running_sessions_stale() {
         started_at: std::time::Instant::now(),
         iteration: Arc::new(AtomicU32::new(1)),
         inbox_tx: tokio::sync::mpsc::channel(1).0,
+        event_inject_tx: tokio::sync::mpsc::channel(1).0,
     };
 
     manager.insert(idle.clone());

@@ -118,7 +118,6 @@ pub fn decode_frame(
     }
 
     if frame.method != FRAME_METHOD_DATA {
-        slog!(debug, "feishu_ws", "unknown_method", method = frame.method,);
         return DecodedFrame {
             response: None,
             event_payload: None,
@@ -403,7 +402,7 @@ pub async fn ws_receive_loop(
             biased;
 
             _ = cancel.cancelled() => {
-                slog!(debug, "feishu_ws", "closing_gracefully",);
+
                 let _ = futures::SinkExt::send(&mut write, tokio_tungstenite::tungstenite::Message::Close(None)).await;
                 break Ok(());
             }
@@ -432,10 +431,7 @@ pub async fn ws_receive_loop(
                         // FIX #4: rebuild timer if ping interval changed
                         if let Some(new_dur) = decoded.updated_ping_interval {
                             if new_dur != ping_interval_dur {
-                                slog!(debug, "feishu_ws", "ping_interval_updated",
-                                    old_secs = ping_interval_dur.as_secs(),
-                                    new_secs = new_dur.as_secs(),
-                                );
+
                                 ping_interval_dur = new_dur;
                                 ping_timer = tokio::time::interval(ping_interval_dur);
                                 ping_timer.tick().await;
@@ -462,7 +458,7 @@ pub async fn ws_receive_loop(
                         let _ = futures::SinkExt::send(&mut write, tokio_tungstenite::tungstenite::Message::Pong(data)).await;
                     }
                     Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => {
-                        slog!(debug, "feishu_ws", "closed_by_server",);
+
                         break Ok(());
                     }
                     Some(Err(e)) => {
@@ -539,12 +535,7 @@ async fn handle_event_payload(
     if let Some(inbound) = parse_event(&json, config, dedup) {
         use crate::kernel::channel::delivery::backpressure::BackpressureResult;
         match event_tx.send(inbound) {
-            BackpressureResult::Accepted => {
-                slog!(debug, "feishu_ws", "message_queued",
-                    event_type,
-                    msg_id = %feishu_msg_id,
-                );
-            }
+            BackpressureResult::Accepted => {}
             BackpressureResult::Busy => {
                 slog!(warn, "feishu_ws", "channel_busy", event_type,);
             }
@@ -552,7 +543,5 @@ async fn handle_event_payload(
                 slog!(warn, "feishu_ws", "channel_full", event_type,);
             }
         }
-    } else {
-        slog!(debug, "feishu_ws", "event_skipped", event_type,);
     }
 }

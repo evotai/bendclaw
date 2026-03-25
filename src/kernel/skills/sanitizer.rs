@@ -93,8 +93,6 @@ fn ascii_lowercase(s: &str) -> String {
 fn sanitize(input: &str) -> SanitizeResult {
     let mut content = input.to_string();
     let mut warnings = Vec::new();
-    let input_size = input.len();
-
     for p in PATTERNS {
         let lower = ascii_lowercase(&content);
         if !lower.contains(p.needle) {
@@ -141,17 +139,6 @@ fn sanitize(input: &str) -> SanitizeResult {
             "sanitizer_replaced",
             pattern = p.label,
             occurrences = match_count,
-        );
-    }
-
-    if warnings.is_empty() {
-        slog!(debug, "skill", "sanitizer_clean", input_size,);
-    } else {
-        let labels: Vec<&str> = warnings.iter().map(|w| w.pattern).collect();
-        slog!(debug, "skill", "sanitizer_sanitized",
-            input_size,
-            output_size = content.len(),
-            patterns = ?labels,
         );
     }
 

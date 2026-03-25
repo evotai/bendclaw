@@ -98,7 +98,6 @@ impl<Op: Send + 'static> BackgroundWriter<Op> {
     /// Graceful shutdown: signal the drain loop and wait (with timeout).
     pub async fn shutdown(&self) {
         self.inner.shutting_down.store(true, Ordering::Relaxed);
-        slog!(debug, "writer", "shutting_down", writer = self.inner.name,);
 
         let Some(mut handle) = self.inner.handle.lock().take() else {
             return;
@@ -129,7 +128,7 @@ impl<Op: Send + 'static> BackgroundWriter<Op> {
     }
 }
 
-async fn drain_loop<Op, H, Fut>(name: &'static str, mut rx: mpsc::Receiver<Op>, mut handler: H)
+async fn drain_loop<Op, H, Fut>(_name: &'static str, mut rx: mpsc::Receiver<Op>, mut handler: H)
 where
     H: FnMut(Op) -> Fut,
     Fut: Future<Output = bool>,
@@ -138,12 +137,10 @@ where
         match rx.recv().await {
             Some(op) => {
                 if !handler(op).await {
-                    slog!(debug, "writer", "stopped", writer = name,);
                     return;
                 }
             }
             None => {
-                slog!(debug, "writer", "stopped", writer = name,);
                 return;
             }
         }

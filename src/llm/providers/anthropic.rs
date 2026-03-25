@@ -151,14 +151,7 @@ impl LLMProvider for AnthropicProvider {
         })?;
 
         let result = parse_response(&data)?;
-        slog!(debug, "llm", "completed",
-            provider = "anthropic",
-            model,
-            request_id = %request_id,
-            prompt_tokens = result.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0),
-            completion_tokens = result.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0),
-            finish_reason = ?result.finish_reason,
-        );
+
         Ok(result)
     }
 
@@ -209,19 +202,11 @@ async fn drive_stream(
     url: &str,
     api_key: &str,
     _base_url: &str,
-    masked_api_key: &str,
+    _masked_api_key: &str,
     body: &serde_json::Value,
     writer: &StreamWriter,
     model: &str,
 ) -> std::result::Result<(), String> {
-    slog!(debug, "llm", "stream_request",
-        provider = "anthropic",
-        model = %model,
-        url = %url,
-        api_key = %masked_api_key,
-        body_bytes = body.to_string().len(),
-    );
-
     let resp = client
         .post(url)
         .header("x-api-key", api_key)
@@ -244,31 +229,17 @@ async fn drive_stream(
             request_id = %request_id,
             response_bytes = text.len(),
         );
-        slog!(debug, "llm", "stream_api_error_detail",
-            provider = "anthropic",
-            model = %model,
-            response = %truncate_for_log(&text),
-        );
+
         return Err(format!("Anthropic API error {status}: {text}"));
     }
 
     // Fallback: if backend doesn't support streaming, parse as JSON response
-    let headers = resp.headers().clone();
-    let request_id = response_request_id(&headers);
-
     let content_type = resp
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-
-    slog!(debug, "llm", "stream_response",
-        provider = "anthropic",
-        model = %model,
-        request_id = %request_id,
-        content_type = %content_type,
-    );
 
     if !content_type.contains("stream") && !content_type.contains("event-stream") {
         let body = resp

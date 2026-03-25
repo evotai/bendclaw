@@ -84,7 +84,6 @@ async fn dispatch_loop(
             handle_queued_message(msg, max_attempts, &cfg, &tx).await;
         });
     }
-    slog!(debug, "channel", "stopped",);
 }
 
 async fn handle_queued_message(
@@ -117,12 +116,7 @@ async fn handle_queued_message(
     .await;
 
     match result {
-        Ok(msg_id) => {
-            slog!(debug, "channel", "delivered",
-                message_id = %msg_id,
-                attempt = msg.attempt,
-            );
-        }
+        Ok(_) => {}
         Err(e) if msg.attempt < max_attempts => {
             let backoff = Duration::from_secs(2u64.pow(msg.attempt as u32).min(60));
             slog!(warn, "channel", "retry",

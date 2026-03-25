@@ -1,7 +1,5 @@
 use crate::base::Result;
 use crate::kernel::runtime::Runtime;
-use crate::observability::log::slog;
-
 impl Runtime {
     pub fn agent_config_store(&self, agent_id: &str) -> Result<crate::storage::AgentConfigStore> {
         let pool = self.databases.agent_pool(agent_id)?;
@@ -24,7 +22,6 @@ impl Runtime {
                 .await?;
         }
 
-        slog!(debug, "runtime", "initialized", agent_id, database = %db_name,);
         Ok(())
     }
 

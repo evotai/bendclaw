@@ -13,7 +13,6 @@ use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
 use crate::storage::Pool;
 
 /// Maximum rows returned before truncation.
@@ -117,14 +116,10 @@ impl Tool for DatabendTool {
         };
 
         let sql = action.to_sql();
-        slog!(debug, "databend", "executing", sql = %sql,);
 
         if action.returns_rows() {
             match self.pool.query_all(&sql).await {
-                Ok(rows) => {
-                    slog!(debug, "databend", "completed", rows = rows.len(),);
-                    Ok(ToolResult::ok(format_rows(&rows)))
-                }
+                Ok(rows) => Ok(ToolResult::ok(format_rows(&rows))),
                 Err(e) => Ok(ToolResult::error(e.to_string())),
             }
         } else {

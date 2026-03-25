@@ -205,7 +205,7 @@ impl DatabendMemoryStore {
                 e
             })?;
         self.search_cache.clear();
-        slog!(debug, "memory", "written", user_id, key = %entry.key, scope = %scope_value,);
+
         Ok(())
     }
 
@@ -296,7 +296,7 @@ impl DatabendMemoryStore {
                 e
             })?;
         self.search_cache.clear();
-        slog!(debug, "memory", "deleted", user_id, id,);
+
         Ok(())
     }
 
@@ -314,7 +314,7 @@ impl DatabendMemoryStore {
             .iter()
             .map(|r| EntryMapper.parse(r))
             .collect::<crate::base::Result<Vec<_>>>()?;
-        slog!(debug, "memory", "list", user_id, count = results.len(),);
+
         Ok(results)
     }
 }

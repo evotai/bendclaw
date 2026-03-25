@@ -62,21 +62,11 @@ impl Tool for ClusterNodesTool {
         _args: serde_json::Value,
         ctx: &ToolContext,
     ) -> Result<ToolResult> {
-        slog!(debug, "cluster", "started",
-            user_id = %ctx.user_id,
-            agent_id = %ctx.agent_id,
-            run_id = %ctx.run_id,
-        );
         match self.service.refresh_peers().await {
             Ok(nodes) => {
                 let json =
                     serde_json::to_string_pretty(&nodes).unwrap_or_else(|_| "[]".to_string());
-                slog!(debug, "cluster", "completed",
-                    user_id = %ctx.user_id,
-                    agent_id = %ctx.agent_id,
-                    run_id = %ctx.run_id,
-                    node_count = nodes.len(),
-                );
+
                 Ok(ToolResult::ok(json))
             }
             Err(e) => {

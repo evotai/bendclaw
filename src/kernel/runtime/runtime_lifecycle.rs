@@ -21,7 +21,6 @@ impl Runtime {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        slog!(debug, "runtime", "shutting_down", status = ?self.status(),);
         let t0 = std::time::Instant::now();
         *self.status.write() = RuntimeStatus::ShuttingDown;
 

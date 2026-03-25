@@ -166,17 +166,12 @@ impl PromptBuilder {
     }
 
     /// Build the full system prompt.
-    pub async fn build(&self, agent_id: &str, user_id: &str, session_id: &str) -> Result<String> {
-        slog!(debug, "prompt", "started", agent_id, user_id, session_id,);
-
+    pub async fn build(&self, agent_id: &str, _user_id: &str, session_id: &str) -> Result<String> {
         // Phase 1: Fire all independent DB queries in parallel.
         let (config, variables_text, errors_text, state) =
             self.fetch_all(agent_id, session_id).await;
 
         let config = config?;
-        let has_config = config.is_some();
-        slog!(debug, "prompt", "config_loaded", agent_id, has_config,);
-
         // Phase 2: Assemble prompt (CPU-only, no I/O).
         let mut prompt = String::with_capacity(4096);
 
@@ -263,7 +258,6 @@ impl PromptBuilder {
             session_id,
             total_size = prompt.len(),
         );
-        slog!(debug, "prompt", "full_content", agent_id, session_id, content = %prompt,);
 
         // Template substitution (state was fetched in parallel)
         let state = state?;

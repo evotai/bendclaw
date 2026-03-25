@@ -100,13 +100,6 @@ impl Tool for ClusterCollectTool {
             .unwrap_or(120);
         let timeout = Duration::from_secs(timeout_secs);
         let started = std::time::Instant::now();
-        slog!(debug, "cluster", "started",
-            user_id = %ctx.user_id,
-            agent_id = %ctx.agent_id,
-            run_id = %ctx.run_id,
-            dispatch_count = dispatch_ids.len(),
-            timeout_ms = timeout.as_millis() as u64,
-        );
 
         match self.dispatch_table.collect(&dispatch_ids, timeout).await {
             Ok(entries) => {
@@ -119,27 +112,6 @@ impl Tool for ClusterCollectTool {
                     })
                     .map(|entry| format!("{}:{}", entry.dispatch_id, entry.status))
                     .collect();
-                let error_details: Vec<String> = entries
-                    .iter()
-                    .filter_map(|entry| {
-                        entry
-                            .error
-                            .as_ref()
-                            .map(|error| format!("{}:{}", entry.dispatch_id, error))
-                    })
-                    .collect();
-                slog!(debug, "cluster", "completed",
-                    user_id = %ctx.user_id,
-                    agent_id = %ctx.agent_id,
-                    run_id = %ctx.run_id,
-                    dispatch_count = entries.len(),
-                    completed = entries.iter().filter(|entry| entry.status == "COMPLETED").count(),
-                    errors = entries.iter().filter(|entry| entry.status == "ERROR").count(),
-                    cancelled = entries.iter().filter(|entry| entry.status == "CANCELLED").count(),
-                    pending = ?pending,
-                    error_details = ?error_details,
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                );
                 if !pending.is_empty() {
                     slog!(warn, "cluster", "pending",
                         user_id = %ctx.user_id,

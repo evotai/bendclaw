@@ -229,14 +229,12 @@ impl Engine {
                     }
                 }
                 _ = self.cancel.cancelled() => {
-                    diagnostics::log_llm_cancelled();
                     resp.mark_cancelled();
                     break;
                 }
             }
         }
         resp.set_stream_stats(chunk_count, bytes);
-        diagnostics::log_llm_collected(&resp, chunk_count, bytes);
         resp
     }
 }

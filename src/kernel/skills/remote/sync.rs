@@ -37,8 +37,6 @@ pub async fn sync(databases: &Arc<AgentDatabases>, workspace_root: &std::path::P
     let mut live_keys: HashSet<(String, String)> = HashSet::new();
 
     // Write skills to local mirror (skip unchanged)
-    let mut written = 0usize;
-    let mut skipped = 0usize;
     for skill in &all_skills {
         let agent_id = skill.agent_id.as_deref().unwrap_or("_global");
         live_keys.insert((agent_id.to_string(), skill.name.clone()));
@@ -49,7 +47,6 @@ pub async fn sync(databases: &Arc<AgentDatabases>, workspace_root: &std::path::P
             writer::read_disk_checksum(workspace_root, agent_id, &skill.name)
         {
             if disk_checksum == db_checksum {
-                skipped += 1;
                 continue;
             }
         }
@@ -57,11 +54,6 @@ pub async fn sync(databases: &Arc<AgentDatabases>, workspace_root: &std::path::P
         let remote_dir = paths::remote_dir(workspace_root, agent_id);
         let _ = std::fs::create_dir_all(&remote_dir);
         writer::write_skill(workspace_root, agent_id, skill);
-        written += 1;
-    }
-
-    if written > 0 {
-        slog!(debug, "skill_sync", "completed", written, skipped,);
     }
 
     // Remove stale skill dirs that are no longer in DB
@@ -77,7 +69,6 @@ fn evict_stale(workspace_root: &std::path::Path, live_keys: &HashSet<(String, St
         Ok(e) => e,
         Err(_) => return,
     };
-    let mut removed = 0usize;
     for entry in entries.flatten() {
         let agent_dir = entry.path();
         if !agent_dir.is_dir() {
@@ -103,12 +94,8 @@ fn evict_stale(workspace_root: &std::path::Path, live_keys: &HashSet<(String, St
             };
             if !live_keys.contains(&(agent_id.clone(), skill_name.clone())) {
                 let _ = std::fs::remove_dir_all(&skill_dir);
-                removed += 1;
             }
         }
-    }
-    if removed > 0 {
-        slog!(debug, "skill_sync", "evicted_stale", count = removed,);
     }
 }
 
@@ -174,7 +161,7 @@ pub fn spawn_sync_task(
         let mut next_sleep = std::time::Duration::ZERO;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => { slog!(debug, "skill_sync", "cancelled",); break; }
+                _ = cancel.cancelled() => { break; }
                 _ = tokio::time::sleep(next_sleep) => {
                     if let Err(e) = store.refresh().await {
                         consecutive_errors += 1;
@@ -185,9 +172,6 @@ pub fn spawn_sync_task(
                         let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
                         next_sleep = std::time::Duration::from_secs(secs);
                     } else {
-                        if consecutive_errors > 0 {
-                            slog!(debug, "skill_sync", "recovered", consecutive_errors,);
-                        }
                         consecutive_errors = 0;
                         next_sleep = base_interval;
                     }

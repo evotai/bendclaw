@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use async_trait::async_trait;
 
@@ -114,19 +113,12 @@ impl LLMProvider for LLMRouter {
         _temperature: f64,
     ) -> Result<LLMResponse> {
         let mut last_error = None;
-        let start = Instant::now();
-
         if self.slots.is_empty() {
             return Err(ErrorCode::llm_request("no LLM providers configured"));
         }
 
         for slot in &self.slots {
             if !slot.breaker.is_available() {
-                slog!(debug, "llm", "slot_skipped",
-                    name = %slot.name,
-                    provider = %slot.provider_name,
-                    model = %slot.model,
-                );
                 continue;
             }
 
@@ -137,20 +129,6 @@ impl LLMProvider for LLMRouter {
             {
                 Ok(resp) => {
                     slot.breaker.record_success();
-                    let latency_ms = start.elapsed().as_millis() as u64;
-                    let (prompt_tokens, completion_tokens) = resp
-                        .usage
-                        .as_ref()
-                        .map(|u| (u.prompt_tokens, u.completion_tokens))
-                        .unwrap_or((0, 0));
-                    slog!(debug, "llm", "completed",
-                        provider = %slot.provider_name,
-                        model = %slot.model,
-                        latency_ms,
-                        prompt_tokens,
-                        completion_tokens,
-                        finish_reason = ?resp.finish_reason,
-                    );
                     return Ok(resp);
                 }
                 Err(e) => {
@@ -187,10 +165,6 @@ impl LLMProvider for LLMRouter {
 
         for slot in &self.slots {
             if slot.breaker.is_available() {
-                slog!(debug, "llm", "stream_started",
-                    provider = %slot.provider_name,
-                    model = %slot.model,
-                );
                 return slot
                     .provider
                     .chat_stream(&slot.model, messages, tools, slot.temperature);

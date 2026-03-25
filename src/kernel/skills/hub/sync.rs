@@ -69,7 +69,6 @@ fn git_clone(url: &str, target: &Path) -> Option<()> {
         .output()
         .ok()?;
     if out.status.success() {
-        slog!(debug, "skill", "hub_cloned", path = %target.display(),);
         Some(())
     } else {
         slog!(warn, "skill", "hub_clone_failed", stderr = %String::from_utf8_lossy(&out.stderr),);

@@ -157,13 +157,7 @@ impl Pool {
     pub async fn exec(&self, sql: &str) -> Result<()> {
         let sql = sql.to_string();
         let started = Instant::now();
-        storage_log!(debug, "exec", "started",
-            database = self.database.as_deref().unwrap_or_default(),
-            sql = &sql,
-            base_url = %self.base_url,
-            warehouse = %self.warehouse,
-            sql_bytes = sql.len(),
-        );
+
         let op = || async {
             let resp = self.do_query(&sql).await?;
             if let Some(ref err) = resp.error {
@@ -209,13 +203,7 @@ impl Pool {
     pub async fn query_all(&self, sql: &str) -> Result<Vec<serde_json::Value>> {
         let sql = sql.to_string();
         let started = Instant::now();
-        storage_log!(debug, "query_all", "started",
-            database = self.database.as_deref().unwrap_or_default(),
-            sql = &sql,
-            base_url = %self.base_url,
-            warehouse = %self.warehouse,
-            sql_bytes = sql.len(),
-        );
+
         let op = || async {
             let resp = self.do_query(&sql).await?;
             if let Some(ref err) = resp.error {

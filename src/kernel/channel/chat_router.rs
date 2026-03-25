@@ -13,8 +13,6 @@ use crate::kernel::channel::debouncer::DebounceConfig;
 use crate::kernel::channel::debouncer::DebounceResult;
 use crate::kernel::channel::debouncer::DebouncedInput;
 use crate::kernel::channel::message::InboundEvent;
-use crate::observability::log::slog;
-
 pub type ChatHandler =
     Arc<dyn Fn(DebouncedInput) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
@@ -162,7 +160,7 @@ impl ChatRouter {
                                 };
                                 (self.handler)(input).await;
                             }
-                            slog!(debug, "channel", "chat_queue_idle_exit", chat_id = %chat_id,);
+
                             return;
                         }
                     }

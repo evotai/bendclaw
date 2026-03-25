@@ -49,13 +49,6 @@ macro_rules! slog {
 pub(crate) use slog;
 
 /// Storage operation log. Pre-fills `stage="storage"`, requires `database` + `sql`.
-///
-/// ```ignore
-/// storage_log!(debug, "exec", "started",
-///     database = "my_db", sql = &sql,
-///     base_url = %self.base_url,
-/// );
-/// ```
 macro_rules! storage_log {
     ($level:ident, $op:expr, $status:expr,
      database = $db:expr, sql = $sql:expr, $($rest:tt)*) => {

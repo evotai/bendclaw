@@ -184,7 +184,6 @@ pub fn parse_event(
 
     // Dedup check
     if !dedup.check_and_insert(msg_id) {
-        slog!(debug, "feishu_ws", "dedup_skipped", msg_id,);
         return None;
     }
 

@@ -13,8 +13,6 @@ use super::sql;
 use super::sql::Sql;
 use super::sql::SqlVal;
 use crate::base::Result;
-use crate::observability::log::slog;
-
 const DEFAULT_CACHE_CAPACITY: usize = 128;
 
 /// Maps a raw JSON row to a domain type.
@@ -74,11 +72,7 @@ impl<M: RowMapper> DatabendTable<M> {
             return None;
         }
         let rows = self.cache.as_ref().and_then(|c| c.get(sql));
-        slog!(debug, "storage", "cache_lookup",
-            table = %self.table,
-            sql_len = sql.len(),
-            hit = rows.is_some(),
-        );
+
         rows
     }
 
@@ -88,18 +82,12 @@ impl<M: RowMapper> DatabendTable<M> {
         }
         if let Some(c) = &self.cache {
             c.put(sql.to_string(), rows.to_vec());
-            slog!(debug, "storage", "cache_store",
-                table = %self.table,
-                sql_len = sql.len(),
-                rows = rows.len(),
-            );
         }
     }
 
     fn invalidate_cache(&self) {
         if let Some(c) = &self.cache {
             c.clear();
-            slog!(debug, "storage", "cache_cleared", table = %self.table,);
         }
     }
 

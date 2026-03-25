@@ -198,23 +198,6 @@ pub(super) fn log_llm_success(
     );
 }
 
-pub(super) fn log_llm_cancelled() {
-    crate::observability::log::slog!(debug, "llm", "cancelled",);
-}
-
-pub(super) fn log_llm_collected(turn: &LLMResponse, chunk_count: u32, bytes: u64) {
-    crate::observability::log::slog!(debug, "llm", "collected",
-        tool_calls = turn.tool_calls().len(),
-        prompt_tokens = turn.usage().prompt_tokens,
-        completion_tokens = turn.usage().completion_tokens,
-        finish_reason = %turn.finish_reason(),
-        has_error = turn.has_error(),
-        ttft_ms = turn.ttft_ms().unwrap_or(0),
-        chunk_count,
-        bytes,
-    );
-}
-
 pub(super) fn log_turn_started(
     ctx: server_log::ServerCtx<'_>,
     iteration: u32,
@@ -283,24 +266,6 @@ pub(super) fn log_turn_completed(
             chunk_count = turn.chunk_count(),
         ),
     }
-}
-
-pub(super) fn log_run_finished(
-    elapsed_ms: u64,
-    iterations: u32,
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    ttft_ms: u64,
-    stop_reason: &impl std::fmt::Display,
-) {
-    crate::observability::log::slog!(debug, "run", "finished",
-        elapsed_ms,
-        iterations,
-        prompt_tokens,
-        completion_tokens,
-        ttft_ms,
-        stop_reason = %stop_reason,
-    );
 }
 
 pub(super) fn log_abort_signal(

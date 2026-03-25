@@ -204,15 +204,6 @@ impl Engine {
             usage: usage.clone(),
         })
         .await;
-        let dur = self.start_time.elapsed().as_millis() as u64;
-        diagnostics::log_run_finished(
-            dur,
-            iterations,
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            usage.ttft_ms,
-            &stop_reason,
-        );
         Ok(AgentResult {
             content,
             iterations,

@@ -163,7 +163,6 @@ impl ToolDispatcher {
                             }
                         }
                         _ = cancel.cancelled() => {
-                            slog!(debug, "tool", "cancelled", tool = %name,);
                             ToolCallResult::InfraError("cancelled".into(), tracker.finish())
                         }
                     };
@@ -222,7 +221,6 @@ impl ToolDispatcher {
         let result = match tool.execute_with_context(args, &tool_context).await {
             Ok(r) => r,
             Err(e) => {
-                slog!(debug, "tool", "exec_failed", tool = name, error = %e,);
                 return ToolCallResult::InfraError(format!("{e}"), tracker.finish());
             }
         };
@@ -230,7 +228,7 @@ impl ToolDispatcher {
         let meta = tracker.finish();
         if !result.success {
             let msg = result.error.unwrap_or_else(|| "unknown error".into());
-            slog!(debug, "tool", "returned_error", tool = name, error = %msg,);
+
             return ToolCallResult::ToolError(truncate_output(msg), meta);
         }
         ToolCallResult::Success(truncate_output(result.output), meta)
@@ -245,14 +243,12 @@ impl ToolDispatcher {
         let out = match self.skill_executor.execute(name, &args).await {
             Ok(out) => out,
             Err(e) => {
-                slog!(debug, "tool", "skill_exec_failed", skill = name, error = %e,);
                 return ToolCallResult::InfraError(format!("{e}"), tracker.finish());
             }
         };
 
         let meta = tracker.finish();
         if let Some(ref err) = out.error {
-            slog!(debug, "tool", "skill_returned_error", skill = name, error = %err,);
             return ToolCallResult::ToolError(truncate_output(err.clone()), meta);
         }
         let text = match out.data {

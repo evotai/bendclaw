@@ -45,11 +45,6 @@ fn extract_and_validate(account: &ChannelAccount, event: &InboundEvent) -> Optio
     // Sender trust check.
     if let Some(sender_id) = event_sender_id(event) {
         if !is_sender_allowed(&account.config, sender_id) {
-            slog!(debug, "channel", "sender_denied",
-                channel_type = %account.channel_type,
-                account_id = %account.channel_account_id,
-                sender_id,
-            );
             return None;
         }
     }

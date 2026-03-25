@@ -48,7 +48,6 @@ impl FeishuOutbound {
 
         let (status, body) = op(self.client.clone(), token).await?;
         if is_token_error(status, &body) {
-            slog!(debug, "feishu_outbound", "token_retry", status,);
             self.token_cache.invalidate().await;
             let token2 = get_token(&self.client, &app_id, &app_secret, &self.token_cache).await?;
             let (status2, body2) = op(self.client.clone(), token2).await?;

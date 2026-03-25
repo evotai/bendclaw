@@ -115,12 +115,6 @@ impl SkillRunner {
         let mut cmd_args = vec![script_path];
         cmd_args.extend(args.iter().cloned());
 
-        slog!(debug, "skill", "executing",
-            skill = skill_name,
-            program = %program,
-            args = ?cmd_args,
-        );
-
         let mut command = self.workspace.command(&program);
         command
             .args(&cmd_args)

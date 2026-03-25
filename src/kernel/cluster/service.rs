@@ -103,7 +103,7 @@ impl ClusterService {
     /// Register this node, do initial peer discovery, and return self.
     pub async fn register_and_discover(self: &Arc<Self>) -> Result<()> {
         self.cluster_client.register().await?;
-        slog!(debug, "cluster", "registered", node_id = %self.cluster_client.node_id(),);
+
         match self.refresh_peers().await {
             Ok(nodes) => {
                 slog!(
@@ -146,7 +146,7 @@ impl ClusterService {
                         }
                     }
                     _ = cancel.cancelled() => {
-                        slog!(debug, "cluster", "heartbeat_stopped",);
+
                         break;
                     }
                 }
@@ -156,7 +156,6 @@ impl ClusterService {
 
     /// Deregister from the cluster registry.
     pub async fn deregister(&self) {
-        slog!(debug, "cluster", "deregistration_started", node_id = %self.cluster_client.node_id(),);
         if let Err(e) = self.cluster_client.deregister().await {
             slog!(warn, "cluster", "deregistration_failed", error = %e,);
         }

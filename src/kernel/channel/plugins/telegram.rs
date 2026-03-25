@@ -122,7 +122,7 @@ impl ReceiverFactory for TelegramReceiverFactory {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
-                        slog!(debug, "channel", "cancelled", account_id = %account_id,);
+
                         return;
                     }
                     result = poll_updates(&client, &config, &mut offset, &event_tx) => {

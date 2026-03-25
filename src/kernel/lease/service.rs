@@ -102,7 +102,6 @@ impl LeaseServiceHandle {
         let mut futs = Vec::new();
         for (i, resource) in self.resources.iter().enumerate() {
             if !resource.safe_to_release() {
-                slog!(debug, "lease", "release_skipped", table = resource.table(),);
                 continue;
             }
             let held = self.held_maps[i].lock().await;
@@ -195,7 +194,7 @@ fn spawn_scan_loop(
 
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    slog!(debug, "lease", "scan_cancelled", table = resource.table(),);
+
                     break;
                 }
                 _ = tokio::time::sleep(sleep_dur) => {}
@@ -279,13 +278,6 @@ async fn scan_once(
                 held_map.remove(&entry.id);
             }
         } else if is_held_by_other(node_id, entry) {
-            slog!(debug, "lease", "held_by_other",
-                table,
-                resource_id = %entry.id,
-                context = %entry.context,
-                holder = entry.lease_node_id.as_deref().unwrap_or(""),
-                expires = entry.lease_expires_at.as_deref().unwrap_or(""),
-            );
         } else if cancel.is_cancelled() {
             // Shutting down — don't claim new resources.
         } else {
@@ -364,14 +356,7 @@ async fn scan_once(
                     }
                     held_map = held.lock().await;
                 }
-                Ok(false) => {
-                    slog!(debug, "lease", "claim_lost",
-                        table,
-                        resource_id = %entry.id,
-                        lease_node_id = entry.lease_node_id.as_deref().unwrap_or(""),
-                        lease_expires_at = entry.lease_expires_at.as_deref().unwrap_or(""),
-                    );
-                }
+                Ok(false) => {}
                 Err(e) => {
                     slog!(warn, "lease", "claim_failed",
                         table,

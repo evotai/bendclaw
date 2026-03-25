@@ -18,8 +18,6 @@ use crate::kernel::tools::ToolContext;
 use crate::kernel::tools::ToolId;
 use crate::kernel::tools::ToolResult;
 use crate::kernel::OpType;
-use crate::observability::log::slog;
-
 pub struct SkillCreateTool {
     store_factory: Arc<DatabendSkillRepositoryFactory>,
     store: Arc<SkillStore>,
@@ -157,7 +155,6 @@ impl Tool for SkillCreateTool {
 
         self.store.insert(&skill, &ctx.agent_id);
 
-        slog!(debug, "skill", "completed", skill = %name, version = %version,);
         Ok(ToolResult::ok(format!(
             "Skill '{name}' created (v{version})"
         )))

@@ -173,9 +173,6 @@ impl ReceiverFactory for FeishuReceiverFactory {
                 };
                 let delay = Duration::from_secs(backoff + jitter);
 
-                slog!(debug, "feishu_ws", "reconnect_delay",
-                    account_id = %account_id, delay_secs = delay.as_secs(),);
-
                 tokio::select! {
                     _ = cancel.cancelled() => return,
                     _ = tokio::time::sleep(delay) => {}

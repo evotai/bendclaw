@@ -193,7 +193,6 @@ impl Runtime {
 
     pub fn reload_llm(&self, new_llm: Arc<dyn LLMProvider>) {
         *self.llm.write() = new_llm;
-        diagnostics::log_runtime_reloaded();
     }
 
     /// Resolve the LLM provider for a specific agent.

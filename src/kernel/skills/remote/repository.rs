@@ -11,7 +11,6 @@ use crate::kernel::skills::skill::Skill;
 use crate::kernel::skills::skill::SkillFile;
 use crate::kernel::skills::skill::SkillScope;
 use crate::kernel::skills::skill::SkillSource;
-use crate::observability::log::slog;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
@@ -235,14 +234,6 @@ impl SkillRepository for DatabendSkillRepository {
             self.files.insert_batch(columns, &rows).await?;
         }
 
-        slog!(debug, "skill", "saved",
-            skill = %skill.name,
-            version = %skill.version,
-            scope = %skill.scope,
-            source = %skill.source,
-            files = skill.files.len(),
-        );
-
         Ok(())
     }
 
@@ -255,7 +246,6 @@ impl SkillRepository for DatabendSkillRepository {
         let skill_cond = format!("name = '{}' AND {}", sql::escape(name), ownership);
         self.skills.delete_where(&skill_cond).await?;
 
-        slog!(debug, "skill", "removed", skill = %name, agent_id = ?agent_id,);
         Ok(())
     }
 

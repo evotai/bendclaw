@@ -102,14 +102,6 @@ impl Tool for ClusterDispatchTool {
             _ => return Ok(ToolResult::error("Missing or empty 'task' parameter")),
         };
         let started = std::time::Instant::now();
-        slog!(debug, "cluster", "started",
-            user_id = %ctx.user_id,
-            agent_id = %ctx.agent_id,
-            run_id = %ctx.run_id,
-            node_id,
-            remote_agent_id = agent_id,
-            task_bytes = task.len(),
-        );
 
         // Resolve node_id to endpoint from trusted peer cache
         let endpoint = match self.service.resolve_endpoint(node_id) {
@@ -145,16 +137,7 @@ impl Tool for ClusterDispatchTool {
         {
             Ok(dispatch_id) => {
                 let result = json!({ "dispatch_id": dispatch_id });
-                slog!(debug, "cluster", "completed",
-                    user_id = %ctx.user_id,
-                    agent_id = %ctx.agent_id,
-                    run_id = %ctx.run_id,
-                    node_id,
-                    endpoint,
-                    remote_agent_id = agent_id,
-                    dispatch_id = %result["dispatch_id"].as_str().unwrap_or_default(),
-                    elapsed_ms = started.elapsed().as_millis() as u64,
-                );
+
                 Ok(ToolResult::ok(result.to_string()))
             }
             Err(e) => {

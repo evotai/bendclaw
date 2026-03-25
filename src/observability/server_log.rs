@@ -247,23 +247,6 @@ pub fn preview_text(text: &str) -> String {
     }
 }
 
-pub fn debug(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields) {
-    tracing::debug!(
-        stage,
-        status,
-        elapsed_ms = fields.elapsed_ms,
-        tokens = fields.tokens,
-        rows = fields.rows,
-        bytes = fields.bytes,
-        payload = %fields.format_payload(),
-        run_id = ctx.run_id,
-        session_id = ctx.session_id,
-        agent_id = ctx.agent_id,
-        turn = ctx.turn,
-        "{stage} {status}"
-    );
-}
-
 pub fn info(ctx: &ServerCtx<'_>, stage: &str, status: &str, fields: ServerFields) {
     tracing::info!(
         stage,

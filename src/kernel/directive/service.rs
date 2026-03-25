@@ -96,7 +96,7 @@ impl DirectiveService {
                         }
                     }
                     _ = cancel.cancelled() => {
-                        slog!(debug, "directive", "loop_stopped",);
+
                         break;
                     }
                 }

@@ -230,17 +230,6 @@ async fn construct(
         skills = skill_count,
     );
 
-    let cluster_id = cluster_config
-        .as_ref()
-        .map(|c| c.cluster_id.as_str())
-        .unwrap_or("");
-    slog!(debug, "runtime", "ready",
-        total_ms = t0.elapsed().as_millis() as u64,
-        node_id = %config.node_id,
-        cluster_id,
-        skills = skill_count,
-    );
-
     let sessions = Arc::new(SessionManager::new());
     let channels = Arc::new(build_channel_registry());
     let activity_tracker = Arc::new(ActivityTracker::new());

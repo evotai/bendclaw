@@ -281,7 +281,7 @@ impl Compactor {
                 }
             }
             _ = self.cancel.cancelled() => {
-                slog!(debug, "compaction", "summarize_cancelled",);
+
                 (None, TokenUsage::default())
             }
         }

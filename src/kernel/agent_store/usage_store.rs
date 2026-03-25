@@ -33,19 +33,7 @@ impl UsageStore {
 
     pub async fn record(&self, event: UsageEvent) -> Result<()> {
         let record = self.event_to_record(event);
-        slog!(debug, "usage", "recorded",
-            user_id = %record.user_id,
-            session_id = %record.session_id,
-            run_id = %record.run_id,
-            provider = %record.provider,
-            model = %record.model,
-            model_role = %record.model_role,
-            prompt_tokens = record.prompt_tokens,
-            completion_tokens = record.completion_tokens,
-            reasoning_tokens = record.reasoning_tokens,
-            ttft_ms = record.ttft_ms,
-            cost = record.cost,
-        );
+
         let should_flush = {
             let mut buf = self.usage_buffer.lock().await;
             buf.push(record);
@@ -78,7 +66,7 @@ impl UsageStore {
         if records.is_empty() {
             return Ok(());
         }
-        slog!(debug, "usage", "flushing", count = records.len(),);
+
         for attempt in 1..=MAX_RETRIES {
             match self.usage_repo.save_batch(&records).await {
                 Ok(()) => return Ok(()),

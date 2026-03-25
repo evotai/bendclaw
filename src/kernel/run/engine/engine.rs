@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-use std::time::Instant;
 
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -24,7 +23,6 @@ pub(crate) struct Engine {
     pub(super) ctx: Context,
     pub(super) compactor: Compactor,
     pub(super) dispatcher: ToolDispatcher,
-    pub(super) start_time: Instant,
     pub(super) cancel: CancellationToken,
     pub(super) iteration: Arc<AtomicU32>,
     pub(super) tx: mpsc::Sender<Event>,
@@ -64,7 +62,6 @@ impl Engine {
             ctx,
             compactor,
             dispatcher,
-            start_time: Instant::now(),
             cancel,
             iteration,
             tx,

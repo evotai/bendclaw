@@ -101,7 +101,7 @@ impl ChannelHealthMonitor {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => {
-                        slog!(debug, "channel", "cancelled",);
+
                         return;
                     }
                     _ = tokio::time::sleep(self.config.poll_interval) => {

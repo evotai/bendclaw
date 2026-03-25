@@ -152,12 +152,7 @@ pub async fn execute_run(
                 }
                 parent_run_id
             }
-            None => {
-                slog!(debug, "service", "parent_run_external",
-                    parent_run_id = %prid,
-                );
-                parent_run_id
-            }
+            None => parent_run_id,
         }
     } else {
         None

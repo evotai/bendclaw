@@ -265,9 +265,6 @@ pub async fn app_with_root_pool_and_llm(
 ) -> anyhow::Result<axum::Router> {
     use bendclaw::service::state::AppState;
 
-    // Ensure evotai_meta registry exists for list_agent_ids()
-    ensure_registry(&root_pool).await?;
-
     let workspace = bendclaw::config::WorkspaceConfig {
         root_dir: std::env::temp_dir()
             .join(format!("bendclaw-test-workspace-{}", Ulid::new()))

@@ -89,7 +89,8 @@ async fn cmd_run(
                 .with_span_list(false)
                 .boxed()
         } else {
-            base.event_format(tracing_fmt::TargetFirstFormatter).boxed()
+            base.event_format(tracing_fmt::TargetFirstFormatter::new())
+                .boxed()
         };
         Some(layer.with_filter(file_filter))
     } else {
@@ -98,7 +99,7 @@ async fn cmd_run(
 
     let terminal_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
-        .event_format(tracing_fmt::TargetFirstFormatter);
+        .event_format(tracing_fmt::TargetFirstFormatter::new());
 
     // Sentry error reporting — enabled by default, opt out via config or env.
     let _sentry_guard = if config.telemetry.enabled {

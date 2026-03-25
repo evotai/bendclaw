@@ -15,21 +15,21 @@ use crate::observability::log::slog;
 use crate::storage::AgentDatabases;
 
 pub async fn sync(databases: &Arc<AgentDatabases>, workspace_root: &std::path::Path) -> Result<()> {
-    let db_names = match databases.list_databases().await {
-        Ok(dbs) => dbs,
+    let agent_ids = match databases.list_agent_ids().await {
+        Ok(ids) => ids,
         Err(e) => {
             slog!(warn, "skill_sync", "db_list_failed", error = %e,);
             return Ok(());
         }
     };
 
-    let all_skills = fetch_all(databases, &db_names).await;
+    let all_skills = fetch_all(databases, &agent_ids).await;
 
     slog!(
         debug,
         "skill_sync",
         "fetched",
-        databases = db_names.len(),
+        agents = agent_ids.len(),
         skills = all_skills.len(),
     );
 
@@ -99,15 +99,15 @@ fn evict_stale(workspace_root: &std::path::Path, live_keys: &HashSet<(String, St
     }
 }
 
-async fn fetch_all(databases: &Arc<AgentDatabases>, db_names: &[String]) -> Vec<Skill> {
+async fn fetch_all(databases: &Arc<AgentDatabases>, agent_ids: &[String]) -> Vec<Skill> {
     let mut all_skills: Vec<Skill> = Vec::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
 
-    for db_name in db_names {
-        let pool = match databases.root_pool().with_database(db_name) {
+    for agent_id in agent_ids {
+        let pool = match databases.agent_pool(agent_id) {
             Ok(p) => p,
             Err(e) => {
-                slog!(warn, "skill_sync", "db_skipped", db = %db_name, error = %e,);
+                slog!(warn, "skill_sync", "db_skipped", agent_id = %agent_id, error = %e,);
                 continue;
             }
         };

@@ -70,17 +70,6 @@ impl AgentDatabases {
         Ok(ids)
     }
 
-    /// List all agent database names.
-    pub async fn list_databases(&self) -> Result<Vec<String>> {
-        let sql = format!("SHOW DATABASES LIKE '{}%'", self.prefix);
-        let rows = self.pool.query_all(&sql).await?;
-        let dbs: Vec<String> = rows
-            .iter()
-            .map(|row| crate::storage::sql::col(row, 0))
-            .collect();
-        Ok(dbs)
-    }
-
     /// Check if a specific agent database exists.
     pub async fn database_exists(&self, db_name: &str) -> Result<bool> {
         let sql = format!("SHOW DATABASES LIKE '{db_name}'");

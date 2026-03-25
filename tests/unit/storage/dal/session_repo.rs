@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bendclaw::storage::session::repo::SessionWrite;
 use bendclaw::storage::session::SessionRepo;
 
 use crate::common::fake_databend::paged_rows;
@@ -11,6 +12,9 @@ fn session_row(id: &str) -> Vec<serde_json::Value> {
         "user-1",
         "My Chat",
         "private",
+        "",
+        "",
+        "",
         "{}",
         "{}",
         "2026-03-11T00:00:00Z",
@@ -42,8 +46,18 @@ async fn session_repo_upsert_generates_valid_sql() -> Result<()> {
         Ok(paged_rows(&[], None, None))
     });
     let repo = SessionRepo::new(fake.pool());
-    repo.upsert("s-1", "a-1", "u-1", Some("title"), None, None)
-        .await?;
+    repo.upsert(SessionWrite {
+        session_id: "s-1".to_string(),
+        agent_id: "a-1".to_string(),
+        user_id: "u-1".to_string(),
+        title: "title".to_string(),
+        base_key: String::new(),
+        replaced_by_session_id: String::new(),
+        reset_reason: String::new(),
+        session_state: serde_json::Value::Null,
+        meta: serde_json::Value::Null,
+    })
+    .await?;
     assert_eq!(fake.calls().len(), 1);
     Ok(())
 }

@@ -107,7 +107,7 @@ pub async fn create_run(
     headers: axum::http::HeaderMap,
     Json(req): Json<CreateRunRequest>,
 ) -> Result<Response> {
-    let session_id = req.session_id.unwrap_or_else(crate::kernel::new_id);
+    let session_id = req.session_id.unwrap_or_else(crate::base::new_session_id);
     // parent_run_id is only accepted via internal header (set by BendclawClient),
     // not exposed in the public request body, to prevent lineage spoofing.
     let parent_run_id = headers

@@ -93,6 +93,15 @@ impl TurnPersister {
         } else {
             String::new()
         };
+        run_log!(info, self.ops_ctx(result.iterations), "persist", "final_output",
+            msg = "persist final output prepared",
+            status = %status.as_str(),
+            stop_reason = %result.stop_reason.as_str(),
+            output_preview = %server_log::preview_text(&response_text),
+            output_bytes = response_text.len() as u64,
+            content_blocks = result.content.len(),
+            message_count = result.messages.len(),
+        );
 
         let mut all_events = events.to_vec();
         let mut payload = audit::base_payload(&self.ops_ctx(result.iterations));

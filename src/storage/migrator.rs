@@ -1,7 +1,7 @@
 use super::pool::Pool;
 use crate::observability::log::slog;
 
-/// Base migrations — independent CREATE TABLE IF NOT EXISTS files.
+/// Base migrations — the only executable schema source.
 /// Files have no cross-dependencies and can run in parallel.
 const BASE_MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/base/sessions.sql"),
@@ -17,15 +17,8 @@ const BASE_MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/base/recall.sql"),
 ];
 
-/// Alter migrations — ALTER TABLE, DROP, etc. that depend on base tables.
-/// Executed strictly in order after all base migrations complete.
-const ALTER_MIGRATIONS: &[&str] = &[include_str!(
-    "../../migrations/alter/0001_runs_checkpoint_fields.sql"
-)];
-
 /// Run all agent migrations against the pool's current database.
 pub async fn run_agent(pool: &Pool) {
-    // Phase 1: base tables — files run in parallel (no cross-dependencies).
     let futs = BASE_MIGRATIONS
         .iter()
         .map(|sql| run_one_file(pool, sql, "base"));
@@ -37,20 +30,6 @@ pub async fn run_agent(pool: &Pool) {
         scope = "base",
         count = BASE_MIGRATIONS.len(),
     );
-
-    // Phase 2: alter — strict sequential for ordering guarantees.
-    if !ALTER_MIGRATIONS.is_empty() {
-        for sql in ALTER_MIGRATIONS {
-            run_one_file(pool, sql, "alter").await;
-        }
-        slog!(
-            info,
-            "storage",
-            "migrations_completed",
-            scope = "alter",
-            count = ALTER_MIGRATIONS.len(),
-        );
-    }
 }
 
 async fn run_one_file(pool: &Pool, sql: &str, _scope: &str) {

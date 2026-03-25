@@ -16,6 +16,8 @@ use crate::storage::dal::run::record::RunKind;
 use crate::storage::dal::run::record::RunRecord;
 use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
+use crate::storage::dal::session::repo::SessionRepo;
+use crate::storage::dal::session::repo::SessionWrite;
 
 pub enum PersistOp {
     /// Barrier: signals all preceding ops are done. Used by non-stream path
@@ -30,6 +32,20 @@ pub enum PersistOp {
         user_message: String,
         parent_run_id: String,
         node_id: String,
+    },
+    SessionUpsert {
+        repo: SessionRepo,
+        record: SessionWrite,
+    },
+    SessionMarkReplaced {
+        repo: SessionRepo,
+        session_id: String,
+        replaced_by_session_id: String,
+        reset_reason: String,
+    },
+    SessionDelete {
+        repo: SessionRepo,
+        session_id: String,
     },
     RunSuccess {
         storage: Arc<AgentStore>,
@@ -92,6 +108,38 @@ async fn handle_op(op: PersistOp) {
         PersistOp::Flush(tx) => {
             let _ = tx.send(());
         }
+        PersistOp::SessionUpsert { repo, record } => {
+            if let Err(error) = repo.upsert(record).await {
+                slog!(warn, "persist", "session_upsert_failed",
+                    error = %error,
+                );
+            }
+        }
+        PersistOp::SessionMarkReplaced {
+            repo,
+            session_id,
+            replaced_by_session_id,
+            reset_reason,
+        } => {
+            if let Err(error) = repo
+                .mark_replaced(&session_id, &replaced_by_session_id, &reset_reason)
+                .await
+            {
+                slog!(warn, "persist", "session_mark_replaced_failed",
+                    session_id = %session_id,
+                    replaced_by_session_id = %replaced_by_session_id,
+                    error = %error,
+                );
+            }
+        }
+        PersistOp::SessionDelete { repo, session_id } => {
+            if let Err(error) = repo.delete_by_id(&session_id).await {
+                slog!(warn, "persist", "session_delete_failed",
+                    session_id = %session_id,
+                    error = %error,
+                );
+            }
+        }
         PersistOp::InitRun {
             storage,
             run_id,
@@ -110,7 +158,17 @@ async fn handle_op(op: PersistOp) {
                 .is_none()
             {
                 if let Err(e) = storage
-                    .session_upsert(&session_id, &agent_id, &user_id, Some(&user_message), None)
+                    .session_upsert(SessionWrite {
+                        session_id: session_id.clone(),
+                        agent_id: agent_id.clone(),
+                        user_id: user_id.clone(),
+                        title: user_message.clone(),
+                        base_key: String::new(),
+                        replaced_by_session_id: String::new(),
+                        reset_reason: String::new(),
+                        session_state: serde_json::Value::Null,
+                        meta: serde_json::Value::Null,
+                    })
                     .await
                 {
                     slog!(warn, "persist", "session_upsert_failed",

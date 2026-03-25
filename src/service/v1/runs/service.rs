@@ -158,6 +158,12 @@ pub async fn execute_run(
         None
     };
 
+    state
+        .runtime
+        .session_lifecycle()
+        .ensure_direct(&agent_id, &ctx.user_id, &session_id)
+        .await?;
+
     let submit = state
         .runtime
         .submit_turn(

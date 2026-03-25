@@ -198,6 +198,36 @@ pub(super) fn log_llm_success(
     );
 }
 
+pub(super) fn log_llm_final_output(ctx: server_log::ServerCtx<'_>, turn: &LLMResponse) {
+    let tool_names = turn
+        .tool_calls()
+        .iter()
+        .map(|call| call.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let content_blocks = turn.content_blocks();
+    let thinking_preview = content_blocks
+        .iter()
+        .find_map(|block| match block {
+            crate::kernel::run::result::ContentBlock::Thinking { thinking } => {
+                Some(server_log::preview_text(thinking))
+            }
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    crate::observability::log::run_log!(info, ctx, "llm", "final_output",
+        msg = "llm final output prepared",
+        finish_reason = %turn.finish_reason(),
+        tool_calls = turn.tool_calls().len(),
+        tool_names = %tool_names,
+        text_preview = %server_log::preview_text(turn.text()),
+        text_bytes = turn.text().len() as u64,
+        thinking_preview = %thinking_preview,
+        content_blocks = content_blocks.len(),
+    );
+}
+
 pub(super) fn log_turn_started(
     ctx: server_log::ServerCtx<'_>,
     iteration: u32,

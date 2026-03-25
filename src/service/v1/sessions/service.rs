@@ -1,6 +1,5 @@
 use super::http::SessionResponse;
 use super::http::SessionsQuery;
-use crate::base::new_session_id;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;
@@ -49,9 +48,11 @@ pub(super) async fn load_session_record(
     agent_id: &str,
     session_id: &str,
 ) -> Result<Option<SessionRecord>> {
-    let pool = state.runtime.databases().agent_pool(agent_id)?;
-    let repo = SessionRepo::new(pool);
-    Ok(repo.load(session_id).await?)
+    Ok(state
+        .runtime
+        .session_lifecycle()
+        .load_session(agent_id, session_id)
+        .await?)
 }
 
 pub(super) async fn create_session(
@@ -60,13 +61,13 @@ pub(super) async fn create_session(
     user_id: &str,
     title: Option<&str>,
     session_state: Option<&serde_json::Value>,
-) -> Result<String> {
-    let session_id = new_session_id();
-    state
+) -> Result<SessionResponse> {
+    let record = state
         .runtime
-        .upsert_session(agent_id, &session_id, user_id, title, session_state, None)
+        .session_lifecycle()
+        .create_direct(agent_id, user_id, title, session_state, None)
         .await?;
-    Ok(session_id)
+    Ok(to_response(record))
 }
 
 pub(super) async fn update_session(
@@ -75,10 +76,10 @@ pub(super) async fn update_session(
     existing: &SessionRecord,
     title: Option<String>,
     session_state: Option<serde_json::Value>,
-) -> Result<()> {
+) -> Result<SessionResponse> {
     let title = title.as_deref().unwrap_or(&existing.title);
     let session_state = session_state.as_ref().unwrap_or(&existing.session_state);
-    state
+    let record = state
         .runtime
         .upsert_session(
             &existing.agent_id,
@@ -89,7 +90,7 @@ pub(super) async fn update_session(
             Some(&existing.meta),
         )
         .await?;
-    Ok(())
+    Ok(to_response(record))
 }
 
 pub(super) async fn delete_session(
@@ -107,6 +108,9 @@ fn to_response(r: SessionRecord) -> SessionResponse {
         agent_id: r.agent_id,
         user_id: r.user_id,
         title: r.title,
+        base_key: r.base_key,
+        replaced_by_session_id: r.replaced_by_session_id,
+        reset_reason: r.reset_reason,
         session_state: r.session_state,
         meta: r.meta,
         created_at: r.created_at,

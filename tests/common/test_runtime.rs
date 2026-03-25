@@ -12,6 +12,7 @@ use bendclaw::kernel::runtime::ActivityTracker;
 use bendclaw::kernel::runtime::Runtime;
 use bendclaw::kernel::runtime::RuntimeParts;
 use bendclaw::kernel::runtime::RuntimeStatus;
+use bendclaw::kernel::session::SessionLifecycle;
 use bendclaw::kernel::session::SessionManager;
 use bendclaw::kernel::skills::store::SkillStore;
 use bendclaw::llm::message::ChatMessage;
@@ -69,6 +70,13 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         channels.clone(),
         chat_router.clone(),
     ));
+    let sessions = Arc::new(SessionManager::new());
+    let persist_writer = bendclaw::kernel::writer::BackgroundWriter::noop("persist");
+    let session_lifecycle = Arc::new(SessionLifecycle::new(
+        databases.clone(),
+        sessions.clone(),
+        persist_writer.clone(),
+    ));
 
     Arc::new(Runtime::from_parts(RuntimeParts {
         config: AgentConfig::default(),
@@ -76,7 +84,8 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         llm: RwLock::new(Arc::new(NoopLLM)),
         agent_llms: RwLock::new(HashMap::new()),
         skills,
-        sessions: Arc::new(SessionManager::new()),
+        sessions,
+        session_lifecycle,
         channels,
         supervisor,
         chat_router,
@@ -90,7 +99,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         directive_handle: RwLock::new(None),
         activity_tracker: Arc::new(ActivityTracker::new()),
         trace_writer: bendclaw::kernel::trace::TraceWriter::noop(),
-        persist_writer: bendclaw::kernel::writer::BackgroundWriter::noop("persist"),
+        persist_writer,
         channel_message_writer: bendclaw::kernel::writer::BackgroundWriter::noop("channel_message"),
         rate_limiter: std::sync::Arc::new(
             bendclaw::kernel::channel::delivery::rate_limit::OutboundRateLimiter::new(
@@ -99,6 +108,5 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         ),
         health_monitor_handle: parking_lot::RwLock::new(None),
         tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
-        channel_session_keys: parking_lot::RwLock::new(HashMap::new()),
     }))
 }

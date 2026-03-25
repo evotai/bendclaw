@@ -5,6 +5,8 @@ use crate::kernel::channel::delivery::retry::send_with_retry;
 use crate::kernel::channel::delivery::retry::RetryConfig;
 use crate::kernel::channel::plugin::ChannelOutbound;
 use crate::kernel::session::session_stream::Stream;
+use crate::observability::log::slog;
+use crate::observability::server_log;
 
 /// Result of outbound delivery: full text + last platform message ID.
 pub struct OutboundResult {
@@ -27,11 +29,22 @@ pub async fn deliver_outbound(
     max_message_len: usize,
     run_stream: Stream,
 ) -> crate::base::Result<Option<OutboundResult>> {
+    let run_id = run_stream.run_id().to_string();
     let finished = run_stream.finish_output().await?;
     let text = finished.text;
     if text.trim().is_empty() {
         return Ok(None);
     }
+
+    slog!(info, "channel", "final_output",
+        msg = "channel final output ready",
+        run_id = %run_id,
+        channel_type,
+        account_id,
+        chat_id,
+        output_preview = %server_log::preview_text(&text),
+        output_bytes = text.len() as u64,
+    );
 
     let chunks = split_text_for_delivery(&text, max_message_len.max(1));
     let mut last_msg_id = String::new();

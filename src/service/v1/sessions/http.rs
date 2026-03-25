@@ -19,6 +19,9 @@ pub struct SessionResponse {
     pub agent_id: String,
     pub user_id: String,
     pub title: String,
+    pub base_key: String,
+    pub replaced_by_session_id: String,
+    pub reset_reason: String,
     pub session_state: serde_json::Value,
     pub meta: serde_json::Value,
     pub created_at: String,
@@ -69,7 +72,7 @@ pub async fn create_session(
     Path(agent_id): Path<String>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<SessionResponse>> {
-    let session_id = service::create_session(
+    let response = service::create_session(
         &state,
         &agent_id,
         &ctx.user_id,
@@ -77,7 +80,6 @@ pub async fn create_session(
         req.session_state.as_ref(),
     )
     .await?;
-    let response = service::get_session(&state, &agent_id, &session_id).await?;
     Ok(Json(response))
 }
 
@@ -90,8 +92,9 @@ pub async fn update_session(
     let existing = service::load_session_record(&state, &agent_id, &session_id).await?;
     let existing = existing
         .ok_or_else(|| ServiceError::AgentNotFound(format!("session '{session_id}' not found")))?;
-    service::update_session(&state, &session_id, &existing, req.title, req.session_state).await?;
-    let response = service::get_session(&state, &agent_id, &session_id).await?;
+    let response =
+        service::update_session(&state, &session_id, &existing, req.title, req.session_state)
+            .await?;
     Ok(Json(response))
 }
 

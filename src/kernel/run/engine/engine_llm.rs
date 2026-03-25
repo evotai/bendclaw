@@ -167,6 +167,7 @@ impl Engine {
             ms,
             ttft_ms,
         );
+        diagnostics::log_llm_final_output(self.ops_ctx(iteration), turn);
         self.emit_audit(
             "llm.response",
             diagnostics::build_llm_response_payload(

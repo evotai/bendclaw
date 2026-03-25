@@ -168,10 +168,12 @@ impl PromptBuilder {
     /// Build the full system prompt.
     pub async fn build(&self, agent_id: &str, _user_id: &str, session_id: &str) -> Result<String> {
         // Phase 1: Fire all independent DB queries in parallel.
-        let (config, variables_text, errors_text, state) =
+        let (config, variables_text, errors_text, state, session_record) =
             self.fetch_all(agent_id, session_id).await;
 
         let config = config?;
+        let state = state?;
+        let session_record = session_record?;
         // Phase 2: Assemble prompt (CPU-only, no I/O).
         let mut prompt = String::with_capacity(4096);
 
@@ -248,24 +250,14 @@ impl PromptBuilder {
         prompt.push_str(&errors_text);
 
         // 9. Runtime (sync)
-        self.append_runtime(&mut prompt, session_id);
-
-        slog!(
-            debug,
-            "prompt",
-            "completed",
-            agent_id,
-            session_id,
-            total_size = prompt.len(),
-        );
+        self.append_runtime(&mut prompt, session_record.as_ref());
 
         // Template substitution (state was fetched in parallel)
-        let state = state?;
         Ok(substitute_template(&prompt, &state))
     }
 
     /// Fetch all independent data sources in parallel.
-    /// Returns (config, variables_text, errors_text, session_state).
+    /// Returns (config, variables_text, errors_text, session_state, session_record).
     async fn fetch_all(
         &self,
         agent_id: &str,
@@ -275,6 +267,7 @@ impl PromptBuilder {
         String,
         String,
         Result<serde_json::Value>,
+        Result<Option<crate::storage::dal::session::record::SessionRecord>>,
     ) {
         // Use cached config if available (avoids a DB round-trip).
         let config_fut = async {
@@ -287,8 +280,9 @@ impl PromptBuilder {
         let vars_fut = self.build_variables_text();
         let errors_fut = self.build_errors_text(session_id);
         let state_fut = self.storage.session_get_state(session_id);
+        let session_fut = self.storage.session_load(session_id);
 
-        tokio::join!(config_fut, vars_fut, errors_fut, state_fut)
+        tokio::join!(config_fut, vars_fut, errors_fut, state_fut, session_fut)
     }
 
     fn append_skills(&self, prompt: &mut String, agent_id: &str) {
@@ -428,15 +422,20 @@ impl PromptBuilder {
         truncate_layer("variables", &buf, MAX_VARIABLES_BYTES, src)
     }
 
-    fn append_runtime(&self, prompt: &mut String, session_id: &str) {
+    fn append_runtime(
+        &self,
+        prompt: &mut String,
+        session: Option<&crate::storage::dal::session::record::SessionRecord>,
+    ) {
         let (buf, src) = if let Some(ref rt) = self.runtime {
             let mut b = String::from("## Runtime\n\n");
             b.push_str(rt);
             b.push_str("\n\n");
             (b, "injected")
         } else {
-            let ch_ctx =
-                crate::kernel::channel::context::ChannelContext::from_session_key(session_id);
+            let ch_ctx = session.and_then(|record| {
+                crate::kernel::channel::context::ChannelContext::from_base_key(&record.base_key)
+            });
             let (ch_type, ch_chat) = match &ch_ctx {
                 Some(c) => (Some(c.channel_type.as_str()), Some(c.chat_id.as_str())),
                 None => (None, None),

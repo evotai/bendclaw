@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::base::new_id;
 use crate::kernel::channel::account::ChannelAccount;
+use crate::kernel::channel::context::ChannelContext;
 use crate::kernel::channel::debouncer::DebouncedInput;
 use crate::kernel::channel::delivery;
 use crate::kernel::channel::dispatcher::ChannelDispatcher;
@@ -61,9 +62,9 @@ fn extract_and_validate(account: &ChannelAccount, event: &InboundEvent) -> Optio
     Some(ValidatedInput { text, chat_id })
 }
 
-/// Stage 2: Resolve dispatch context (session key, outbound, repo, capabilities).
+/// Stage 2: Resolve dispatch context (session, outbound, repo, capabilities).
 struct DispatchContext {
-    session_key: String,
+    session_id: String,
     base_key: String,
     outbound: Option<Arc<dyn ChannelOutbound>>,
     msg_repo: ChannelMessageRepo,
@@ -75,20 +76,19 @@ async fn resolve_dispatch_context(
     account: &ChannelAccount,
     chat_id: &str,
 ) -> std::result::Result<DispatchContext, Box<dyn std::error::Error + Send + Sync>> {
-    let base_key = ChannelDispatcher::session_key(
-        &account.channel_type,
-        &account.external_account_id,
-        chat_id,
-    );
+    let base_key =
+        ChannelContext::base_key(&account.channel_type, &account.external_account_id, chat_id);
 
     let outbound = runtime
         .channels()
         .get(&account.channel_type)
         .map(|e| e.plugin.outbound());
 
-    let session_key = runtime
-        .resolve_channel_session_key(&base_key, &account.agent_id)
-        .await;
+    let session_id = runtime
+        .session_lifecycle()
+        .resolve_active(&account.agent_id, &account.user_id, &base_key)
+        .await?
+        .id;
 
     let pool = runtime.databases().agent_pool(&account.agent_id)?;
     let msg_repo = ChannelMessageRepo::new(pool.clone());
@@ -100,7 +100,7 @@ async fn resolve_dispatch_context(
     let max_message_len = caps.as_ref().map(|c| c.max_message_len).unwrap_or(4096);
 
     Ok(DispatchContext {
-        session_key,
+        session_id,
         base_key,
         outbound,
         msg_repo,
@@ -121,25 +121,46 @@ async fn handle_slash_command(
         return false;
     }
 
-    // Close old session.
-    let old_key = runtime
-        .resolve_channel_session_key(&ctx.base_key, &account.agent_id)
-        .await;
-    if let Some(session) = runtime.sessions().get(&old_key) {
-        session.close().await;
-        runtime.sessions().remove(&old_key);
-    }
-
-    // Rotate to new session key.
-    let new_key = runtime.rotate_channel_session_key(&ctx.base_key);
-    ctx.session_key = new_key.clone();
+    let old_session_id = ctx.session_id.clone();
+    let new_session = match runtime
+        .session_lifecycle()
+        .start_new(
+            &account.agent_id,
+            &account.user_id,
+            &ctx.base_key,
+            trimmed.trim_start_matches('/'),
+        )
+        .await
+    {
+        Ok(session) => session,
+        Err(error) => {
+            slog!(warn, "channel", "session_reset_failed",
+                agent_id = %account.agent_id,
+                channel_type = %account.channel_type,
+                account_id = %account.channel_account_id,
+                chat_id,
+                error = %error,
+            );
+            if let Some(ref ob) = ctx.outbound {
+                let _ = ob
+                    .send_text(
+                        &account.config,
+                        chat_id,
+                        "Failed to start a new conversation.",
+                    )
+                    .await;
+            }
+            return true;
+        }
+    };
+    ctx.session_id = new_session.id.clone();
 
     channel_log!(info, "command", "new_session",
         channel_type = %account.channel_type,
         account_id = %account.channel_account_id,
         chat_id,
-        old_session = %old_key,
-        new_session = %new_key,
+        old_session = %old_session_id,
+        new_session = %new_session.id,
     );
 
     if let Some(ref ob) = ctx.outbound {
@@ -189,7 +210,7 @@ fn record_inbound(
     runtime: &Runtime,
     msg_repo: &ChannelMessageRepo,
     account: &ChannelAccount,
-    session_key: &str,
+    session_id: &str,
     events: &[InboundEvent],
 ) {
     for event in events {
@@ -203,7 +224,7 @@ fn record_inbound(
                         channel_type: account.channel_type.clone(),
                         account_id: account.external_account_id.clone(),
                         chat_id: msg.chat_id.clone(),
-                        session_id: session_key.to_string(),
+                        session_id: session_id.to_string(),
                         direction: "inbound".into(),
                         sender_id: msg.sender_id.clone(),
                         text: msg.text.clone(),
@@ -233,7 +254,7 @@ async fn submit_and_deliver(
         let submit = runtime
             .submit_turn(
                 &account.agent_id,
-                &ctx.session_key,
+                &ctx.session_id,
                 &account.user_id,
                 &pending_input.take().unwrap_or_default(),
                 &trace_id,
@@ -251,7 +272,7 @@ async fn submit_and_deliver(
                     ctx.outbound.as_ref(),
                     &ctx.msg_repo,
                     account,
-                    &ctx.session_key,
+                    &ctx.session_id,
                     chat_id,
                     &message,
                 )
@@ -284,7 +305,7 @@ async fn submit_and_deliver(
                     match result {
                         Some(r) => (r.text, r.platform_message_id),
                         None => {
-                            if let Some(next) = take_followup(runtime, &ctx.session_key) {
+                            if let Some(next) = take_followup(runtime, &ctx.session_id) {
                                 pending_input = Some(next);
                                 continue;
                             }
@@ -293,7 +314,7 @@ async fn submit_and_deliver(
                     }
                 } else {
                     let _ = stream.finish_output().await?;
-                    if let Some(next) = take_followup(runtime, &ctx.session_key) {
+                    if let Some(next) = take_followup(runtime, &ctx.session_id) {
                         pending_input = Some(next);
                         continue;
                     }
@@ -319,7 +340,7 @@ async fn submit_and_deliver(
                             channel_type: account.channel_type.clone(),
                             account_id: account.external_account_id.clone(),
                             chat_id: chat_id.to_string(),
-                            session_id: ctx.session_key.clone(),
+                            session_id: ctx.session_id.clone(),
                             direction: "outbound".into(),
                             sender_id: "agent".into(),
                             text: output_text,
@@ -330,7 +351,7 @@ async fn submit_and_deliver(
                         },
                     });
 
-                if let Some(next) = take_followup(runtime, &ctx.session_key) {
+                if let Some(next) = take_followup(runtime, &ctx.session_id) {
                     pending_input = Some(next);
                     continue;
                 }
@@ -342,10 +363,10 @@ async fn submit_and_deliver(
     Ok(())
 }
 
-fn take_followup(runtime: &Runtime, session_key: &str) -> Option<String> {
+fn take_followup(runtime: &Runtime, session_id: &str) -> Option<String> {
     runtime
         .sessions()
-        .get(session_key)
+        .get(session_id)
         .and_then(|session| session.take_followup())
 }
 
@@ -397,7 +418,7 @@ async fn try_dispatch_debounced(
         runtime,
         &ctx.msg_repo,
         account,
-        &ctx.session_key,
+        &ctx.session_id,
         &input.all_events,
     );
 
@@ -428,7 +449,7 @@ async fn send_control_reply(
     outbound: Option<&Arc<dyn ChannelOutbound>>,
     msg_repo: &ChannelMessageRepo,
     account: &ChannelAccount,
-    session_key: &str,
+    session_id: &str,
     chat_id: &str,
     message: &str,
 ) {
@@ -453,7 +474,7 @@ async fn send_control_reply(
                             channel_type: account.channel_type.clone(),
                             account_id: account.external_account_id.clone(),
                             chat_id: chat_id.to_string(),
-                            session_id: session_key.to_string(),
+                            session_id: session_id.to_string(),
                             direction: "outbound".into(),
                             sender_id: "agent".into(),
                             text: message.to_string(),

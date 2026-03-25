@@ -14,6 +14,35 @@ use crate::storage::table::Where;
 const REPO: &str = "sessions";
 const CACHE_TTL: Duration = Duration::from_secs(15);
 
+#[derive(Debug, Clone)]
+pub struct SessionWrite {
+    pub session_id: String,
+    pub agent_id: String,
+    pub user_id: String,
+    pub title: String,
+    pub base_key: String,
+    pub replaced_by_session_id: String,
+    pub reset_reason: String,
+    pub session_state: serde_json::Value,
+    pub meta: serde_json::Value,
+}
+
+impl SessionWrite {
+    pub fn from_record(record: &SessionRecord) -> Self {
+        Self {
+            session_id: record.id.clone(),
+            agent_id: record.agent_id.clone(),
+            user_id: record.user_id.clone(),
+            title: record.title.clone(),
+            base_key: record.base_key.clone(),
+            replaced_by_session_id: record.replaced_by_session_id.clone(),
+            reset_reason: record.reset_reason.clone(),
+            session_state: record.session_state.clone(),
+            meta: record.meta.clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct SessionMapper;
 
@@ -21,7 +50,7 @@ impl RowMapper for SessionMapper {
     type Entity = SessionRecord;
 
     fn columns(&self) -> &str {
-        "id, agent_id, user_id, title, scope, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
+        "id, agent_id, user_id, title, scope, base_key, replaced_by_session_id, reset_reason, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
     fn parse(&self, row: &serde_json::Value) -> crate::base::Result<SessionRecord> {
@@ -31,10 +60,13 @@ impl RowMapper for SessionMapper {
             user_id: sql::col(row, 2),
             title: sql::col(row, 3),
             scope: sql::col(row, 4),
-            session_state: parse_variant_json(&sql::col(row, 5))?,
-            meta: parse_variant_json(&sql::col(row, 6))?,
-            created_at: sql::col(row, 7),
-            updated_at: sql::col(row, 8),
+            base_key: sql::col(row, 5),
+            replaced_by_session_id: sql::col(row, 6),
+            reset_reason: sql::col(row, 7),
+            session_state: parse_variant_json(&sql::col(row, 8))?,
+            meta: parse_variant_json(&sql::col(row, 9))?,
+            created_at: sql::col(row, 10),
+            updated_at: sql::col(row, 11),
         })
     }
 }
@@ -51,21 +83,12 @@ impl SessionRepo {
         }
     }
 
-    pub async fn upsert(
-        &self,
-        session_id: &str,
-        agent_id: &str,
-        user_id: &str,
-        title: Option<&str>,
-        session_state: Option<&serde_json::Value>,
-        meta: Option<&serde_json::Value>,
-    ) -> Result<()> {
-        let state_json =
-            serde_json::to_string(session_state.unwrap_or(&serde_json::Value::Null))
-                .map_err(|e| ErrorCode::storage_serde(format!("serialize session_state: {e}")))?;
+    pub async fn upsert(&self, input: SessionWrite) -> Result<()> {
+        let state_json = serde_json::to_string(&input.session_state)
+            .map_err(|e| ErrorCode::storage_serde(format!("serialize session_state: {e}")))?;
         let state_expr = format!("PARSE_JSON('{}')", sql::escape(&state_json));
 
-        let meta_json = serde_json::to_string(meta.unwrap_or(&serde_json::Value::Null))
+        let meta_json = serde_json::to_string(&input.meta)
             .map_err(|e| ErrorCode::storage_serde(format!("serialize session meta: {e}")))?;
         let meta_expr = format!("PARSE_JSON('{}')", sql::escape(&meta_json));
 
@@ -73,11 +96,17 @@ impl SessionRepo {
             .table
             .upsert(
                 &[
-                    ("id", SqlVal::Str(session_id)),
-                    ("agent_id", SqlVal::Str(agent_id)),
-                    ("user_id", SqlVal::Str(user_id)),
-                    ("title", SqlVal::Str(title.unwrap_or_default())),
+                    ("id", SqlVal::Str(&input.session_id)),
+                    ("agent_id", SqlVal::Str(&input.agent_id)),
+                    ("user_id", SqlVal::Str(&input.user_id)),
+                    ("title", SqlVal::Str(&input.title)),
                     ("scope", SqlVal::Str("private")),
+                    ("base_key", SqlVal::Str(&input.base_key)),
+                    (
+                        "replaced_by_session_id",
+                        SqlVal::Str(&input.replaced_by_session_id),
+                    ),
+                    ("reset_reason", SqlVal::Str(&input.reset_reason)),
                     ("session_state", SqlVal::Raw(&state_expr)),
                     ("meta", SqlVal::Raw(&meta_expr)),
                     ("created_at", SqlVal::Raw("NOW()")),
@@ -90,7 +119,10 @@ impl SessionRepo {
             repo_error(
                 REPO,
                 "upsert",
-                serde_json::json!({"session_id": session_id, "agent_id": agent_id}),
+                serde_json::json!({
+                    "session_id": input.session_id,
+                    "agent_id": input.agent_id
+                }),
                 error,
             );
         }
@@ -113,20 +145,28 @@ impl SessionRepo {
         result
     }
 
-    pub async fn update_state(&self, session_id: &str, state: &serde_json::Value) -> Result<()> {
-        let json = serde_json::to_string(state)
-            .map_err(|e| ErrorCode::storage_serde(format!("serialize session_state: {e}")))?;
+    pub async fn mark_replaced(
+        &self,
+        session_id: &str,
+        replaced_by_session_id: &str,
+        reset_reason: &str,
+    ) -> Result<()> {
         let sql = format!(
-            "UPDATE sessions SET session_state = PARSE_JSON('{}'), updated_at = NOW() WHERE id = '{}'",
-            sql::escape(&json),
+            "UPDATE sessions SET replaced_by_session_id = '{}', reset_reason = '{}', updated_at = NOW() WHERE id = '{}'",
+            sql::escape(replaced_by_session_id),
+            sql::escape(reset_reason),
             sql::escape(session_id)
         );
         let result = self.table.exec_raw(&sql).await;
         if let Err(error) = &result {
             repo_error(
                 REPO,
-                "update_state",
-                serde_json::json!({"session_id": session_id}),
+                "mark_replaced",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "replaced_by_session_id": replaced_by_session_id,
+                    "reset_reason": reset_reason
+                }),
                 error,
             );
         }
@@ -224,14 +264,12 @@ impl SessionRepo {
         result
     }
 
-    /// Find the most recent session matching a base key (exact or with `#timestamp` suffix).
-    pub async fn latest_by_prefix(&self, prefix: &str) -> Result<Option<SessionRecord>> {
+    pub async fn load_active_by_base_key(&self, base_key: &str) -> Result<Option<SessionRecord>> {
         let result = async {
             let query = format!(
-                "SELECT {} FROM sessions WHERE id = '{}' OR id LIKE '{}#%' ORDER BY created_at DESC LIMIT 1",
+                "SELECT {} FROM sessions WHERE base_key = '{}' AND replaced_by_session_id = '' ORDER BY created_at DESC LIMIT 1",
                 SessionMapper.columns(),
-                sql::escape(prefix),
-                sql::escape_like(prefix),
+                sql::escape(base_key),
             );
             let rows = self.table.pool().query_all(&query).await?;
             match rows.first() {
@@ -243,8 +281,8 @@ impl SessionRepo {
         if let Err(error) = &result {
             repo_error(
                 REPO,
-                "latest_by_prefix",
-                serde_json::json!({"prefix": prefix}),
+                "load_active_by_base_key",
+                serde_json::json!({"base_key": base_key}),
                 error,
             );
         }

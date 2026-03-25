@@ -11,6 +11,12 @@ pub struct SessionRecord {
     #[serde(default)]
     pub scope: String,
     #[serde(default)]
+    pub base_key: String,
+    #[serde(default)]
+    pub replaced_by_session_id: String,
+    #[serde(default)]
+    pub reset_reason: String,
+    #[serde(default)]
     pub session_state: serde_json::Value,
     #[serde(default)]
     pub meta: serde_json::Value,

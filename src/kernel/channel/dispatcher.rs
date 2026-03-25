@@ -29,11 +29,6 @@ impl ChannelDispatcher {
         &self.registry
     }
 
-    /// Build a session key that uniquely identifies a conversation across channels.
-    pub fn session_key(channel_type: &str, account_id: &str, chat_id: &str) -> String {
-        format!("{channel_type}:{account_id}:{chat_id}")
-    }
-
     /// Extract the user-facing text and reply context from any inbound event.
     pub fn extract_input(event: &InboundEvent) -> (String, Option<ReplyContext>) {
         match event {

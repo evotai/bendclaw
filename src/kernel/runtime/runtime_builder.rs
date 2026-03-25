@@ -27,6 +27,7 @@ use crate::kernel::runtime::runtime::Runtime;
 use crate::kernel::runtime::runtime::RuntimeParts;
 use crate::kernel::runtime::runtime::RuntimeStatus;
 use crate::kernel::runtime::ActivityTracker;
+use crate::kernel::session::SessionLifecycle;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
 use crate::llm::provider::LLMProvider;
@@ -235,6 +236,11 @@ async fn construct(
     let activity_tracker = Arc::new(ActivityTracker::new());
     let trace_writer = crate::kernel::trace::TraceWriter::spawn();
     let persist_writer = crate::kernel::run::persist_op::spawn_persist_writer();
+    let session_lifecycle = Arc::new(SessionLifecycle::new(
+        databases.clone(),
+        sessions.clone(),
+        persist_writer.clone(),
+    ));
     let channel_message_writer = crate::kernel::channel::spawn_channel_message_writer();
     let rate_limiter = Arc::new(
         crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter::new(
@@ -270,6 +276,7 @@ async fn construct(
 
         Runtime::from_parts(RuntimeParts {
             sessions,
+            session_lifecycle,
             channels,
             supervisor,
             chat_router,
@@ -293,7 +300,6 @@ async fn construct(
             rate_limiter,
             health_monitor_handle: RwLock::new(None),
             tool_writer,
-            channel_session_keys: RwLock::new(HashMap::new()),
         })
     });
 

@@ -10,6 +10,7 @@ use crate::kernel::skills::remote::repository::SkillRepository;
 use crate::kernel::skills::skill::Skill;
 use crate::llm::config::LLMConfig;
 use crate::observability::redaction;
+use crate::storage::dal::session::record::SessionRecord;
 
 /// Validate that an LLMConfig can actually produce a working LLMRouter.
 /// Called before persisting to avoid storing broken configs.
@@ -70,11 +71,10 @@ impl Runtime {
             "had_live_session": had_live_session,
         });
         log_runtime_info("delete_session", "started", agent_id, 0, payload.clone());
-        if let Some(session) = self.sessions.get(session_id) {
-            session.close().await;
-            self.sessions.remove(session_id);
-        }
-        let result = self.agent_store(agent_id)?.session_delete(session_id).await;
+        let result = self
+            .session_lifecycle()
+            .delete_session(agent_id, session_id)
+            .await;
         match &result {
             Ok(_) => log_runtime_info(
                 "delete_session",
@@ -371,7 +371,7 @@ impl Runtime {
         title: Option<&str>,
         session_state: Option<&serde_json::Value>,
         meta: Option<&serde_json::Value>,
-    ) -> Result<()> {
+    ) -> Result<SessionRecord> {
         let started = Instant::now();
         let payload = serde_json::json!({
             "session_id": session_id,
@@ -381,15 +381,10 @@ impl Runtime {
             "meta": meta,
         });
         log_runtime_info("upsert_session", "started", agent_id, 0, payload.clone());
-        let store = self.agent_store(agent_id)?;
         let result = async {
-            store
-                .session_upsert(session_id, agent_id, user_id, title, meta)
-                .await?;
-            if let Some(state) = session_state {
-                store.session_update_state(session_id, state).await?;
-            }
-            Ok(())
+            self.session_lifecycle()
+                .update_session(agent_id, session_id, user_id, title, session_state, meta)
+                .await
         }
         .await;
         match &result {

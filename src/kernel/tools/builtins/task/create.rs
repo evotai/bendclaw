@@ -12,6 +12,7 @@ use crate::kernel::tools::tool::ToolResult;
 use crate::kernel::tools::Impact;
 use crate::kernel::tools::OpType;
 use crate::kernel::tools::ToolId;
+use crate::storage::dal::session::repo::SessionRepo;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::TaskSchedule;
 
@@ -74,7 +75,13 @@ impl Tool for TaskCreateTool {
 
         // Auto-inject channel delivery from session context when not explicitly set
         if matches!(spec.delivery, TaskDelivery::None) {
-            if let Some(ch) = ChannelContext::from_session_key(&ctx.session_id) {
+            let session = SessionRepo::new(ctx.pool.clone())
+                .load(&ctx.session_id)
+                .await?;
+            if let Some(ch) = session
+                .as_ref()
+                .and_then(|record| ChannelContext::from_base_key(&record.base_key))
+            {
                 spec.delivery = TaskDelivery::Channel {
                     channel_account_id: ch.account_id,
                     chat_id: ch.chat_id,

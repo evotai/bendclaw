@@ -1,21 +1,22 @@
 use anyhow::Context as _;
 use anyhow::Result;
+use bendclaw::kernel::channel::context::ChannelContext;
 use bendclaw::kernel::channel::dispatcher::ChannelDispatcher;
 use bendclaw::kernel::channel::InboundEvent;
 use bendclaw::kernel::channel::InboundMessage;
 use bendclaw::kernel::channel::ReplyContext;
 
-// ── session_key ──
+// ── base_key ──
 
 #[test]
 fn session_key_format() {
-    let key = ChannelDispatcher::session_key("telegram", "acc_1", "chat_42");
+    let key = ChannelContext::base_key("telegram", "acc_1", "chat_42");
     assert_eq!(key, "telegram:acc_1:chat_42");
 }
 
 #[test]
 fn session_key_http_api() {
-    let key = ChannelDispatcher::session_key("http_api", "acc_x", "run_123");
+    let key = ChannelContext::base_key("http_api", "acc_x", "run_123");
     assert_eq!(key, "http_api:acc_x:run_123");
 }
 

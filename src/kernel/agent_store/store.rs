@@ -22,6 +22,7 @@ use crate::storage::dal::run_event::record::RunEventRecord;
 use crate::storage::dal::run_event::repo::RunEventRepo;
 use crate::storage::dal::session::record::SessionRecord;
 use crate::storage::dal::session::repo::SessionRepo;
+use crate::storage::dal::session::repo::SessionWrite;
 use crate::storage::dal::trace::record::SpanRecord;
 use crate::storage::dal::trace::repo::SpanRepo;
 use crate::storage::dal::trace::repo::TraceRepo;
@@ -103,17 +104,8 @@ impl AgentStore {
 
     // ── Sessions ──────────────────────────────────────────────────────────
 
-    pub async fn session_upsert(
-        &self,
-        session_id: &str,
-        agent_id: &str,
-        user_id: &str,
-        title: Option<&str>,
-        meta: Option<&serde_json::Value>,
-    ) -> Result<()> {
-        self.sessions
-            .upsert(session_id, agent_id, user_id, title, None, meta)
-            .await
+    pub async fn session_upsert(&self, input: SessionWrite) -> Result<()> {
+        self.sessions.upsert(input).await
     }
 
     pub async fn session_load(&self, session_id: &str) -> Result<Option<SessionRecord>> {
@@ -128,23 +120,11 @@ impl AgentStore {
         self.sessions.list_by_user(user_id, limit).await
     }
 
-    pub async fn session_update_state(
-        &self,
-        session_id: &str,
-        state: &serde_json::Value,
-    ) -> Result<()> {
-        self.sessions.update_state(session_id, state).await
-    }
-
     pub async fn session_get_state(&self, session_id: &str) -> Result<serde_json::Value> {
         let record = self.sessions.load(session_id).await?;
         Ok(record
             .map(|r| r.session_state)
             .unwrap_or(serde_json::Value::Null))
-    }
-
-    pub async fn session_delete(&self, session_id: &str) -> Result<()> {
-        self.sessions.delete_by_id(session_id).await
     }
 
     // ── Runs ──────────────────────────────────────────────────────────────

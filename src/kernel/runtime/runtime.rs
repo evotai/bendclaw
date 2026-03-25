@@ -15,6 +15,7 @@ use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::diagnostics;
+use crate::kernel::session::SessionLifecycle;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
 use crate::llm::provider::LLMProvider;
@@ -35,6 +36,7 @@ pub struct Runtime {
     pub(crate) agent_llms: RwLock<HashMap<String, Arc<dyn LLMProvider>>>,
     pub(crate) skills: Arc<SkillStore>,
     pub(crate) sessions: Arc<SessionManager>,
+    pub(crate) session_lifecycle: Arc<SessionLifecycle>,
     pub(crate) channels: Arc<ChannelRegistry>,
     pub(crate) supervisor: Arc<ChannelSupervisor>,
     pub(crate) chat_router: Arc<ChatRouter>,
@@ -53,7 +55,6 @@ pub struct Runtime {
     pub(crate) rate_limiter: Arc<OutboundRateLimiter>,
     pub(crate) health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) tool_writer: crate::kernel::writer::tool_op::ToolWriter,
-    pub(crate) channel_session_keys: RwLock<HashMap<String, String>>,
 }
 
 pub struct RuntimeParts {
@@ -63,6 +64,7 @@ pub struct RuntimeParts {
     pub agent_llms: RwLock<HashMap<String, Arc<dyn LLMProvider>>>,
     pub skills: Arc<SkillStore>,
     pub sessions: Arc<SessionManager>,
+    pub session_lifecycle: Arc<SessionLifecycle>,
     pub channels: Arc<ChannelRegistry>,
     pub supervisor: Arc<ChannelSupervisor>,
     pub chat_router: Arc<ChatRouter>,
@@ -81,7 +83,6 @@ pub struct RuntimeParts {
     pub rate_limiter: Arc<OutboundRateLimiter>,
     pub health_monitor_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
-    pub channel_session_keys: RwLock<HashMap<String, String>>,
 }
 
 impl Runtime {
@@ -112,6 +113,7 @@ impl Runtime {
             agent_llms: parts.agent_llms,
             skills: parts.skills,
             sessions: parts.sessions,
+            session_lifecycle: parts.session_lifecycle,
             channels: parts.channels,
             supervisor: parts.supervisor,
             chat_router: parts.chat_router,
@@ -130,7 +132,6 @@ impl Runtime {
             rate_limiter: parts.rate_limiter,
             health_monitor_handle: parts.health_monitor_handle,
             tool_writer: parts.tool_writer,
-            channel_session_keys: parts.channel_session_keys,
         }
     }
 
@@ -268,6 +269,10 @@ impl Runtime {
         &self.sessions
     }
 
+    pub fn session_lifecycle(&self) -> &Arc<SessionLifecycle> {
+        &self.session_lifecycle
+    }
+
     pub fn channels(&self) -> &Arc<ChannelRegistry> {
         &self.channels
     }
@@ -286,47 +291,6 @@ impl Runtime {
 
     pub fn temperature(&self) -> f64 {
         self.llm.read().default_temperature()
-    }
-
-    // ── Channel session key resolution ──
-
-    /// Resolve the current session key for a channel base key.
-    /// Checks in-memory cache first, then DB for the latest session with this prefix.
-    /// Falls back to the base key itself (backward compatible).
-    pub async fn resolve_channel_session_key(&self, base_key: &str, agent_id: &str) -> String {
-        // 1. Check in-memory cache
-        if let Some(key) = self.channel_session_keys.read().get(base_key) {
-            diagnostics::log_resolved_channel_session(base_key, key, "memory");
-            return key.clone();
-        }
-        // 2. Query DB for latest session with this prefix
-        if let Ok(pool) = self.databases.agent_pool(agent_id) {
-            let repo = crate::storage::dal::session::repo::SessionRepo::new(pool);
-            if let Ok(Some(record)) = repo.latest_by_prefix(base_key).await {
-                self.channel_session_keys
-                    .write()
-                    .insert(base_key.to_string(), record.id.clone());
-                diagnostics::log_resolved_channel_session(base_key, &record.id, "db");
-                return record.id;
-            }
-        }
-        // 3. Fallback: use base key (no prior session exists)
-        diagnostics::log_resolved_channel_session(base_key, base_key, "fallback");
-        base_key.to_string()
-    }
-
-    /// Rotate to a new session key for a channel base key.
-    /// Returns the new session key with `#timestamp` suffix.
-    pub fn rotate_channel_session_key(&self, base_key: &str) -> String {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let new_key = format!("{base_key}#{ts}");
-        self.channel_session_keys
-            .write()
-            .insert(base_key.to_string(), new_key.clone());
-        new_key
     }
 }
 

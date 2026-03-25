@@ -41,7 +41,7 @@ External environments must be updated to the current schema before deploying thi
      title          VARCHAR   NOT NULL DEFAULT '',
      scope          VARCHAR   NOT NULL DEFAULT 'private',
 +    base_key       VARCHAR   NOT NULL DEFAULT '' COMMENT 'Conversation key shared by a session chain',
-+    replaced_by_session_id VARCHAR NOT NULL DEFAULT '' COMMENT 'Next session in the chain; empty means active',
++    replaced_by_session_id VARCHAR NOT NULL DEFAULT '' COMMENT 'Next session in the chain and empty means active',
 +    reset_reason   VARCHAR   NOT NULL DEFAULT '' COMMENT 'Why this session was replaced',
      session_state  VARIANT   NULL,
      meta           VARIANT   NULL,

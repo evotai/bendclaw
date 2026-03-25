@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title          VARCHAR   NOT NULL DEFAULT '' COMMENT 'Display title',
     scope          VARCHAR   NOT NULL DEFAULT 'private' COMMENT 'private | shared',
     base_key       VARCHAR   NOT NULL DEFAULT '' COMMENT 'Conversation key shared by a session chain',
-    replaced_by_session_id VARCHAR NOT NULL DEFAULT '' COMMENT 'Next session in the chain; empty means active',
+    replaced_by_session_id VARCHAR NOT NULL DEFAULT '' COMMENT 'Next session in the chain and empty means active',
     reset_reason   VARCHAR   NOT NULL DEFAULT '' COMMENT 'Why this session was replaced',
     session_state  VARIANT   NULL       COMMENT 'Persistent session state (JSON)',
     meta           VARIANT   NULL       COMMENT 'Arbitrary session metadata (JSON)',

@@ -43,11 +43,15 @@ fn ctx_with_pool(pool: bendclaw::storage::Pool) -> bendclaw::kernel::tools::Tool
 
 #[tokio::test]
 async fn task_create_tool_persists_schedule_and_returns_json() -> Result<()> {
-    let fake = FakeDatabend::new(|sql, _database| {
-        assert!(sql.contains("INSERT INTO tasks"));
-        assert!(sql.contains("'report-task'"));
-        assert!(sql.contains("\"kind\":\"every\""));
-        assert!(sql.contains("'inst-1'"));
+    let saw_insert = Arc::new(Mutex::new(false));
+    let saw_insert_for_fake = Arc::clone(&saw_insert);
+    let fake = FakeDatabend::new(move |sql, _database| {
+        if sql.contains("INSERT INTO tasks") {
+            *saw_insert_for_fake.lock().expect("task insert flag") = true;
+            assert!(sql.contains("'report-task'"));
+            assert!(sql.contains("\"kind\":\"every\""));
+            assert!(sql.contains("'inst-1'"));
+        }
         Ok(paged_rows(&[], None, None))
     });
     let tool = TaskCreateTool::new("inst-1".to_string());
@@ -67,6 +71,7 @@ async fn task_create_tool_persists_schedule_and_returns_json() -> Result<()> {
         .await?;
 
     assert!(result.success);
+    assert!(*saw_insert.lock().expect("task insert flag"));
     let body: serde_json::Value = serde_json::from_str(&result.output)?;
     assert_eq!(body["name"], "report-task");
     assert_eq!(body["schedule"]["kind"], "every");
@@ -76,11 +81,15 @@ async fn task_create_tool_persists_schedule_and_returns_json() -> Result<()> {
 
 #[tokio::test]
 async fn task_create_tool_accepts_channel_delivery() -> Result<()> {
-    let fake = FakeDatabend::new(|sql, _database| {
-        assert!(sql.contains("INSERT INTO tasks"));
-        assert!(sql.contains("\"kind\":\"channel\""));
-        assert!(sql.contains("\"channel_account_id\":\"channel-1\""));
-        assert!(sql.contains("\"chat_id\":\"chat-42\""));
+    let saw_insert = Arc::new(Mutex::new(false));
+    let saw_insert_for_fake = Arc::clone(&saw_insert);
+    let fake = FakeDatabend::new(move |sql, _database| {
+        if sql.contains("INSERT INTO tasks") {
+            *saw_insert_for_fake.lock().expect("task insert flag") = true;
+            assert!(sql.contains("\"kind\":\"channel\""));
+            assert!(sql.contains("\"channel_account_id\":\"channel-1\""));
+            assert!(sql.contains("\"chat_id\":\"chat-42\""));
+        }
         Ok(paged_rows(&[], None, None))
     });
     let tool = TaskCreateTool::new("inst-1".to_string());
@@ -105,6 +114,7 @@ async fn task_create_tool_accepts_channel_delivery() -> Result<()> {
         .await?;
 
     assert!(result.success);
+    assert!(*saw_insert.lock().expect("task insert flag"));
     let body: serde_json::Value = serde_json::from_str(&result.output)?;
     assert_eq!(body["delivery"]["kind"], "channel");
     assert_eq!(body["delivery"]["chat_id"], "chat-42");

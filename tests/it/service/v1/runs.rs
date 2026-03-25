@@ -69,6 +69,7 @@ fn run_row(run_id: &str, status: &str) -> bendclaw::storage::pool::QueryResponse
             serde_json::Value::String("session-1".to_string()),
             serde_json::Value::String("agent-1".to_string()),
             serde_json::Value::String("user-1".to_string()),
+            serde_json::Value::String("user_turn".to_string()),
             serde_json::Value::String(String::new()), // parent_run_id
             serde_json::Value::String(String::new()), // node_id
             serde_json::Value::String(status.to_string()),
@@ -77,6 +78,7 @@ fn run_row(run_id: &str, status: &str) -> bendclaw::storage::pool::QueryResponse
             serde_json::Value::String(String::new()),
             serde_json::Value::String("{\"duration_ms\":42}".to_string()),
             serde_json::Value::String("END_TURN".to_string()),
+            serde_json::Value::String(String::new()), // checkpoint_through_run_id
             serde_json::Value::String("3".to_string()),
             serde_json::Value::String("2026-03-11T00:00:00Z".to_string()),
             serde_json::Value::String("2026-03-11T00:01:00Z".to_string()),
@@ -97,6 +99,7 @@ fn stored_run_row(run: &StoredRun) -> bendclaw::storage::pool::QueryResponse {
             serde_json::Value::String(run.session_id.clone()),
             serde_json::Value::String("agent-1".to_string()),
             serde_json::Value::String("user-1".to_string()),
+            serde_json::Value::String("user_turn".to_string()),
             serde_json::Value::String(String::new()), // parent_run_id
             serde_json::Value::String(String::new()), // node_id
             serde_json::Value::String(run.status.clone()),
@@ -105,6 +108,7 @@ fn stored_run_row(run: &StoredRun) -> bendclaw::storage::pool::QueryResponse {
             serde_json::Value::String(run.error.clone()),
             serde_json::Value::String(run.metrics.clone()),
             serde_json::Value::String(run.stop_reason.clone()),
+            serde_json::Value::String(String::new()), // checkpoint_through_run_id
             serde_json::Value::String(run.iterations.to_string()),
             serde_json::Value::String("2026-03-11T00:00:00Z".to_string()),
             serde_json::Value::String("2026-03-11T00:01:00Z".to_string()),
@@ -187,13 +191,13 @@ async fn fake_runs_app() -> Result<axum::Router> {
         if sql.starts_with("SELECT COUNT(*) FROM runs WHERE session_id = 'session-1'") {
             return Ok(paged_rows(&[&["1"]], None, None));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1'") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' AND kind != 'session_checkpoint'") {
             return Ok(run_row("run-1", "COMPLETED"));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-1' LIMIT 1") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-1' LIMIT 1") {
             return Ok(run_row("run-1", "COMPLETED"));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-paused' LIMIT 1") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = 'run-paused' LIMIT 1") {
             return Ok(run_row("run-paused", "COMPLETED"));
         }
         if sql.starts_with("SELECT id, run_id, session_id, agent_id, user_id, seq, event, payload, TO_VARCHAR(created_at) FROM run_events WHERE run_id = 'run-1' ORDER BY seq ASC, created_at ASC LIMIT 5000") {
@@ -234,7 +238,10 @@ async fn fake_execute_runs_app(state: RunExecState) -> Result<axum::Router> {
         if sql.starts_with("REPLACE INTO sessions ") {
             return Ok(paged_rows(&[], None, None));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' ORDER BY created_at DESC LIMIT 1000") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' AND kind = 'session_checkpoint' ORDER BY created_at DESC LIMIT 1") {
+            return Ok(paged_rows(&[], None, None));
+        }
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE session_id = 'session-1' AND kind != 'session_checkpoint' ORDER BY created_at DESC LIMIT 1000") {
             let guard = fake_state.run.lock().expect("run state");
             return Ok(match guard.as_ref() {
                 Some(run) => stored_run_row(run),
@@ -246,12 +253,12 @@ async fn fake_execute_runs_app(state: RunExecState) -> Result<axum::Router> {
             *fake_state.run.lock().expect("run state") = Some(StoredRun {
                 id: values[0].clone(),
                 session_id: values[1].clone(),
-                status: values[6].clone(),
-                input: values[7].clone(),
-                output: values[8].clone(),
-                error: values[9].clone(),
-                metrics: values[10].clone(),
-                stop_reason: values[11].clone(),
+                status: values[7].clone(),
+                input: values[8].clone(),
+                output: values[9].clone(),
+                error: values[10].clone(),
+                metrics: values[11].clone(),
+                stop_reason: values[12].clone(),
                 iterations: 0,
             });
             return Ok(paged_rows(&[], None, None));
@@ -294,7 +301,7 @@ async fn fake_execute_runs_app(state: RunExecState) -> Result<axum::Router> {
             }
             return Ok(paged_rows(&[], None, None));
         }
-        if sql.starts_with("SELECT id, session_id, agent_id, user_id, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = ") {
+        if sql.starts_with("SELECT id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM runs WHERE id = ") {
             let guard = fake_state.run.lock().expect("run state");
             return Ok(match guard.as_ref() {
                 Some(run) => stored_run_row(run),

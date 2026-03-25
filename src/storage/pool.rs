@@ -398,12 +398,30 @@ async fn parse_response(resp: reqwest::Response, context: &str) -> Result<QueryR
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
+        let code = status.as_u16();
         let lower = body.to_lowercase();
+
+        // Database not found — permanent, no retry
         if lower.contains("unknown database")
             || (lower.contains("database") && lower.contains("not") && lower.contains("exist"))
         {
             return Err(ErrorCode::not_found(body));
         }
+
+        // Auth / permission errors — permanent, no retry
+        if code == 401 || code == 403 {
+            return Err(ErrorCode::storage_exec(format!(
+                "{context}: HTTP {status}: {body}"
+            )));
+        }
+
+        // Gateway errors (502, 503) — transient, retryable
+        if code == 502 || code == 503 {
+            return Err(ErrorCode::storage_gateway(format!(
+                "{context}: HTTP {status}: {body}"
+            )));
+        }
+
         return Err(ErrorCode::storage_exec(format!(
             "{context}: HTTP {status}: {body}"
         )));
@@ -441,26 +459,10 @@ fn backoff_builder() -> ExponentialBuilder {
 }
 
 fn is_retryable(e: &ErrorCode) -> bool {
-    let msg = e.message.to_lowercase();
-
-    // Permanent errors — never retry
-    if msg.contains("storageproxyerror")
-        || msg.contains("authentication")
-        || msg.contains("unauthorized")
-    {
-        return false;
-    }
-
-    matches!(e.code, ErrorCode::STORAGE_CONNECTION | ErrorCode::TIMEOUT) || {
-        msg.contains("timeout")
-            || msg.contains("connection")
-            || msg.contains("broken pipe")
-            || msg.contains("reset by peer")
-            || msg.contains("temporarily unavailable")
-            || msg.contains("unknown database")
-            || msg.contains("http 502")
-            || msg.contains("http 503")
-    }
+    matches!(
+        e.code,
+        ErrorCode::STORAGE_CONNECTION | ErrorCode::TIMEOUT | ErrorCode::STORAGE_GATEWAY
+    )
 }
 
 impl std::fmt::Debug for Pool {

@@ -116,6 +116,7 @@ build_agent_errors!(
         "StorageMigration"
     ),
     (1104, storage_serde, STORAGE_SERDE, "StorageSerialization"),
+    (1105, storage_gateway, STORAGE_GATEWAY, "StorageGateway"),
     (1200, llm_request, LLM_REQUEST, "LlmRequest"),
     (1201, llm_response, LLM_RESPONSE, "LlmResponse"),
     (1202, llm_rate_limit, LLM_RATE_LIMIT, "LlmRateLimit"),

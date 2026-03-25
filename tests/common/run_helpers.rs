@@ -90,7 +90,7 @@ pub fn fake_run_exec_databend(state: RunExecState, session_id: &str) -> FakeData
         if sql.starts_with("SELECT id, key, value, secret, revoked, TO_VARCHAR(last_used_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM variables WHERE revoked = FALSE") {
             return Ok(paged_rows(&[], None, None));
         }
-        if sql.starts_with("SELECT id, agent_id, user_id, title, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM sessions WHERE id = ") {
+        if sql.starts_with("SELECT id, agent_id, user_id, title, scope, base_key, replaced_by_session_id, reset_reason, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM sessions WHERE id = ") {
             return Ok(paged_rows(&[], None, None));
         }
         if sql.starts_with("REPLACE INTO sessions ") {

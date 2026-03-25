@@ -228,7 +228,7 @@ async fn fake_execute_runs_app(state: RunExecState) -> Result<axum::Router> {
         if sql.starts_with("SELECT id, key, value, secret, revoked, user_id, scope, created_by, TO_VARCHAR(last_used_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM variables WHERE revoked = FALSE") {
             return Ok(paged_rows(&[], None, None));
         }
-        if sql.starts_with("SELECT id, agent_id, user_id, title, scope, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM sessions WHERE id = ") {
+        if sql.starts_with("SELECT id, agent_id, user_id, title, scope, base_key, replaced_by_session_id, reset_reason, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at) FROM sessions WHERE id = ") {
             return Ok(paged_rows(&[], None, None));
         }
         if sql.starts_with("REPLACE INTO sessions ") {

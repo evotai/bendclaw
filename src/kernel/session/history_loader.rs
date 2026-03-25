@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
+use crate::kernel::session::diagnostics;
 use crate::kernel::Message;
 
 pub(crate) struct SessionHistoryLoader {
@@ -18,9 +19,9 @@ impl SessionHistoryLoader {
         let runs = self.storage.run_list_by_session(session_id, limit).await?;
 
         let mut seeded = Vec::new();
-        let replay = if let Some(checkpoint) = checkpoint {
+        let replay = if let Some(ref checkpoint) = checkpoint {
             if !checkpoint.output.is_empty() {
-                seeded.push(Message::compaction(checkpoint.output));
+                seeded.push(Message::compaction(checkpoint.output.clone()));
             }
 
             if checkpoint.checkpoint_through_run_id.is_empty() {
@@ -45,6 +46,14 @@ impl SessionHistoryLoader {
                 seeded.push(Message::assistant(run.output.clone()).with_run_id(run.id.clone()));
             }
         }
+
+        diagnostics::log_history_loaded(
+            session_id,
+            runs.len(),
+            replay.len(),
+            seeded.len(),
+            &diagnostics::summarize_loaded_history(&seeded, checkpoint.as_ref()),
+        );
 
         Ok(seeded)
     }

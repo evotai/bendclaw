@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::diagnostics;
 use super::engine::Engine;
 use crate::kernel::run::dispatcher::DispatchOutcome;
 use crate::kernel::run::dispatcher::ParsedToolCall;
@@ -11,8 +12,6 @@ use crate::kernel::trace::TraceSpan;
 use crate::kernel::Message;
 use crate::kernel::OperationMeta;
 use crate::llm::message::ToolCall;
-use crate::observability::log::run_log;
-use crate::observability::log::slog;
 use crate::observability::server_log;
 
 /// Max bytes for span error messages stored in trace DB.
@@ -74,27 +73,9 @@ impl Engine {
                 &self.ctx.agent_id,
                 self.iteration.load(std::sync::atomic::Ordering::Relaxed),
             );
-            run_log!(info, tool_ctx, "tool", "started",
-                msg = format!("    tool [{}] started", p.call.name),
-                tool_name = %p.call.name,
-                tool_kind = %p.kind.as_str(),
-                bytes = p.arguments.to_string().len() as u64,
-                tool_call_id = %p.call.id,
-            );
+            diagnostics::log_tool_started(tool_ctx, p);
             let turn = self.iteration.load(std::sync::atomic::Ordering::Relaxed);
-            let mut payload = self.audit_payload(turn);
-            payload.insert(
-                "tool_call_id".to_string(),
-                serde_json::json!(p.call.id.clone()),
-            );
-            payload.insert(
-                "tool_name".to_string(),
-                serde_json::json!(p.call.name.clone()),
-            );
-            payload.insert(
-                "arguments".to_string(),
-                serde_json::json!(p.arguments.clone()),
-            );
+            let payload = diagnostics::build_tool_started_payload(self.audit_payload(turn), p);
             self.emit_audit("tool.started", payload).await;
         }
         spans
@@ -112,10 +93,7 @@ impl Engine {
                 ToolCallResult::Success(out, _) => (out.clone(), true, None),
                 ToolCallResult::ToolError(msg, _) | ToolCallResult::InfraError(msg, _) => {
                     if matches!(&outcome.result, ToolCallResult::InfraError(..)) {
-                        slog!(error, "tool", "infra_error",
-                            tool = %p.call.name,
-                            error = %msg,
-                        );
+                        diagnostics::log_tool_infra_error(&p.call.name, msg);
                     }
                     (format!("Error: {msg}"), false, Some(msg.clone()))
                 }
@@ -141,42 +119,23 @@ impl Engine {
                 &self.ctx.agent_id,
                 self.iteration.load(std::sync::atomic::Ordering::Relaxed),
             );
-            if success {
-                run_log!(info, result_ctx, "tool", "completed",
-                    msg = format!("    tool [{}] completed {}ms", p.call.name, meta.duration_ms),
-                    tool_name = %p.call.name,
-                    tool_kind = %p.kind.as_str(),
-                    summary = %meta.summary,
-                    elapsed_ms = meta.duration_ms,
-                    bytes = output.len() as u64,
-                    tool_call_id = %p.call.id,
-                );
-            } else {
-                run_log!(error, result_ctx, "tool", "failed",
-                    msg = format!("    tool [{}] failed", p.call.name),
-                    tool_name = %p.call.name,
-                    tool_kind = %p.kind.as_str(),
-                    error = %error_text.as_deref().unwrap_or(""),
-                    summary = %meta.summary,
-                    elapsed_ms = meta.duration_ms,
-                    bytes = output.len() as u64,
-                    tool_call_id = %p.call.id,
-                );
-            }
+            diagnostics::log_tool_result(
+                result_ctx,
+                p,
+                &meta,
+                success,
+                error_text.as_deref(),
+                output.len(),
+            );
             let turn = self.iteration.load(std::sync::atomic::Ordering::Relaxed);
-            let mut payload = self.audit_payload(turn);
-            payload.insert(
-                "tool_call_id".to_string(),
-                serde_json::json!(p.call.id.clone()),
+            let payload = diagnostics::build_tool_result_payload(
+                self.audit_payload(turn),
+                p,
+                success,
+                &output,
+                error_text.as_deref(),
+                &meta,
             );
-            payload.insert(
-                "tool_name".to_string(),
-                serde_json::json!(p.call.name.clone()),
-            );
-            payload.insert("success".to_string(), serde_json::json!(success));
-            payload.insert("output".to_string(), serde_json::json!(output.clone()));
-            payload.insert("error".to_string(), serde_json::json!(error_text));
-            payload.insert("operation".to_string(), serde_json::json!(meta.clone()));
             self.emit_audit(
                 if success {
                     "tool.completed"

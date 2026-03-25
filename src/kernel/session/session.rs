@@ -27,6 +27,7 @@ use crate::kernel::run::prompt::PromptBuilder;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::run::usage::UsageScope;
 use crate::kernel::runtime::agent_config::AgentConfig;
+use crate::kernel::session::diagnostics;
 use crate::kernel::session::history_loader::SessionHistoryLoader;
 use crate::kernel::session::session_manager::SessionInfo;
 use crate::kernel::session::session_manager::TurnStats;
@@ -42,8 +43,6 @@ use crate::kernel::Message;
 use crate::llm::provider::LLMProvider;
 use crate::llm::tool::ToolSchema;
 use crate::observability::audit;
-use crate::observability::log::run_log;
-use crate::observability::log::slog;
 use crate::observability::server_log;
 
 const USAGE_PROVIDER_UNKNOWN: &str = "unknown";
@@ -115,11 +114,7 @@ impl Session {
         {
             let state = self.state.lock();
             if let SessionState::Running { run_id, .. } = &*state {
-                slog!(warn, "session", "run_rejected",
-                    session_id = %self.id,
-                    agent_id = %self.agent_id,
-                    active_run_id = %run_id,
-                );
+                diagnostics::log_run_rejected(&self.id, &self.agent_id, run_id);
                 return Err(ErrorCode::denied(format!(
                     "session already has a running run: {run_id}"
                 )));
@@ -138,6 +133,7 @@ impl Session {
 
         self.ensure_history_loaded().await?;
         let mut history = self.history.lock().clone();
+        let context_preview = diagnostics::ContextPreview::from_history(&history);
         let run_index = history
             .iter()
             .filter(|m| matches!(m, Message::User { .. }))
@@ -167,17 +163,20 @@ impl Session {
             &self.agent_id,
             run_index,
         );
-        run_log!(info, run_ctx, "run", "started",
-            msg = format!("─── RUN {} {} user={} ───",
-                server_log::short_run_id(&run_id),
-                &self.id,
-                &self.user_id,
-            ),
-            input_preview = %server_log::preview_text(user_message),
-            user_id = %self.user_id,
+        diagnostics::log_run_started(
+            run_ctx,
+            &self.user_id,
+            user_message,
             run_index,
-            parent_run_id = %parent_run_id.unwrap_or(""),
-            bytes = user_message.len() as u64,
+            parent_run_id,
+        );
+
+        diagnostics::log_context_prepared(
+            run_ctx,
+            user_message,
+            run_index,
+            &history,
+            &context_preview,
         );
 
         let full_prompt = {
@@ -193,16 +192,12 @@ impl Session {
             pb.build(&self.agent_id, &self.user_id, &self.id).await?
         };
 
-        run_log!(info, run_ctx, "prompt", "built",
-            msg = format!("  prompt: {}B tools={} history={}",
-                full_prompt.len(),
-                self.res.tools.len(),
-                history.len(),
-            ),
-            bytes = full_prompt.len() as u64,
-            user_id = %self.user_id,
-            tool_count = self.res.tools.len(),
-            history_messages = history.len(),
+        diagnostics::log_prompt_built(
+            run_ctx,
+            &self.user_id,
+            full_prompt.len(),
+            self.res.tools.len(),
+            history.len(),
         );
 
         let initial_events = vec![

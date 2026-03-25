@@ -1,3 +1,4 @@
+pub(crate) mod diagnostics;
 pub(crate) mod history_loader;
 pub mod message;
 pub mod session;

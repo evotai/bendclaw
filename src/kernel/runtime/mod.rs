@@ -2,6 +2,7 @@ mod activity;
 pub mod agent_config;
 mod agent_setup;
 mod commands;
+mod diagnostics;
 pub mod runtime;
 pub mod runtime_builder;
 mod runtime_lifecycle;

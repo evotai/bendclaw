@@ -14,6 +14,7 @@ use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
 use crate::kernel::runtime::agent_config::AgentConfig;
+use crate::kernel::runtime::diagnostics;
 use crate::kernel::session::SessionManager;
 use crate::kernel::skills::store::SkillStore;
 use crate::llm::provider::LLMProvider;
@@ -192,7 +193,7 @@ impl Runtime {
 
     pub fn reload_llm(&self, new_llm: Arc<dyn LLMProvider>) {
         *self.llm.write() = new_llm;
-        slog!(debug, "runtime", "reloaded",);
+        diagnostics::log_runtime_reloaded();
     }
 
     /// Resolve the LLM provider for a specific agent.
@@ -252,13 +253,10 @@ impl Runtime {
         self.agent_llms.write().remove(agent_id);
         let result = self.sessions.invalidate_by_agent(agent_id);
         if result.evicted_idle > 0 || result.marked_running > 0 {
-            slog!(
-                info,
-                "runtime",
-                "invalidated",
+            diagnostics::log_runtime_invalidated(
                 agent_id,
-                evicted_idle = result.evicted_idle,
-                marked_running = result.marked_running,
+                result.evicted_idle,
+                result.marked_running,
             );
         }
     }
@@ -299,6 +297,7 @@ impl Runtime {
     pub async fn resolve_channel_session_key(&self, base_key: &str, agent_id: &str) -> String {
         // 1. Check in-memory cache
         if let Some(key) = self.channel_session_keys.read().get(base_key) {
+            diagnostics::log_resolved_channel_session(base_key, key, "memory");
             return key.clone();
         }
         // 2. Query DB for latest session with this prefix
@@ -308,10 +307,12 @@ impl Runtime {
                 self.channel_session_keys
                     .write()
                     .insert(base_key.to_string(), record.id.clone());
+                diagnostics::log_resolved_channel_session(base_key, &record.id, "db");
                 return record.id;
             }
         }
         // 3. Fallback: use base key (no prior session exists)
+        diagnostics::log_resolved_channel_session(base_key, base_key, "fallback");
         base_key.to_string()
     }
 
@@ -331,4 +332,3 @@ impl Runtime {
 }
 
 pub use crate::kernel::validate_agent_id;
-use crate::observability::log::slog;

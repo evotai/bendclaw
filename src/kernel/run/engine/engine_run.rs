@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
+use super::diagnostics;
 use super::engine::Engine;
 use crate::base::Result;
 use crate::kernel::run::event::Event;
@@ -14,8 +15,6 @@ use crate::kernel::run::run_loop::RunLoopConfig;
 use crate::kernel::run::run_loop::RunLoopState;
 use crate::kernel::run::transition::apply_turn_result;
 use crate::kernel::run::transition::TurnTransition;
-use crate::observability::log::run_log;
-use crate::observability::log::slog;
 
 pub(super) enum StepOutcome {
     Continue,
@@ -71,13 +70,14 @@ impl Engine {
         let iteration = state.begin_iteration();
         self.iteration.store(iteration, Ordering::Relaxed);
         self.emit(Event::TurnStart { iteration }).await;
-        let payload = self.audit_payload(iteration);
-        self.emit_audit("turn.started", payload).await;
-        run_log!(info, self.ops_ctx(iteration), "turn", "started",
-            msg = format!("  iter-{iteration}"),
-            tool_strategy = %format!("{:?}", self.ctx.tool_view.strategy()),
-            max_context_tokens = state.max_context_tokens(),
-            message_count = self.ctx.messages.len(),
+        self.emit_audit("turn.started", self.audit_payload(iteration))
+            .await;
+        diagnostics::log_turn_started(
+            self.ops_ctx(iteration),
+            iteration,
+            &format!("{:?}", self.ctx.tool_view.strategy()),
+            state,
+            self.ctx.messages.len(),
         );
 
         self.emit(Event::ReasonStart).await;
@@ -152,54 +152,14 @@ impl Engine {
         turn: &LLMResponse,
         extra: &[(&str, serde_json::Value)],
     ) {
-        let mut payload = self.audit_payload(iteration);
-        payload.insert("status".to_string(), serde_json::json!(status));
-        payload.insert(
-            "finish_reason".to_string(),
-            serde_json::json!(turn.finish_reason()),
+        let payload = diagnostics::build_turn_completed_payload(
+            self.audit_payload(iteration),
+            status,
+            turn,
+            extra,
         );
-        payload.insert(
-            "tool_calls".to_string(),
-            serde_json::json!(turn.tool_calls().len() as u64),
-        );
-        for (k, v) in extra {
-            payload.insert(k.to_string(), v.clone());
-        }
         self.emit_audit("turn.completed", payload).await;
-
-        let log_level = match status {
-            "failed" => "error",
-            "aborted" => "warn",
-            _ => "info",
-        };
-        // Use a single structured log call — level is always captured as a field
-        // since the run_log! macro requires a literal level token.
-        match log_level {
-            "error" => run_log!(error, self.ops_ctx(iteration), "turn", status,
-                msg = format!("  iter-{iteration} {status}"),
-                finish_reason = %turn.finish_reason(),
-                tool_calls = turn.tool_calls().len(),
-                tokens = turn.usage().total_tokens,
-                bytes = turn.bytes(),
-                chunk_count = turn.chunk_count(),
-            ),
-            "warn" => run_log!(warn, self.ops_ctx(iteration), "turn", status,
-                msg = format!("  iter-{iteration} {status}"),
-                finish_reason = %turn.finish_reason(),
-                tool_calls = turn.tool_calls().len(),
-                tokens = turn.usage().total_tokens,
-                bytes = turn.bytes(),
-                chunk_count = turn.chunk_count(),
-            ),
-            _ => run_log!(info, self.ops_ctx(iteration), "turn", status,
-                msg = format!("  iter-{iteration} {status}"),
-                finish_reason = %turn.finish_reason(),
-                tool_calls = turn.tool_calls().len(),
-                tokens = turn.usage().total_tokens,
-                bytes = turn.bytes(),
-                chunk_count = turn.chunk_count(),
-            ),
-        }
+        diagnostics::log_turn_completed(self.ops_ctx(iteration), iteration, status, turn);
 
         self.emit(Event::TurnEnd { iteration }).await;
     }
@@ -245,13 +205,13 @@ impl Engine {
         })
         .await;
         let dur = self.start_time.elapsed().as_millis() as u64;
-        slog!(debug, "run", "finished",
-            elapsed_ms = dur,
+        diagnostics::log_run_finished(
+            dur,
             iterations,
-            prompt_tokens = usage.prompt_tokens,
-            completion_tokens = usage.completion_tokens,
-            ttft_ms = usage.ttft_ms,
-            stop_reason = %stop_reason,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.ttft_ms,
+            &stop_reason,
         );
         Ok(AgentResult {
             content,
@@ -264,31 +224,17 @@ impl Engine {
     }
 
     fn log_abort(&self, signal: AbortSignal, state: &RunLoopState) {
-        match signal {
-            AbortSignal::MaxIterations => slog!(
-                warn,
-                "run",
-                "aborted",
-                reason = "max_iterations",
-                iterations = state.iterations(),
-                max = self.ctx.max_iterations,
-            ),
-            AbortSignal::Timeout => slog!(
-                warn,
-                "run",
-                "aborted",
-                reason = "timeout",
-                max_duration_secs = self.ctx.max_duration.as_secs(),
-            ),
-            _ => {}
-        }
+        diagnostics::log_abort_signal(
+            signal,
+            state.iterations(),
+            self.ctx.max_iterations,
+            self.ctx.max_duration.as_secs(),
+        );
     }
 
     async fn drain_inbox(&mut self) {
         while let Ok(msg) = self.inbox.try_recv() {
-            slog!(info, "run", "message_injected",
-                session_id = %self.ctx.session_id,
-            );
+            diagnostics::log_message_injected(&self.ctx.session_id);
             self.emit(Event::MessageInjected {
                 content: msg.text(),
             })

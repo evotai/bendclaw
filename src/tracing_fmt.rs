@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use chrono::Local;
 use parking_lot::Mutex;
+use tracing::Level;
 use tracing_subscriber::registry::LookupSpan;
 
 pub struct LocalDailyWriter {
@@ -103,6 +104,15 @@ impl TargetFirstFormatter {
         Self
     }
 }
+
+const ANSI_RESET: &str = "\x1b[0m";
+const ANSI_DIM: &str = "\x1b[2m";
+const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_CYAN: &str = "\x1b[36m";
+const ANSI_GREEN: &str = "\x1b[32m";
+const ANSI_YELLOW: &str = "\x1b[33m";
+const ANSI_RED: &str = "\x1b[31m";
+const ANSI_MAGENTA: &str = "\x1b[35m";
 
 const KEEP_ZERO_KEYS: &[&str] = &[
     "elapsed_ms",
@@ -691,6 +701,24 @@ fn render(data: &EventData) -> Option<Rendered> {
     Some(rendered)
 }
 
+fn level_color(level: Level) -> &'static str {
+    match level {
+        Level::TRACE => ANSI_MAGENTA,
+        Level::DEBUG => ANSI_CYAN,
+        Level::INFO => ANSI_GREEN,
+        Level::WARN => ANSI_YELLOW,
+        Level::ERROR => ANSI_RED,
+    }
+}
+
+fn paint(text: &str, style: &str, ansi_enabled: bool) -> String {
+    if ansi_enabled {
+        format!("{style}{text}{ANSI_RESET}")
+    } else {
+        text.to_string()
+    }
+}
+
 impl<S, N> tracing_subscriber::fmt::FormatEvent<S, N> for TargetFirstFormatter
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
@@ -708,10 +736,25 @@ where
         let Some(rendered) = render(&data) else {
             return Ok(());
         };
+        let ansi_enabled = writer.has_ansi_escapes();
+        let timestamp = Local::now().format("%H:%M:%S%.3f").to_string();
+        let level_text = format!("{level:>5}");
+        let header_style = match level {
+            Level::WARN | Level::ERROR => ANSI_BOLD,
+            _ => "",
+        };
 
-        write!(writer, "{}", Local::now().format("%H:%M:%S%.3f"))?;
-        write!(writer, " {:>5}", level)?;
-        write!(writer, "  {}", rendered.header)?;
+        write!(writer, "{}", paint(&timestamp, ANSI_DIM, ansi_enabled))?;
+        write!(
+            writer,
+            " {}",
+            paint(&level_text, level_color(level), ansi_enabled)
+        )?;
+        write!(
+            writer,
+            "  {}",
+            paint(&rendered.header, header_style, ansi_enabled)
+        )?;
         if rendered.lines.is_empty() {
             writeln!(writer)
         } else {

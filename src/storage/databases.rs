@@ -54,15 +54,16 @@ impl AgentDatabases {
         &self.prefix
     }
 
-    /// List all agent IDs, with a short-lived cache to avoid repeated SHOW DATABASES.
+    /// List all agent IDs from the evotai_meta registry.
     pub async fn list_agent_ids(&self) -> Result<Vec<String>> {
         if let Some(ids) = self.agent_ids_cache.get("all") {
             return Ok(ids);
         }
-        let dbs = self.list_databases().await?;
-        let mut ids: Vec<String> = dbs
+        let sql = "SELECT agent_id FROM evotai_meta.evotai_agents WHERE status = 'active' ORDER BY agent_id";
+        let rows = self.pool.query_all(sql).await?;
+        let mut ids: Vec<String> = rows
             .iter()
-            .filter_map(|db| db.strip_prefix(&self.prefix).map(String::from))
+            .map(|row| crate::storage::sql::col(row, 0))
             .collect();
         ids.sort();
         self.agent_ids_cache.put("all".to_string(), ids.clone());

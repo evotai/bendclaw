@@ -615,3 +615,105 @@ async fn reliable_stream_exhausts_retries() {
         "should have received error after exhausting retries"
     );
 }
+
+// ── chat_stream: partial content before error must be discarded on retry ──
+
+/// Provider that streams partial content before failing, then succeeds.
+struct PartialThenSucceed {
+    remaining_failures: Mutex<u32>,
+}
+
+impl PartialThenSucceed {
+    fn new(failures: u32) -> Self {
+        Self {
+            remaining_failures: Mutex::new(failures),
+        }
+    }
+}
+
+#[async_trait]
+impl LLMProvider for PartialThenSucceed {
+    async fn chat(
+        &self,
+        _model: &str,
+        _messages: &[ChatMessage],
+        _tools: &[ToolSchema],
+        _temperature: f64,
+    ) -> bendclaw::base::Result<LLMResponse> {
+        Ok(LLMResponse {
+            content: Some("ok".into()),
+            tool_calls: vec![],
+            finish_reason: Some("stop".into()),
+            usage: Some(TokenUsage::new(10, 5)),
+            model: Some("test".into()),
+        })
+    }
+
+    fn chat_stream(
+        &self,
+        _model: &str,
+        _messages: &[ChatMessage],
+        _tools: &[ToolSchema],
+        _temperature: f64,
+    ) -> ResponseStream {
+        let should_fail = {
+            let mut r = self.remaining_failures.lock();
+            if *r > 0 {
+                *r -= 1;
+                true
+            } else {
+                false
+            }
+        };
+
+        let (writer, stream) = ResponseStream::channel(16);
+        tokio::spawn(async move {
+            if should_fail {
+                // Stream partial content THEN error — simulates mid-stream 500
+                writer.text("GARBAGE").await;
+                writer.error("server error mid-stream").await;
+            } else {
+                writer.text("correct answer").await;
+                writer.done("stop").await;
+            }
+        });
+        stream
+    }
+}
+
+#[tokio::test]
+async fn reliable_stream_discards_partial_content_on_retry() -> anyhow::Result<()> {
+    use tokio_stream::StreamExt;
+
+    let inner = Arc::new(PartialThenSucceed::new(1));
+    let reliable = ReliableProvider::wrap(inner)
+        .max_retries(3)
+        .base_backoff_ms(50);
+
+    let mut stream = reliable.chat_stream("model", &[ChatMessage::user("hi")], &[], 0.7);
+
+    let mut texts = Vec::new();
+    let mut got_done = false;
+    while let Some(event) = stream.next().await {
+        match event {
+            bendclaw::llm::stream::StreamEvent::ContentDelta(text) => {
+                texts.push(text);
+            }
+            bendclaw::llm::stream::StreamEvent::Done { .. } => {
+                got_done = true;
+            }
+            bendclaw::llm::stream::StreamEvent::Error(msg) => {
+                anyhow::bail!("unexpected error: {msg}");
+            }
+            _ => {}
+        }
+    }
+    assert!(got_done, "should have received done event");
+    // Must only contain the successful retry's content, not the partial garbage
+    assert_eq!(
+        texts,
+        vec!["correct answer"],
+        "partial content from failed attempt must be discarded, got: {texts:?}"
+    );
+    Ok(())
+}

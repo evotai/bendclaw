@@ -188,6 +188,12 @@ impl SessionLifecycle {
     ) -> Result<SessionRecord> {
         if let Some(record) = self.lookup_session(session_id) {
             self.ensure_owner(&record, agent_id, user_id)?;
+            slog!(info, "session", "resolved",
+                session_id = %record.id,
+                base_key = "",
+                source = "memory",
+                mode = "ensure_direct",
+            );
             return Ok(record);
         }
 
@@ -195,6 +201,12 @@ impl SessionLifecycle {
         if let Some(record) = repo.load(session_id).await? {
             self.ensure_owner(&record, agent_id, user_id)?;
             self.remember_session(record.clone());
+            slog!(info, "session", "resolved",
+                session_id = %record.id,
+                base_key = "",
+                source = "db",
+                mode = "ensure_direct",
+            );
             return Ok(record);
         }
 
@@ -209,6 +221,12 @@ impl SessionLifecycle {
         });
         self.remember_session(record.clone());
         self.stage_upsert(&repo, &record);
+        slog!(info, "session", "resolved",
+            session_id = %record.id,
+            base_key = "",
+            source = "created",
+            mode = "ensure_direct",
+        );
         Ok(record)
     }
 

@@ -116,6 +116,7 @@ impl LLMProvider for ReliableProvider {
 
                     let mut got_error = false;
                     let mut error_msg = String::new();
+                    let mut buffer: Vec<StreamEvent> = Vec::new();
 
                     use tokio_stream::StreamExt;
                     while let Some(event) = inner_stream.next().await {
@@ -126,19 +127,28 @@ impl LLMProvider for ReliableProvider {
                                 break;
                             }
                             StreamEvent::Done { .. } => {
+                                // Success — flush buffer then send Done
+                                for buffered in buffer {
+                                    writer.send(buffered).await;
+                                }
                                 writer.send(event).await;
                                 return;
                             }
                             _ => {
-                                writer.send(event).await;
+                                buffer.push(event);
                             }
                         }
                     }
 
                     if !got_error {
+                        // Stream ended without Done or Error — flush what we have
+                        for buffered in buffer {
+                            writer.send(buffered).await;
+                        }
                         return;
                     }
 
+                    // Error path — discard buffer, retry
                     match delays.next() {
                         Some(delay) => {
                             slog!(warn, "llm", "stream_retry",

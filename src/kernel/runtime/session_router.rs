@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::diagnostics;
 use crate::base::Result;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::session_stream::Stream;
@@ -33,6 +34,18 @@ impl Runtime {
         is_remote_dispatch: bool,
     ) -> Result<SubmitResult> {
         let normalized = normalize_control_input(input);
+        if let Some(command) = classify_control_command(&normalized) {
+            diagnostics::log_control_command_classified(diagnostics::ControlCommandInfo {
+                agent_id,
+                user_id,
+                session_id,
+                input,
+                normalized: &normalized,
+                command: command.name(),
+                handled: command.is_handled(),
+                handler: command.handler(),
+            });
+        }
 
         // Cancel commands
         if is_cancel_command(&normalized) {
@@ -137,6 +150,53 @@ pub async fn merge_followup(
 
 fn normalize_control_input(input: &str) -> String {
     input.trim().to_lowercase()
+}
+
+#[derive(Clone, Copy)]
+enum ControlCommand {
+    Cancel,
+    Status,
+    NewSession,
+    ClearSession,
+    SlashUnknown,
+}
+
+impl ControlCommand {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Cancel => "cancel",
+            Self::Status => "status",
+            Self::NewSession => "/new",
+            Self::ClearSession => "/clear",
+            Self::SlashUnknown => "slash_unknown",
+        }
+    }
+
+    fn is_handled(self) -> bool {
+        matches!(self, Self::Cancel | Self::Status)
+    }
+
+    fn handler(self) -> &'static str {
+        match self {
+            Self::Cancel | Self::Status => "runtime.submit_turn",
+            Self::NewSession | Self::ClearSession | Self::SlashUnknown => "none",
+        }
+    }
+}
+
+fn classify_control_command(normalized: &str) -> Option<ControlCommand> {
+    if is_cancel_command(normalized) {
+        return Some(ControlCommand::Cancel);
+    }
+    if is_status_command(normalized) {
+        return Some(ControlCommand::Status);
+    }
+    match normalized {
+        "/new" => Some(ControlCommand::NewSession),
+        "/clear" => Some(ControlCommand::ClearSession),
+        value if value.starts_with('/') => Some(ControlCommand::SlashUnknown),
+        _ => None,
+    }
 }
 
 fn is_cancel_command(normalized: &str) -> bool {

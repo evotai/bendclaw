@@ -24,6 +24,7 @@ where
     Signal: Future<Output = ()>,
 {
     let has_admin = admin_server.is_some();
+    slog!(info, "server", "supervision_started", has_admin,);
     let api_server = async move { ServerExit::Api(api_server.into_future().await) };
     let admin_server = async move {
         match admin_server {
@@ -44,6 +45,36 @@ where
             ServerExit::Signal
         }
     };
+
+    match &first_exit {
+        ServerExit::Api(result) => {
+            slog!(
+                info,
+                "server",
+                "server_exit",
+                listener = "api",
+                success = result.is_ok(),
+            );
+        }
+        ServerExit::Admin(result) => {
+            slog!(
+                info,
+                "server",
+                "server_exit",
+                listener = "admin",
+                success = result.is_ok(),
+            );
+        }
+        ServerExit::Signal => {
+            slog!(
+                info,
+                "server",
+                "server_exit",
+                listener = "signal",
+                success = true,
+            );
+        }
+    }
 
     shutdown_token.cancel();
 

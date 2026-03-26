@@ -11,6 +11,7 @@ use bendclaw::kernel::Runtime;
 use bendclaw::llm::router::LLMRouter;
 use bendclaw::service::state::AppState;
 use clap::Parser;
+use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -174,14 +175,46 @@ async fn cmd_run(
     let api_router = bendclaw::service::api_router(state, &config.log.level, &config.auth);
 
     let api_bind = &config.server.bind_addr;
+    info!(
+        stage = "server",
+        status = "binding",
+        listener = "api",
+        bind_addr = %api_bind,
+        "server binding"
+    );
     let api_listener = tokio::net::TcpListener::bind(api_bind).await?;
+    let api_local_addr = api_listener.local_addr()?;
+    info!(
+        stage = "server",
+        status = "listener_ready",
+        listener = "api",
+        bind_addr = %api_bind,
+        local_addr = %api_local_addr,
+        "server listener_ready"
+    );
 
     let admin_listener = if let Some(ref admin) = config.admin {
         let admin_state = bendclaw::service::AdminState {
             runtime: runtime.clone(),
             shutdown_token: shutdown_token.clone(),
         };
+        info!(
+            stage = "server",
+            status = "binding",
+            listener = "admin",
+            bind_addr = %admin.bind_addr,
+            "server binding"
+        );
         let listener = tokio::net::TcpListener::bind(&admin.bind_addr).await?;
+        let admin_local_addr = listener.local_addr()?;
+        info!(
+            stage = "server",
+            status = "listener_ready",
+            listener = "admin",
+            bind_addr = %admin.bind_addr,
+            local_addr = %admin_local_addr,
+            "server listener_ready"
+        );
         Some((listener, bendclaw::service::admin_router(admin_state)))
     } else {
         None
@@ -195,6 +228,15 @@ async fn cmd_run(
         axum::serve(listener, router)
             .with_graceful_shutdown(async move { admin_shutdown.cancelled().await })
     });
+
+    info!(
+        stage = "server",
+        status = "serving",
+        api_bind_addr = %api_bind,
+        admin_enabled = admin_server.is_some(),
+        mode = "foreground",
+        "server serving"
+    );
 
     bendclaw::service::server::supervise_servers(shutdown_token, api_server, admin_server, async {
         let _ = tokio::signal::ctrl_c().await;

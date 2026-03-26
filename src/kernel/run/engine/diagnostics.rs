@@ -24,6 +24,10 @@ pub(super) struct PreparedLlmRequestSummary {
     pub(super) last_role: String,
     pub(super) last_user: String,
     pub(super) last_assistant: String,
+    pub(super) role_counts: String,
+    pub(super) tool_result_messages: usize,
+    pub(super) assistant_tool_call_messages: usize,
+    pub(super) message_shape_tail: String,
     pub(super) chat_tail: String,
 }
 
@@ -82,6 +86,18 @@ pub(super) fn summarize_prepared_llm_request(
             .unwrap_or_default(),
         last_user: last_chat_preview(&prepared.chat_messages, crate::base::Role::User),
         last_assistant: last_chat_preview(&prepared.chat_messages, crate::base::Role::Assistant),
+        role_counts: chat_role_count_summary(&prepared.chat_messages),
+        tool_result_messages: prepared
+            .chat_messages
+            .iter()
+            .filter(|msg| msg.role == crate::base::Role::Tool)
+            .count(),
+        assistant_tool_call_messages: prepared
+            .chat_messages
+            .iter()
+            .filter(|msg| msg.role == crate::base::Role::Assistant && !msg.tool_calls.is_empty())
+            .count(),
+        message_shape_tail: chat_shape_tail_summary(&prepared.chat_messages, 8),
         chat_tail: chat_tail_summary(&prepared.chat_messages, 6),
     }
 }
@@ -94,6 +110,10 @@ pub(super) fn log_llm_context(ctx: server_log::ServerCtx<'_>, summary: &Prepared
         last_role = %summary.last_role,
         last_user = %summary.last_user,
         last_assistant = %summary.last_assistant,
+        role_counts = %summary.role_counts,
+        tool_result_messages = summary.tool_result_messages,
+        assistant_tool_call_messages = summary.assistant_tool_call_messages,
+        message_shape_tail = %summary.message_shape_tail,
         chat_tail = %summary.chat_tail,
     );
 }
@@ -431,6 +451,58 @@ fn chat_tail_summary(messages: &[ChatMessage], limit: usize) -> String {
                 text = format!("{text} [tool_calls:{}]", msg.tool_calls.len());
             }
             format!("{}: {}", msg.role, text)
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn chat_role_count_summary(messages: &[ChatMessage]) -> String {
+    let system = messages
+        .iter()
+        .filter(|msg| msg.role == crate::base::Role::System)
+        .count();
+    let user = messages
+        .iter()
+        .filter(|msg| msg.role == crate::base::Role::User)
+        .count();
+    let assistant = messages
+        .iter()
+        .filter(|msg| msg.role == crate::base::Role::Assistant)
+        .count();
+    let tool = messages
+        .iter()
+        .filter(|msg| msg.role == crate::base::Role::Tool)
+        .count();
+    format!("system:{system},user:{user},assistant:{assistant},tool:{tool}")
+}
+
+fn chat_shape_tail_summary(messages: &[ChatMessage], limit: usize) -> String {
+    let start = messages.len().saturating_sub(limit);
+    messages[start..]
+        .iter()
+        .map(|msg| {
+            let mut tags = Vec::new();
+            if msg.cache_control.is_some() {
+                tags.push("cached".to_string());
+            }
+            if !msg.tool_calls.is_empty() {
+                let ids: Vec<&str> = msg.tool_calls.iter().map(|tc| tc.id.as_str()).collect();
+                tags.push(format!("tool_use[{}]", ids.join(",")));
+            }
+            if let Some(ref id) = msg.tool_call_id {
+                tags.push(format!("tool_result[{id}]"));
+            }
+            let suffix = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", tags.join(","))
+            };
+            format!(
+                "{}{}: {}",
+                msg.role,
+                suffix,
+                server_log::preview_text(&msg.text())
+            )
         })
         .collect::<Vec<_>>()
         .join(" | ")

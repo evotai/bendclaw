@@ -133,7 +133,6 @@ impl Session {
 
         self.ensure_history_loaded().await?;
         let mut history = self.history.lock().clone();
-        let context_preview = diagnostics::ContextPreview::from_history(&history);
         let run_index = history
             .iter()
             .filter(|m| matches!(m, Message::User { .. }))
@@ -152,6 +151,8 @@ impl Session {
         )?;
 
         history.push(Message::user(user_message).with_run_id(run_id.clone()));
+        let context_preview =
+            diagnostics::ContextPreview::from_history(&history, user_message, &run_id);
 
         let trace = self
             .create_trace(&run_id, trace_id, parent_trace_id, origin_node_id)

@@ -217,10 +217,11 @@ async fn drive_stream(
         .await
         .map_err(|e| format!("request failed: {e}"))?;
 
+    let resp_headers = resp.headers().clone();
+    let request_id = response_request_id(&resp_headers);
+
     if !resp.status().is_success() {
         let status = resp.status();
-        let headers = resp.headers().clone();
-        let request_id = response_request_id(&headers);
         let text = resp.text().await.unwrap_or_default();
         slog!(error, "llm", "stream_api_error",
             provider = "anthropic",

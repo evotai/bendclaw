@@ -212,7 +212,7 @@ pub struct StorageConfig {
     pub databend_api_base_url: String,
     /// Databend Cloud API token. Required.
     pub databend_api_token: String,
-    /// Databend Cloud warehouse name. Default: "default"
+    /// Databend Cloud warehouse name. Empty means server-side default.
     pub databend_warehouse: String,
     /// Prefix for agent databases.
     pub db_prefix: String,
@@ -225,7 +225,7 @@ impl Default for StorageConfig {
         Self {
             databend_api_base_url: "https://api.databend.com/v1".to_string(),
             databend_api_token: String::new(),
-            databend_warehouse: "default".to_string(),
+            databend_warehouse: String::new(),
             db_prefix: DEFAULT_DB_PREFIX.to_string(),
         }
     }

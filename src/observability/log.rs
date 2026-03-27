@@ -51,6 +51,31 @@ pub(crate) use slog;
 /// Storage operation log. Pre-fills `stage="storage"`, requires `database` + `sql`.
 macro_rules! storage_log {
     ($level:ident, $op:expr, $status:expr,
+     warehouse = $wh:expr, database = $db:expr, sql = $sql:expr, $($rest:tt)*) => {
+        tracing::$level!(
+            stage = "storage",
+            operation = $op,
+            status = $status,
+            warehouse = $wh,
+            database = $db,
+            sql = %$crate::storage::pool::truncate_sql($sql),
+            $($rest)*
+            concat!("storage ", $status)
+        )
+    };
+    ($level:ident, $op:expr, $status:expr,
+     warehouse = $wh:expr, database = $db:expr, sql = $sql:expr $(,)?) => {
+        tracing::$level!(
+            stage = "storage",
+            operation = $op,
+            status = $status,
+            warehouse = $wh,
+            database = $db,
+            sql = %$crate::storage::pool::truncate_sql($sql),
+            concat!("storage ", $status)
+        )
+    };
+    ($level:ident, $op:expr, $status:expr,
      database = $db:expr, sql = $sql:expr, $($rest:tt)*) => {
         tracing::$level!(
             stage = "storage",

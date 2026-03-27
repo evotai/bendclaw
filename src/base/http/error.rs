@@ -5,6 +5,38 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ErrorOrigin {
+    Client,
+    Server,
+    Network,
+}
+
+impl ErrorOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Server => "server",
+            Self::Network => "network",
+        }
+    }
+
+    pub fn from_status_code(code: u16) -> Self {
+        match code {
+            400..=499 => Self::Client,
+            500..=599 => Self::Server,
+            _ => Self::Network,
+        }
+    }
+}
+
+impl fmt::Display for ErrorOrigin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HttpErrorKind {
     DnsFailure,
     TcpConnectFailure,
@@ -29,6 +61,19 @@ impl HttpErrorKind {
             Self::InvalidRequest => "invalid_request",
             Self::InvalidResponse => "invalid_response",
             Self::Unknown => "unknown",
+        }
+    }
+
+    pub fn origin(self) -> ErrorOrigin {
+        match self {
+            Self::InvalidRequest => ErrorOrigin::Client,
+            Self::DnsFailure
+            | Self::TcpConnectFailure
+            | Self::TlsHandshakeFailure
+            | Self::ProxyInterrupted
+            | Self::RequestTimeout => ErrorOrigin::Network,
+            Self::ConnectionInterrupted | Self::InvalidResponse => ErrorOrigin::Server,
+            Self::Unknown => ErrorOrigin::Network,
         }
     }
 }

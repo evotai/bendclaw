@@ -189,8 +189,6 @@ async fn construct(
     auth_key: String,
     directive_config: Option<DirectiveConfig>,
 ) -> Result<Arc<Runtime>> {
-    let t0 = std::time::Instant::now();
-
     let pool = match root_pool {
         Some(pool) => pool,
         None => Pool::new(
@@ -203,13 +201,11 @@ async fn construct(
         pool.clone(),
         &config.db_prefix,
     )?);
-    diagnostics::log_runtime_pool_created(t0.elapsed().as_millis() as u64);
 
     let sync_cancel = CancellationToken::new();
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let t2 = std::time::Instant::now();
-    let (skills, skill_count, sync_handle) = build_skill_store(
+    let (skills, _, sync_handle) = build_skill_store(
         databases.clone(),
         workspace_root,
         hub_config,
@@ -217,7 +213,6 @@ async fn construct(
         sync_cancel.clone(),
     )
     .await;
-    diagnostics::log_runtime_skills_ready(t2.elapsed().as_millis() as u64, skill_count);
 
     let sessions = Arc::new(SessionManager::new());
     let channels = Arc::new(build_channel_registry());

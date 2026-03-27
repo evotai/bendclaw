@@ -86,14 +86,6 @@ pub(super) fn log_runtime_session_created(
     );
 }
 
-pub(super) fn log_runtime_pool_created(elapsed_ms: u64) {
-    crate::observability::log::slog!(info, "runtime", "pool_created", elapsed_ms,);
-}
-
-pub(super) fn log_runtime_skills_ready(elapsed_ms: u64, skills: usize) {
-    crate::observability::log::slog!(info, "runtime", "skills_ready", elapsed_ms, skills,);
-}
-
 pub(super) fn log_runtime_directive_init_failed(error: &impl std::fmt::Display) {
     crate::observability::log::slog!(warn, "runtime", "directive_init_failed", error = %error,);
 }

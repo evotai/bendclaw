@@ -10,6 +10,7 @@ pub use client::read_text;
 pub use client::send;
 pub use client::stream_read_error;
 pub use context::HttpRequestContext;
+pub use error::ErrorOrigin;
 pub use error::HttpErrorKind;
 pub use error::HttpErrorPhase;
 pub use error::HttpTransportError;

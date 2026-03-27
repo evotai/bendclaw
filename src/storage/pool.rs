@@ -64,6 +64,14 @@ impl HttpDatabendClient {
             warehouse: warehouse.to_string(),
         })
     }
+
+    fn with_warehouse_header(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.warehouse.is_empty() {
+            builder
+        } else {
+            builder.header("X-DatabendCloud-Warehouse", &self.warehouse)
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -85,12 +93,13 @@ impl DatabendClient for HttpDatabendClient {
         };
 
         let resp = http::send(
-            self.client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .header("X-DatabendCloud-Token", &self.token)
-                .header("X-DatabendCloud-Warehouse", &self.warehouse)
-                .json(&body),
+            self.with_warehouse_header(
+                self.client
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .header("X-DatabendCloud-Token", &self.token),
+            )
+            .json(&body),
             http::HttpRequestContext::new("storage", "query")
                 .with_endpoint("storage_proxy")
                 .with_warehouse(self.warehouse.clone())
@@ -105,10 +114,11 @@ impl DatabendClient for HttpDatabendClient {
     async fn page(&self, uri: &str) -> Result<QueryResponse> {
         let url = resolve_url(&self.base_url, uri);
         let resp = http::send(
-            self.client
-                .get(&url)
-                .header("X-DatabendCloud-Token", &self.token)
-                .header("X-DatabendCloud-Warehouse", &self.warehouse),
+            self.with_warehouse_header(
+                self.client
+                    .get(&url)
+                    .header("X-DatabendCloud-Token", &self.token),
+            ),
             http::HttpRequestContext::new("storage", "page")
                 .with_endpoint("storage_proxy")
                 .with_warehouse(self.warehouse.clone())
@@ -123,10 +133,11 @@ impl DatabendClient for HttpDatabendClient {
     async fn finalize(&self, uri: &str) -> Result<()> {
         let url = resolve_url(&self.base_url, uri);
         if let Err(error) = http::send(
-            self.client
-                .get(&url)
-                .header("X-DatabendCloud-Token", &self.token)
-                .header("X-DatabendCloud-Warehouse", &self.warehouse),
+            self.with_warehouse_header(
+                self.client
+                    .get(&url)
+                    .header("X-DatabendCloud-Token", &self.token),
+            ),
             http::HttpRequestContext::new("storage", "finalize")
                 .with_endpoint("storage_proxy")
                 .with_warehouse(self.warehouse.clone())
@@ -193,6 +204,7 @@ impl Pool {
             .when(is_retryable)
             .notify(|e: &ErrorCode, dur: Duration| {
                 storage_log!(warn, "exec", "retrying",
+                    warehouse = &self.warehouse,
                     database = self.database.as_deref().unwrap_or_default(),
                     sql = &sql,
                     error = %e,
@@ -205,11 +217,13 @@ impl Pool {
                 debug,
                 "exec",
                 "completed",
+                warehouse = &self.warehouse,
                 database = self.database.as_deref().unwrap_or_default(),
                 sql = &sql,
                 elapsed_ms = started.elapsed().as_millis() as u64,
             ),
             Err(error) => storage_log!(error, "exec", "failed",
+                warehouse = &self.warehouse,
                 database = self.database.as_deref().unwrap_or_default(),
                 sql = &sql,
                 elapsed_ms = started.elapsed().as_millis() as u64,
@@ -261,6 +275,7 @@ impl Pool {
             .when(is_retryable)
             .notify(|e: &ErrorCode, dur: Duration| {
                 storage_log!(warn, "query_all", "retrying",
+                    warehouse = &self.warehouse,
                     database = self.database.as_deref().unwrap_or_default(),
                     sql = &sql,
                     error = %e,
@@ -273,12 +288,14 @@ impl Pool {
                 debug,
                 "query_all",
                 "completed",
+                warehouse = &self.warehouse,
                 database = self.database.as_deref().unwrap_or_default(),
                 sql = &sql,
                 rows = rows.len(),
                 elapsed_ms = started.elapsed().as_millis() as u64,
             ),
             Err(error) => storage_log!(error, "query_all", "failed",
+                warehouse = &self.warehouse,
                 database = self.database.as_deref().unwrap_or_default(),
                 sql = &sql,
                 elapsed_ms = started.elapsed().as_millis() as u64,
@@ -425,11 +442,13 @@ async fn parse_response(
         let code = status.as_u16();
         let lower = body.to_lowercase();
         let proxy_error = parse_storage_proxy_error(&body);
+        let error_origin = http::ErrorOrigin::from_status_code(code).as_str();
 
         match &proxy_error {
             Some(error) => slog!(error, "storage", "upstream_failed",
                 operation = context,
                 warehouse,
+                error_origin,
                 upstream_status = code,
                 upstream_error = %error.error,
                 upstream_message = %error.message,
@@ -438,6 +457,7 @@ async fn parse_response(
             None => slog!(error, "storage", "upstream_failed",
                 operation = context,
                 warehouse,
+                error_origin,
                 upstream_status = code,
                 upstream_body = %body,
                 url = %url,

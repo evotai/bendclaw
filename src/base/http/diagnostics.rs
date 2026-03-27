@@ -16,6 +16,7 @@ pub(crate) fn log_transport_error(
         model = %ctx.model.as_deref().unwrap_or(""),
         warehouse = %ctx.warehouse.as_deref().unwrap_or(""),
         url = %ctx.url,
+        error_origin = %issue.kind.origin(),
         transport_error_kind = %issue.kind,
         transport_error_phase = %issue.phase,
         transport_retryable = issue.retryable,

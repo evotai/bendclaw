@@ -806,6 +806,8 @@ where
         mut writer: tracing_subscriber::fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
+        use serde_json::Value;
+
         let level = *event.metadata().level();
         let mut data = EventData::new();
         event.record(&mut data);
@@ -817,59 +819,44 @@ where
 
         let timestamp = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
-        write!(writer, "{{\"timestamp\":\"{timestamp}\"")?;
-        write!(writer, ",\"level\":\"{level}\"")?;
-        write!(writer, ",\"message\":{}", json_escape(&message))?;
+        let mut obj = serde_json::Map::new();
+        obj.insert("timestamp".into(), Value::String(timestamp));
+        obj.insert("level".into(), Value::String(level.to_string()));
+        obj.insert("message".into(), Value::String(message));
 
         if !data.stage.is_empty() {
-            write!(writer, ",\"stage\":{}", json_escape(&data.stage))?;
+            obj.insert("stage".into(), Value::String(data.stage.clone()));
         }
         if !data.status.is_empty() {
-            write!(writer, ",\"status\":{}", json_escape(&data.status))?;
+            obj.insert("status".into(), Value::String(data.status.clone()));
         }
         if !data.run_id.is_empty() {
-            write!(writer, ",\"run_id\":{}", json_escape(&data.run_id))?;
+            obj.insert("run_id".into(), Value::String(data.run_id.clone()));
         }
         if !data.session_id.is_empty() {
-            write!(writer, ",\"session_id\":{}", json_escape(&data.session_id))?;
+            obj.insert("session_id".into(), Value::String(data.session_id.clone()));
         }
         if let Some(turn) = data.turn {
-            write!(writer, ",\"turn\":{turn}")?;
+            obj.insert("turn".into(), Value::Number(turn.into()));
         }
         for field in &data.fields {
-            write!(writer, ",\"{}\":{}", field.name, json_value(&field.plain))?;
+            let value = if field.plain == "true" {
+                Value::Bool(true)
+            } else if field.plain == "false" {
+                Value::Bool(false)
+            } else if let Ok(n) = field.plain.parse::<i64>() {
+                Value::Number(n.into())
+            } else if let Ok(n) = field.plain.parse::<f64>() {
+                serde_json::Number::from_f64(n)
+                    .map(Value::Number)
+                    .unwrap_or_else(|| Value::String(field.plain.clone()))
+            } else {
+                Value::String(field.plain.clone())
+            };
+            obj.insert(field.name.clone(), value);
         }
 
-        writeln!(writer, "}}")
+        let json = serde_json::to_string(&obj).map_err(|_| std::fmt::Error)?;
+        writeln!(writer, "{json}")
     }
-}
-
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c < '\x20' => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn json_value(plain: &str) -> String {
-    if plain == "true" || plain == "false" {
-        return plain.to_string();
-    }
-    if plain.parse::<i64>().is_ok() || plain.parse::<f64>().is_ok() {
-        return plain.to_string();
-    }
-    json_escape(plain)
 }

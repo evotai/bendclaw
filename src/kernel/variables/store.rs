@@ -166,7 +166,7 @@ impl VariableStore for SharedVariableStore {
              INNER JOIN evotai_meta.resource_subscriptions s \
                ON s.resource_type = 'variable' AND s.resource_key = v.id AND s.user_id = {uid} \
              WHERE v.scope = 'shared' AND v.user_id != {uid} AND v.revoked = FALSE AND s.revoked = FALSE \
-             ORDER BY created_at DESC LIMIT {lim}",
+             ORDER BY 11 DESC LIMIT {lim}",
         );
         let rows = self.pool.query_all(&stmt).await?;
         rows.iter().map(parse_variable).collect()

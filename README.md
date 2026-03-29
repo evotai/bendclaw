@@ -7,11 +7,11 @@
 </p>
 
 <p align="center">
-  Distributed AI teams. Share everything. Co-evolve.
+  Self-evolving AI agents. Share everything. Get better every run.
 </p>
 
 <p align="center">
-  A Rust-native runtime where every execution produces reusable knowledge — no prompt engineering required.
+  A Rust-native runtime where agents learn from execution, inspect their own behavior, and co-evolve — no prompt engineering required.
 </p>
 
 <p align="center">
@@ -22,20 +22,46 @@
 
 ## Why BendClaw
 
-Most agent frameworks are stateless — every run starts from zero. BendClaw turns each execution into reusable knowledge that's automatically shared across the team and injected into future runs. Agents co-evolve without prompt engineering.
+Most agent frameworks are stateless — every run starts from zero. BendClaw closes the loop: agents execute, observe what happened, extract knowledge, and feed it back into future runs. Each session makes every agent on the team a little better.
 
-It's also a distributed runtime from day one. Agents collaborate across nodes, fan out subtasks, and collect results — all on a single shared data layer backed by Databend. Add nodes to scale; the cluster handles coordination.
+This is built on three pillars:
+
+1. **Execute** — agents run tasks using tools, skills, and LLM reasoning across a distributed cluster
+2. **Observe** — every session produces a structured replay that agents and humans can inspect
+3. **Evolve** — knowledge extracted from execution is shared across agents and auto-injected into future prompts
+
+It's also distributed from day one. Agents collaborate across nodes, fan out subtasks, and collect results — all on a single shared data layer backed by Databend.
+
+## How Self-Evolution Works
+
+```
+  ┌─────────┐     ┌─────────┐     ┌─────────┐
+  │ Execute │────▶│ Observe │────▶│  Evolve │
+  └─────────┘     └─────────┘     └─────────┘
+       ▲                                │
+       └────────────────────────────────┘
+```
+
+**Execute** — The kernel runs agent sessions: LLM reasoning, tool calls, skill execution, context compaction. Every tool invocation and capability snapshot is recorded as a structured event.
+
+**Observe** — Session replay projects raw events into an inspectable summary: which tools were called, what succeeded or failed, what capabilities were available, how the session ended. Agents can call this API on their own sessions.
+
+```
+GET /v1/agents/{agent_id}/workbench/sessions/{session_id}/replay
+```
+
+**Evolve** — Post-run recall extracts learnings from execution. Shared memory makes knowledge available to all agents on the team. The replay → memory loop means agents don't just accumulate knowledge blindly — they learn from what actually happened.
 
 ## What's Inside
 
-- **Autonomous learning** — agents extract and **share** knowledge from every run, auto-injected into future prompts for continuous **co-evolution**
-- **Session replay** — structured replay API turns raw execution traces into inspectable summaries; agents can review their own sessions to self-diagnose failures and improve over time
-- **Cluster dispatch** — agents **collaborate** across nodes, fan out subtasks, and collect results
-- **Lease-based scheduling** — tasks and channel receivers claimed via distributed DB leases; automatic failover
-- **Shared persistent memory** — vector + full-text search on shared cloud storage, one unified data layer
+- **Self-evolution loop** — execute → observe → extract knowledge → inject into future runs, continuously
+- **Session replay** — structured API turns execution traces into tool timelines, capability snapshots, and outcome summaries
+- **Shared memory** — vector + full-text search; knowledge extracted by one agent is available to all
+- **Cluster dispatch** — agents collaborate across nodes, fan out subtasks, collect results
+- **Lease-based scheduling** — distributed DB leases with automatic failover
 - **Hub integrations** — 100+ integrations (GitHub, Slack, Email, etc.) via pluggable skills
-- **Secret-safe execution** — secrets in a vault, never exposed to LLMs; injected only at tool execution time
-- **Full traceability** — spans, events, audits, sensitive field redaction; humans review, agents execute
+- **Secret-safe execution** — secrets in a vault, never exposed to LLMs
+- **Full traceability** — spans, events, audits, sensitive field redaction
 - **Multi-tenant isolation** — separate DB per agent, isolated workspace per session
 - **32 built-in tools** — file, search, shell, memory, recall, task, web, databend, channel, cluster
 - **50+ REST endpoints** — SSE streaming, Bearer auth, per-agent scoping
@@ -74,7 +100,6 @@ curl -fsSL https://app.evot.ai/api/setup | sh -s -- <BASE64_CONFIG>
 
 ---
 
-
 ## Architecture
 
 ```
@@ -86,8 +111,9 @@ curl -fsSL https://app.evot.ai/api/setup | sh -s -- <BASE64_CONFIG>
   │                   │         │                   │         │                   │
   │  Gateway          │         │  Gateway          │         │  Gateway          │
   │  Kernel + Hub     │ cluster │  Kernel + Hub     │ cluster │  Kernel + Hub     │
-  │  Recall           │◄───────▶│  Recall           │◄───────▶│  Recall           │
-  │  Lease            │   RPC   │  Lease            │   RPC   │  Lease            │
+  │  Workbench        │◄───────▶│  Workbench        │◄───────▶│  Workbench        │
+  │  Recall           │   RPC   │  Recall           │   RPC   │  Recall           │
+  │  Lease            │         │  Lease            │         │  Lease            │
   │  Channels         │         │  Channels         │         │  Channels         │
   │                   │         │                   │         │                   │
   └─────────┬─────────┘         └─────────┬─────────┘         └─────────┬─────────┘
@@ -96,7 +122,7 @@ curl -fsSL https://app.evot.ai/api/setup | sh -s -- <BASE64_CONFIG>
             ┌───────────────────────────────────────────────────────┐
             │                   Databend (Cloud)                    │
             │                                                       │
-            │  sessions · runs · memories (vector + FTS)            │
+            │  sessions · runs · run_events · memories (vector+FTS) │
             │  learnings · knowledge · skills · traces              │
             │  tasks · config · variables · feedback · channels     │
             │                                                       │
@@ -108,9 +134,9 @@ curl -fsSL https://app.evot.ai/api/setup | sh -s -- <BASE64_CONFIG>
 | Layer | Role |
 |---|---|
 | **Gateway** | HTTP routing, SSE streaming, Bearer auth, CORS, request logging |
-| **Kernel** | Agent loop, LLM router (Anthropic / OpenAI) with circuit breaker and failover, tool registry, context compaction, prompt builder |
-| **Workbench** | Session replay projection — semantic event capture, structured replay summaries from raw execution facts, agent self-inspection |
-| **Recall** | Post-run knowledge extraction (fire-and-forget), learning accumulation, auto-injection into future prompts |
+| **Kernel** | Agent loop, LLM router (Anthropic / OpenAI) with circuit breaker and failover, tool registry, context compaction, prompt builder, semantic event capture |
+| **Workbench** | Session replay — projects raw execution events into structured summaries for agent self-inspection and human debugging |
+| **Recall** | Post-run knowledge extraction, learning accumulation, auto-injection into future prompts |
 | **Lease** | Distributed lease coordination — claim/renew/release across nodes; per-resource callbacks for task scheduling and channel receiver lifecycle |
 | **Hub** | Pluggable skill registry, auto-sync from remote repo, 100+ integrations fed into Kernel |
 | **Channels** | Webhook ingestion (Feishu, Telegram, GitHub), HTTP API channel, lease-managed receivers, centralized sender trust (allow_from), inbound dispatch to Kernel |
@@ -135,24 +161,6 @@ curl -fsSL https://app.evot.ai/api/setup | sh -s -- <BASE64_CONFIG>
 | **Channel** | `channel_send` | Send messages through connected channels |
 | **Cluster** | `cluster_nodes`, `cluster_dispatch`, `cluster_collect` | Discover peers, dispatch subtasks to other agents, collect results |
 | **Coding** | `claude_code`, `codex_exec` | Delegate coding tasks to Claude Code or OpenAI Codex CLI with multi-turn session support |
-
----
-
-## Session Replay
-
-Every agent session produces a structured replay — a single API call returns what happened, which tools were used, what capabilities were available, and how the session ended.
-
-```
-GET /v1/agents/{agent_id}/workbench/sessions/{session_id}/replay
-```
-
-Returns:
-- **Run summaries** — status, stop reason, iterations, duration, errors for each run in the session
-- **Tool timeline** — ordered sequence of tool calls with success/failure and duration
-- **Capabilities by run** — which tools and skills were visible at each run start
-- **Outcome** — final status derived from the last run
-
-This is the foundation for agent self-improvement. Instead of treating each session as a black box, agents can inspect their own execution history, identify failure patterns, and feed insights back through the memory system. Humans get a structured view for debugging; agents get a feedback loop for co-evolution.
 
 ---
 

@@ -94,6 +94,11 @@ const COLS: &str = "id, key, value, secret, revoked, user_id, scope, created_by,
                     TO_VARCHAR(last_used_at) AS last_used_at, last_used_by, \
                     TO_VARCHAR(created_at) AS created_at, TO_VARCHAR(updated_at) AS updated_at";
 
+/// Same columns but qualified with table alias `v.` for use in JOINs.
+const COLS_V: &str = "v.id, v.key, v.value, v.secret, v.revoked, v.user_id, v.scope, v.created_by, \
+                      TO_VARCHAR(v.last_used_at) AS last_used_at, v.last_used_by, \
+                      TO_VARCHAR(v.created_at) AS created_at, TO_VARCHAR(v.updated_at) AS updated_at";
+
 fn parse_variable(row: &serde_json::Value) -> Result<Variable> {
     let secret_str: String = sql::col(row, 3);
     let secret = matches!(secret_str.as_str(), "1" | "true");
@@ -163,7 +168,7 @@ impl VariableStore for SharedVariableStore {
             "SELECT {COLS} FROM {TABLE} \
              WHERE user_id = {uid} AND revoked = FALSE \
              UNION \
-             SELECT {COLS} FROM {TABLE} v \
+             SELECT {COLS_V} FROM {TABLE} v \
              INNER JOIN evotai_meta.resource_subscriptions s \
                ON s.resource_type = 'variable' AND s.resource_key = v.id AND s.user_id = {uid} \
              WHERE v.scope = 'shared' AND v.user_id != {uid} AND v.revoked = FALSE AND s.revoked = FALSE \

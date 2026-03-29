@@ -91,7 +91,8 @@ impl SharedVariableStore {
 }
 
 const COLS: &str = "id, key, value, secret, revoked, user_id, scope, created_by, \
-                    TO_VARCHAR(last_used_at), last_used_by, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)";
+                    TO_VARCHAR(last_used_at) AS last_used_at, last_used_by, \
+                    TO_VARCHAR(created_at) AS created_at, TO_VARCHAR(updated_at) AS updated_at";
 
 fn parse_variable(row: &serde_json::Value) -> Result<Variable> {
     let secret_str: String = sql::col(row, 3);
@@ -166,7 +167,7 @@ impl VariableStore for SharedVariableStore {
              INNER JOIN evotai_meta.resource_subscriptions s \
                ON s.resource_type = 'variable' AND s.resource_key = v.id AND s.user_id = {uid} \
              WHERE v.scope = 'shared' AND v.user_id != {uid} AND v.revoked = FALSE AND s.revoked = FALSE \
-             ORDER BY 11 DESC LIMIT {lim}",
+             ORDER BY created_at DESC LIMIT {lim}",
         );
         let rows = self.pool.query_all(&stmt).await?;
         rows.iter().map(parse_variable).collect()

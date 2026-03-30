@@ -86,9 +86,9 @@ async fn l2_drops_old_tool_results_in_middle() {
     for i in 0..4 {
         messages.push(Message::assistant(format!("call tool {i}")));
         messages.push(Message::tool_result(
-            &format!("tc-{i}"),
+            format!("tc-{i}"),
             "shell",
-            &"x ".repeat(500),
+            "x ".repeat(500),
             true,
         ));
     }
@@ -168,7 +168,7 @@ async fn l3_handles_system_messages_in_split_correctly() {
         .iter()
         .filter(|m| matches!(m, Message::CompactionSummary { .. }))
         .collect();
-    assert!(summaries.len() >= 1);
+    assert!(!summaries.is_empty());
 }
 
 /// Proves that L3 split_index → non_system_split mapping is correct

@@ -124,7 +124,7 @@ fn prompt_projection_consistent_with_to_chat_messages() {
     // Also verify per-message: every message that produces a ChatMessage
     // must be prompt-relevant, and vice versa.
     for msg in &messages {
-        let produces_chat = !to_chat_messages(&[msg.clone()]).is_empty();
+        let produces_chat = !to_chat_messages(std::slice::from_ref(msg)).is_empty();
         let is_relevant = is_prompt_relevant(msg);
         assert_eq!(
             is_relevant,

@@ -6,6 +6,7 @@ use serde_json::json;
 
 use super::cache::WebCache;
 use super::duckduckgo;
+use super::gemini;
 use crate::base::Result;
 use crate::kernel::tools::OperationClassifier;
 use crate::kernel::tools::Tool;
@@ -20,19 +21,21 @@ use crate::observability::log::slog;
 #[derive(Clone, Debug, Default)]
 pub enum SearchProvider {
     Brave,
+    Gemini,
     DuckDuckGo,
-    /// Try Brave if API key is available, fall back to DuckDuckGo.
+    /// Try providers in order: Brave → Gemini → DuckDuckGo (each if API key available).
     #[default]
     Auto,
 }
 
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 
-/// Search the web using Brave (with API key) or DuckDuckGo (zero-config fallback).
+/// Search the web using Brave, Gemini, or DuckDuckGo (zero-config fallback).
 #[derive(Clone)]
 pub struct WebSearchTool {
     client: reqwest::Client,
     brave_base_url: String,
+    gemini_base_url: String,
     provider: SearchProvider,
     cache: Arc<WebCache>,
 }
@@ -46,6 +49,7 @@ impl WebSearchTool {
                 .build()
                 .unwrap_or_default(),
             brave_base_url: brave_base_url.into(),
+            gemini_base_url: "https://generativelanguage.googleapis.com/v1beta".to_string(),
             provider: SearchProvider::Auto,
             cache: Arc::new(WebCache::new(DEFAULT_CACHE_TTL)),
         }
@@ -61,24 +65,90 @@ impl WebSearchTool {
         self
     }
 
+    pub fn with_gemini_base_url(mut self, url: impl Into<String>) -> Self {
+        self.gemini_base_url = url.into();
+        self
+    }
+
     fn extract_query(args: &serde_json::Value) -> &str {
         args.get("query").and_then(|v| v.as_str()).unwrap_or("")
     }
 
-    /// Resolve the Brave API key: workspace variable first, then env var.
-    fn resolve_brave_key(ctx: &ToolContext) -> Option<BraveKey> {
-        if let Some(v) = ctx.workspace.variable("BRAVE_API_KEY") {
-            return Some(BraveKey {
+    /// Resolve an API key by name: workspace variable first, then env var.
+    fn resolve_key(ctx: &ToolContext, name: &str) -> Option<ApiKey> {
+        if let Some(v) = ctx.workspace.variable(name) {
+            return Some(ApiKey {
                 value: v.value.clone(),
                 secret: v.secret,
                 id: Some(v.id.clone()),
             });
         }
-        std::env::var("BRAVE_API_KEY").ok().map(|value| BraveKey {
+        std::env::var(name).ok().map(|value| ApiKey {
             value,
             secret: false,
             id: None,
         })
+    }
+
+    /// Auto mode: try Brave → Gemini → DuckDuckGo in order.
+    /// Returns `Ok(output)` on first success, `Err(combined)` if all fail.
+    async fn auto_search(
+        &self,
+        query: &str,
+        count: u32,
+        brave_key: &Option<ApiKey>,
+        gemini_key: &Option<ApiKey>,
+    ) -> std::result::Result<String, String> {
+        let mut errors: Vec<String> = Vec::new();
+
+        // 1) Try Brave if key available
+        if let Some(key) = brave_key {
+            match self.brave_search(query, count, &key.value).await {
+                Ok(output) => return Ok(output),
+                Err(e) => {
+                    slog!(warn, "web", "fallback", provider = "brave", query, error = %e,);
+                    errors.push(format!("Brave: {e}"));
+                }
+            }
+        }
+
+        // 2) Try Gemini if key available
+        if let Some(key) = gemini_key {
+            match gemini::search(
+                &self.client,
+                &self.gemini_base_url,
+                query,
+                count,
+                &key.value,
+            )
+            .await
+            {
+                Ok(output) => return Ok(output),
+                Err(e) => {
+                    slog!(warn, "web", "fallback", provider = "gemini", query, error = %e,);
+                    errors.push(format!("Gemini: {e}"));
+                }
+            }
+        }
+
+        // 3) DuckDuckGo as zero-config fallback
+        if errors.is_empty() {
+            slog!(
+                info,
+                "web",
+                "no_api_key",
+                provider = "auto->duckduckgo",
+                query,
+            );
+        }
+        match duckduckgo::search(&self.client, query, count).await {
+            Ok(results) => Ok(duckduckgo::format_results(&results)),
+            Err(e) => {
+                slog!(warn, "web", "failed", provider = "duckduckgo", query, error = %e,);
+                errors.push(format!("DuckDuckGo: {e}"));
+                Err(errors.join("; "))
+            }
+        }
     }
 
     /// Execute a Brave search. Returns `Ok(output)` on success, `Err(msg)` on failure.
@@ -138,7 +208,8 @@ impl WebSearchTool {
     }
 }
 
-struct BraveKey {
+/// Resolved API key with metadata for secret tracking.
+struct ApiKey {
     value: String,
     secret: bool,
     id: Option<String>,
@@ -219,7 +290,8 @@ impl Tool for WebSearchTool {
             return Ok(ToolResult::ok(cached));
         }
 
-        let brave_key = Self::resolve_brave_key(ctx);
+        let brave_key = Self::resolve_key(ctx, "BRAVE_API_KEY");
+        let gemini_key = Self::resolve_key(ctx, "GEMINI_API_KEY");
 
         let output = match &self.provider {
             SearchProvider::Brave => {
@@ -241,6 +313,33 @@ impl Tool for WebSearchTool {
                     }
                 }
             }
+            SearchProvider::Gemini => {
+                let key = match &gemini_key {
+                    Some(k) => k,
+                    None => {
+                        slog!(warn, "web", "no_api_key", provider = "gemini",);
+                        return Ok(ToolResult::error(
+                            "No GEMINI_API_KEY variable configured. \
+                             Add it via the variables API or set the GEMINI_API_KEY env var.",
+                        ));
+                    }
+                };
+                match gemini::search(
+                    &self.client,
+                    &self.gemini_base_url,
+                    query,
+                    count,
+                    &key.value,
+                )
+                .await
+                {
+                    Ok(output) => output,
+                    Err(e) => {
+                        slog!(warn, "web", "failed", provider = "gemini", query, error = %e,);
+                        return Ok(ToolResult::error(e));
+                    }
+                }
+            }
             SearchProvider::DuckDuckGo => {
                 match duckduckgo::search(&self.client, query, count).await {
                     Ok(results) => duckduckgo::format_results(&results),
@@ -251,43 +350,20 @@ impl Tool for WebSearchTool {
                 }
             }
             SearchProvider::Auto => {
-                if let Some(key) = &brave_key {
-                    match self.brave_search(query, count, &key.value).await {
-                        Ok(output) => output,
-                        Err(e) => {
-                            slog!(warn, "web", "fallback", provider = "brave->duckduckgo", query, error = %e,);
-                            match duckduckgo::search(&self.client, query, count).await {
-                                Ok(results) => duckduckgo::format_results(&results),
-                                Err(e2) => {
-                                    slog!(warn, "web", "failed", provider = "brave+duckduckgo", query, error = %e2,);
-                                    return Ok(ToolResult::error(format!(
-                                        "Brave: {e}; DuckDuckGo: {e2}"
-                                    )));
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    slog!(
-                        info,
-                        "web",
-                        "no_api_key",
-                        provider = "auto->duckduckgo",
-                        query,
-                    );
-                    match duckduckgo::search(&self.client, query, count).await {
-                        Ok(results) => duckduckgo::format_results(&results),
-                        Err(e) => {
-                            slog!(warn, "web", "failed", provider = "duckduckgo", query, error = %e,);
-                            return Ok(ToolResult::error(e));
-                        }
+                match self
+                    .auto_search(query, count, &brave_key, &gemini_key)
+                    .await
+                {
+                    Ok(output) => output,
+                    Err(e) => {
+                        return Ok(ToolResult::error(e));
                     }
                 }
             }
         };
 
-        // Touch secret variable last-used timestamp
-        if let Some(key) = brave_key {
+        // Touch secret variable last-used timestamps
+        for key in [brave_key, gemini_key].into_iter().flatten() {
             if key.secret {
                 if let Some(id) = key.id {
                     let pool = ctx.pool.clone();

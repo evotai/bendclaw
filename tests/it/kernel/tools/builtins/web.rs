@@ -350,6 +350,108 @@ async fn web_fetch_html_conversion_failure_falls_back() -> Result<(), Box<dyn st
     Ok(())
 }
 
+// --- Gemini provider tests ---
+
+#[tokio::test]
+async fn web_search_gemini_no_key_returns_error() -> Result<(), Box<dyn std::error::Error>> {
+    let tool = WebSearchTool::default().with_provider(SearchProvider::Gemini);
+    let ctx = test_tool_context();
+
+    let result = tool
+        .execute_with_context(json!({"query": "test"}), &ctx)
+        .await?;
+    assert!(!result.success);
+    assert!(result
+        .error
+        .as_deref()
+        .is_some_and(|e| e.contains("No GEMINI_API_KEY variable configured")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn web_search_gemini_success_via_mock() -> Result<(), Box<dyn std::error::Error>> {
+    async fn gemini_api(
+        axum::extract::Json(_body): axum::extract::Json<serde_json::Value>,
+    ) -> axum::Json<serde_json::Value> {
+        axum::Json(json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "Spain won Euro 2024." }] },
+                "groundingMetadata": {
+                    "groundingChunks": [
+                        { "web": { "uri": "https://example.com/euro", "title": "Euro 2024" } }
+                    ]
+                }
+            }]
+        }))
+    }
+
+    let app = Router::new().route(
+        "/models/gemini-2.5-flash:generateContent",
+        axum::routing::post(gemini_api),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let _ws_dir = std::env::temp_dir().join(format!("bendclaw-gemini-mock-{}", ulid::Ulid::new()));
+    let vars = vec![bendclaw::kernel::variables::Variable {
+        id: "var-gemini".into(),
+        key: "GEMINI_API_KEY".into(),
+        value: "test-key".into(),
+        secret: false,
+        revoked: false,
+        user_id: String::new(),
+        scope: bendclaw::kernel::variables::VariableScope::Shared,
+        created_by: String::new(),
+        last_used_at: None,
+        last_used_by: None,
+        created_at: String::new(),
+        updated_at: String::new(),
+    }];
+    let workspace = bendclaw::kernel::session::workspace::Workspace::from_variables(
+        _ws_dir.clone(),
+        _ws_dir,
+        vec!["PATH".into(), "HOME".into()],
+        &vars,
+        Duration::from_secs(5),
+        Duration::from_secs(300),
+        1_048_576,
+        Arc::new(bendclaw::kernel::session::workspace::SandboxResolver),
+    );
+    let ctx = bendclaw::kernel::tools::ToolContext {
+        user_id: "u1".into(),
+        session_id: "s1".into(),
+        agent_id: "a1".into(),
+        run_id: "r-test".into(),
+        trace_id: "t-test".into(),
+        workspace: Arc::new(workspace),
+        pool: crate::mocks::context::dummy_pool(),
+        is_dispatched: false,
+        runtime: bendclaw::kernel::tools::ToolRuntime {
+            event_tx: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            tool_call_id: None,
+        },
+        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+    };
+
+    let tool = WebSearchTool::default()
+        .with_provider(SearchProvider::Gemini)
+        .with_gemini_base_url(format!("http://{addr}"));
+
+    let result = tool
+        .execute_with_context(json!({"query": "euro 2024"}), &ctx)
+        .await?;
+
+    assert!(result.success);
+    assert!(result.output.contains("Spain won Euro 2024."));
+    assert!(result.output.contains("Euro 2024"));
+    assert!(result.output.contains("https://example.com/euro"));
+    Ok(())
+}
+
 // --- DDG parser tests ---
 
 #[test]

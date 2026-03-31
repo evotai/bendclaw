@@ -1,7 +1,6 @@
 mod compaction_rules;
 mod compactor;
 mod default_identity;
-mod dispatcher;
 mod engine_hooks;
 mod event;
 mod fmt;

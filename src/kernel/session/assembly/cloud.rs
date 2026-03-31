@@ -83,8 +83,8 @@ impl CloudAssembler {
         let secret_sink: Arc<dyn crate::kernel::tools::services::SecretUsageSink> =
             Arc::new(DbSecretUsageSink::new(pool.clone()));
         let mut registry = ToolRegistry::new();
-        crate::kernel::tools::catalog::core::register(&mut registry, secret_sink);
-        crate::kernel::tools::catalog::cloud::register(
+        crate::kernel::tools::catalog::register_core(&mut registry, secret_sink);
+        crate::kernel::tools::catalog::register_cloud(
             &mut registry,
             self.runtime.org.clone(),
             pool.clone(),
@@ -95,13 +95,13 @@ impl CloudAssembler {
         let memory_ref = self.runtime.org.memory().cloned();
         if let Some(ref svc) = cluster_ref {
             let dt = svc.create_dispatch_table();
-            crate::kernel::tools::catalog::optional::register(
+            crate::kernel::tools::catalog::register_optional(
                 &mut registry,
                 Some((svc, &dt)),
                 memory_ref.as_ref(),
             );
         } else {
-            crate::kernel::tools::catalog::optional::register(
+            crate::kernel::tools::catalog::register_optional(
                 &mut registry,
                 None,
                 memory_ref.as_ref(),

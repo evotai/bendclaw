@@ -2,8 +2,6 @@ pub mod checkpoint;
 pub mod compaction;
 pub mod context;
 pub mod default_identity;
-pub mod dispatcher;
-pub(crate) mod dispatcher_diagnostics;
 pub mod engine;
 pub mod event;
 pub mod fmt;

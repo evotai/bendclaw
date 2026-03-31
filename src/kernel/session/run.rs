@@ -13,9 +13,9 @@ use super::options::RunOptions;
 use super::resources::SessionResources;
 use super::state::SessionState;
 use crate::base::Result;
+use crate::kernel::execution::CallExecutor;
 use crate::kernel::run::compaction::Compactor;
 use crate::kernel::run::context::Context;
-use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::engine::Engine;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::persister::TurnPersister;
@@ -268,7 +268,7 @@ impl<'a> SessionRunCoordinator<'a> {
         let skill_executor = self.resources.skill_executor.clone();
         let (tx, rx) = Engine::create_channel();
         let event_tx = tx.clone();
-        let dispatcher = ToolDispatcher::new(
+        let executor = CallExecutor::new(
             self.resources.tool_registry.clone(),
             skill_executor,
             ToolContext {
@@ -300,7 +300,7 @@ impl<'a> SessionRunCoordinator<'a> {
             .filter(|_| self.resources.config.memory.extract);
         let mut engine = Engine::from_tx(
             ctx,
-            dispatcher,
+            executor,
             compactor,
             cancel.clone(),
             iteration.clone(),

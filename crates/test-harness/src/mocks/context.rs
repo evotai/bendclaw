@@ -93,8 +93,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
     let mut registry = ToolRegistry::new();
     let sink: Arc<dyn bendclaw::kernel::tools::services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
-    bendclaw::kernel::tools::catalog::core::register(&mut registry, sink);
-    bendclaw::kernel::tools::catalog::cloud::register(
+    bendclaw::kernel::tools::catalog::register_core(&mut registry, sink);
+    bendclaw::kernel::tools::catalog::register_cloud(
         &mut registry,
         org.clone(),
         pool.clone(),

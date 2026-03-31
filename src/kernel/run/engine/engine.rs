@@ -4,11 +4,11 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::kernel::execution::CallExecutor;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::run::checkpoint::CompactionCheckpoint;
 use crate::kernel::run::compaction::Compactor;
 use crate::kernel::run::context::Context;
-use crate::kernel::run::dispatcher::ToolDispatcher;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::hooks::BeforeTurnHook;
 use crate::kernel::run::hooks::SteeringSource;
@@ -25,7 +25,7 @@ pub(super) const INBOX_CAPACITY: usize = 16;
 pub struct Engine {
     pub(super) ctx: Context,
     pub(super) compactor: Compactor,
-    pub(super) dispatcher: ToolDispatcher,
+    pub(super) executor: CallExecutor,
     pub(super) cancel: CancellationToken,
     pub(super) iteration: Arc<AtomicU32>,
     pub(super) tx: mpsc::Sender<Event>,
@@ -55,7 +55,7 @@ impl Engine {
     #[allow(clippy::too_many_arguments)]
     pub fn from_tx(
         ctx: Context,
-        dispatcher: ToolDispatcher,
+        executor: CallExecutor,
         compactor: Compactor,
         cancel: CancellationToken,
         iteration: Arc<AtomicU32>,
@@ -68,7 +68,7 @@ impl Engine {
             abort_policy: AbortPolicy::new(ctx.max_iterations),
             ctx,
             compactor,
-            dispatcher,
+            executor,
             cancel,
             iteration,
             tx,

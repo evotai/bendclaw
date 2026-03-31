@@ -92,7 +92,7 @@ pub fn build_local_assembly(
     let secret_sink: Arc<dyn crate::kernel::tools::services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let mut registry = ToolRegistry::new();
-    crate::kernel::tools::catalog::core::register(&mut registry, secret_sink);
+    crate::kernel::tools::catalog::register_core(&mut registry, secret_sink);
     let registry = Arc::new(registry);
 
     let mut tools = registry.tool_schemas();

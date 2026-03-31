@@ -2,7 +2,7 @@ use serde_json::Map;
 use serde_json::Value;
 
 use super::engine::Engine;
-use crate::kernel::run::dispatcher::ParsedToolCall;
+use crate::kernel::execution::ParsedToolCall;
 use crate::kernel::run::run_loop::AbortSignal;
 use crate::kernel::run::run_loop::LLMResponse;
 use crate::kernel::run::run_loop::RunLoopState;

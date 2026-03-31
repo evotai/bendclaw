@@ -34,8 +34,8 @@ fn make_registry() -> ToolRegistry {
         Arc::new(NoopSecretUsageSink);
 
     let mut registry = ToolRegistry::new();
-    bendclaw::kernel::tools::catalog::core::register(&mut registry, secret_sink);
-    bendclaw::kernel::tools::catalog::cloud::register(
+    bendclaw::kernel::tools::catalog::register_core(&mut registry, secret_sink);
+    bendclaw::kernel::tools::catalog::register_cloud(
         &mut registry,
         org,
         pool,

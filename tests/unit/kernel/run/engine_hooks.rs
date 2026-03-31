@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use bendclaw::kernel::execution::CallExecutor;
 use bendclaw::kernel::run::compaction::Compactor;
 use bendclaw::kernel::run::context::Context;
-use bendclaw::kernel::run::dispatcher::ToolDispatcher;
 use bendclaw::kernel::run::engine::Engine;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::run::hooks::BeforeTurnHook;
@@ -93,7 +93,7 @@ fn build_engine(
         std::env::temp_dir().join("bendclaw-engine-hooks-test"),
     );
 
-    let dispatcher = ToolDispatcher::new(
+    let executor = CallExecutor::new(
         Arc::new(ToolRegistry::new()),
         Arc::new(NoopSkillExecutor),
         bendclaw::kernel::tools::ToolContext {
@@ -138,7 +138,7 @@ fn build_engine(
 
     let engine = Engine::from_tx(
         ctx,
-        dispatcher,
+        executor,
         compactor,
         cancel,
         Arc::new(AtomicU32::new(0)),

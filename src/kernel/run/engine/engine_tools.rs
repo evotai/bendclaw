@@ -3,11 +3,11 @@ use std::sync::atomic::Ordering;
 
 use super::diagnostics;
 use super::engine::Engine;
+use crate::kernel::execution::DispatchOutcome;
+use crate::kernel::execution::ParsedToolCall;
+use crate::kernel::execution::ToolCallResult;
 use crate::kernel::memory::pressure;
 use crate::kernel::memory::pressure::PressureLevel;
-use crate::kernel::run::dispatcher::DispatchOutcome;
-use crate::kernel::run::dispatcher::ParsedToolCall;
-use crate::kernel::run::dispatcher::ToolCallResult;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::hooks::SteeringDecision;
 use crate::kernel::run::prompt_projection;
@@ -28,12 +28,9 @@ impl Engine {
         tool_calls: &[ToolCall],
         state: &mut RunLoopState,
     ) {
-        let parsed = self.dispatcher.parse_calls(tool_calls);
+        let parsed = self.executor.parse_calls(tool_calls);
         let spans = self.emit_tool_starts(&parsed).await;
-        let results = self
-            .dispatcher
-            .execute_calls(&parsed, state.deadline())
-            .await;
+        let results = self.executor.execute_calls(&parsed, state.deadline()).await;
         self.apply_tool_results(results, &spans).await;
 
         // ── steering check ──

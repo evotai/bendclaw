@@ -4,10 +4,11 @@ use std::time::Duration;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use bendclaw::kernel::tools::builtins::web::WebSearchTool;
+use bendclaw::kernel::tools::services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::web::cache::WebCache;
 use bendclaw::kernel::tools::web::SearchProvider;
 use bendclaw::kernel::tools::web::WebFetchTool;
-use bendclaw::kernel::tools::web::WebSearchTool;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use serde_json::json;
@@ -208,7 +209,9 @@ async fn web_search_success_formats_results_and_caps_count(
             .expect("serve search test server");
     });
 
-    let tool = WebSearchTool::new(format!("http://{addr}/search"));
+    let noop_sink: Arc<dyn bendclaw::kernel::tools::services::SecretUsageSink> =
+        Arc::new(NoopSecretUsageSink);
+    let tool = WebSearchTool::new(format!("http://{addr}/search"), noop_sink);
     let _ws_dir = std::env::temp_dir().join(format!("bendclaw-web-search-{}", ulid::Ulid::new()));
     let vars = vec![bendclaw::kernel::variables::Variable {
         id: "var-brave".into(),
@@ -404,8 +407,11 @@ async fn web_search_ddg_provider_uses_mock_server() -> Result<(), Box<dyn std::e
     // Instead, test the parser + format directly since we can't inject DDG base URL.
     // The DDG integration is tested via parse_results above; here we test Auto fallback.
 
-    let tool =
-        WebSearchTool::new(format!("http://{addr}/will-404")).with_provider(SearchProvider::Brave);
+    let tool = WebSearchTool::new(
+        format!("http://{addr}/will-404"),
+        Arc::new(NoopSecretUsageSink),
+    )
+    .with_provider(SearchProvider::Brave);
     let ctx = test_tool_context();
 
     // Brave-only with no key → error
@@ -481,7 +487,9 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
 
     // Auto mode: Brave will fail (500), then falls back to DDG.
     // DDG may succeed (real endpoint) or fail (network). Either way, the fallback path is exercised.
-    let tool = WebSearchTool::new(format!("http://{addr}/search"));
+    let noop_sink: Arc<dyn bendclaw::kernel::tools::services::SecretUsageSink> =
+        Arc::new(NoopSecretUsageSink);
+    let tool = WebSearchTool::new(format!("http://{addr}/search"), noop_sink);
     let result = tool
         .execute_with_context(json!({"query": "test fallback"}), &ctx)
         .await?;
@@ -542,9 +550,12 @@ async fn web_search_returns_cached_result_on_second_call() -> Result<(), Box<dyn
     });
 
     let cache = Arc::new(WebCache::new(Duration::from_secs(300)));
-    let tool = WebSearchTool::new(format!("http://{addr}/search"))
-        .with_provider(SearchProvider::Brave)
-        .with_cache(cache.clone());
+    let tool = WebSearchTool::new(
+        format!("http://{addr}/search"),
+        Arc::new(NoopSecretUsageSink),
+    )
+    .with_provider(SearchProvider::Brave)
+    .with_cache(cache.clone());
 
     let _ws_dir = std::env::temp_dir().join(format!("bendclaw-cache-test-{}", ulid::Ulid::new()));
     let vars = vec![bendclaw::kernel::variables::Variable {

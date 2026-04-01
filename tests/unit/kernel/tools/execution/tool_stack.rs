@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::skills::executor::SkillExecutor;
 use bendclaw::kernel::skills::executor::SkillOutput;
-use bendclaw::kernel::tools::execution::labels::ExecutionLabels;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::execution_labels::ExecutionLabels;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::execution::ToolStack;
 use bendclaw::kernel::tools::execution::ToolStackConfig;
 use bendclaw::kernel::tools::execution::TurnContext;
@@ -97,7 +97,7 @@ fn build_tool_stack(
         agent_id: "a1".into(),
     });
     let stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::execution::toolset::Toolset {
+        toolset: bendclaw::kernel::tools::execution::registry::toolset::Toolset {
             registry: Arc::new(registry),
             tools: Arc::new(vec![]),
             allowed_tool_names: allowed,

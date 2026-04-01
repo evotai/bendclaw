@@ -11,8 +11,8 @@ use bendclaw::kernel::run::build::build_run_driver;
 use bendclaw::kernel::run::build::RunAssemblyDeps;
 use bendclaw::kernel::run::build::RunConfig;
 use bendclaw::kernel::run::build::RunRequest;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
-use bendclaw::kernel::tools::execution::toolset::Toolset;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::registry::toolset::Toolset;
 use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 

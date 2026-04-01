@@ -1,7 +1,7 @@
 use serde_json::Map;
 use serde_json::Value;
 
-use super::call::ParsedToolCall;
+use super::dispatch::parsed_tool_call::ParsedToolCall;
 use crate::kernel::OperationMeta;
 use crate::observability::server_log;
 

@@ -16,9 +16,9 @@ use crate::kernel::session::assembly::contract::RuntimeInfra;
 use crate::kernel::session::assembly::contract::SessionAssembly;
 use crate::kernel::session::assembly::contract::SessionCore;
 use crate::kernel::session::assembly::contract::SessionOwner;
-use crate::kernel::tools::execution::services::DbSecretUsageSink;
-use crate::kernel::tools::execution::toolset::build_cloud_toolset;
-use crate::kernel::tools::execution::toolset::CloudToolsetDeps;
+use crate::kernel::tools::execution::registry::toolset::build_cloud_toolset;
+use crate::kernel::tools::execution::registry::toolset::CloudToolsetDeps;
+use crate::kernel::tools::execution::tool_services::DbSecretUsageSink;
 
 /// Assembles a full session with cloud config, all tools, skills, memory.
 pub struct CloudAssembler {
@@ -81,7 +81,7 @@ impl CloudAssembler {
         let storage = Arc::new(AgentStore::new(pool.clone(), agent_llm.clone()));
 
         // Tools: core + persistent + optional
-        let secret_sink: Arc<dyn crate::kernel::tools::execution::services::SecretUsageSink> =
+        let secret_sink: Arc<dyn crate::kernel::tools::execution::tool_services::SecretUsageSink> =
             Arc::new(DbSecretUsageSink::new(pool.clone()));
         let cluster_ref = self.runtime.cluster.read().clone();
         let memory_ref = self.runtime.org.memory().cloned();

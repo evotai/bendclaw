@@ -3,14 +3,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use bendclaw::kernel::tools::execution::services::NoopSecretUsageSink;
-use bendclaw::kernel::tools::execution::toolset::build_local_toolset;
+use bendclaw::kernel::tools::execution::registry::toolset::build_local_toolset;
+use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 
-fn sink() -> Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> {
+fn sink() -> Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> {
     Arc::new(NoopSecretUsageSink)
 }
 
-fn make_local_toolset() -> bendclaw::kernel::tools::execution::toolset::Toolset {
+fn make_local_toolset() -> bendclaw::kernel::tools::execution::registry::toolset::Toolset {
     build_local_toolset(None, sink())
 }
 
@@ -311,7 +311,7 @@ fn tool_identity_matches_new_names() {
 
 // ── Cloud skill schema boundary tests ─────────────────────────────────
 
-use bendclaw::kernel::tools::execution::toolset::append_skill_schemas;
+use bendclaw::kernel::tools::execution::registry::toolset::append_skill_schemas;
 
 fn mock_skills() -> Vec<(String, String, serde_json::Value)> {
     vec![

@@ -1,9 +1,9 @@
 use std::time::Duration;
 use std::time::Instant;
 
-use bendclaw::kernel::run::engine::response::LLMResponse;
-use bendclaw::kernel::run::engine::state::RunLoopConfig;
-use bendclaw::kernel::run::engine::state::RunLoopState;
+use bendclaw::kernel::run::engine::engine_state::RunLoopConfig;
+use bendclaw::kernel::run::engine::engine_state::RunLoopState;
+use bendclaw::kernel::run::engine::response_mapper::LLMResponse;
 use bendclaw::kernel::run::engine::transition::apply_turn_result;
 use bendclaw::kernel::run::engine::transition::TurnTransition;
 use bendclaw::kernel::run::Reason;

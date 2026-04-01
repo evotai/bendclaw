@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "id": "20260329-003843-250507",
+  "task": "plan review",
+  "phase": "implement",
+  "round": 1,
+  "status": "completed",
+  "plan_source_path": "/Users/bohu/github/evotai/bendclaw/.claude/plans/fix-identity-and-subscriptions.md",
+  "owner_session_id": "3a0500a1-7d74-4715-92d9-b71ccf1cae04",
+  "owner_cwd": "/Users/bohu/github/evotai/bendclaw",
+  "owner_project_key": "-Users-bohu-github-evotai-bendclaw",
+  "created_at": "2026-03-29T00:38:43Z",
+  "updated_at": "2026-03-29T00:55:58Z"
+}

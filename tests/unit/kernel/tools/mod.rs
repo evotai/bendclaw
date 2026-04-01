@@ -1,3 +1,4 @@
+mod builtin;
 mod databend;
 mod execution;
 mod id;

@@ -12,9 +12,9 @@ use bendclaw::kernel::run::hooks::SteeringDecision;
 use bendclaw::kernel::run::hooks::SteeringSource;
 use bendclaw::kernel::run::hooks::TurnDecision;
 use bendclaw::kernel::run::result::Reason;
-use bendclaw::kernel::tools::execution::labels::ExecutionLabels;
-use bendclaw::kernel::tools::execution::progressive::ProgressiveToolView;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::dispatch::tool_progressive::ProgressiveToolView;
+use bendclaw::kernel::tools::execution::execution_labels::ExecutionLabels;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::execution::ToolStack;
 use bendclaw::kernel::tools::execution::ToolStackConfig;
 use bendclaw::kernel::tools::ToolRuntime;
@@ -103,7 +103,7 @@ fn build_engine(
         agent_id: "agent-1".to_string(),
     });
     let tool_stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::execution::toolset::Toolset {
+        toolset: bendclaw::kernel::tools::execution::registry::toolset::Toolset {
             registry: Arc::new(ToolRegistry::new()),
             tools: Arc::new(vec![]),
             allowed_tool_names: None,

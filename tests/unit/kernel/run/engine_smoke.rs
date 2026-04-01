@@ -8,11 +8,11 @@ use bendclaw::kernel::run::context::Context;
 use bendclaw::kernel::run::engine::Engine;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::run::result::Reason;
-use bendclaw::kernel::tools::execution::id::ToolId;
-use bendclaw::kernel::tools::execution::labels::ExecutionLabels;
-use bendclaw::kernel::tools::execution::progressive::ProgressiveToolView;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
-use bendclaw::kernel::tools::execution::services::NoopSecretUsageSink;
+use bendclaw::kernel::tools::execution::dispatch::tool_progressive::ProgressiveToolView;
+use bendclaw::kernel::tools::execution::execution_labels::ExecutionLabels;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::tool_id::ToolId;
+use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::execution::ToolStack;
 use bendclaw::kernel::tools::execution::ToolStackConfig;
 use bendclaw::kernel::tools::ToolContext;
@@ -41,7 +41,7 @@ fn trace() -> TraceRecorder {
 
 fn real_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
-    let sink: Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> =
+    let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     registry.register_builtin(
         ToolId::ListDir,
@@ -76,7 +76,7 @@ fn build_engine_with_filter(
         agent_id: "agent-1".to_string(),
     });
     let tool_stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::execution::toolset::Toolset {
+        toolset: bendclaw::kernel::tools::execution::registry::toolset::Toolset {
             registry: Arc::new(registry),
             tools: Arc::new(vec![]),
             allowed_tool_names: allowed,

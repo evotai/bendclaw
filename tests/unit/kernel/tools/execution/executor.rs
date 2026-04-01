@@ -6,7 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bendclaw::kernel::skills::executor::SkillExecutor;
 use bendclaw::kernel::skills::executor::SkillOutput;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::execution::CallExecutor;
 use bendclaw::kernel::tools::execution::DispatchKind;
 use bendclaw::kernel::tools::execution::ToolCallResult;

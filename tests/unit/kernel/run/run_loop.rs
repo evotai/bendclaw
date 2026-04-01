@@ -3,9 +3,9 @@ use std::time::Instant;
 
 use bendclaw::kernel::run::engine::abort::AbortPolicy;
 use bendclaw::kernel::run::engine::abort::AbortSignal;
-use bendclaw::kernel::run::engine::response::LLMResponse;
-use bendclaw::kernel::run::engine::state::RunLoopConfig;
-use bendclaw::kernel::run::engine::state::RunLoopState;
+use bendclaw::kernel::run::engine::engine_state::RunLoopConfig;
+use bendclaw::kernel::run::engine::engine_state::RunLoopState;
+use bendclaw::kernel::run::engine::response_mapper::LLMResponse;
 use bendclaw::kernel::run::ContentBlock;
 use bendclaw::kernel::run::Reason;
 use bendclaw::llm::stream::StreamEvent;

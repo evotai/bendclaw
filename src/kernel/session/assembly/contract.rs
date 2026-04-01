@@ -11,7 +11,7 @@ use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::backend::context::SessionContextProvider;
 use crate::kernel::session::backend::sink::RunInitializer;
 use crate::kernel::session::workspace::Workspace;
-use crate::kernel::tools::execution::toolset::Toolset;
+use crate::kernel::tools::execution::registry::toolset::Toolset;
 use crate::llm::provider::LLMProvider;
 
 /// Owner identity for session assembly. Callers (invocation layer, factory) construct this.

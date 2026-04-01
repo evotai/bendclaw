@@ -10,7 +10,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::tools::execution::services::NoopSecretUsageSink;
+use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolContext;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::storage::Pool;
@@ -89,10 +89,10 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
     let workspace = test_workspace(workspace_dir);
 
     let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
-    let sink: Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> =
+    let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
-    let toolset = bendclaw::kernel::tools::execution::toolset::build_cloud_toolset(
-        bendclaw::kernel::tools::execution::toolset::CloudToolsetDeps {
+    let toolset = bendclaw::kernel::tools::execution::registry::toolset::build_cloud_toolset(
+        bendclaw::kernel::tools::execution::registry::toolset::CloudToolsetDeps {
             org: org.clone(),
             databend_pool: pool.clone(),
             channels,

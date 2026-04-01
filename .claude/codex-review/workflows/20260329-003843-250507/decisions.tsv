@@ -1,0 +1,23 @@
+# Codex Review Decisions Ledger
+# Edit `selected` to `yes` for fixes you want applied.
+# phase	artifact	round	reviewer	finding_id	severity	finding	decision	outcome	selected	status	updated_at
+plan	plan	1	codex	CRITICAL-1	CRITICAL	`touch_last_used` keyed by `(name, user_id)` is still semantically unsafe.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-1	HIGH	Subscription support is only planned for `SkillService::list()`, not the full skill read path.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-2	HIGH	Variables query uses `UNION ALL` without dedupe guarantees.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	MEDIUM-1	MEDIUM	`list_user_ids()` predicate `user_id != ''` is incomplete.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-3	HIGH	Revocation/expiry semantics for subscriptions are not included in query filters.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-4	HIGH	Sync-loop cleanup behavior is missing for unsubscribed/revoked resources.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	MEDIUM-2	MEDIUM	No explicit conflict policy for same skill name across owned and subscribed sets.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	MEDIUM-3	MEDIUM	Testing scope is underspecified for cross-tenant regressions.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	CRITICAL-2	CRITICAL	Authorization drift risk between DB truth and filesystem mirror is not addressed.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-5	HIGH	Ignoring path `agent_id` entirely creates API contract ambiguity and audit risk.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	MEDIUM-4	MEDIUM	N+1/per-user subscription sync can become expensive and inconsistent under load.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	LOW-1	LOW	Prefer a single “accessible resources” query abstraction per resource type.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	LOW-2	LOW	Consider replacing path `agent_id` routes with user-scoped routes over time.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+plan	plan	1	codex	HIGH-6	HIGH	Missing explicit subscription-state checks is a direct authorization concern.	FIX	FIX	yes	agreed-fix	2026-03-29T00:44:52Z
+implement	implement	1	codex	CRITICAL-1	CRITICAL	File: [runtime_builder.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/runtime/runtime_builder.rs:390), [sync.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/remote/sync.rs:70), [sync.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/remote/sync.rs:23)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z
+implement	implement	1	codex	CRITICAL-2	CRITICAL	File: [sync.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/remote/sync.rs:38), [sync.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/remote/sync.rs:54), [sync.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/remote/sync.rs:67)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z
+implement	implement	1	codex	HIGH-1	HIGH	File: [store.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/variables/store.rs:154), [workspace.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/session/workspace.rs:138)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z
+implement	implement	1	codex	MEDIUM-1	MEDIUM	File: [service.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/service.rs:117), [runner.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/skills/runner.rs:144)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z
+implement	implement	1	codex	MEDIUM-2	MEDIUM	File: [http.rs](/Users/bohu/github/evotai/bendclaw/src/service/v1/skills/http.rs:85)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z
+implement	implement	1	codex	LOW-1	LOW	File: [search.rs](/Users/bohu/github/evotai/bendclaw/src/kernel/tools/builtins/web/search.rs:297)	FIX	FIX	yes	agreed-fix	2026-03-29T00:55:56Z

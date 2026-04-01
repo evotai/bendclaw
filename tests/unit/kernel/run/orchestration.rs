@@ -1,12 +1,12 @@
 use std::time::Duration;
 use std::time::Instant;
 
+use bendclaw::kernel::run::engine::engine_state::RunLoopConfig;
+use bendclaw::kernel::run::engine::engine_state::RunLoopState;
 use bendclaw::kernel::run::engine::message::aborted_tool_result_messages;
 use bendclaw::kernel::run::engine::message::assistant_message_from_turn;
 use bendclaw::kernel::run::engine::message::record_assistant_turn;
-use bendclaw::kernel::run::engine::response::LLMResponse;
-use bendclaw::kernel::run::engine::state::RunLoopConfig;
-use bendclaw::kernel::run::engine::state::RunLoopState;
+use bendclaw::kernel::run::engine::response_mapper::LLMResponse;
 use bendclaw::kernel::Message;
 use bendclaw::llm::message::ToolCall;
 use bendclaw::llm::stream::StreamEvent;

@@ -4,7 +4,7 @@ use std::time::Duration;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use bendclaw::kernel::tools::execution::services::NoopSecretUsageSink;
+use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::web::cache::WebCache;
 use bendclaw::kernel::tools::web_fetch::WebFetchTool;
 use bendclaw::kernel::tools::web_search::SearchProvider;
@@ -209,7 +209,7 @@ async fn web_search_success_formats_results_and_caps_count(
             .expect("serve search test server");
     });
 
-    let noop_sink: Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> =
+    let noop_sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let tool = WebSearchTool::new(format!("http://{addr}/search"), noop_sink);
     let _ws_dir = std::env::temp_dir().join(format!("bendclaw-web-search-{}", ulid::Ulid::new()));
@@ -485,7 +485,7 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
 
     // Auto mode: Brave will fail (500), then falls back to DDG.
     // DDG may succeed (real endpoint) or fail (network). Either way, the fallback path is exercised.
-    let noop_sink: Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> =
+    let noop_sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let tool = WebSearchTool::new(format!("http://{addr}/search"), noop_sink);
     let result = tool

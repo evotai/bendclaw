@@ -3,8 +3,8 @@ use std::sync::Arc;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::projector::SkillProjector;
-use bendclaw::kernel::tools::execution::registry::ToolRegistry;
-use bendclaw::kernel::tools::execution::services::NoopSecretUsageSink;
+use bendclaw::kernel::tools::execution::registry::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolId;
 
 fn make_registry() -> Arc<ToolRegistry> {
@@ -30,11 +30,11 @@ fn make_registry() -> Arc<ToolRegistry> {
     let meta_pool = pool.with_database("evotai_meta").expect("meta pool");
     let org = Arc::new(OrgServices::new(meta_pool, projector, &config, llm));
     let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
-    let secret_sink: Arc<dyn bendclaw::kernel::tools::execution::services::SecretUsageSink> =
+    let secret_sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
 
-    let toolset = bendclaw::kernel::tools::execution::toolset::build_cloud_toolset(
-        bendclaw::kernel::tools::execution::toolset::CloudToolsetDeps {
+    let toolset = bendclaw::kernel::tools::execution::registry::toolset::build_cloud_toolset(
+        bendclaw::kernel::tools::execution::registry::toolset::CloudToolsetDeps {
             org,
             databend_pool: pool,
             channels,

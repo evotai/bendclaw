@@ -13,7 +13,10 @@ use crate::local::args::RunArgs;
 pub async fn execute(args: RunArgs, deps: LocalRuntimeDeps) -> Result<()> {
     let cwd = args.cwd.map(PathBuf::from);
     let system = args.system.as_deref().map(resolve_input).transpose()?;
-    let tool_filter = crate::kernel::tools::execution::selection::parse_tool_selection(&args.tools);
+    let tool_filter =
+        crate::kernel::tools::execution::registry::tool_selection::parse_tool_selection(
+            &args.tools,
+        );
 
     let session_id = args.session_id.unwrap_or_else(crate::kernel::new_id);
     let prompt = resolve_input(&args.prompt)?;

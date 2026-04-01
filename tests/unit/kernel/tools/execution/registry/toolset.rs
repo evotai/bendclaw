@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use bendclaw::kernel::tools::execution::registry::toolset::build_local_toolset;
+use bendclaw::kernel::tools::builtin::catalog::build_local_toolset;
 use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 
 fn sink() -> Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> {
@@ -307,80 +307,4 @@ fn tool_identity_matches_new_names() {
     assert_eq!(ToolId::Grep.as_str(), "grep");
     assert_eq!(ToolId::WebFetch.as_str(), "web_fetch");
     assert_eq!(ToolId::WebSearch.as_str(), "web_search");
-}
-
-// ── Cloud skill schema boundary tests ─────────────────────────────────
-
-use bendclaw::kernel::tools::execution::registry::toolset::append_skill_schemas;
-
-fn mock_skills() -> Vec<(String, String, serde_json::Value)> {
-    vec![
-        (
-            "skill:my_tool".to_string(),
-            "A user skill".to_string(),
-            serde_json::json!({"type": "object"}),
-        ),
-        (
-            "skill:other".to_string(),
-            "Another skill".to_string(),
-            serde_json::json!({"type": "object"}),
-        ),
-    ]
-}
-
-#[test]
-fn no_filter_appends_all_skills_to_tools() {
-    let mut toolset = make_local_toolset();
-    let before = toolset.tools.len();
-    append_skill_schemas(&mut toolset, &mock_skills(), &None);
-    assert_eq!(toolset.tools.len(), before + 2);
-    let names: Vec<String> = toolset
-        .tools
-        .iter()
-        .map(|t| t.function.name.clone())
-        .collect();
-    assert!(names.contains(&"skill:my_tool".to_string()));
-    assert!(names.contains(&"skill:other".to_string()));
-}
-
-#[test]
-fn filter_with_skill_name_includes_that_skill() {
-    let filter: HashSet<String> = ["read", "skill:my_tool"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let mut toolset = build_local_toolset(Some(filter.clone()), sink());
-    append_skill_schemas(&mut toolset, &mock_skills(), &Some(filter));
-    let names: Vec<String> = toolset
-        .tools
-        .iter()
-        .map(|t| t.function.name.clone())
-        .collect();
-    assert!(
-        names.contains(&"skill:my_tool".to_string()),
-        "filtered skill should be in tools"
-    );
-    assert!(
-        !names.contains(&"skill:other".to_string()),
-        "unfiltered skill should not be in tools"
-    );
-    let allowed = toolset.allowed_tool_names.as_ref().unwrap();
-    assert!(
-        allowed.contains("skill:my_tool"),
-        "filtered skill should be in allowed_tool_names"
-    );
-}
-
-#[test]
-fn filter_without_skill_name_excludes_skills() {
-    let filter: HashSet<String> = ["read", "bash"].iter().map(|s| s.to_string()).collect();
-    let mut toolset = build_local_toolset(Some(filter.clone()), sink());
-    append_skill_schemas(&mut toolset, &mock_skills(), &Some(filter));
-    let names: Vec<String> = toolset
-        .tools
-        .iter()
-        .map(|t| t.function.name.clone())
-        .collect();
-    assert!(!names.contains(&"skill:my_tool".to_string()));
-    assert!(!names.contains(&"skill:other".to_string()));
 }

@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::call_executor::CallExecutor;
-use super::messages;
 use super::tool_call_result::ToolCallResult;
 use super::tool_events::EventEmitter;
+use super::tool_messages;
 use super::tool_recorder::ExecutionRecorder;
 use crate::kernel::tools::execution::turn_context::TurnContext;
 use crate::kernel::Message;
@@ -52,7 +52,7 @@ impl ToolLifecycle {
             self.emitter.tool_start(p).await;
             self.recorder.audit_tool_started(p, &tc).await;
             self.recorder.log_tool_started(p, &tc);
-            all_messages.push(messages::tool_started_message(p));
+            all_messages.push(tool_messages::tool_started_message(p));
             spans.insert(p.call.id.clone(), span);
         }
 
@@ -91,15 +91,15 @@ impl ToolLifecycle {
                 .log_tool_result(p, meta, &tc, success, error_text.clone(), output.len());
 
             if success {
-                all_messages.push(messages::tool_completed_message(p, meta));
+                all_messages.push(tool_messages::tool_completed_message(p, meta));
             } else {
-                all_messages.push(messages::tool_failed_message(
+                all_messages.push(tool_messages::tool_failed_message(
                     p,
                     meta,
                     error_text.unwrap_or_default(),
                 ));
             }
-            all_messages.push(messages::tool_result_message(outcome, &labels));
+            all_messages.push(tool_messages::tool_result_message(outcome, &labels));
         }
 
         let invoked_names = parsed.iter().map(|p| p.call.name.clone()).collect();

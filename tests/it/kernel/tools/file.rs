@@ -1,6 +1,6 @@
-use bendclaw::kernel::tools::builtin::filesystem::edit::FileEditTool;
-use bendclaw::kernel::tools::builtin::filesystem::read::FileReadTool;
-use bendclaw::kernel::tools::builtin::filesystem::write::FileWriteTool;
+use bendclaw::kernel::tools::builtin::filesystem::FileEditTool;
+use bendclaw::kernel::tools::builtin::filesystem::FileReadTool;
+use bendclaw::kernel::tools::builtin::filesystem::FileWriteTool;
 use bendclaw::kernel::tools::Tool;
 use serde_json::json;
 

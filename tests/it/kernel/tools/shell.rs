@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bendclaw::kernel::tools::builtin::shell::bash::ShellTool;
+use bendclaw::kernel::tools::builtin::shell::ShellTool;
 use bendclaw::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;

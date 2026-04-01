@@ -16,7 +16,7 @@ use crate::kernel::run::prompt::resolver::LocalPromptResolver;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::session_org::LocalOrgServices;
 use crate::kernel::session::store::json::JsonSessionStore;
-use crate::kernel::tools::execution::registry::toolset::build_local_toolset;
+use crate::kernel::tools::builtin::catalog::build_local_toolset;
 use crate::kernel::tools::execution::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::factory::NoopTraceFactory;
 use crate::kernel::trace::TraceWriter;

@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod channel;
 pub mod cluster;
 pub mod databend;
@@ -6,4 +7,4 @@ pub mod memory;
 pub mod shell;
 pub mod skills;
 pub mod tasks;
-pub mod web_tools;
+pub mod web;

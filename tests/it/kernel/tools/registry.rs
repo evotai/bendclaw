@@ -33,8 +33,8 @@ fn make_registry() -> Arc<ToolRegistry> {
     let secret_sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
 
-    let toolset = bendclaw::kernel::tools::execution::registry::toolset::build_cloud_toolset(
-        bendclaw::kernel::tools::execution::registry::toolset::CloudToolsetDeps {
+    let toolset = bendclaw::kernel::tools::builtin::catalog::build_cloud_toolset(
+        bendclaw::kernel::tools::builtin::catalog::CloudToolsetDeps {
             org,
             databend_pool: pool,
             channels,

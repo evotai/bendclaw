@@ -1,9 +1,9 @@
 pub mod call_executor;
-pub mod messages;
 pub mod parsed_tool_call;
 pub mod tool_call_result;
 pub mod tool_events;
 pub mod tool_lifecycle;
+pub mod tool_messages;
 pub mod tool_progressive;
 pub mod tool_recorder;
 

@@ -31,51 +31,51 @@ fn assert_valid_spec(tool: &dyn Tool) {
 
 #[test]
 fn file_read_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::read::FileReadTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::FileReadTool);
 }
 
 #[test]
 fn file_write_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::write::FileWriteTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::FileWriteTool);
 }
 
 #[test]
 fn file_edit_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::edit::FileEditTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::FileEditTool);
 }
 
 #[test]
 fn list_dir_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::list_dir::ListDirTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::ListDirTool);
 }
 
 #[test]
 fn glob_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::glob::GlobTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::GlobTool);
 }
 
 #[test]
 fn grep_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::grep::GrepTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::filesystem::GrepTool);
 }
 
 #[test]
 fn bash_spec_is_valid() {
     let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::shell::bash::ShellTool::new(sink));
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::shell::ShellTool::new(
+        sink,
+    ));
 }
 
 #[test]
 fn web_fetch_spec_is_valid() {
-    assert_valid_spec(&bendclaw::kernel::tools::builtin::web_tools::web_fetch::WebFetchTool);
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::web::WebFetchTool);
 }
 
 #[test]
 fn web_search_spec_is_valid() {
-    assert_valid_spec(
-        &bendclaw::kernel::tools::builtin::web_tools::web_search::WebSearchTool::default(),
-    );
+    assert_valid_spec(&bendclaw::kernel::tools::builtin::web::WebSearchTool::default());
 }
 
 #[test]
@@ -83,20 +83,20 @@ fn all_core_tool_names_are_unique() {
     let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let tools: Vec<Box<dyn Tool>> = vec![
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::read::FileReadTool),
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::write::FileWriteTool),
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::edit::FileEditTool),
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::list_dir::ListDirTool),
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::glob::GlobTool),
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::grep::GrepTool),
-        Box::new(bendclaw::kernel::tools::builtin::shell::bash::ShellTool::new(sink.clone())),
-        Box::new(bendclaw::kernel::tools::builtin::web_tools::web_fetch::WebFetchTool),
-        Box::new(
-            bendclaw::kernel::tools::builtin::web_tools::web_search::WebSearchTool::new(
-                "https://example.com",
-                sink,
-            ),
-        ),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::FileReadTool),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::FileWriteTool),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::FileEditTool),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::ListDirTool),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::GlobTool),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::GrepTool),
+        Box::new(bendclaw::kernel::tools::builtin::shell::ShellTool::new(
+            sink.clone(),
+        )),
+        Box::new(bendclaw::kernel::tools::builtin::web::WebFetchTool),
+        Box::new(bendclaw::kernel::tools::builtin::web::WebSearchTool::new(
+            "https://example.com",
+            sink,
+        )),
     ];
     let mut names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
     let count = names.len();
@@ -110,15 +110,15 @@ fn tool_spec_descriptions_contain_usage_guidance() {
     let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let tools: Vec<Box<dyn Tool>> = vec![
-        Box::new(bendclaw::kernel::tools::builtin::filesystem::read::FileReadTool),
-        Box::new(bendclaw::kernel::tools::builtin::shell::bash::ShellTool::new(sink.clone())),
-        Box::new(bendclaw::kernel::tools::builtin::web_tools::web_fetch::WebFetchTool),
-        Box::new(
-            bendclaw::kernel::tools::builtin::web_tools::web_search::WebSearchTool::new(
-                "https://example.com",
-                sink,
-            ),
-        ),
+        Box::new(bendclaw::kernel::tools::builtin::filesystem::FileReadTool),
+        Box::new(bendclaw::kernel::tools::builtin::shell::ShellTool::new(
+            sink.clone(),
+        )),
+        Box::new(bendclaw::kernel::tools::builtin::web::WebFetchTool),
+        Box::new(bendclaw::kernel::tools::builtin::web::WebSearchTool::new(
+            "https://example.com",
+            sink,
+        )),
     ];
     for tool in &tools {
         let desc = tool.description();

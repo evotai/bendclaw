@@ -16,8 +16,8 @@ use crate::kernel::session::assembly::contract::RuntimeInfra;
 use crate::kernel::session::assembly::contract::SessionAssembly;
 use crate::kernel::session::assembly::contract::SessionCore;
 use crate::kernel::session::assembly::contract::SessionOwner;
-use crate::kernel::tools::execution::registry::toolset::build_cloud_toolset;
-use crate::kernel::tools::execution::registry::toolset::CloudToolsetDeps;
+use crate::kernel::tools::builtin::catalog::build_cloud_toolset;
+use crate::kernel::tools::builtin::catalog::CloudToolsetDeps;
 use crate::kernel::tools::execution::tool_services::DbSecretUsageSink;
 
 /// Assembles a full session with cloud config, all tools, skills, memory.

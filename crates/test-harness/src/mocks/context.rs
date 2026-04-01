@@ -91,8 +91,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
     let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
     let sink: Arc<dyn bendclaw::kernel::tools::execution::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
-    let toolset = bendclaw::kernel::tools::execution::registry::toolset::build_cloud_toolset(
-        bendclaw::kernel::tools::execution::registry::toolset::CloudToolsetDeps {
+    let toolset = bendclaw::kernel::tools::builtin::catalog::build_cloud_toolset(
+        bendclaw::kernel::tools::builtin::catalog::CloudToolsetDeps {
             org: org.clone(),
             databend_pool: pool.clone(),
             channels,

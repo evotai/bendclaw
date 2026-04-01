@@ -96,19 +96,21 @@ impl CloudAssembler {
         );
 
         let prompt_resolver = prompt_factory::build_cloud_prompt_resolver(
-            storage.clone(),
-            self.runtime.org.clone(),
-            toolset.tools.clone(),
-            prompt_variables.clone(),
-            prompt_config.clone(),
-            workspace.cwd().to_path_buf(),
-            cluster_ref.clone(),
-            self.runtime.directive.read().clone(),
-            self.runtime.config.memory.recall,
-            self.runtime.config.memory.recall_budget,
-            agent_id.to_string(),
-            user_id.to_string(),
-            session_id.to_string(),
+            prompt_factory::CloudPromptResolverConfig {
+                storage: storage.clone(),
+                org: self.runtime.org.clone(),
+                tools: toolset.tools.clone(),
+                variables: prompt_variables.clone(),
+                prompt_config: prompt_config.clone(),
+                cwd: workspace.cwd().to_path_buf(),
+                cluster_client: cluster_ref.clone(),
+                directive: self.runtime.directive.read().clone(),
+                memory_enabled: self.runtime.config.memory.recall,
+                memory_recall_budget: self.runtime.config.memory.recall_budget,
+                agent_id: agent_id.to_string(),
+                user_id: user_id.to_string(),
+                session_id: session_id.to_string(),
+            },
         );
 
         let (session_store, persistent) = backend_factory::build_cloud_backend(

@@ -11,12 +11,6 @@ use crate::client::ClusterClient;
 use crate::client::DirectiveClient;
 use crate::config::ClusterConfig;
 use crate::config::DirectiveConfig;
-use crate::kernel::channel::chat_router::ChatHandler;
-use crate::kernel::channel::chat_router::ChatRouter;
-use crate::kernel::channel::chat_router::ChatRouterConfig;
-use crate::kernel::channel::debouncer::DebounceConfig;
-use crate::kernel::channel::dispatch::dispatch_debounced;
-use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterOptions;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
@@ -24,7 +18,7 @@ use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::runtime::runtime_handle::Runtime;
-use crate::kernel::runtime::runtime_services::build_channel_registry;
+use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::runtime_state::RuntimeParts;
 use crate::kernel::runtime::runtime_state::RuntimeStatus;
 use crate::kernel::runtime::ActivityTracker;
@@ -47,45 +41,19 @@ pub(super) struct RuntimeDeps {
 
 pub(super) fn assemble_runtime(deps: RuntimeDeps) -> Arc<Runtime> {
     let sessions = Arc::new(SessionManager::new());
-    let channels = Arc::new(build_channel_registry());
+    let channels = Arc::new(runtime_services::build_channel_registry());
     let activity_tracker = Arc::new(ActivityTracker::new());
-    let trace_writer = crate::kernel::trace::TraceWriter::spawn();
-    let persist_writer = crate::kernel::run::persist_op::spawn_persist_writer();
+    let writers = runtime_services::spawn_writers();
     let session_lifecycle = Arc::new(SessionLifecycle::new(
         deps.databases.clone(),
         sessions.clone(),
-        persist_writer.clone(),
+        writers.persist_writer.clone(),
     ));
-    let channel_message_writer = crate::kernel::channel::spawn_channel_message_writer();
-    let rate_limiter = Arc::new(
-        crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter::new(
-            crate::kernel::channel::delivery::rate_limit::RateLimitConfig::default(),
-        ),
-    );
-    let tool_writer = crate::kernel::writer::tool_op::spawn_tool_writer();
     let sync_cancel = deps.sync_cancel;
 
     Arc::new_cyclic(|weak: &std::sync::Weak<Runtime>| {
-        let weak_for_handler = weak.clone();
-        let handler: ChatHandler = Arc::new(move |input| {
-            let weak = weak_for_handler.clone();
-            Box::pin(async move {
-                if let Some(runtime) = weak.upgrade() {
-                    dispatch_debounced(&runtime, input).await;
-                }
-            })
-        });
-        let chat_router = Arc::new(ChatRouter::new(
-            ChatRouterConfig::default(),
-            DebounceConfig::default(),
-            handler,
-        ));
-        let channel_status = Arc::new(crate::kernel::channel::status::ChannelStatus::new());
-        let supervisor = Arc::new(ChannelSupervisor::new(
-            channels.clone(),
-            chat_router.clone(),
-            channel_status,
-        ));
+        let chat_router = runtime_services::build_chat_router(weak);
+        let supervisor = runtime_services::build_supervisor(channels.clone(), chat_router.clone());
 
         Runtime::from_parts(RuntimeParts {
             sessions,
@@ -108,11 +76,11 @@ pub(super) fn assemble_runtime(deps: RuntimeDeps) -> Arc<Runtime> {
             directive: RwLock::new(None),
             directive_handle: RwLock::new(None),
             activity_tracker,
-            trace_writer,
-            persist_writer,
-            channel_message_writer,
-            rate_limiter,
-            tool_writer,
+            trace_writer: writers.trace_writer,
+            persist_writer: writers.persist_writer,
+            channel_message_writer: writers.channel_message_writer,
+            rate_limiter: writers.rate_limiter,
+            tool_writer: writers.tool_writer,
         })
     })
 }

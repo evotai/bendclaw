@@ -265,5 +265,3 @@ impl Runtime {
         self.llm.read().default_temperature()
     }
 }
-
-pub use crate::kernel::validate_agent_id;

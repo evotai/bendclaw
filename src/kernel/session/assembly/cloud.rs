@@ -3,19 +3,16 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+use super::backend_factory;
 use super::common;
+use super::contract::*;
+use super::infra_factory;
+use super::prompt_factory;
 use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
-use crate::kernel::run::prompt::resolver::CloudPromptResolver;
 use crate::kernel::run::prompt::PromptConfig;
 use crate::kernel::run::prompt::PromptVariable;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::session::assembly::contract::AgentContext;
-use crate::kernel::session::assembly::contract::RunLabels;
-use crate::kernel::session::assembly::contract::RuntimeInfra;
-use crate::kernel::session::assembly::contract::SessionAssembly;
-use crate::kernel::session::assembly::contract::SessionCore;
-use crate::kernel::session::assembly::contract::SessionOwner;
 use crate::kernel::tools::builtin::catalog::build_cloud_toolset;
 use crate::kernel::tools::builtin::catalog::CloudToolsetDeps;
 use crate::kernel::tools::execution::tool_services::DbSecretUsageSink;
@@ -36,7 +33,6 @@ impl CloudAssembler {
         let user_id = &owner.user_id;
         let pool = self.runtime.databases.agent_pool(agent_id)?;
 
-        // LLM + config
         let (agent_llm, cached_config) = match opts.llm_override {
             Some(llm) => (llm, None),
             None => {
@@ -46,7 +42,6 @@ impl CloudAssembler {
             }
         };
 
-        // Variables
         let variables = self
             .runtime
             .org
@@ -67,7 +62,6 @@ impl CloudAssembler {
             variables.iter().map(PromptVariable::from).collect();
         let prompt_config = cached_config.clone().map(PromptConfig::from);
 
-        // Workspace
         let workspace = common::build_workspace(
             &self.runtime.config,
             agent_id,
@@ -77,10 +71,8 @@ impl CloudAssembler {
             &variables,
         )?;
 
-        // Storage
         let storage = Arc::new(AgentStore::new(pool.clone(), agent_llm.clone()));
 
-        // Tools: core + persistent + optional
         let secret_sink: Arc<dyn crate::kernel::tools::execution::tool_services::SecretUsageSink> =
             Arc::new(DbSecretUsageSink::new(pool.clone()));
         let cluster_ref = self.runtime.cluster.read().clone();
@@ -103,7 +95,7 @@ impl CloudAssembler {
             opts.tool_filter,
         );
 
-        let prompt_resolver = Arc::new(CloudPromptResolver::new(
+        let prompt_resolver = prompt_factory::build_cloud_prompt_resolver(
             storage.clone(),
             self.runtime.org.clone(),
             toolset.tools.clone(),
@@ -117,34 +109,24 @@ impl CloudAssembler {
             agent_id.to_string(),
             user_id.to_string(),
             session_id.to_string(),
-        ));
-
-        // Session store — DbSessionStore for persistence, separate from AgentStore
-        let session_store = Arc::new(crate::kernel::session::store::db::DbSessionStore::new(
-            pool.clone(),
-        ));
-
-        // Backend: PersistentBackend for history loading + run initialization
-        let persistent = Arc::new(
-            crate::kernel::session::backend::persistent::PersistentBackend::new(
-                session_store.clone(),
-                self.runtime.persist_writer.clone(),
-                session_id,
-                agent_id,
-                user_id,
-                prompt_config.clone(),
-            ),
         );
 
-        // Trace factory — needs pool before SkillRunner consumes it
-        let trace_factory = Arc::new(crate::kernel::trace::factory::DbTraceFactory {
-            trace_repo: Arc::new(crate::storage::dal::trace::repo::TraceRepo::new(
-                pool.clone(),
-            )),
-            span_repo: Arc::new(crate::storage::dal::trace::repo::SpanRepo::new(
-                pool.clone(),
-            )),
-        });
+        let (session_store, persistent) = backend_factory::build_cloud_backend(
+            pool.clone(),
+            self.runtime.persist_writer.clone(),
+            session_id,
+            agent_id,
+            user_id,
+            prompt_config.clone(),
+        );
+
+        let infra = infra_factory::build_cloud_infra(
+            session_store,
+            pool.clone(),
+            self.runtime.tool_writer.clone(),
+            self.runtime.trace_writer.clone(),
+            self.runtime.persist_writer.clone(),
+        );
 
         let skill_executor: Arc<dyn crate::kernel::skills::executor::SkillExecutor> =
             Arc::new(crate::kernel::skills::runner::SkillRunner::new(
@@ -169,13 +151,7 @@ impl CloudAssembler {
                 context_provider: persistent.clone(),
                 run_initializer: persistent,
             },
-            infra: RuntimeInfra {
-                store: session_store,
-                trace_factory,
-                tool_writer: self.runtime.tool_writer.clone(),
-                trace_writer: self.runtime.trace_writer.clone(),
-                persist_writer: self.runtime.persist_writer.clone(),
-            },
+            infra,
             agent: AgentContext {
                 org: self.runtime.org.clone(),
                 config: Arc::new(self.runtime.config.clone()),

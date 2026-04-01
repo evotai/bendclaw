@@ -58,13 +58,11 @@ fn build_assembly_with_mock(executor: Arc<dyn SkillExecutor>) -> SessionAssembly
                 tools: Arc::new(vec![]),
                 allowed_tool_names: None,
             },
-            prompt_resolver: Arc::new(
-                bendclaw::kernel::run::prompt::resolver::LocalPromptResolver::new(
-                    bendclaw::kernel::run::prompt::PromptSeed::default(),
-                    Arc::new(vec![]),
-                    std::path::PathBuf::from("/tmp"),
-                ),
-            ),
+            prompt_resolver: Arc::new(bendclaw::kernel::run::prompt::LocalPromptResolver::new(
+                bendclaw::kernel::run::prompt::PromptSeed::default(),
+                Arc::new(vec![]),
+                std::path::PathBuf::from("/tmp"),
+            )),
             context_provider: noop.clone(),
             run_initializer: noop,
         },

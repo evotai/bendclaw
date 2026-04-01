@@ -1,11 +1,28 @@
-//! Prompt construction for a chat turn.
-
 pub mod build;
+pub mod cloud_resolver;
 pub mod loader;
+pub mod local_resolver;
 pub mod model;
-pub mod resolver;
+pub mod prompt_contract;
 
 pub use build::build_prompt;
+pub use cloud_resolver::CloudPromptResolver;
 pub use loader::CloudPromptLoader;
-pub use model::*;
-pub use resolver::PromptResolver;
+pub use local_resolver::LocalPromptResolver;
+pub use model::substitute_template;
+pub use model::truncate_layer;
+pub use model::PromptConfig;
+pub use model::PromptInputs;
+pub use model::PromptRequestMeta;
+pub use model::PromptSeed;
+pub use model::PromptVariable;
+pub use model::SkillPromptEntry;
+pub use model::MAX_ERRORS_BYTES;
+pub use model::MAX_IDENTITY_BYTES;
+pub use model::MAX_RUNTIME_BYTES;
+pub use model::MAX_SKILLS_BYTES;
+pub use model::MAX_SOUL_BYTES;
+pub use model::MAX_SYSTEM_BYTES;
+pub use model::MAX_TOOLS_BYTES;
+pub use model::MAX_VARIABLES_BYTES;
+pub use prompt_contract::PromptResolver;

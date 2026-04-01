@@ -125,13 +125,11 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             prompt_config: None,
             before_turn_hook: None,
             steering_source: None,
-            prompt_resolver: Arc::new(
-                bendclaw::kernel::run::prompt::resolver::LocalPromptResolver::new(
-                    bendclaw::kernel::run::prompt::PromptSeed::default(),
-                    Arc::new(vec![]),
-                    std::path::PathBuf::from("/tmp"),
-                ),
-            ),
+            prompt_resolver: Arc::new(bendclaw::kernel::run::prompt::LocalPromptResolver::new(
+                bendclaw::kernel::run::prompt::PromptSeed::default(),
+                Arc::new(vec![]),
+                std::path::PathBuf::from("/tmp"),
+            )),
             context_provider: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
             run_initializer: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
             skill_executor: Arc::new(bendclaw::kernel::skills::noop::NoopSkillExecutor),

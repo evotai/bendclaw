@@ -67,7 +67,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         before_turn_hook: None,
         steering_source: None,
         prompt_resolver: std::sync::Arc::new(
-            bendclaw::kernel::run::prompt::resolver::LocalPromptResolver::new(
+            bendclaw::kernel::run::prompt::LocalPromptResolver::new(
                 bendclaw::kernel::run::prompt::PromptSeed::default(),
                 std::sync::Arc::new(vec![]),
                 std::path::PathBuf::from("/tmp"),

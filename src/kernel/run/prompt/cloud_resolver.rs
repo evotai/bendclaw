@@ -1,61 +1,16 @@
-//! PromptResolver — per-invocation prompt resolution.
-//!
-//! LocalPromptResolver: calls build_prompt() with seed. No DB.
-//! CloudPromptResolver: calls CloudPromptLoader::build(). DB-backed.
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::loader::CloudPromptLoader;
+use super::model::*;
+use super::prompt_contract::PromptResolver;
 use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
-use crate::kernel::run::prompt::build::build_prompt;
-use crate::kernel::run::prompt::loader::CloudPromptLoader;
-use crate::kernel::run::prompt::model::*;
 use crate::kernel::runtime::org::OrgServices;
 use crate::llm::tool::ToolSchema;
 
-/// Resolves the final system prompt per invocation.
-#[async_trait]
-pub trait PromptResolver: Send + Sync {
-    async fn resolve(&self, meta: &PromptRequestMeta) -> Result<String>;
-}
-
-/// Local: calls build_prompt() with seed + meta overlays. No DB.
-pub struct LocalPromptResolver {
-    seed: PromptSeed,
-    tools: Arc<Vec<ToolSchema>>,
-    cwd: PathBuf,
-}
-
-impl LocalPromptResolver {
-    pub fn new(seed: PromptSeed, tools: Arc<Vec<ToolSchema>>, cwd: PathBuf) -> Self {
-        Self { seed, tools, cwd }
-    }
-}
-
-#[async_trait]
-impl PromptResolver for LocalPromptResolver {
-    async fn resolve(&self, meta: &PromptRequestMeta) -> Result<String> {
-        Ok(build_prompt(PromptInputs {
-            seed: self.seed.clone(),
-            tools: self.tools.clone(),
-            cwd: self.cwd.clone(),
-            system_overlay: meta.system_overlay.clone(),
-            skill_overlay: meta.skill_overlay.clone(),
-            memory_recall: None,
-            cluster_info: None,
-            recent_errors: None,
-            session_state: None,
-            channel_type: meta.channel_type.clone(),
-            channel_chat_id: meta.channel_chat_id.clone(),
-            runtime_override: None,
-        }))
-    }
-}
-
-/// Cloud: delegates to CloudPromptLoader for DB-backed prompt resolution.
 pub struct CloudPromptResolver {
     storage: Arc<AgentStore>,
     org: Arc<OrgServices>,

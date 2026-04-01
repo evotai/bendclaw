@@ -7,18 +7,18 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+use super::backend_factory;
 use super::common;
 use super::contract::*;
+use super::infra_factory;
+use super::prompt_factory;
 use crate::base::Result;
 use crate::kernel::run::persist_op::PersistWriter;
-use crate::kernel::run::prompt::model::PromptSeed;
-use crate::kernel::run::prompt::resolver::LocalPromptResolver;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::session_org::LocalOrgServices;
 use crate::kernel::session::store::json::JsonSessionStore;
 use crate::kernel::tools::builtin::catalog::build_local_toolset;
 use crate::kernel::tools::execution::tool_services::NoopSecretUsageSink;
-use crate::kernel::trace::factory::NoopTraceFactory;
 use crate::kernel::trace::TraceWriter;
 use crate::kernel::writer::BackgroundWriter;
 use crate::llm::provider::LLMProvider;
@@ -27,8 +27,6 @@ type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
 
 // ── LocalRuntimeDeps ────────────────────────────────────────────────
 
-/// Minimal dependency set for local sessions.
-/// Does NOT pull in AgentDatabases, SessionLifecycle, or Pool.
 pub struct LocalRuntimeDeps {
     pub config: AgentConfig,
     pub llm: Arc<RwLock<Arc<dyn LLMProvider>>>,
@@ -51,7 +49,6 @@ impl LocalRuntimeDeps {
 
 // ── LocalBuildOptions ───────────────────────────────────────────────
 
-/// Options for local assembly.
 pub struct LocalBuildOptions {
     pub cwd: Option<std::path::PathBuf>,
     pub tool_filter: Option<HashSet<String>>,
@@ -65,13 +62,6 @@ pub fn build_local_assembly(
     session_id: &str,
     opts: LocalBuildOptions,
 ) -> Result<SessionAssembly> {
-    // Local directory layout:
-    //   {root_dir}/local/sessions/{session_id}/
-    //     workspace/       ← Workspace.dir
-    //     session.json     ← JsonSessionStore data
-    //     runs/
-    //     events/
-    //     usage/
     let session_root = PathBuf::from(&deps.config.workspace.root_dir)
         .join("local")
         .join("sessions")
@@ -81,7 +71,6 @@ pub fn build_local_assembly(
     let workspace =
         common::build_workspace_from_dir(&deps.config, workspace_dir, opts.cwd.as_deref(), &[])?;
 
-    // Store at session_root — same level as workspace/
     let store = Arc::new(JsonSessionStore::new(session_root));
 
     let llm = opts
@@ -93,21 +82,22 @@ pub fn build_local_assembly(
         Arc::new(NoopSecretUsageSink);
     let toolset = build_local_toolset(opts.tool_filter, secret_sink);
 
-    let prompt_resolver = Arc::new(LocalPromptResolver::new(
-        PromptSeed::default(),
+    let prompt_resolver = prompt_factory::build_local_prompt_resolver(
         toolset.tools.clone(),
         workspace.cwd().to_path_buf(),
-    ));
+    );
 
-    let persistent = Arc::new(
-        crate::kernel::session::backend::persistent::PersistentBackend::new(
-            store.clone(),
-            deps.persist_writer.clone(),
-            session_id,
-            "local",
-            "cli",
-            None,
-        ),
+    let persistent = backend_factory::build_local_backend(
+        store.clone(),
+        deps.persist_writer.clone(),
+        session_id,
+    );
+
+    let infra = infra_factory::build_local_infra(
+        store,
+        deps.tool_writer.clone(),
+        deps.trace_writer.clone(),
+        deps.persist_writer.clone(),
     );
 
     Ok(SessionAssembly {
@@ -124,13 +114,7 @@ pub fn build_local_assembly(
             context_provider: persistent.clone(),
             run_initializer: persistent,
         },
-        infra: RuntimeInfra {
-            store,
-            trace_factory: Arc::new(NoopTraceFactory),
-            tool_writer: deps.tool_writer.clone(),
-            trace_writer: deps.trace_writer.clone(),
-            persist_writer: deps.persist_writer.clone(),
-        },
+        infra,
         agent: AgentContext {
             org: Arc::new(LocalOrgServices),
             config: Arc::new(deps.config.clone()),

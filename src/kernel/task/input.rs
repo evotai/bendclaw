@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use super::admin::CreateTaskParams;
-use super::admin::UpdateTaskParams;
+use super::management::CreateTaskParams;
+use super::management::UpdateTaskParams;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::dal::task::TaskSchedule;
 

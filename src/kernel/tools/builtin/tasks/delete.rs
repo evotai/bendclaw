@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::admin;
+use crate::kernel::task::management;
 use crate::kernel::tools::execution::operation::Impact;
 use crate::kernel::tools::execution::operation::OpType;
 use crate::kernel::tools::execution::tool_context::ToolContext;
@@ -75,7 +75,7 @@ impl Tool for TaskDeleteTool {
             _ => return Ok(ToolResult::error("task_id is required")),
         };
 
-        match admin::delete_task(&self.pool, task_id).await {
+        match management::delete_task(&self.pool, task_id).await {
             Ok(()) => Ok(ToolResult::ok(format!("Task '{task_id}' deleted"))),
             Err(e) => Ok(ToolResult::error(format!("Failed to delete task: {e}"))),
         }

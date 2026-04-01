@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::admin;
+use crate::kernel::task::management;
 use crate::kernel::task::view::TaskSummaryView;
 use crate::kernel::tools::execution::operation::OpType;
 use crate::kernel::tools::execution::tool_context::ToolContext;
@@ -66,7 +66,7 @@ impl Tool for TaskListTool {
     ) -> crate::base::Result<ToolResult> {
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
 
-        match admin::list_tasks(&self.pool, limit).await {
+        match management::list_tasks(&self.pool, limit).await {
             Ok(tasks) => {
                 let items: Vec<TaskSummaryView> =
                     tasks.into_iter().map(TaskSummaryView::from).collect();

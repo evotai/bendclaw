@@ -1,5 +1,6 @@
+pub mod prompt_builder;
+
 mod finish_execution;
-mod prompt_context;
 mod task_result;
 mod task_runner;
 

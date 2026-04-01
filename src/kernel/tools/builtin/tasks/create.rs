@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 
 use crate::kernel::channel::context::ChannelContext;
-use crate::kernel::task::admin;
 use crate::kernel::task::input::task_create_schema;
 use crate::kernel::task::input::TaskCreateSpec;
+use crate::kernel::task::management;
 use crate::kernel::task::view::TaskView;
 use crate::kernel::tools::execution::operation::Impact;
 use crate::kernel::tools::execution::operation::OpType;
@@ -105,7 +105,7 @@ impl Tool for TaskCreateTool {
             ctx.user_id.to_string(),
             ctx.user_id.to_string(),
         );
-        match admin::create_task(&self.pool, params).await {
+        match management::create_task(&self.pool, params).await {
             Ok(record) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(&TaskView::from(record)).unwrap_or_default(),
             )),

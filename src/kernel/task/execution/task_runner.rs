@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::finish_execution::finish_execution;
-use super::prompt_context::enrich_prompt_with_delivery;
+use super::prompt_builder::enrich_prompt_with_delivery;
 use super::task_result::classify_task_run_output;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::task::delivery::delivery_service::deliver_result;

@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
-use crate::kernel::task::admin;
 use crate::kernel::task::input::task_update_schema;
 use crate::kernel::task::input::TaskUpdateToolInput;
+use crate::kernel::task::management;
 use crate::kernel::task::view::TaskView;
 use crate::kernel::tools::execution::operation::Impact;
 use crate::kernel::tools::execution::operation::OpType;
@@ -72,7 +72,7 @@ impl Tool for TaskUpdateTool {
             }
         };
 
-        match admin::update_task(&self.pool, &input.task_id, input.spec.into_params()).await {
+        match management::update_task(&self.pool, &input.task_id, input.spec.into_params()).await {
             Ok(updated) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(&TaskView::from(updated)).unwrap_or_default(),
             )),

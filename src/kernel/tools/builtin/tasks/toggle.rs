@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::admin;
+use crate::kernel::task::management;
 use crate::kernel::task::view::TaskView;
 use crate::kernel::tools::execution::operation::Impact;
 use crate::kernel::tools::execution::operation::OpType;
@@ -76,7 +76,7 @@ impl Tool for TaskToggleTool {
             _ => return Ok(ToolResult::error("task_id is required")),
         };
 
-        match admin::toggle_task(&self.pool, task_id).await {
+        match management::toggle_task(&self.pool, task_id).await {
             Ok(task) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(&TaskView::from(task)).unwrap_or_default(),
             )),

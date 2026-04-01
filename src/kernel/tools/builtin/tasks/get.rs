@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::admin;
+use crate::kernel::task::management;
 use crate::kernel::task::view::TaskView;
 use crate::kernel::tools::execution::operation::OpType;
 use crate::kernel::tools::execution::tool_context::ToolContext;
@@ -71,7 +71,7 @@ impl Tool for TaskGetTool {
             _ => return Ok(ToolResult::error("task_id is required")),
         };
 
-        match admin::get_task(&self.pool, task_id).await {
+        match management::get_task(&self.pool, task_id).await {
             Ok(Some(task)) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(&TaskView::from(task)).unwrap_or_default(),
             )),

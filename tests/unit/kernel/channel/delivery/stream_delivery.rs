@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::kernel::channel::delivery::stream_delivery::StreamDelivery;
+use bendclaw::kernel::channel::delivery::stream_delivery::StreamDeliveryConfig;
 use bendclaw::kernel::channel::plugin::ChannelOutbound;
-use bendclaw::kernel::channel::stream_delivery::StreamDelivery;
-use bendclaw::kernel::channel::stream_delivery::StreamDeliveryConfig;
 use bendclaw::kernel::run::event::Delta;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::tools::OpType;
 use bendclaw::kernel::OperationMeta;
 use parking_lot::Mutex;
-
-// ── Mock outbound that records all calls ─────────────────────────────────────
 
 #[derive(Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
@@ -108,7 +106,7 @@ impl ChannelOutbound for MockOutbound {
 
 fn default_config() -> StreamDeliveryConfig {
     StreamDeliveryConfig {
-        throttle_ms: 0, // no throttle in tests
+        throttle_ms: 0,
         min_initial_chars: 5,
         max_message_len: 4096,
         show_tool_progress: true,
@@ -154,8 +152,6 @@ fn make_stream(events: Vec<Event>) -> tokio_stream::wrappers::ReceiverStream<Eve
     tokio_stream::wrappers::ReceiverStream::new(rx)
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn sends_draft_after_min_chars_then_finalizes() {
     let (ob, calls) = MockOutbound::new("msg_42");
@@ -165,17 +161,13 @@ async fn sends_draft_after_min_chars_then_finalizes() {
         serde_json::json!({}),
         "chat_1".into(),
     );
-    let mut stream = make_stream(vec![
-        text_delta("Hello"),  // exactly 5 chars → triggers send_draft
-        text_delta(" world"), // triggers update_draft (throttle=0)
-    ]);
+    let mut stream = make_stream(vec![text_delta("Hello"), text_delta(" world")]);
     let result = delivery.deliver(&mut stream).await.unwrap();
     assert_eq!(result, "Hello world");
 
     let calls = calls.lock();
     assert!(matches!(&calls[0], OutboundCall::SendDraft { .. }));
     assert!(matches!(&calls[1], OutboundCall::UpdateDraft { msg_id, .. } if msg_id == "msg_42"));
-    // Last call should be finalize with clean text (no cursor indicator)
     let last = calls.last().unwrap();
     assert!(
         matches!(last, OutboundCall::FinalizeDraft { msg_id, text } if msg_id == "msg_42" && text == "Hello world")
@@ -191,12 +183,9 @@ async fn no_draft_when_text_below_min_chars() {
         serde_json::json!({}),
         "chat_1".into(),
     );
-    let mut stream = make_stream(vec![
-        text_delta("Hi"), // only 2 chars, below min_initial_chars=5
-    ]);
+    let mut stream = make_stream(vec![text_delta("Hi")]);
     let result = delivery.deliver(&mut stream).await.unwrap();
     assert_eq!(result, "Hi");
-    // No draft was sent, so no calls at all
     assert!(calls.lock().is_empty());
 }
 
@@ -233,21 +222,15 @@ async fn tool_progress_shown_in_updates() {
     assert_eq!(result, "Hello world, this is a test");
 
     let calls = calls.lock();
-    // Should have: send_draft, update(tool_start), update(tool_end), finalize
     assert!(calls.len() >= 3);
-    // Check tool_start update contains the tool name
     let tool_start_call = calls.iter().find(
         |c| matches!(c, OutboundCall::UpdateDraft { text, .. } if text.contains("web_search...")),
     );
-    assert!(tool_start_call.is_some(), "should show tool start progress");
-    // Check tool_end update contains success icon
+    assert!(tool_start_call.is_some());
     let tool_end_call = calls
         .iter()
         .find(|c| matches!(c, OutboundCall::UpdateDraft { text, .. } if text.contains("\u{2705}")));
-    assert!(
-        tool_end_call.is_some(),
-        "should show tool end with success icon"
-    );
+    assert!(tool_end_call.is_some());
 }
 
 #[tokio::test]
@@ -268,16 +251,12 @@ async fn reason_start_clears_tool_status() {
     let _ = delivery.deliver(&mut stream).await.unwrap();
 
     let calls = calls.lock();
-    // After ReasonStart, the next update should NOT contain tool status
     let last_update = calls
         .iter()
         .rev()
         .find(|c| matches!(c, OutboundCall::UpdateDraft { .. }));
     if let Some(OutboundCall::UpdateDraft { text, .. }) = last_update {
-        assert!(
-            !text.contains("search"),
-            "tool status should be cleared after ReasonStart"
-        );
+        assert!(!text.contains("search"));
     }
 }
 
@@ -295,7 +274,6 @@ async fn truncates_long_output_on_finalize() {
     let long_text = "a".repeat(50);
     let mut stream = make_stream(vec![text_delta(&long_text)]);
     let result = delivery.deliver(&mut stream).await.unwrap();
-    // deliver returns the full untruncated text
     assert_eq!(result.len(), 50);
 
     let calls = calls.lock();
@@ -303,10 +281,7 @@ async fn truncates_long_output_on_finalize() {
         .iter()
         .find(|c| matches!(c, OutboundCall::FinalizeDraft { .. }));
     if let Some(OutboundCall::FinalizeDraft { text, .. }) = finalize {
-        assert!(
-            text.len() <= 20,
-            "finalized text should be truncated to max_message_len"
-        );
+        assert!(text.len() <= 20);
     } else {
         panic!("expected a FinalizeDraft call");
     }
@@ -332,10 +307,7 @@ async fn failed_tool_shows_error_icon() {
     let fail_call = calls
         .iter()
         .find(|c| matches!(c, OutboundCall::UpdateDraft { text, .. } if text.contains("\u{274C}")));
-    assert!(
-        fail_call.is_some(),
-        "should show failure icon for failed tool"
-    );
+    assert!(fail_call.is_some());
 }
 
 #[tokio::test]
@@ -351,20 +323,13 @@ async fn cursor_indicator_in_draft_updates_but_not_in_finalize() {
     let _ = delivery.deliver(&mut stream).await.unwrap();
 
     let calls = calls.lock();
-    // send_draft and update_draft should contain cursor indicator
     for call in calls.iter() {
         match call {
             OutboundCall::SendDraft { text } | OutboundCall::UpdateDraft { text, .. } => {
-                assert!(
-                    text.contains('\u{2026}'),
-                    "draft should contain typing indicator"
-                );
+                assert!(text.contains('\u{2026}'));
             }
             OutboundCall::FinalizeDraft { text, .. } => {
-                assert!(
-                    !text.contains('\u{2026}'),
-                    "finalized text should not contain typing indicator"
-                );
+                assert!(!text.contains('\u{2026}'));
             }
         }
     }

@@ -66,7 +66,7 @@ fn empty_fake() -> FakeDatabend {
 }
 
 #[tokio::test]
-async fn finish_execution_writes_history_and_updates_task() {
+async fn writes_history_and_updates_task() {
     let fake = empty_fake();
     let pool = fake.pool();
     let task = sample_task("every", false);
@@ -100,7 +100,7 @@ async fn finish_execution_writes_history_and_updates_task() {
 }
 
 #[tokio::test]
-async fn finish_execution_deletes_one_shot_after_run() {
+async fn deletes_one_shot_after_run() {
     let fake = empty_fake();
     let pool = fake.pool();
     let task = sample_task("at", true);

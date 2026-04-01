@@ -6,7 +6,7 @@ use crate::kernel::channel::chat_router::ChatRouterConfig;
 use crate::kernel::channel::debouncer::DebounceConfig;
 use crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter;
 use crate::kernel::channel::delivery::rate_limit::RateLimitConfig;
-use crate::kernel::channel::dispatch::dispatch_debounced;
+use crate::kernel::channel::inbound::dispatch_debounced;
 use crate::kernel::channel::supervisor::ChannelSupervisor;
 use crate::kernel::runtime::runtime_handle::Runtime;
 use crate::kernel::trace::TraceWriter;

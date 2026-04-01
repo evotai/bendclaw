@@ -139,7 +139,7 @@ impl LeaseResource for TaskLeaseResource {
             };
             let result = tokio::time::timeout(
                 TASK_EXECUTION_TIMEOUT,
-                super::executor::execute_task(&runtime, &agent_id, &task, &lease_token, &client),
+                super::execution::execute_task(&runtime, &agent_id, &task, &lease_token, &client),
             )
             .await;
             match result {

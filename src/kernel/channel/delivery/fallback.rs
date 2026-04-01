@@ -2,13 +2,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use super::stream_delivery::StreamDelivery;
+use super::stream_delivery::StreamDeliveryConfig;
 use crate::base::Result;
 use crate::kernel::channel::delivery::retry::send_with_retry;
 use crate::kernel::channel::delivery::retry::RetryConfig;
 use crate::kernel::channel::diagnostics;
 use crate::kernel::channel::plugin::ChannelOutbound;
-use crate::kernel::channel::stream_delivery::StreamDelivery;
-use crate::kernel::channel::stream_delivery::StreamDeliveryConfig;
 use crate::kernel::run::event::Event;
 
 /// How the message was ultimately delivered.

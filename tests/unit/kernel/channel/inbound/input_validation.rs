@@ -1,4 +1,4 @@
-use bendclaw::kernel::channel::dispatch::is_sender_allowed;
+use bendclaw::kernel::channel::inbound::is_sender_allowed;
 use serde_json::json;
 
 #[test]
@@ -29,7 +29,6 @@ fn allow_matching_sender_id() {
 
 #[test]
 fn allow_pipe_separated_format() {
-    // Telegram uses "user_id|username" format.
     let config = json!({"allow_from": ["123|alice", "456|bob"]});
     assert!(is_sender_allowed(&config, "123"));
     assert!(is_sender_allowed(&config, "alice"));

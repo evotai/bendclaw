@@ -4,14 +4,14 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
-use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::skills::model::skill::Skill;
-use bendclaw::kernel::skills::model::skill::SkillFile;
-use bendclaw::kernel::skills::model::skill::SkillScope;
-use bendclaw::kernel::skills::model::skill::SkillSource;
-use bendclaw::kernel::skills::runtime::SkillExecutor;
-use bendclaw::kernel::skills::runtime::SkillRunner;
+use bendclaw::kernel::skills::definition::skill::Skill;
+use bendclaw::kernel::skills::definition::skill::SkillFile;
+use bendclaw::kernel::skills::definition::skill::SkillScope;
+use bendclaw::kernel::skills::definition::skill::SkillSource;
+use bendclaw::kernel::skills::execution::SkillExecutor;
+use bendclaw::kernel::skills::execution::SkillRunner;
 use bendclaw::kernel::skills::sources::remote::writer;
+use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 use bendclaw_test_harness::mocks::skill::NoopUsageSink;
@@ -294,10 +294,12 @@ async fn hub_and_remote_updates_are_visible_and_remote_skill_reads_variables() -
     );
 
     let mut remote_skill = make_user_skill("user-a", "remote-tool", "remote tool", "user-1");
-    remote_skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec!["bash".into()],
-        env: vec!["API_TOKEN".into()],
-    });
+    remote_skill.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec!["bash".into()],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     remote_skill.files = vec![SkillFile {
         path: "scripts/run.sh".to_string(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\"".to_string(),
@@ -317,10 +319,12 @@ async fn hub_and_remote_updates_are_visible_and_remote_skill_reads_variables() -
 
     let mut remote_skill_v2 =
         make_user_skill("user-a", "remote-tool", "remote tool updated", "user-2");
-    remote_skill_v2.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec!["bash".into()],
-        env: vec!["API_TOKEN".into()],
-    });
+    remote_skill_v2.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec!["bash".into()],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     remote_skill_v2.files = vec![SkillFile {
         path: "scripts/run.sh".to_string(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf 'updated:%s' \"$API_TOKEN\"".to_string(),
@@ -394,7 +398,7 @@ fn subscribed_skill_in_visible_list_with_tool_key() -> Result<()> {
     let skills = projector.visible_skills("bob");
     let names: Vec<String> = skills
         .iter()
-        .map(|s| bendclaw::kernel::skills::model::tool_key::format(s, "bob"))
+        .map(|s| bendclaw::kernel::skills::definition::tool_key::format(s, "bob"))
         .collect();
 
     assert!(names.contains(&"my-tool".to_string()));
@@ -430,7 +434,7 @@ fn same_name_subscribed_from_different_owners_both_visible_and_stable() -> Resul
     let skills = projector.visible_skills("viewer");
     let keys: Vec<String> = skills
         .iter()
-        .map(|s| bendclaw::kernel::skills::model::tool_key::format(s, "viewer"))
+        .map(|s| bendclaw::kernel::skills::definition::tool_key::format(s, "viewer"))
         .collect();
 
     assert!(keys.contains(&"alice/report".to_string()));
@@ -506,7 +510,7 @@ fn owned_skill_overrides_hub_but_subscribed_coexists() -> Result<()> {
     let skills = projector.visible_skills("bob");
     let keys: Vec<String> = skills
         .iter()
-        .map(|s| bendclaw::kernel::skills::model::tool_key::format(s, "bob"))
+        .map(|s| bendclaw::kernel::skills::definition::tool_key::format(s, "bob"))
         .collect();
 
     let report = projector.resolve("bob", "report").unwrap();

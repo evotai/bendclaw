@@ -5,9 +5,9 @@ use std::sync::Arc;
 use crate::kernel::memory::store::SharedMemoryStore;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::runtime::agent_config::AgentConfig;
-use crate::kernel::skills::catalog::SkillCatalog;
-use crate::kernel::skills::management::SkillManager;
-use crate::kernel::skills::shared::DatabendSharedSkillStore;
+use crate::kernel::skills::store::DatabendSharedSkillStore;
+use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillManager;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::kernel::variables::service::VariableService;
@@ -82,7 +82,7 @@ impl OrgServices {
 }
 
 impl super::session_org::SessionOrgServices for OrgServices {
-    fn list_skills(&self, user_id: &str) -> Vec<crate::kernel::skills::model::skill::Skill> {
+    fn list_skills(&self, user_id: &str) -> Vec<crate::kernel::skills::definition::skill::Skill> {
         self.catalog.visible_skills(user_id)
     }
     fn memory(&self) -> Option<Arc<MemoryService>> {

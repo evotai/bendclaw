@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::kernel::memory::MemoryService;
-use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::definition::skill::Skill;
 
 /// Minimal org services needed by session core at runtime.
 /// OrgServices implements this for cloud; LocalOrgServices for local.

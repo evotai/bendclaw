@@ -1,5 +1,5 @@
-use crate::kernel::skills::model::manifest::CredentialSpec;
-use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::definition::manifest::CredentialSpec;
+use crate::kernel::skills::definition::skill::Skill;
 use crate::service::state::AppState;
 
 pub(super) fn list_hub_skills(state: &AppState) -> Vec<Skill> {

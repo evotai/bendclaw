@@ -335,12 +335,12 @@ async fn subscribed_skill_visible_in_list_and_gettable_by_namespaced_key() -> Re
     setup_agent(&app, &agent_id, &user).await?;
 
     // Write a subscribed skill directly to disk (alice owns "report", user subscribes)
-    let skill = bendclaw::kernel::skills::model::skill::Skill {
+    let skill = bendclaw::kernel::skills::definition::skill::Skill {
         name: "report".to_string(),
         version: "1.0.0".to_string(),
         description: "alice report".to_string(),
-        scope: bendclaw::kernel::skills::model::skill::SkillScope::Shared,
-        source: bendclaw::kernel::skills::model::skill::SkillSource::Agent,
+        scope: bendclaw::kernel::skills::definition::skill::SkillScope::Shared,
+        source: bendclaw::kernel::skills::definition::skill::SkillSource::Agent,
         user_id: "alice".to_string(),
         created_by: Some("alice".to_string()),
         last_used_by: None,
@@ -430,12 +430,12 @@ async fn delete_subscribed_skill_triggers_unsubscribe() -> Result<()> {
     setup_agent(&app, &agent_id, &user).await?;
 
     // Write subscribed skill to disk
-    let skill = bendclaw::kernel::skills::model::skill::Skill {
+    let skill = bendclaw::kernel::skills::definition::skill::Skill {
         name: "tool".to_string(),
         version: "1.0.0".to_string(),
         description: "alice tool".to_string(),
-        scope: bendclaw::kernel::skills::model::skill::SkillScope::Shared,
-        source: bendclaw::kernel::skills::model::skill::SkillSource::Agent,
+        scope: bendclaw::kernel::skills::definition::skill::SkillScope::Shared,
+        source: bendclaw::kernel::skills::definition::skill::SkillSource::Agent,
         user_id: "alice".to_string(),
         created_by: Some("alice".to_string()),
         last_used_by: None,

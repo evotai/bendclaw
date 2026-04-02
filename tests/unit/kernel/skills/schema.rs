@@ -2,8 +2,8 @@
 
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::skills::model::skill::Skill;
-use bendclaw::kernel::skills::model::skill::SkillParameter;
+use bendclaw::kernel::skills::definition::skill::Skill;
+use bendclaw::kernel::skills::definition::skill::SkillParameter;
 
 fn base_skill() -> Skill {
     Skill {

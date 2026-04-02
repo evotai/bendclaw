@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use bendclaw::kernel::run::event::Event;
-use bendclaw::kernel::skills::runtime::SkillExecutor;
-use bendclaw::kernel::skills::runtime::SkillOutput;
+use bendclaw::kernel::skills::execution::SkillExecutor;
+use bendclaw::kernel::skills::execution::SkillOutput;
 use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
 use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::execution::tool_events::EventEmitter;

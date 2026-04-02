@@ -107,7 +107,7 @@ fn build_engine_with_filter(
             tools: Arc::new(tools_schema),
             allowed_tool_names: allowed,
         },
-        skill_executor: Arc::new(bendclaw::kernel::skills::runtime::NoopSkillExecutor),
+        skill_executor: Arc::new(bendclaw::kernel::skills::execution::NoopSkillExecutor),
         tool_context: ToolContext {
             user_id: "user-1".into(),
             session_id: "session-1".into(),

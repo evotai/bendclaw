@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::skills::catalog::SkillCatalog;
-use crate::kernel::skills::model::sanitizer::sanitize_skill_content;
+use crate::kernel::skills::definition::sanitizer::sanitize_skill_content;
+use crate::kernel::skills::sync::SkillCatalog;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;

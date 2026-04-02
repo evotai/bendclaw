@@ -7,7 +7,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::skills::catalog::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -82,7 +82,7 @@ fn make_session(id: &str) -> Arc<Session> {
                 bendclaw::kernel::session::backend::noop::NoopBackend,
             ),
             skill_executor: std::sync::Arc::new(
-                bendclaw::kernel::skills::runtime::NoopSkillExecutor,
+                bendclaw::kernel::skills::execution::NoopSkillExecutor,
             ),
         },
     ))

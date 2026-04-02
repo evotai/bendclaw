@@ -14,7 +14,7 @@ use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::catalog::SkillCatalog;
+use crate::kernel::skills::sync::SkillCatalog;
 use crate::llm::provider::LLMProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

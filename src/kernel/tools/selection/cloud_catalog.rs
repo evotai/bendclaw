@@ -41,7 +41,7 @@ pub fn build_cloud_toolset(deps: CloudToolsetDeps, filter: Option<HashSet<String
         .into_iter()
         .filter(|s| s.executable)
         .map(|s| {
-            let name = crate::kernel::skills::model::tool_key::format(&s, &deps.user_id);
+            let name = crate::kernel::skills::definition::tool_key::format(&s, &deps.user_id);
             let desc = s.description.clone();
             let params = s.to_json_schema();
             ToolEntry {

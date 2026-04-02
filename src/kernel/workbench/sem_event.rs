@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::kernel::run::event::Event;
-use crate::kernel::skills::model::skill::Skill;
-use crate::kernel::skills::model::tool_key;
+use crate::kernel::skills::definition::skill::Skill;
+use crate::kernel::skills::definition::tool_key;
 use crate::llm::tool::ToolSchema;
 
 /// Semantic events layered on top of raw runtime facts.

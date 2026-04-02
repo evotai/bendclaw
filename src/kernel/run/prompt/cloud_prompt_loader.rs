@@ -134,7 +134,10 @@ impl CloudPromptLoader {
             .into_iter()
             .filter(|s| !s.executable)
             .map(|s| SkillPromptEntry {
-                display_name: crate::kernel::skills::model::tool_key::format(&s, &self.user_id),
+                display_name: crate::kernel::skills::definition::tool_key::format(
+                    &s,
+                    &self.user_id,
+                ),
                 description: s.description.clone(),
             })
             .collect();

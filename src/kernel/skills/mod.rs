@@ -1,12 +1,7 @@
-pub mod catalog;
 pub mod definition;
 pub(crate) mod diagnostics;
 pub mod execution;
 pub mod fs;
-pub mod management;
-pub mod model;
-pub mod runtime;
-pub mod shared;
 pub mod sources;
 pub mod store;
 pub mod sync;

@@ -7,7 +7,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::skills::catalog::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -77,7 +77,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
             bendclaw::kernel::session::backend::noop::NoopBackend,
         ),
         run_initializer: std::sync::Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
-        skill_executor: std::sync::Arc::new(bendclaw::kernel::skills::runtime::NoopSkillExecutor),
+        skill_executor: std::sync::Arc::new(bendclaw::kernel::skills::execution::NoopSkillExecutor),
     });
 
     assert!(session.belongs_to("a1", "u1"));

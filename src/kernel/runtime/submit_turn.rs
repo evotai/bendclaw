@@ -5,7 +5,7 @@ use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::definition::skill::Skill;
 use crate::llm::config::LLMConfig;
 use crate::observability::redaction;
 use crate::storage::dal::session::record::SessionRecord;

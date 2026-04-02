@@ -7,13 +7,13 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
-use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::skills::model::skill::Skill;
-use bendclaw::kernel::skills::model::skill::SkillFile;
-use bendclaw::kernel::skills::model::skill::SkillScope;
-use bendclaw::kernel::skills::model::skill::SkillSource;
-use bendclaw::kernel::skills::runtime::SkillExecutor;
-use bendclaw::kernel::skills::runtime::SkillRunner;
+use bendclaw::kernel::skills::definition::skill::Skill;
+use bendclaw::kernel::skills::definition::skill::SkillFile;
+use bendclaw::kernel::skills::definition::skill::SkillScope;
+use bendclaw::kernel::skills::definition::skill::SkillSource;
+use bendclaw::kernel::skills::execution::SkillExecutor;
+use bendclaw::kernel::skills::execution::SkillRunner;
+use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw::kernel::variables::Variable;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
@@ -215,10 +215,12 @@ async fn runner_executes_skill_with_required_env_snapshot() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec!["bash".into()],
-        env: vec!["API_TOKEN".into()],
-    });
+    skill.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec!["bash".into()],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\"".into(),
@@ -252,10 +254,12 @@ async fn runner_executes_python_skill_with_required_env_snapshot() -> Result<()>
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec!["python3".into()],
-        env: vec!["API_TOKEN".into()],
-    });
+    skill.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec!["python3".into()],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     skill.files = vec![SkillFile {
         path: "scripts/run.py".into(),
         body: "import os, sys\nsys.stdin.read()\nprint(os.environ['API_TOKEN'])".into(),
@@ -288,10 +292,12 @@ async fn runner_missing_required_env_returns_error() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec![],
-        env: vec!["API_TOKEN".into()],
-    });
+    skill.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec![],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\nprintf 'ok'".into(),
@@ -329,10 +335,12 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
-        bins: vec!["bash".into()],
-        env: vec!["API_TOKEN".into()],
-    });
+    skill.requires = Some(
+        bendclaw::kernel::skills::definition::skill::SkillRequirements {
+            bins: vec!["bash".into()],
+            env: vec!["API_TOKEN".into()],
+        },
+    );
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\"".into(),
@@ -455,8 +463,8 @@ async fn runner_subscribed_skill_not_accessible_via_bare_name() -> Result<()> {
 
 // ── UsageSink contract ──
 
-use bendclaw::kernel::skills::model::skill::SkillId;
-use bendclaw::kernel::skills::runtime::UsageSink;
+use bendclaw::kernel::skills::definition::skill::SkillId;
+use bendclaw::kernel::skills::execution::UsageSink;
 use parking_lot::Mutex;
 
 struct RecordingSink {

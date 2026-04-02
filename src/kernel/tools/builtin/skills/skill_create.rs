@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::skills::management::SkillManager;
-use crate::kernel::skills::model::skill::Skill;
-use crate::kernel::skills::model::skill::SkillFile;
-use crate::kernel::skills::model::skill::SkillScope;
-use crate::kernel::skills::model::skill::SkillSource;
+use crate::kernel::skills::definition::skill::Skill;
+use crate::kernel::skills::definition::skill::SkillFile;
+use crate::kernel::skills::definition::skill::SkillScope;
+use crate::kernel::skills::definition::skill::SkillSource;
+use crate::kernel::skills::sync::SkillManager;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;

@@ -1,7 +1,7 @@
 use super::http::CreateSkillRequest;
-use crate::kernel::skills::model::skill::Skill;
-use crate::kernel::skills::model::skill::SkillScope;
-use crate::kernel::skills::model::skill::SkillSource;
+use crate::kernel::skills::definition::skill::Skill;
+use crate::kernel::skills::definition::skill::SkillScope;
+use crate::kernel::skills::definition::skill::SkillSource;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 
@@ -49,7 +49,7 @@ pub(super) async fn delete_skill(
     user_id: &str,
     skill_key: &str,
 ) -> Result<String> {
-    let (owner, bare_name) = crate::kernel::skills::model::tool_key::parse(skill_key, user_id);
+    let (owner, bare_name) = crate::kernel::skills::definition::tool_key::parse(skill_key, user_id);
     if owner != user_id {
         // Subscribed skill: unsubscribe instead of delete
         state

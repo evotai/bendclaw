@@ -13,16 +13,16 @@ use std::sync::Arc;
 
 use crate::base::Result;
 use crate::config::HubConfig;
+use crate::kernel::skills::definition::skill::Skill;
+use crate::kernel::skills::definition::skill::SkillScope;
+use crate::kernel::skills::definition::skill::SkillSource;
+use crate::kernel::skills::definition::tool_key;
 use crate::kernel::skills::diagnostics;
 use crate::kernel::skills::fs::load_skill_tree;
 use crate::kernel::skills::fs::LoadedSkill;
-use crate::kernel::skills::model::skill::Skill;
-use crate::kernel::skills::model::skill::SkillScope;
-use crate::kernel::skills::model::skill::SkillSource;
-use crate::kernel::skills::model::tool_key;
-use crate::kernel::skills::shared::SharedSkillStore;
 use crate::kernel::skills::sources::hub;
 use crate::kernel::skills::sources::remote;
+use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 
 pub struct SkillCatalog {

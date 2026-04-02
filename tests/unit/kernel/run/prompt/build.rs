@@ -29,7 +29,7 @@ use bendclaw::kernel::run::prompt::MAX_TOOLS_BYTES;
 use bendclaw::kernel::run::prompt::MAX_VARIABLES_BYTES;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::catalog::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw::kernel::tools::definition::ToolDefinition;
 use bendclaw::kernel::OpType;
 use bendclaw::llm::message::ChatMessage;

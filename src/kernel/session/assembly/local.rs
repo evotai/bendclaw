@@ -122,7 +122,7 @@ pub fn build_local_assembly(
             directive: None,
             prompt_config: None,
             prompt_variables: vec![],
-            skill_executor: Arc::new(crate::kernel::skills::runtime::NoopSkillExecutor),
+            skill_executor: Arc::new(crate::kernel::skills::execution::NoopSkillExecutor),
             memory_recaller: None,
         },
     })

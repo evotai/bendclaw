@@ -1,3 +1,4 @@
-pub use super::catalog::SkillCatalog;
-pub use super::shared::DatabendSharedSkillStore;
-pub use super::shared::SharedSkillStore;
+pub mod skill_store;
+
+pub use skill_store::DatabendSharedSkillStore;
+pub use skill_store::SharedSkillStore;

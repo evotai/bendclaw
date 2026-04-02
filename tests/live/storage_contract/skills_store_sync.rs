@@ -1,11 +1,11 @@
 use anyhow::Result;
-use bendclaw::kernel::skills::model::skill::Skill;
-use bendclaw::kernel::skills::model::skill::SkillFile;
-use bendclaw::kernel::skills::model::skill::SkillRequirements;
-use bendclaw::kernel::skills::model::skill::SkillScope;
-use bendclaw::kernel::skills::model::skill::SkillSource;
-use bendclaw::kernel::skills::shared::DatabendSharedSkillStore;
-use bendclaw::kernel::skills::shared::SharedSkillStore;
+use bendclaw::kernel::skills::definition::skill::Skill;
+use bendclaw::kernel::skills::definition::skill::SkillFile;
+use bendclaw::kernel::skills::definition::skill::SkillRequirements;
+use bendclaw::kernel::skills::definition::skill::SkillScope;
+use bendclaw::kernel::skills::definition::skill::SkillSource;
+use bendclaw::kernel::skills::store::DatabendSharedSkillStore;
+use bendclaw::kernel::skills::store::SharedSkillStore;
 use bendclaw::storage::Pool;
 
 use crate::common::setup::require_api_config;

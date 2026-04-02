@@ -20,7 +20,7 @@ use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::catalog::SkillCatalog;
+use crate::kernel::skills::sync::SkillCatalog;
 use crate::llm::provider::LLMProvider;
 use crate::storage::pool::Pool;
 

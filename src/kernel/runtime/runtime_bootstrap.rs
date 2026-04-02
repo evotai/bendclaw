@@ -24,7 +24,7 @@ use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::catalog::SkillCatalog;
+use crate::kernel::skills::sync::SkillCatalog;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
@@ -113,11 +113,10 @@ pub(super) async fn construct(
     let sync_cancel = CancellationToken::new();
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let skill_store_for_catalog = Arc::new(
-        crate::kernel::skills::shared::DatabendSharedSkillStore::new(
+    let skill_store_for_catalog =
+        Arc::new(crate::kernel::skills::store::DatabendSharedSkillStore::new(
             pool.with_database("evotai_meta")?,
-        ),
-    );
+        ));
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::new(
         pool.with_database("evotai_meta")?,
     ));
@@ -284,7 +283,7 @@ pub(super) async fn construct_minimal(
     )?);
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let skill_store = Arc::new(crate::kernel::skills::shared::DatabendSharedSkillStore::noop());
+    let skill_store = Arc::new(crate::kernel::skills::store::DatabendSharedSkillStore::noop());
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::noop());
     let catalog = Arc::new(SkillCatalog::new(
         workspace_root.to_path_buf(),

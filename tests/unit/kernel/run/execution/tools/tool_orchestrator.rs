@@ -17,8 +17,8 @@ use bendclaw::kernel::run::execution::tools::tool_orchestrator::ToolOrchestrator
 use bendclaw::kernel::run::execution::tools::tool_recorder::ExecutionRecorder;
 use bendclaw::kernel::run::execution::tools::TurnContext;
 use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
-use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::run_labels::RunLabels;
+use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;

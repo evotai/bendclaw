@@ -1,5 +1,4 @@
 pub mod tool_definition;
-pub mod tool_registry;
 pub mod tool_target;
 pub mod toolset;
 

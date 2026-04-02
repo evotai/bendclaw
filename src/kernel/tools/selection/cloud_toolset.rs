@@ -9,7 +9,7 @@ use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 use crate::kernel::tools::definition::tool_target::ToolTarget;
 use crate::kernel::tools::definition::toolset::ToolEntry;
 use crate::kernel::tools::definition::toolset::Toolset;
-use crate::kernel::tools::selection::local_catalog::build_core_entries;
+use crate::kernel::tools::selection::local_toolset::build_core_entries;
 use crate::kernel::tools::tool_services::SecretUsageSink;
 use crate::storage::Pool;
 

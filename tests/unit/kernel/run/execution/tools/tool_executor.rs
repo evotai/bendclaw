@@ -9,7 +9,7 @@ use bendclaw::kernel::run::execution::skills::SkillOutput;
 use bendclaw::kernel::run::execution::tools::tool_executor::CallExecutor;
 use bendclaw::kernel::run::execution::tools::tool_result::ToolCallResult;
 use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
-use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;

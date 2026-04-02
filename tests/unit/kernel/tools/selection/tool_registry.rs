@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;

@@ -1,7 +1,7 @@
 //! Tests for skill name, file path, and size validation.
 
-use bendclaw::kernel::skills::skill::Skill;
-use bendclaw::kernel::skills::skill::SkillFile;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::model::skill::SkillFile;
 use bendclaw::kernel::tools::ToolId;
 
 // ═══════════════════════════════════════════════════════════════════════════════

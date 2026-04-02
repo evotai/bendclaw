@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::skills::service::SkillService;
-use crate::kernel::skills::skill::Skill;
+use crate::kernel::skills::management::SkillManager;
+use crate::kernel::skills::model::skill::Skill;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -15,11 +15,11 @@ use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::OpType;
 pub struct SkillRemoveTool {
-    service: Arc<SkillService>,
+    service: Arc<SkillManager>,
 }
 
 impl SkillRemoveTool {
-    pub fn new(service: Arc<SkillService>) -> Self {
+    pub fn new(service: Arc<SkillManager>) -> Self {
         Self { service }
     }
 }
@@ -71,7 +71,7 @@ impl Tool for SkillRemoveTool {
             .unwrap_or("")
             .to_string();
 
-        let (owner, bare_name) = crate::kernel::skills::tool_key::parse(&name, &ctx.user_id);
+        let (owner, bare_name) = crate::kernel::skills::model::tool_key::parse(&name, &ctx.user_id);
 
         // Validate bare name in all cases
         if let Err(e) = Skill::validate_name(bare_name) {

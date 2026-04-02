@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolId;
@@ -18,7 +18,7 @@ fn make_registry() -> Arc<ToolRegistry> {
                 .expect("meta pool for projector"),
         ),
     );
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         dir,
         skill_store,
         Arc::new(bendclaw_test_harness::mocks::skill::NoopSubscriptionStore),

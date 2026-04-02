@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::kernel::run::event::Event;
-use crate::kernel::skills::executor::SkillExecutor;
+use crate::kernel::skills::runtime::SkillExecutor;
 use crate::kernel::tools::catalog::toolset::Toolset;
 use crate::kernel::tools::run_labels::RunLabels;
 use crate::kernel::tools::runtime::tool_events::EventEmitter;

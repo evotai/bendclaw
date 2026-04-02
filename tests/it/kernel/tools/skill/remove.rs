@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::builtin::skills::remove::SkillRemoveTool;
 use bendclaw::kernel::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -20,7 +20,7 @@ fn make_tool() -> SkillRemoveTool {
     let fake = FakeDatabend::new(|_sql, _database| Ok(paged_rows(&[], None, None)));
     let dir = std::env::temp_dir().join(format!("bendclaw-rm-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -31,7 +31,7 @@ fn make_tool() -> SkillRemoveTool {
         Arc::new(bendclaw_test_harness::mocks::llm::MockLLMProvider::with_text("ok"));
     let meta_pool = fake.pool().with_database("evotai_meta").expect("meta pool");
     let org = Arc::new(OrgServices::new(meta_pool, projector, &config, llm));
-    SkillRemoveTool::new(org.skills().clone())
+    SkillRemoveTool::new(org.manager().clone())
 }
 
 #[tokio::test]

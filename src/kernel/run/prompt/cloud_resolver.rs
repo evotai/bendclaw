@@ -67,7 +67,7 @@ impl PromptResolver for CloudPromptResolver {
     async fn resolve(&self, meta: &PromptRequestMeta) -> Result<String> {
         let directive_prompt = self.directive.as_ref().and_then(|d| d.cached_prompt());
 
-        let mut pb = CloudPromptLoader::new(self.storage.clone(), self.org.skills().clone())
+        let mut pb = CloudPromptLoader::new(self.storage.clone(), self.org.catalog().clone())
             .with_tools(self.tools.clone())
             .with_variables(self.variables.clone())
             .with_cached_config(self.prompt_config.clone())

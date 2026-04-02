@@ -20,7 +20,7 @@ use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::projector::SkillProjector;
+use crate::kernel::skills::catalog::SkillCatalog;
 use crate::llm::provider::LLMProvider;
 use crate::storage::pool::Pool;
 
@@ -30,7 +30,7 @@ pub struct Runtime {
     pub(crate) llm: RwLock<Arc<dyn LLMProvider>>,
     pub(crate) agent_llms: RwLock<HashMap<String, Arc<dyn LLMProvider>>>,
     pub(crate) org: Arc<OrgServices>,
-    pub(crate) projector: Arc<SkillProjector>,
+    pub(crate) catalog: Arc<SkillCatalog>,
     pub(crate) sessions: Arc<SessionManager>,
     pub(crate) session_lifecycle: Arc<SessionLifecycle>,
     pub(crate) channels: Arc<ChannelRegistry>,
@@ -79,7 +79,7 @@ impl Runtime {
             llm: parts.llm,
             agent_llms: parts.agent_llms,
             org: parts.org,
-            projector: parts.projector,
+            catalog: parts.catalog,
             sessions: parts.sessions,
             session_lifecycle: parts.session_lifecycle,
             channels: parts.channels,
@@ -124,9 +124,8 @@ impl Runtime {
     }
 
     pub fn skill_prompt(&self, user_id: &str) -> String {
-        self.org
-            .skills()
-            .list(user_id)
+        self.catalog
+            .visible_skills(user_id)
             .into_iter()
             .filter(|s| !s.executable)
             .map(|s| s.content)
@@ -229,8 +228,8 @@ impl Runtime {
         }
     }
 
-    pub fn skills(&self) -> &Arc<SkillProjector> {
-        &self.projector
+    pub fn skills(&self) -> &Arc<SkillCatalog> {
+        &self.catalog
     }
 
     pub fn org(&self) -> &Arc<OrgServices> {

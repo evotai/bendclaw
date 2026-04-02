@@ -7,17 +7,17 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
-use bendclaw::kernel::skills::executor::SkillExecutor;
-use bendclaw::kernel::skills::projector::SkillProjector;
-use bendclaw::kernel::skills::runner::SkillRunner;
-use bendclaw::kernel::skills::skill::Skill;
-use bendclaw::kernel::skills::skill::SkillFile;
-use bendclaw::kernel::skills::skill::SkillScope;
-use bendclaw::kernel::skills::skill::SkillSource;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::model::skill::SkillFile;
+use bendclaw::kernel::skills::model::skill::SkillScope;
+use bendclaw::kernel::skills::model::skill::SkillSource;
+use bendclaw::kernel::skills::runtime::SkillExecutor;
+use bendclaw::kernel::skills::runtime::SkillRunner;
 use bendclaw::kernel::variables::Variable;
-use bendclaw_test_harness::mocks::skill::test_skill_service;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
+use bendclaw_test_harness::mocks::skill::NoopUsageSink;
 
 use crate::common::fake_databend::paged_rows;
 use crate::common::fake_databend::FakeDatabend;
@@ -61,15 +61,15 @@ fn test_workspace_with_variables(variables: &[Variable]) -> Arc<Workspace> {
     ))
 }
 
-fn make_projector_with_skill(skill: &Skill) -> Arc<SkillProjector> {
+fn make_projector_with_skill(skill: &Skill) -> Arc<SkillCatalog> {
     make_projector_with_skill_for(skill, "u1")
 }
 
-fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillProjector> {
+fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillCatalog> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    bendclaw::kernel::skills::remote::writer::write_skill(&dir, user_id, skill);
-    Arc::new(SkillProjector::new(
+    bendclaw::kernel::skills::sources::remote::writer::write_skill(&dir, user_id, skill);
+    Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -77,10 +77,10 @@ fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillProje
     ))
 }
 
-fn make_empty_projector() -> Arc<SkillProjector> {
+fn make_empty_projector() -> Arc<SkillCatalog> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    Arc::new(SkillProjector::new(
+    Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -116,7 +116,8 @@ async fn runner_unknown_skill_returns_error() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -144,7 +145,8 @@ async fn runner_invisible_skill_returns_error() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -164,7 +166,8 @@ async fn runner_skill_without_script_returns_error() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -192,7 +195,8 @@ async fn runner_executes_shell_skill_and_parses_json_output() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -211,7 +215,7 @@ async fn runner_executes_skill_with_required_env_snapshot() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::skill::SkillRequirements {
+    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
         bins: vec!["bash".into()],
         env: vec!["API_TOKEN".into()],
     });
@@ -224,7 +228,8 @@ async fn runner_executes_skill_with_required_env_snapshot() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace_with_vars(HashMap::from([(
             "API_TOKEN".to_string(),
             "secret-token".to_string(),
@@ -247,7 +252,7 @@ async fn runner_executes_python_skill_with_required_env_snapshot() -> Result<()>
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::skill::SkillRequirements {
+    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
         bins: vec!["python3".into()],
         env: vec!["API_TOKEN".into()],
     });
@@ -260,7 +265,8 @@ async fn runner_executes_python_skill_with_required_env_snapshot() -> Result<()>
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace_with_vars(HashMap::from([(
             "API_TOKEN".to_string(),
             "python-secret".to_string(),
@@ -282,7 +288,7 @@ async fn runner_missing_required_env_returns_error() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::skill::SkillRequirements {
+    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
         bins: vec![],
         env: vec!["API_TOKEN".into()],
     });
@@ -295,7 +301,8 @@ async fn runner_missing_required_env_returns_error() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -322,7 +329,7 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(bendclaw::kernel::skills::skill::SkillRequirements {
+    skill.requires = Some(bendclaw::kernel::skills::model::skill::SkillRequirements {
         bins: vec!["bash".into()],
         env: vec!["API_TOKEN".into()],
     });
@@ -348,7 +355,8 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
     let runner = SkillRunner::new(
         "a1",
         "u1",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         workspace,
         fake.pool(),
     );
@@ -370,13 +378,13 @@ fn make_projector_with_subscribed_skill(
     skill: &Skill,
     subscriber: &str,
     owner: &str,
-) -> Arc<SkillProjector> {
+) -> Arc<SkillCatalog> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    bendclaw::kernel::skills::remote::writer::write_subscribed_skill(
+    bendclaw::kernel::skills::sources::remote::writer::write_subscribed_skill(
         &dir, subscriber, owner, skill,
     );
-    Arc::new(SkillProjector::new(
+    Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -403,7 +411,8 @@ async fn runner_executes_subscribed_skill_via_namespaced_key() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "bob",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -430,7 +439,8 @@ async fn runner_subscribed_skill_not_accessible_via_bare_name() -> Result<()> {
     let runner = SkillRunner::new(
         "a1",
         "bob",
-        test_skill_service(projector),
+        projector,
+        Arc::new(NoopUsageSink),
         test_workspace(),
         dummy_pool(),
     );
@@ -439,6 +449,104 @@ async fn runner_subscribed_skill_not_accessible_via_bare_name() -> Result<()> {
     assert!(
         result.is_err(),
         "subscribed skill should not be accessible via bare name"
+    );
+    Ok(())
+}
+
+// ── UsageSink contract ──
+
+use bendclaw::kernel::skills::model::skill::SkillId;
+use bendclaw::kernel::skills::runtime::UsageSink;
+use parking_lot::Mutex;
+
+struct RecordingSink {
+    calls: Mutex<Vec<(SkillId, String)>>,
+}
+
+impl RecordingSink {
+    fn new() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+    fn calls(&self) -> Vec<(SkillId, String)> {
+        self.calls.lock().clone()
+    }
+}
+
+impl UsageSink for RecordingSink {
+    fn touch_used(&self, id: SkillId, agent_id: String) {
+        self.calls.lock().push((id, agent_id));
+    }
+}
+
+#[tokio::test]
+async fn runner_calls_usage_sink_on_success() -> Result<()> {
+    let mut skill = base_skill("usage-ok");
+    skill.scope = SkillScope::Private;
+    skill.source = SkillSource::Agent;
+    skill.user_id = "u1".to_string();
+    skill.created_by = Some("u1".into());
+    skill.executable = true;
+    skill.files = vec![SkillFile {
+        path: "scripts/run.sh".into(),
+        body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '{\"data\":\"ok\",\"error\":null}'"
+            .into(),
+    }];
+    let projector = make_projector_with_skill(&skill);
+    let sink = Arc::new(RecordingSink::new());
+
+    let runner = SkillRunner::new(
+        "a1",
+        "u1",
+        projector,
+        sink.clone(),
+        test_workspace(),
+        dummy_pool(),
+    );
+    let output = runner.execute("usage-ok", &[]).await?;
+    assert!(!output.is_error());
+
+    let calls = sink.calls();
+    assert_eq!(
+        calls.len(),
+        1,
+        "touch_used should be called once on success"
+    );
+    assert_eq!(calls[0].1, "a1");
+    Ok(())
+}
+
+#[tokio::test]
+async fn runner_does_not_call_usage_sink_on_failure() -> Result<()> {
+    let mut skill = base_skill("usage-fail");
+    skill.scope = SkillScope::Private;
+    skill.source = SkillSource::Agent;
+    skill.user_id = "u1".to_string();
+    skill.created_by = Some("u1".into());
+    skill.executable = true;
+    skill.files = vec![SkillFile {
+        path: "scripts/run.sh".into(),
+        body: "#!/usr/bin/env bash\ncat >/dev/null\nexit 1".into(),
+    }];
+    let projector = make_projector_with_skill(&skill);
+    let sink = Arc::new(RecordingSink::new());
+
+    let runner = SkillRunner::new(
+        "a1",
+        "u1",
+        projector,
+        sink.clone(),
+        test_workspace(),
+        dummy_pool(),
+    );
+    let output = runner.execute("usage-fail", &[]).await?;
+    assert!(output.is_error());
+
+    let calls = sink.calls();
+    assert!(
+        calls.is_empty(),
+        "touch_used should not be called on failure"
     );
     Ok(())
 }

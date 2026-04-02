@@ -1,4 +1,4 @@
-//! SkillProjector — single projection owner for skill visibility + filesystem mirror.
+//! SkillCatalog — single read-side entry point for skill visibility + filesystem mirror.
 //!
 //! Owns:
 //! - `reconcile()`: writes/evicts filesystem mirror from DB state
@@ -16,23 +16,23 @@ use crate::config::HubConfig;
 use crate::kernel::skills::diagnostics;
 use crate::kernel::skills::fs::load_skill_tree;
 use crate::kernel::skills::fs::LoadedSkill;
-use crate::kernel::skills::hub;
-use crate::kernel::skills::remote;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::skill::SkillScope;
+use crate::kernel::skills::model::skill::SkillSource;
+use crate::kernel::skills::model::tool_key;
 use crate::kernel::skills::shared::SharedSkillStore;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::skill::SkillScope;
-use crate::kernel::skills::skill::SkillSource;
-use crate::kernel::skills::tool_key;
+use crate::kernel::skills::sources::hub;
+use crate::kernel::skills::sources::remote;
 use crate::kernel::subscriptions::SubscriptionStore;
 
-pub struct SkillProjector {
+pub struct SkillCatalog {
     workspace_root: PathBuf,
     store: Arc<dyn SharedSkillStore>,
     sub_store: Arc<dyn SubscriptionStore>,
     hub_config: Option<HubConfig>,
 }
 
-impl SkillProjector {
+impl SkillCatalog {
     pub fn new(
         workspace_root: PathBuf,
         store: Arc<dyn SharedSkillStore>,
@@ -154,8 +154,6 @@ impl SkillProjector {
         Ok(())
     }
 
-    // ── PLACEHOLDER_READ_API ──
-
     // ── Public read API — all delegate to build_visible_index ──
 
     pub fn visible_skills(&self, user_id: &str) -> Vec<Skill> {
@@ -245,6 +243,23 @@ impl SkillProjector {
         loaded.skill.source = SkillSource::Hub;
         loaded.skill.scope = SkillScope::Shared;
         Some(loaded.skill)
+    }
+
+    /// Return only hub-sourced skills.
+    pub fn hub_skills(&self) -> Vec<Skill> {
+        self.load_hub_skills()
+            .into_iter()
+            .map(|mut l| {
+                l.skill.source = SkillSource::Hub;
+                l.skill.scope = SkillScope::Shared;
+                l.skill
+            })
+            .collect()
+    }
+
+    /// Last successful hub sync time.
+    pub fn hub_last_sync(&self) -> Option<std::time::SystemTime> {
+        hub::sync::last_sync_time(&self.workspace_root)
     }
 
     // ── Private: single visibility logic ──

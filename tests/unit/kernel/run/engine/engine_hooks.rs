@@ -70,13 +70,13 @@ fn test_trace_recorder() -> TraceRecorder {
 struct NoopSkillExecutor;
 
 #[async_trait]
-impl bendclaw::kernel::skills::executor::SkillExecutor for NoopSkillExecutor {
+impl bendclaw::kernel::skills::runtime::SkillExecutor for NoopSkillExecutor {
     async fn execute(
         &self,
         _skill_name: &str,
         _args: &[String],
-    ) -> bendclaw::base::Result<bendclaw::kernel::skills::executor::SkillOutput> {
-        Ok(bendclaw::kernel::skills::executor::SkillOutput {
+    ) -> bendclaw::base::Result<bendclaw::kernel::skills::runtime::SkillOutput> {
+        Ok(bendclaw::kernel::skills::runtime::SkillOutput {
             data: None,
             error: Some("not implemented".into()),
         })

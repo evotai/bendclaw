@@ -2,7 +2,7 @@
 //!
 //! Tool key: bare "name" for owned/hub skills, "owner_id/name" for subscribed.
 
-use crate::kernel::skills::skill::Skill;
+use super::skill::Skill;
 
 /// Format a skill's tool key for a given viewer.
 /// Owned/hub: bare name. Subscribed: "owner_id/name".

@@ -1,8 +1,8 @@
 //! Tests for `SkillScope`, `SkillSource`, and `Skill::is_visible_to`.
 
-use bendclaw::kernel::skills::skill::Skill;
-use bendclaw::kernel::skills::skill::SkillScope;
-use bendclaw::kernel::skills::skill::SkillSource;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::model::skill::SkillScope;
+use bendclaw::kernel::skills::model::skill::SkillSource;
 
 fn make_skill(scope: SkillScope, user_id: &str, created_by: Option<&str>) -> Skill {
     Skill {

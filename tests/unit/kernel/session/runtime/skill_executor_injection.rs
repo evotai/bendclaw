@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use bendclaw::kernel::runtime::session_org::LocalOrgServices;
 use bendclaw::kernel::session::assembly::contract::*;
 use bendclaw::kernel::session::backend::noop::NoopBackend;
-use bendclaw::kernel::skills::executor::SkillExecutor;
-use bendclaw::kernel::skills::executor::SkillOutput;
+use bendclaw::kernel::skills::runtime::SkillExecutor;
+use bendclaw::kernel::skills::runtime::SkillOutput;
 use bendclaw::kernel::tools::catalog::toolset::Toolset;
 use bendclaw::kernel::trace::factory::NoopTraceFactory;
 

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::builtin::skills::create::SkillCreateTool;
 use bendclaw::kernel::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -19,7 +19,7 @@ fn make_tool() -> SkillCreateTool {
         bendclaw::storage::Pool::new("http://localhost:0", "", "default").expect("dummy pool");
     let dir = std::env::temp_dir().join(format!("bendclaw-create-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -30,7 +30,7 @@ fn make_tool() -> SkillCreateTool {
         Arc::new(bendclaw_test_harness::mocks::llm::MockLLMProvider::with_text("ok"));
     let meta_pool = pool.with_database("evotai_meta").expect("meta pool");
     let org = Arc::new(OrgServices::new(meta_pool, projector, &config, llm));
-    SkillCreateTool::new(org.skills().clone())
+    SkillCreateTool::new(org.manager().clone())
 }
 
 fn valid_args() -> serde_json::Value {

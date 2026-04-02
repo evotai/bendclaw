@@ -14,10 +14,10 @@ use crate::kernel::skills::fs::is_safe_relative_path;
 use crate::kernel::skills::fs::load_skill_from_dir;
 use crate::kernel::skills::fs::load_skill_with_meta;
 use crate::kernel::skills::fs::LoadedSkill;
-use crate::kernel::skills::manifest::SkillManifest;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::skill::SkillParameter;
-use crate::kernel::skills::skill::SkillRequirements;
+use crate::kernel::skills::model::manifest::SkillManifest;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::skill::SkillParameter;
+use crate::kernel::skills::model::skill::SkillRequirements;
 
 /// Metadata persisted alongside SKILL.md so that scope, source, user_id,
 /// etc. survive a round-trip through the filesystem mirror.

@@ -19,15 +19,14 @@ use bendclaw::kernel::run::prompt::MAX_SOUL_BYTES;
 use bendclaw::kernel::run::prompt::MAX_SYSTEM_BYTES;
 use bendclaw::kernel::run::prompt::MAX_TOOLS_BYTES;
 use bendclaw::kernel::run::prompt::MAX_VARIABLES_BYTES;
-use bendclaw::kernel::skills::hub::paths::hub_dir;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
+use bendclaw::kernel::skills::sources::hub::paths::hub_dir;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
 use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::tool::ToolSchema;
 use bendclaw::storage::VariableRecord;
-use bendclaw_test_harness::mocks::skill::test_skill_service;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 
@@ -237,7 +236,7 @@ fn make_prompt_builder(
     let pool = fake.pool();
     let workspace_root = prompt_test_workspace();
     std::fs::create_dir_all(&workspace_root)?;
-    let skills = Arc::new(SkillProjector::new(
+    let skills = Arc::new(SkillCatalog::new(
         workspace_root.clone(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -245,7 +244,7 @@ fn make_prompt_builder(
     ));
     let storage = Arc::new(AgentStore::new(pool, Arc::new(NoopLLM)));
     Ok((
-        CloudPromptLoader::new(storage, test_skill_service(skills)),
+        CloudPromptLoader::new(storage, skills),
         fake,
         workspace_root,
     ))
@@ -268,12 +267,12 @@ fn write_subscribed_skill(
     name: &str,
     desc: &str,
 ) -> Result<()> {
-    let skill = bendclaw::kernel::skills::skill::Skill {
+    let skill = bendclaw::kernel::skills::model::skill::Skill {
         name: name.to_string(),
         version: "1.0.0".to_string(),
         description: desc.to_string(),
-        scope: bendclaw::kernel::skills::skill::SkillScope::Shared,
-        source: bendclaw::kernel::skills::skill::SkillSource::Agent,
+        scope: bendclaw::kernel::skills::model::skill::SkillScope::Shared,
+        source: bendclaw::kernel::skills::model::skill::SkillSource::Agent,
         user_id: owner.to_string(),
         created_by: Some(owner.to_string()),
         last_used_by: None,
@@ -285,7 +284,7 @@ fn write_subscribed_skill(
         requires: None,
         manifest: None,
     };
-    bendclaw::kernel::skills::remote::writer::write_subscribed_skill(
+    bendclaw::kernel::skills::sources::remote::writer::write_subscribed_skill(
         workspace_root,
         subscriber,
         owner,

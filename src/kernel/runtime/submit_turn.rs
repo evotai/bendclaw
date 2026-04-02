@@ -5,7 +5,7 @@ use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::skills::skill::Skill;
+use crate::kernel::skills::model::skill::Skill;
 use crate::llm::config::LLMConfig;
 use crate::observability::redaction;
 use crate::storage::dal::session::record::SessionRecord;
@@ -208,7 +208,7 @@ impl Runtime {
         });
         log_runtime_info("create_skill", "started", user_id, 0, payload.clone());
         self.require_ready()?;
-        let result = self.org.skills().create(user_id, skill).await;
+        let result = self.org.manager().create(user_id, skill).await;
         match &result {
             Ok(_) => log_runtime_info(
                 "create_skill",
@@ -235,7 +235,7 @@ impl Runtime {
         });
         log_runtime_info("delete_skill", "started", user_id, 0, payload.clone());
         self.require_ready()?;
-        let result = self.org.skills().delete(user_id, skill_name).await;
+        let result = self.org.manager().delete(user_id, skill_name).await;
         match &result {
             Ok(_) => log_runtime_info(
                 "delete_skill",

@@ -1,34 +1,23 @@
-use crate::kernel::skills::manifest::CredentialSpec;
-use crate::kernel::skills::skill::Skill;
+use crate::kernel::skills::model::manifest::CredentialSpec;
+use crate::kernel::skills::model::skill::Skill;
 use crate::service::state::AppState;
 
 pub(super) fn list_hub_skills(state: &AppState) -> Vec<Skill> {
-    state
-        .runtime
-        .skills()
-        .loaded_skills()
-        .into_iter()
-        .filter(|s| s.skill.source == crate::kernel::skills::skill::SkillSource::Hub)
-        .map(|s| s.skill)
-        .collect()
+    state.runtime.skills().hub_skills()
 }
 
 pub(super) fn hub_status(state: &AppState) -> HubStatus {
-    let projector = state.runtime.skills();
-    let hub_config = projector.hub_config().cloned();
-    let last_sync = crate::kernel::skills::hub::sync::last_sync_time(projector.workspace_root());
-    let hub_skills: Vec<_> = projector
-        .loaded_skills()
-        .into_iter()
-        .filter(|s| s.skill.source == crate::kernel::skills::skill::SkillSource::Hub)
-        .collect();
+    let catalog = state.runtime.skills();
+    let hub_config = catalog.hub_config().cloned();
+    let last_sync = catalog.hub_last_sync();
+    let hub_skill_count = catalog.hub_skills().len();
     HubStatus {
         enabled: hub_config.is_some(),
         repo_url: hub_config
             .as_ref()
             .map(|c| c.repo_url.clone())
             .unwrap_or_default(),
-        skill_count: hub_skills.len(),
+        skill_count: hub_skill_count,
         last_sync_epoch: last_sync
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs()),

@@ -7,7 +7,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::catalog::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
@@ -32,7 +32,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         Arc::new(SandboxResolver),
     ));
     let pool = bendclaw_test_harness::mocks::context::dummy_pool();
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         workspace_dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -77,7 +77,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
             bendclaw::kernel::session::backend::noop::NoopBackend,
         ),
         run_initializer: std::sync::Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
-        skill_executor: std::sync::Arc::new(bendclaw::kernel::skills::noop::NoopSkillExecutor),
+        skill_executor: std::sync::Arc::new(bendclaw::kernel::skills::runtime::NoopSkillExecutor),
     });
 
     assert!(session.belongs_to("a1", "u1"));

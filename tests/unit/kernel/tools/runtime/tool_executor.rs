@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use bendclaw::kernel::skills::executor::SkillExecutor;
-use bendclaw::kernel::skills::executor::SkillOutput;
+use bendclaw::kernel::skills::runtime::SkillExecutor;
+use bendclaw::kernel::skills::runtime::SkillOutput;
 use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::runtime::parsed_tool_call::DispatchKind;
 use bendclaw::kernel::tools::runtime::tool_executor::CallExecutor;

@@ -132,7 +132,7 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             )),
             context_provider: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
             run_initializer: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
-            skill_executor: Arc::new(bendclaw::kernel::skills::noop::NoopSkillExecutor),
+            skill_executor: Arc::new(bendclaw::kernel::skills::runtime::NoopSkillExecutor),
         },
     ))
 }

@@ -1,12 +1,12 @@
 use super::http::CreateSkillRequest;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::skill::SkillScope;
-use crate::kernel::skills::skill::SkillSource;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::skill::SkillScope;
+use crate::kernel::skills::model::skill::SkillSource;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 
 pub(super) async fn list_skills(state: &AppState, user_id: &str) -> Result<Vec<Skill>> {
-    Ok(state.runtime.org().skills().list(user_id))
+    Ok(state.runtime.skills().visible_skills(user_id))
 }
 
 pub(super) async fn get_skill(
@@ -14,7 +14,7 @@ pub(super) async fn get_skill(
     user_id: &str,
     skill_key: &str,
 ) -> Result<Option<Skill>> {
-    Ok(state.runtime.org().skills().get(user_id, skill_key))
+    Ok(state.runtime.skills().resolve(user_id, skill_key))
 }
 
 pub(super) async fn create_skill(
@@ -49,13 +49,13 @@ pub(super) async fn delete_skill(
     user_id: &str,
     skill_key: &str,
 ) -> Result<String> {
-    let (owner, bare_name) = crate::kernel::skills::tool_key::parse(skill_key, user_id);
+    let (owner, bare_name) = crate::kernel::skills::model::tool_key::parse(skill_key, user_id);
     if owner != user_id {
         // Subscribed skill: unsubscribe instead of delete
         state
             .runtime
             .org()
-            .skills()
+            .manager()
             .unsubscribe(user_id, bare_name, owner)
             .await?;
     } else {

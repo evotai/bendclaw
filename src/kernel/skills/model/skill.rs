@@ -6,10 +6,10 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 
+use super::manifest::SkillManifest;
+use super::sanitizer::sanitize_skill_description;
 use crate::base::ErrorCode;
 use crate::base::Result;
-use crate::kernel::skills::manifest::SkillManifest;
-use crate::kernel::skills::sanitizer::sanitize_skill_description;
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 

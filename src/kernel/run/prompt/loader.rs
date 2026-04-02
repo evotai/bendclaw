@@ -12,14 +12,14 @@ use crate::kernel::agent_store::AgentStore;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::run::prompt_diagnostics;
-use crate::kernel::skills::service::SkillService;
+use crate::kernel::skills::catalog::SkillCatalog;
 use crate::llm::tool::ToolSchema;
 
 const RECENT_ERRORS_LIMIT: u32 = 5;
 
 pub struct CloudPromptLoader {
     storage: Arc<AgentStore>,
-    skills: Arc<SkillService>,
+    skills: Arc<SkillCatalog>,
 
     identity: Option<String>,
     soul: Option<String>,
@@ -37,11 +37,8 @@ pub struct CloudPromptLoader {
     skill_overlay: Option<String>,
 }
 
-/// Temporary alias for backward compatibility.
-pub type PromptBuilder = CloudPromptLoader;
-
 impl CloudPromptLoader {
-    pub fn new(storage: Arc<AgentStore>, skills: Arc<SkillService>) -> Self {
+    pub fn new(storage: Arc<AgentStore>, skills: Arc<SkillCatalog>) -> Self {
         Self {
             storage,
             skills,
@@ -165,7 +162,6 @@ impl CloudPromptLoader {
                 }
             });
 
-        // LOADER_PLACEHOLDER
         let variables = if let Some(ref vars) = self.variables {
             vars.clone()
         } else {
@@ -180,11 +176,11 @@ impl CloudPromptLoader {
 
         let skill_prompts: Vec<SkillPromptEntry> = self
             .skills
-            .list(user_id)
+            .visible_skills(user_id)
             .into_iter()
             .filter(|s| !s.executable)
             .map(|s| SkillPromptEntry {
-                display_name: crate::kernel::skills::tool_key::format(&s, user_id),
+                display_name: crate::kernel::skills::model::tool_key::format(&s, user_id),
                 description: s.description.clone(),
             })
             .collect();

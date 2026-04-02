@@ -1,7 +1,7 @@
 use anyhow::bail;
 use anyhow::Result;
 use bendclaw::kernel::run::Event;
-use bendclaw::kernel::skills::skill::Skill;
+use bendclaw::kernel::skills::model::skill::Skill;
 use bendclaw::kernel::workbench::sem_event::capture_capabilities;
 use bendclaw::kernel::workbench::sem_event::SemEvent;
 use bendclaw::llm::tool::FunctionDef;

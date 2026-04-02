@@ -15,7 +15,7 @@ use bendclaw::kernel::runtime::RuntimeParts;
 use bendclaw::kernel::runtime::RuntimeStatus;
 use bendclaw::kernel::session::store::lifecycle::SessionLifecycle;
 use bendclaw::kernel::session::SessionManager;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
@@ -62,7 +62,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
     let databases = Arc::new(AgentDatabases::new(pool, "test_").expect("agent databases"));
     let workspace_root = std::env::temp_dir().join(format!("bendclaw-test-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&workspace_root);
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         workspace_root,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -100,7 +100,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         llm: RwLock::new(Arc::new(NoopLLM)),
         agent_llms: RwLock::new(HashMap::new()),
         org,
-        projector,
+        catalog: projector,
         sessions,
         session_lifecycle,
         channels,

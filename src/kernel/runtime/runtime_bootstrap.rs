@@ -24,7 +24,7 @@ use crate::kernel::runtime::runtime_state::RuntimeStatus;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::projector::SkillProjector;
+use crate::kernel::skills::catalog::SkillCatalog;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
@@ -35,7 +35,7 @@ pub(super) struct RuntimeDeps {
     pub llm: Arc<dyn LLMProvider>,
     pub databases: Arc<crate::storage::AgentDatabases>,
     pub org: Arc<OrgServices>,
-    pub projector: Arc<SkillProjector>,
+    pub catalog: Arc<SkillCatalog>,
     pub sync_cancel: CancellationToken,
 }
 
@@ -66,7 +66,7 @@ pub(super) fn assemble_runtime(deps: RuntimeDeps) -> Arc<Runtime> {
             llm: RwLock::new(deps.llm),
             agent_llms: RwLock::new(HashMap::new()),
             org: deps.org,
-            projector: deps.projector,
+            catalog: deps.catalog,
             status: RwLock::new(RuntimeStatus::Ready),
             sync_cancel,
             sync_handle: RwLock::new(None),
@@ -113,7 +113,7 @@ pub(super) async fn construct(
     let sync_cancel = CancellationToken::new();
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let skill_store_for_projector = Arc::new(
+    let skill_store_for_catalog = Arc::new(
         crate::kernel::skills::shared::DatabendSharedSkillStore::new(
             pool.with_database("evotai_meta")?,
         ),
@@ -121,9 +121,9 @@ pub(super) async fn construct(
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::new(
         pool.with_database("evotai_meta")?,
     ));
-    let projector = Arc::new(SkillProjector::new(
+    let catalog = Arc::new(SkillCatalog::new(
         workspace_root.to_path_buf(),
-        skill_store_for_projector,
+        skill_store_for_catalog,
         sub_store,
         hub_config,
     ));
@@ -132,7 +132,7 @@ pub(super) async fn construct(
     crate::storage::migrator::run_org(&meta_pool).await;
     let org = Arc::new(OrgServices::new(
         meta_pool,
-        projector.clone(),
+        catalog.clone(),
         &config,
         llm.clone(),
     ));
@@ -142,7 +142,7 @@ pub(super) async fn construct(
         llm,
         databases,
         org,
-        projector: projector.clone(),
+        catalog: catalog.clone(),
         sync_cancel: sync_cancel.clone(),
     });
 
@@ -218,7 +218,7 @@ pub(super) async fn construct(
     }
 
     {
-        let sync_projector = runtime.projector.clone();
+        let sync_catalog = runtime.catalog.clone();
         let sync_databases = runtime.databases().clone();
         let cancel = runtime.sync_cancel.clone();
         let sync_handle = crate::base::spawn_named("skill_sync_loop", async move {
@@ -229,7 +229,7 @@ pub(super) async fn construct(
                 tokio::select! {
                     _ = cancel.cancelled() => { break; }
                     _ = tokio::time::sleep(next_sleep) => {
-                        sync_projector.ensure_hub();
+                        sync_catalog.ensure_hub();
                         let user_ids = match sync_databases.list_user_ids().await {
                             Ok(ids) => ids,
                             Err(e) => {
@@ -242,7 +242,7 @@ pub(super) async fn construct(
                         };
                         let mut had_error = false;
                         for user_id in &user_ids {
-                            if let Err(e) = sync_projector.reconcile(user_id).await {
+                            if let Err(e) = sync_catalog.reconcile(user_id).await {
                                 if !had_error {
                                     consecutive_errors += 1;
                                     had_error = true;
@@ -286,7 +286,7 @@ pub(super) async fn construct_minimal(
     let workspace_root = Path::new(&config.workspace.root_dir);
     let skill_store = Arc::new(crate::kernel::skills::shared::DatabendSharedSkillStore::noop());
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::noop());
-    let projector = Arc::new(SkillProjector::new(
+    let catalog = Arc::new(SkillCatalog::new(
         workspace_root.to_path_buf(),
         skill_store,
         sub_store,
@@ -295,7 +295,7 @@ pub(super) async fn construct_minimal(
 
     let org = Arc::new(OrgServices::new(
         pool.clone(),
-        projector.clone(),
+        catalog.clone(),
         &config,
         llm.clone(),
     ));
@@ -305,7 +305,7 @@ pub(super) async fn construct_minimal(
         llm,
         databases,
         org,
-        projector,
+        catalog,
         sync_cancel: CancellationToken::new(),
     });
 

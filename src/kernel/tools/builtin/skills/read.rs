@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::skills::sanitizer::sanitize_skill_content;
-use crate::kernel::skills::service::SkillService;
+use crate::kernel::skills::catalog::SkillCatalog;
+use crate::kernel::skills::model::sanitizer::sanitize_skill_content;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -20,12 +20,12 @@ const MAX_SKILL_CONTENT_BYTES: usize = 64 * 1024;
 
 /// In-process tool that reads skill documentation.
 pub struct SkillReadTool {
-    service: Arc<SkillService>,
+    catalog: Arc<SkillCatalog>,
 }
 
 impl SkillReadTool {
-    pub fn new(service: Arc<SkillService>) -> Self {
-        Self { service }
+    pub fn new(catalog: Arc<SkillCatalog>) -> Self {
+        Self { catalog }
     }
 }
 
@@ -72,7 +72,7 @@ impl Tool for SkillReadTool {
     ) -> Result<ToolResult> {
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
 
-        match self.service.read_skill(&ctx.user_id, path) {
+        match self.catalog.read_skill(&ctx.user_id, path) {
             Some(content) => {
                 let raw_size = content.len();
 

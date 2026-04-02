@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::kernel::memory::store::SharedMemoryStore;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::runtime::agent_config::AgentConfig;
-use crate::kernel::skills::projector::SkillProjector;
-use crate::kernel::skills::service::SkillService;
+use crate::kernel::skills::catalog::SkillCatalog;
+use crate::kernel::skills::management::SkillManager;
 use crate::kernel::skills::shared::DatabendSharedSkillStore;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
@@ -17,7 +17,8 @@ use crate::storage::pool::Pool;
 
 pub struct OrgServices {
     variables: Arc<VariableService>,
-    skills: Arc<SkillService>,
+    catalog: Arc<SkillCatalog>,
+    manager: Arc<SkillManager>,
     memory: Option<Arc<MemoryService>>,
     subscriptions: Arc<dyn SubscriptionStore>,
 }
@@ -25,7 +26,7 @@ pub struct OrgServices {
 impl OrgServices {
     pub fn new(
         meta_pool: Pool,
-        projector: Arc<SkillProjector>,
+        catalog: Arc<SkillCatalog>,
         config: &AgentConfig,
         llm: Arc<dyn LLMProvider>,
     ) -> Self {
@@ -36,7 +37,11 @@ impl OrgServices {
         let variables = Arc::new(VariableService::new(variable_store, sub_store.clone()));
 
         let skill_store = Arc::new(DatabendSharedSkillStore::new(meta_pool.clone()));
-        let skills = Arc::new(SkillService::new(skill_store, sub_store.clone(), projector));
+        let manager = Arc::new(SkillManager::new(
+            skill_store,
+            sub_store.clone(),
+            catalog.clone(),
+        ));
 
         let memory = if config.memory.enabled {
             let store = Arc::new(SharedMemoryStore::new(meta_pool));
@@ -48,7 +53,8 @@ impl OrgServices {
 
         Self {
             variables,
-            skills,
+            catalog,
+            manager,
             memory,
             subscriptions: sub_store,
         }
@@ -58,8 +64,12 @@ impl OrgServices {
         &self.variables
     }
 
-    pub fn skills(&self) -> &Arc<SkillService> {
-        &self.skills
+    pub(crate) fn catalog(&self) -> &Arc<SkillCatalog> {
+        &self.catalog
+    }
+
+    pub fn manager(&self) -> &Arc<SkillManager> {
+        &self.manager
     }
 
     pub fn memory(&self) -> Option<&Arc<MemoryService>> {
@@ -72,8 +82,8 @@ impl OrgServices {
 }
 
 impl super::session_org::SessionOrgServices for OrgServices {
-    fn list_skills(&self, user_id: &str) -> Vec<crate::kernel::skills::skill::Skill> {
-        self.skills.list(user_id)
+    fn list_skills(&self, user_id: &str) -> Vec<crate::kernel::skills::model::skill::Skill> {
+        self.catalog.visible_skills(user_id)
     }
     fn memory(&self) -> Option<Arc<MemoryService>> {
         self.memory.clone()

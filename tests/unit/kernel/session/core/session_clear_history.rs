@@ -7,7 +7,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::skills::projector::SkillProjector;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
 use bendclaw::kernel::tools::catalog::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
@@ -30,7 +30,7 @@ fn make_session(id: &str) -> Arc<Session> {
         Arc::new(SandboxResolver),
     ));
     let pool = bendclaw_test_harness::mocks::context::dummy_pool();
-    let projector = Arc::new(SkillProjector::new(
+    let projector = Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -81,7 +81,9 @@ fn make_session(id: &str) -> Arc<Session> {
             run_initializer: std::sync::Arc::new(
                 bendclaw::kernel::session::backend::noop::NoopBackend,
             ),
-            skill_executor: std::sync::Arc::new(bendclaw::kernel::skills::noop::NoopSkillExecutor),
+            skill_executor: std::sync::Arc::new(
+                bendclaw::kernel::skills::runtime::NoopSkillExecutor,
+            ),
         },
     ))
 }

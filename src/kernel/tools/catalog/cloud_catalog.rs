@@ -36,12 +36,12 @@ pub fn build_cloud_toolset(deps: CloudToolsetDeps, filter: Option<HashSet<String
 
     let skills: Vec<_> = deps
         .org
-        .skills()
-        .list(&deps.user_id)
+        .catalog()
+        .visible_skills(&deps.user_id)
         .into_iter()
         .filter(|s| s.executable)
         .map(|s| {
-            let name = crate::kernel::skills::tool_key::format(&s, &deps.user_id);
+            let name = crate::kernel::skills::model::tool_key::format(&s, &deps.user_id);
             let desc = s.description.clone();
             let params = s.to_json_schema();
             (name, desc, params)
@@ -69,15 +69,15 @@ fn register_cloud(registry: &mut ToolRegistry, deps: &CloudToolsetDeps) {
 
     registry.register_builtin(
         ToolId::SkillRead,
-        Arc::new(SkillReadTool::new(deps.org.skills().clone())),
+        Arc::new(SkillReadTool::new(deps.org.catalog().clone())),
     );
     registry.register_builtin(
         ToolId::SkillCreate,
-        Arc::new(SkillCreateTool::new(deps.org.skills().clone())),
+        Arc::new(SkillCreateTool::new(deps.org.manager().clone())),
     );
     registry.register_builtin(
         ToolId::SkillRemove,
-        Arc::new(SkillRemoveTool::new(deps.org.skills().clone())),
+        Arc::new(SkillRemoveTool::new(deps.org.manager().clone())),
     );
     registry.register_builtin(
         ToolId::Databend,

@@ -1,7 +1,7 @@
 //! Tests for content sanitization.
 
-use bendclaw::kernel::skills::sanitizer::sanitize_skill_content;
-use bendclaw::kernel::skills::sanitizer::sanitize_skill_description;
+use bendclaw::kernel::skills::model::sanitizer::sanitize_skill_content;
+use bendclaw::kernel::skills::model::sanitizer::sanitize_skill_description;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // sanitize_skill_content — clean input

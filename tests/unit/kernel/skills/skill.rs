@@ -1,10 +1,10 @@
 use anyhow::Result;
-use bendclaw::kernel::skills::skill::Skill;
-use bendclaw::kernel::skills::skill::SkillFile;
-use bendclaw::kernel::skills::skill::SkillParameter;
-use bendclaw::kernel::skills::skill::SkillRequirements;
-use bendclaw::kernel::skills::skill::SkillScope;
-use bendclaw::kernel::skills::skill::SkillSource;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::model::skill::SkillFile;
+use bendclaw::kernel::skills::model::skill::SkillParameter;
+use bendclaw::kernel::skills::model::skill::SkillRequirements;
+use bendclaw::kernel::skills::model::skill::SkillScope;
+use bendclaw::kernel::skills::model::skill::SkillSource;
 
 #[test]
 fn skill_scope_display() {

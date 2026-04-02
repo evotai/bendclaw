@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use bendclaw::kernel::skills::projector::SkillProjector;
-use bendclaw::kernel::skills::service::SkillService;
+use bendclaw::kernel::skills::catalog::SkillCatalog;
 use bendclaw::kernel::tools::builtin::skills::read::SkillReadTool;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
@@ -14,22 +13,17 @@ use serde_json::json;
 
 use crate::mocks::context::test_tool_context;
 
-fn make_tool() -> (SkillReadTool, Arc<SkillService>) {
+fn make_tool() -> (SkillReadTool, Arc<SkillCatalog>) {
     let dir = std::env::temp_dir().join(format!("bendclaw-read-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let projector = Arc::new(SkillProjector::new(
+    let catalog = Arc::new(SkillCatalog::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
         None,
     ));
-    let service = Arc::new(SkillService::new(
-        Arc::new(NoopSkillStore),
-        Arc::new(NoopSubscriptionStore),
-        projector,
-    ));
-    let tool = SkillReadTool::new(service.clone());
-    (tool, service)
+    let tool = SkillReadTool::new(catalog.clone());
+    (tool, catalog)
 }
 
 // ── metadata ──

@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::kernel::run::event::Event;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::tool_key;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::tool_key;
 use crate::llm::tool::ToolSchema;
 
 /// Semantic events layered on top of raw runtime facts.
@@ -15,7 +15,7 @@ use crate::llm::tool::ToolSchema;
 pub enum SemEvent {
     /// Snapshot of tools and skills visible at run start.
     ///
-    /// Run-level granularity — records the full set assembled by `PromptBuilder`,
+    /// Run-level granularity — records the full set assembled by `CloudPromptLoader`,
     /// not the per-turn progressive subset from `ProgressiveToolView`.
     CapabilitiesSnapshot {
         tools: Vec<String>,

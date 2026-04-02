@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::kernel::skills::service::SkillService;
+use bendclaw::kernel::skills::management::SkillManager;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::runtime::UsageSink;
 use bendclaw::kernel::skills::shared::SharedSkillStore;
-use bendclaw::kernel::skills::skill::Skill;
 use bendclaw::kernel::subscriptions::store::Subscription;
 use bendclaw::kernel::subscriptions::store::SubscriptionStore;
 use parking_lot::Mutex;
@@ -32,7 +33,7 @@ impl SharedSkillStore for NoopSkillStore {
     }
     async fn touch_last_used(
         &self,
-        _id: &bendclaw::kernel::skills::skill::SkillId,
+        _id: &bendclaw::kernel::skills::model::skill::SkillId,
         _agent_id: &str,
     ) -> bendclaw::base::Result<()> {
         Ok(())
@@ -95,7 +96,7 @@ impl SharedSkillStore for MockSkillStore {
 
     async fn touch_last_used(
         &self,
-        _id: &bendclaw::kernel::skills::skill::SkillId,
+        _id: &bendclaw::kernel::skills::model::skill::SkillId,
         _agent_id: &str,
     ) -> bendclaw::base::Result<()> {
         Ok(())
@@ -150,11 +151,18 @@ impl SubscriptionStore for NoopSubscriptionStore {
     }
 }
 
+/// Usage sink that does nothing (for tests).
+pub struct NoopUsageSink;
+
+impl UsageSink for NoopUsageSink {
+    fn touch_used(&self, _id: bendclaw::kernel::skills::model::skill::SkillId, _agent_id: String) {}
+}
+
 /// Build a test `SkillProjector` backed by a temp directory (no DB needed for hub-only tests).
 pub fn test_skill_projector(
     workspace_root: PathBuf,
-) -> Arc<bendclaw::kernel::skills::projector::SkillProjector> {
-    Arc::new(bendclaw::kernel::skills::projector::SkillProjector::new(
+) -> Arc<bendclaw::kernel::skills::catalog::SkillCatalog> {
+    Arc::new(bendclaw::kernel::skills::catalog::SkillCatalog::new(
         workspace_root,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -162,23 +170,23 @@ pub fn test_skill_projector(
     ))
 }
 
-/// Build a test `SkillService` wrapping a projector with noop stores.
+/// Build a test `SkillManager` wrapping a catalog with noop stores.
 pub fn test_skill_service(
-    projector: Arc<bendclaw::kernel::skills::projector::SkillProjector>,
-) -> Arc<SkillService> {
-    Arc::new(SkillService::new(
+    projector: Arc<bendclaw::kernel::skills::catalog::SkillCatalog>,
+) -> Arc<SkillManager> {
+    Arc::new(SkillManager::new(
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
         projector,
     ))
 }
 
-/// Build a test `SkillService` with a custom `SharedSkillStore`.
+/// Build a test `SkillManager` with a custom `SharedSkillStore`.
 pub fn test_skill_service_with_store(
     store: Arc<dyn SharedSkillStore>,
-    projector: Arc<bendclaw::kernel::skills::projector::SkillProjector>,
-) -> Arc<SkillService> {
-    Arc::new(SkillService::new(
+    projector: Arc<bendclaw::kernel::skills::catalog::SkillCatalog>,
+) -> Arc<SkillManager> {
+    Arc::new(SkillManager::new(
         store,
         Arc::new(NoopSubscriptionStore),
         projector,

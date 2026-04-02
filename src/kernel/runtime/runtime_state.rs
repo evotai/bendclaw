@@ -14,7 +14,7 @@ use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::projector::SkillProjector;
+use crate::kernel::skills::catalog::SkillCatalog;
 use crate::llm::provider::LLMProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub struct RuntimeParts {
     pub llm: RwLock<Arc<dyn LLMProvider>>,
     pub agent_llms: RwLock<HashMap<String, Arc<dyn LLMProvider>>>,
     pub org: Arc<super::org::OrgServices>,
-    pub projector: Arc<SkillProjector>,
+    pub catalog: Arc<SkillCatalog>,
     pub sessions: Arc<SessionManager>,
     pub session_lifecycle: Arc<SessionLifecycle>,
     pub channels: Arc<ChannelRegistry>,

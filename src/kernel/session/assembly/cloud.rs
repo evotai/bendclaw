@@ -130,11 +130,12 @@ impl CloudAssembler {
             self.runtime.persist_writer.clone(),
         );
 
-        let skill_executor: Arc<dyn crate::kernel::skills::executor::SkillExecutor> =
-            Arc::new(crate::kernel::skills::runner::SkillRunner::new(
+        let skill_executor: Arc<dyn crate::kernel::skills::runtime::SkillExecutor> =
+            Arc::new(crate::kernel::skills::runtime::SkillRunner::new(
                 agent_id,
                 user_id,
-                self.runtime.org.skills().clone(),
+                self.runtime.catalog.clone(),
+                self.runtime.org.manager().clone(),
                 workspace.clone(),
                 pool,
             ));

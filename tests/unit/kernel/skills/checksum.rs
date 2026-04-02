@@ -1,7 +1,7 @@
 //! Unit tests for [`Skill::compute_sha256`].
 
-use bendclaw::kernel::skills::skill::Skill;
-use bendclaw::kernel::skills::skill::SkillFile;
+use bendclaw::kernel::skills::model::skill::Skill;
+use bendclaw::kernel::skills::model::skill::SkillFile;
 
 fn base_skill() -> Skill {
     Skill {

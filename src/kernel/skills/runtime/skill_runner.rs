@@ -8,17 +8,19 @@ use serde_json::json;
 use crate::base::ErrorCode;
 use crate::base::Result;
 use crate::kernel::session::workspace::Workspace;
+use crate::kernel::skills::catalog::SkillCatalog;
 use crate::kernel::skills::diagnostics;
-use crate::kernel::skills::executor::SkillExecutor;
-use crate::kernel::skills::executor::SkillOutput;
-use crate::kernel::skills::service::SkillService;
-use crate::kernel::skills::skill::Skill;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::runtime::skill_executor::SkillExecutor;
+use crate::kernel::skills::runtime::skill_executor::SkillOutput;
+use crate::kernel::skills::runtime::usage_sink::UsageSink;
 use crate::kernel::variables::store::SharedVariableStore;
 use crate::kernel::variables::store::VariableStore;
 use crate::storage::pool::Pool;
 
 pub struct SkillRunner {
-    skills: Arc<SkillService>,
+    catalog: Arc<SkillCatalog>,
+    usage_sink: Arc<dyn UsageSink>,
     workspace: Arc<Workspace>,
     pool: Pool,
     agent_id: String,
@@ -36,12 +38,14 @@ impl SkillRunner {
     pub fn new(
         agent_id: &str,
         user_id: &str,
-        skills: Arc<SkillService>,
+        catalog: Arc<SkillCatalog>,
+        usage_sink: Arc<dyn UsageSink>,
         workspace: Arc<Workspace>,
         pool: Pool,
     ) -> Self {
         Self {
-            skills,
+            catalog,
+            usage_sink,
             workspace,
             pool,
             agent_id: agent_id.to_string(),
@@ -67,7 +71,7 @@ impl SkillRunner {
             }
 
             let content = self
-                .skills
+                .catalog
                 .read_skill(&self.user_id, path)
                 .unwrap_or_else(|| format!("Skill not found: {path}"));
 
@@ -78,7 +82,7 @@ impl SkillRunner {
         }
 
         let skill = self
-            .skills
+            .catalog
             .resolve(&self.user_id, skill_name)
             .ok_or_else(|| ErrorCode::skill_not_found(format!("unknown skill: {skill_name}")))?;
 
@@ -88,10 +92,8 @@ impl SkillRunner {
             )));
         }
 
-        // Check script existence before preflight to avoid wasting time on
-        // requirement checks for skills that have no runnable script.
         let host_script_path = self
-            .skills
+            .catalog
             .host_script_path(&self.user_id, skill_name)
             .ok_or_else(|| ErrorCode::skill_exec(format!("skill '{skill_name}' has no script")))?;
 
@@ -156,7 +158,7 @@ impl SkillRunner {
         let latency_ms = start.elapsed().as_millis() as u64;
         diagnostics::log_skill_completed(skill_name, latency_ms, exit_code, stdout.len());
 
-        self.skills
+        self.usage_sink
             .touch_used(skill.skill_id(), self.agent_id.clone());
 
         match serde_json::from_str::<SkillOutput>(&stdout) {

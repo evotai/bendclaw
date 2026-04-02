@@ -6,11 +6,11 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::skills::service::SkillService;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::skill::SkillFile;
-use crate::kernel::skills::skill::SkillScope;
-use crate::kernel::skills::skill::SkillSource;
+use crate::kernel::skills::management::SkillManager;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::skill::SkillFile;
+use crate::kernel::skills::model::skill::SkillScope;
+use crate::kernel::skills::model::skill::SkillSource;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -18,11 +18,11 @@ use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::OpType;
 pub struct SkillCreateTool {
-    service: Arc<SkillService>,
+    service: Arc<SkillManager>,
 }
 
 impl SkillCreateTool {
-    pub fn new(service: Arc<SkillService>) -> Self {
+    pub fn new(service: Arc<SkillManager>) -> Self {
         Self { service }
     }
 }

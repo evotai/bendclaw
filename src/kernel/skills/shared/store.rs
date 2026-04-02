@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use crate::base::Result;
-use crate::kernel::skills::skill::Skill;
-use crate::kernel::skills::skill::SkillFile;
-use crate::kernel::skills::skill::SkillId;
-use crate::kernel::skills::skill::SkillScope;
-use crate::kernel::skills::skill::SkillSource;
+use crate::kernel::skills::model::skill::Skill;
+use crate::kernel::skills::model::skill::SkillFile;
+use crate::kernel::skills::model::skill::SkillId;
+use crate::kernel::skills::model::skill::SkillScope;
+use crate::kernel::skills::model::skill::SkillSource;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;

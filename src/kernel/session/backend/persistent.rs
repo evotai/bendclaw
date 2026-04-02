@@ -13,7 +13,7 @@ use crate::base::ErrorCode;
 use crate::base::Result;
 use crate::kernel::run::persist_op::PersistOp;
 use crate::kernel::run::persist_op::PersistWriter;
-use crate::kernel::run::prompt::PromptConfig;
+use crate::kernel::run::planning::PromptConfig;
 use crate::kernel::run::usage::UsageScope;
 use crate::kernel::session::runtime::history_loader::SessionHistoryLoader;
 use crate::kernel::session::store::SessionStore;

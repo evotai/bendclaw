@@ -119,8 +119,8 @@ fn test_session(session_id: &str, agent_id: &str) -> Arc<Session> {
             before_turn_hook: None,
             steering_source: None,
             prompt_resolver: std::sync::Arc::new(
-                bendclaw::kernel::run::prompt::LocalPromptResolver::new(
-                    bendclaw::kernel::run::prompt::PromptSeed::default(),
+                bendclaw::kernel::run::planning::LocalPromptResolver::new(
+                    bendclaw::kernel::run::planning::PromptSeed::default(),
                     std::sync::Arc::new(vec![]),
                     std::path::PathBuf::from("/tmp"),
                 ),

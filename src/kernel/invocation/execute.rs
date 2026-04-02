@@ -6,7 +6,7 @@ use super::request::*;
 use super::session_route::acquire_session;
 use crate::base::ErrorCode;
 use crate::base::Result;
-use crate::kernel::run::prompt::PromptRequestMeta;
+use crate::kernel::run::planning::PromptRequestMeta;
 use crate::kernel::run::result::RunOutput;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::runtime::run_options::RunOptions;

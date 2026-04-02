@@ -1,4 +1,3 @@
-mod assembly;
 mod compaction_rules;
 mod compactor;
 mod default_identity;
@@ -8,7 +7,7 @@ mod fmt;
 mod hooks;
 mod persist;
 mod persister;
-mod prompt;
+mod planning;
 mod prompt_projection;
 mod result;
 mod runtime_context;

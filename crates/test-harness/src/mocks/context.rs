@@ -125,8 +125,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             prompt_config: None,
             before_turn_hook: None,
             steering_source: None,
-            prompt_resolver: Arc::new(bendclaw::kernel::run::prompt::LocalPromptResolver::new(
-                bendclaw::kernel::run::prompt::PromptSeed::default(),
+            prompt_resolver: Arc::new(bendclaw::kernel::run::planning::LocalPromptResolver::new(
+                bendclaw::kernel::run::planning::PromptSeed::default(),
                 Arc::new(vec![]),
                 std::path::PathBuf::from("/tmp"),
             )),

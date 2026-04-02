@@ -29,8 +29,8 @@ type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
 // ═══════════════════════════════════════════════════════════════════
 
 use crate::kernel::agent_store::AgentStore;
-use crate::kernel::run::prompt::PromptConfig;
-use crate::kernel::run::prompt::PromptVariable;
+use crate::kernel::run::planning::PromptConfig;
+use crate::kernel::run::planning::PromptVariable;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::tools::selection::build_cloud_toolset;
 use crate::kernel::tools::selection::CloudToolsetDeps;

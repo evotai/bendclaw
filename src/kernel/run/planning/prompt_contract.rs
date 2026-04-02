@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
+use super::prompt_model::PromptRequestMeta;
 use crate::base::Result;
-use crate::kernel::run::prompt::prompt_model::PromptRequestMeta;
 
 #[async_trait]
 pub trait PromptResolver: Send + Sync {

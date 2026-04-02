@@ -5,8 +5,8 @@ use parking_lot::RwLock;
 
 use crate::base::Result;
 use crate::kernel::directive::DirectiveService;
-use crate::kernel::run::prompt::PromptConfig;
-use crate::kernel::run::prompt::PromptResolver;
+use crate::kernel::run::planning::PromptConfig;
+use crate::kernel::run::planning::PromptResolver;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::backend::context::SessionContextProvider;
 use crate::kernel::session::backend::sink::RunInitializer;
@@ -65,7 +65,7 @@ pub struct AgentContext {
     pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
     pub directive: Option<Arc<DirectiveService>>,
     pub prompt_config: Option<PromptConfig>,
-    pub prompt_variables: Vec<crate::kernel::run::prompt::PromptVariable>,
+    pub prompt_variables: Vec<crate::kernel::run::planning::PromptVariable>,
     pub skill_executor: Arc<dyn crate::kernel::skills::execution::SkillExecutor>,
     pub memory_recaller: Option<Arc<dyn MemoryRecaller>>,
 }

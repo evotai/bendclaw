@@ -1,4 +1,3 @@
-pub mod assembly;
 pub mod checkpoint;
 pub mod compaction;
 pub mod context;
@@ -13,7 +12,7 @@ pub(crate) mod persist_diagnostics;
 pub mod persist_op;
 pub mod persister;
 pub(crate) mod persister_diagnostics;
-pub mod prompt;
+pub mod planning;
 pub(crate) mod prompt_diagnostics;
 pub mod prompt_projection;
 pub mod result;

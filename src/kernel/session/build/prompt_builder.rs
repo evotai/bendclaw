@@ -2,12 +2,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::kernel::agent_store::AgentStore;
-use crate::kernel::run::prompt::prompt_model::PromptConfig;
-use crate::kernel::run::prompt::prompt_model::PromptSeed;
-use crate::kernel::run::prompt::prompt_model::PromptVariable;
-use crate::kernel::run::prompt::CloudPromptLoader;
-use crate::kernel::run::prompt::LocalPromptResolver;
-use crate::kernel::run::prompt::PromptResolver;
+use crate::kernel::run::planning::prompt_model::PromptConfig;
+use crate::kernel::run::planning::prompt_model::PromptSeed;
+use crate::kernel::run::planning::prompt_model::PromptVariable;
+use crate::kernel::run::planning::CloudPromptLoader;
+use crate::kernel::run::planning::LocalPromptResolver;
+use crate::kernel::run::planning::PromptResolver;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 

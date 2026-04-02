@@ -1,4 +1,4 @@
-use bendclaw::kernel::run::prompt::tool_prompt::render_tools_section;
+use bendclaw::kernel::run::planning::tool_prompt::render_tools_section;
 use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
 
 #[test]

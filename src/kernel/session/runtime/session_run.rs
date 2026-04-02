@@ -11,12 +11,12 @@ use super::run_options::RunOptions;
 use super::session_resources::SessionResources;
 use super::session_stream::Stream;
 use crate::base::Result;
-use crate::kernel::run::assembly::RunAssemblyDeps;
-use crate::kernel::run::assembly::RunConfig;
-use crate::kernel::run::assembly::RunRequest;
 use crate::kernel::run::launcher;
 use crate::kernel::run::launcher::EngineHandle;
 use crate::kernel::run::persister::TurnPersister;
+use crate::kernel::run::planning::RunAssemblyDeps;
+use crate::kernel::run::planning::RunConfig;
+use crate::kernel::run::planning::RunRequest;
 use crate::kernel::session::core::session_state::SessionState;
 use crate::kernel::session::diagnostics;
 use crate::kernel::trace::TraceRecorder;
@@ -48,7 +48,7 @@ impl<'a> SessionRunCoordinator<'a> {
         is_remote_dispatch: bool,
         started_at: Instant,
         opts: RunOptions,
-        meta: crate::kernel::run::prompt::PromptRequestMeta,
+        meta: crate::kernel::run::planning::PromptRequestMeta,
     ) -> Result<Stream> {
         self.enforce_token_limits().await?;
 

@@ -1,10 +1,10 @@
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::channel::context::ChannelContext;
-use bendclaw::kernel::channel::dispatcher::ChannelDispatcher;
-use bendclaw::kernel::channel::InboundEvent;
-use bendclaw::kernel::channel::InboundMessage;
-use bendclaw::kernel::channel::ReplyContext;
+use bendclaw::kernel::channels::model::context::ChannelContext;
+use bendclaw::kernel::channels::routing::dispatcher::ChannelDispatcher;
+use bendclaw::kernel::channels::InboundEvent;
+use bendclaw::kernel::channels::InboundMessage;
+use bendclaw::kernel::channels::ReplyContext;
 
 // ── base_key ──
 

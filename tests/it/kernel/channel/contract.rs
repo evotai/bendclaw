@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use bendclaw::kernel::channel::account::ChannelAccount;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::InboundKind;
+use bendclaw::kernel::channels::model::account::ChannelAccount;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::InboundKind;
 
 fn test_account(channel_type: &str) -> ChannelAccount {
     let config = match channel_type {
@@ -55,7 +55,7 @@ fn contract_outbound_available(plugin: &dyn ChannelPlugin) {
 }
 
 fn contract_inbound_kind_consistent(plugin: &dyn ChannelPlugin) {
-    use bendclaw::kernel::channel::InboundMode;
+    use bendclaw::kernel::channels::InboundMode;
     let caps = plugin.capabilities();
     match plugin.inbound() {
         InboundKind::Webhook(_) => {
@@ -82,10 +82,10 @@ fn contract_inbound_kind_consistent(plugin: &dyn ChannelPlugin) {
 
 // ── Contract test for each plugin ──
 
-use bendclaw::kernel::channel::plugins::feishu::FeishuChannel;
-use bendclaw::kernel::channel::plugins::github::GitHubChannel;
-use bendclaw::kernel::channel::plugins::http_api::HttpApiChannel;
-use bendclaw::kernel::channel::plugins::telegram::TelegramChannel;
+use bendclaw::kernel::channels::adapters::feishu::FeishuChannel;
+use bendclaw::kernel::channels::adapters::github::GitHubChannel;
+use bendclaw::kernel::channels::adapters::http_api::HttpApiChannel;
+use bendclaw::kernel::channels::adapters::telegram::TelegramChannel;
 
 #[tokio::test]
 async fn http_api_passes_contract() {

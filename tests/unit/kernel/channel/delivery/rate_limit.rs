@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use bendclaw::kernel::channel::delivery::rate_limit::OutboundRateLimiter;
-use bendclaw::kernel::channel::delivery::rate_limit::RateLimitConfig;
-use bendclaw::kernel::channel::delivery::rate_limit::RateLimitResult;
+use bendclaw::kernel::channels::egress::rate_limit::OutboundRateLimiter;
+use bendclaw::kernel::channels::egress::rate_limit::RateLimitConfig;
+use bendclaw::kernel::channels::egress::rate_limit::RateLimitResult;
 
 #[test]
 fn allows_up_to_burst() {

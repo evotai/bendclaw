@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bendclaw::base::ErrorCode;
 use bendclaw::base::Result as BaseResult;
-use bendclaw::kernel::channel::delivery::delivery_service::ChannelDeliveryService;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
+use bendclaw::kernel::channels::egress::delivery_service::ChannelDeliveryService;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use parking_lot::Mutex;
 
 struct MockOutbound {
@@ -65,7 +65,8 @@ impl ChannelOutbound for MockOutbound {
 #[tokio::test]
 async fn deliver_text_sends_and_returns_message_id() {
     let (ob, calls) = MockOutbound::new(false);
-    let ob: Arc<dyn bendclaw::kernel::channel::plugin::ChannelOutbound> = Arc::new(ob);
+    let ob: Arc<dyn bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound> =
+        Arc::new(ob);
     let result =
         ChannelDeliveryService::deliver_text(&ob, &serde_json::json!({}), "chat-1", "hello").await;
     assert!(result.is_ok());
@@ -75,7 +76,8 @@ async fn deliver_text_sends_and_returns_message_id() {
 #[tokio::test]
 async fn deliver_text_returns_error_on_failure() {
     let (ob, _calls) = MockOutbound::new(true);
-    let ob: Arc<dyn bendclaw::kernel::channel::plugin::ChannelOutbound> = Arc::new(ob);
+    let ob: Arc<dyn bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound> =
+        Arc::new(ob);
     let result =
         ChannelDeliveryService::deliver_text(&ob, &serde_json::json!({}), "chat-1", "hello").await;
     assert!(result.is_err());

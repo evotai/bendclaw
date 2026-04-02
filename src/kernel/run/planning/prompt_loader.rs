@@ -148,7 +148,7 @@ impl CloudPromptLoader {
         let (channel_type, channel_chat_id) = session_record
             .as_ref()
             .and_then(|r| {
-                crate::kernel::channel::context::ChannelContext::from_base_key(&r.base_key)
+                crate::kernel::channels::model::context::ChannelContext::from_base_key(&r.base_key)
             })
             .map(|c| (Some(c.channel_type), Some(c.chat_id)))
             .unwrap_or((None, None));

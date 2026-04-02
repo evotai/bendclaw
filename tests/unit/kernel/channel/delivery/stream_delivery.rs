@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::kernel::channel::delivery::stream_delivery::StreamDelivery;
-use bendclaw::kernel::channel::delivery::stream_delivery::StreamDeliveryConfig;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
+use bendclaw::kernel::channels::egress::stream_delivery::StreamDelivery;
+use bendclaw::kernel::channels::egress::stream_delivery::StreamDeliveryConfig;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use bendclaw::kernel::run::event::Delta;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::tools::OpType;

@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use bendclaw::kernel::channel::account::ChannelAccount;
-use bendclaw::kernel::channel::debouncer::debounce;
-use bendclaw::kernel::channel::debouncer::ChatJob;
-use bendclaw::kernel::channel::debouncer::DebounceConfig;
-use bendclaw::kernel::channel::debouncer::DebounceResult;
-use bendclaw::kernel::channel::message::InboundEvent;
-use bendclaw::kernel::channel::message::InboundMessage;
+use bendclaw::kernel::channels::model::account::ChannelAccount;
+use bendclaw::kernel::channels::model::message::InboundEvent;
+use bendclaw::kernel::channels::model::message::InboundMessage;
+use bendclaw::kernel::channels::routing::debouncer::debounce;
+use bendclaw::kernel::channels::routing::debouncer::ChatJob;
+use bendclaw::kernel::channels::routing::debouncer::DebounceConfig;
+use bendclaw::kernel::channels::routing::debouncer::DebounceResult;
 use tokio::sync::mpsc;
 
 fn test_account() -> ChannelAccount {

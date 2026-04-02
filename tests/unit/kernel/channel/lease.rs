@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::kernel::channel::account::ChannelAccount;
-use bendclaw::kernel::channel::capabilities::ChannelCapabilities;
-use bendclaw::kernel::channel::capabilities::ChannelKind;
-use bendclaw::kernel::channel::capabilities::InboundMode;
-use bendclaw::kernel::channel::chat_router::ChatRouter;
-use bendclaw::kernel::channel::chat_router::ChatRouterConfig;
-use bendclaw::kernel::channel::debouncer::DebounceConfig;
-use bendclaw::kernel::channel::lease::ChannelLeaseResource;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
-use bendclaw::kernel::channel::plugin::ChannelPlugin;
-use bendclaw::kernel::channel::plugin::InboundKind;
-use bendclaw::kernel::channel::plugin::ReceiverFactory;
-use bendclaw::kernel::channel::registry::ChannelRegistry;
-use bendclaw::kernel::channel::supervisor::ChannelSupervisor;
+use bendclaw::kernel::channels::model::account::ChannelAccount;
+use bendclaw::kernel::channels::model::capabilities::ChannelCapabilities;
+use bendclaw::kernel::channels::model::capabilities::ChannelKind;
+use bendclaw::kernel::channels::model::capabilities::InboundMode;
+use bendclaw::kernel::channels::model::lease::ChannelLeaseResource;
+use bendclaw::kernel::channels::routing::chat_router::ChatRouter;
+use bendclaw::kernel::channels::routing::chat_router::ChatRouterConfig;
+use bendclaw::kernel::channels::routing::debouncer::DebounceConfig;
+use bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelPlugin;
+use bendclaw::kernel::channels::runtime::channel_trait::InboundKind;
+use bendclaw::kernel::channels::runtime::channel_trait::ReceiverFactory;
+use bendclaw::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use bendclaw::kernel::lease::LeaseResource;
 use bendclaw::storage::pool::QueryResponse;
 use bendclaw::storage::AgentDatabases;
@@ -33,7 +33,7 @@ impl ReceiverFactory for FakeReceiverFactory {
     async fn spawn(
         &self,
         _account: &ChannelAccount,
-        _event_tx: bendclaw::kernel::channel::plugin::InboundEventSender,
+        _event_tx: bendclaw::kernel::channels::runtime::channel_trait::InboundEventSender,
         cancel: tokio_util::sync::CancellationToken,
     ) -> bendclaw::base::Result<tokio::task::JoinHandle<()>> {
         Ok(tokio::spawn(async move { cancel.cancelled().await }))
@@ -200,7 +200,7 @@ fn build_resource_inner(
     let supervisor = Arc::new(ChannelSupervisor::new(
         registry.clone(),
         router,
-        Arc::new(bendclaw::kernel::channel::status::ChannelStatus::new()),
+        Arc::new(bendclaw::kernel::channels::model::status::ChannelStatus::new()),
     ));
 
     let resource = ChannelLeaseResource::new(databases, registry, supervisor.clone());

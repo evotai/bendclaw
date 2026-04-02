@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
-use bendclaw::kernel::channel::typing_keepalive::TypingKeepalive;
-use bendclaw::kernel::channel::typing_keepalive::TypingKeepaliveConfig;
+use bendclaw::kernel::channels::routing::typing_keepalive::TypingKeepalive;
+use bendclaw::kernel::channels::routing::typing_keepalive::TypingKeepaliveConfig;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
 
 struct TypingMock {
     typing_count: Arc<AtomicUsize>,

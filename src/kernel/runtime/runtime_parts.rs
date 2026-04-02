@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::kernel::channel::chat_router::ChatRouter;
-use crate::kernel::channel::delivery::rate_limit::OutboundRateLimiter;
-use crate::kernel::channel::registry::ChannelRegistry;
-use crate::kernel::channel::supervisor::ChannelSupervisor;
+use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
+use crate::kernel::channels::routing::chat_router::ChatRouter;
+use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
+use crate::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
@@ -48,7 +48,7 @@ pub struct RuntimeParts {
     pub activity_tracker: Arc<ActivityTracker>,
     pub trace_writer: crate::kernel::trace::TraceWriter,
     pub persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
-    pub channel_message_writer: crate::kernel::channel::ChannelMessageWriter,
+    pub channel_message_writer: crate::kernel::channels::ChannelMessageWriter,
     pub rate_limiter: Arc<OutboundRateLimiter>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
 }

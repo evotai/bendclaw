@@ -4,11 +4,11 @@ use std::time::Instant;
 use async_trait::async_trait;
 use bendclaw::base::ErrorCode;
 use bendclaw::base::Result;
-use bendclaw::kernel::channel::delivery::outbound_queue::spawn_outbound_queue;
-use bendclaw::kernel::channel::delivery::outbound_queue::OutboundQueueConfig;
-use bendclaw::kernel::channel::delivery::outbound_queue::QueuedMessage;
-use bendclaw::kernel::channel::delivery::retry::RetryConfig;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
+use bendclaw::kernel::channels::egress::outbound_queue::spawn_outbound_queue;
+use bendclaw::kernel::channels::egress::outbound_queue::OutboundQueueConfig;
+use bendclaw::kernel::channels::egress::outbound_queue::QueuedMessage;
+use bendclaw::kernel::channels::egress::retry::RetryConfig;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use parking_lot::Mutex;
 
 struct CountingOutbound {

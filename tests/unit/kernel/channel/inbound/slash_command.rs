@@ -1,7 +1,7 @@
 // slash_command is pub(crate) — tested via observable side effects on ChannelOutbound.
 // We verify the command recognition logic by checking the text sent back to the user.
 
-use bendclaw::kernel::channel::inbound::is_sender_allowed;
+use bendclaw::kernel::channels::ingress::is_sender_allowed;
 
 /// /clear and /new are recognized as slash commands (not forwarded as user input).
 /// This is verified indirectly: is_sender_allowed is unrelated to slash commands,

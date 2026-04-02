@@ -1,4 +1,4 @@
-use bendclaw::kernel::channel::inbound::is_sender_allowed;
+use bendclaw::kernel::channels::ingress::is_sender_allowed;
 use serde_json::json;
 
 #[test]

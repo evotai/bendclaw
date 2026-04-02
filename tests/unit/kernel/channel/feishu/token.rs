@@ -1,5 +1,5 @@
-use bendclaw::kernel::channel::plugins::feishu::token::is_token_error;
-use bendclaw::kernel::channel::plugins::feishu::token::TokenCache;
+use bendclaw::kernel::channels::adapters::feishu::token::is_token_error;
+use bendclaw::kernel::channels::adapters::feishu::token::TokenCache;
 
 #[tokio::test]
 async fn cache_miss_returns_none() {

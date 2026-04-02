@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bendclaw::kernel::channel::status::ChannelStatus;
+use bendclaw::kernel::channels::model::status::ChannelStatus;
 
 #[test]
 fn reset_and_get() {

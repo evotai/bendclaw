@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::kernel::channel::registry::ChannelRegistry;
+use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::cluster::DispatchTable;
 use crate::kernel::memory::MemoryService;

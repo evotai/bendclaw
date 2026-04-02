@@ -1,9 +1,9 @@
-use bendclaw::kernel::channel::plugins::feishu::FeishuChannel;
-use bendclaw::kernel::channel::plugins::feishu::FEISHU_CHANNEL_TYPE;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::InboundKind;
-use bendclaw::kernel::channel::InboundMode;
+use bendclaw::kernel::channels::adapters::feishu::FeishuChannel;
+use bendclaw::kernel::channels::adapters::feishu::FEISHU_CHANNEL_TYPE;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::InboundKind;
+use bendclaw::kernel::channels::InboundMode;
 
 #[test]
 fn channel_type() {

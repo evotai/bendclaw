@@ -1,9 +1,9 @@
-use bendclaw::kernel::channel::plugins::http_api::HttpApiChannel;
-use bendclaw::kernel::channel::plugins::http_api::HTTP_API_CHANNEL_TYPE;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::InboundKind;
-use bendclaw::kernel::channel::InboundMode;
+use bendclaw::kernel::channels::adapters::http_api::HttpApiChannel;
+use bendclaw::kernel::channels::adapters::http_api::HTTP_API_CHANNEL_TYPE;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::InboundKind;
+use bendclaw::kernel::channels::InboundMode;
 
 #[test]
 fn channel_type() {

@@ -1,9 +1,9 @@
-use bendclaw::kernel::channel::plugins::telegram::TelegramChannel;
-use bendclaw::kernel::channel::plugins::telegram::TELEGRAM_CHANNEL_TYPE;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::InboundKind;
-use bendclaw::kernel::channel::InboundMode;
+use bendclaw::kernel::channels::adapters::telegram::TelegramChannel;
+use bendclaw::kernel::channels::adapters::telegram::TELEGRAM_CHANNEL_TYPE;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::InboundKind;
+use bendclaw::kernel::channels::InboundMode;
 
 #[test]
 fn channel_type() {

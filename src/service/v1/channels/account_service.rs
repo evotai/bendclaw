@@ -1,7 +1,7 @@
 use super::http::ChannelAccountView;
 use super::http::CreateChannelAccountRequest;
 use crate::base::new_id;
-use crate::kernel::channel::account::ChannelAccount;
+use crate::kernel::channels::model::account::ChannelAccount;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;

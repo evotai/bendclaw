@@ -1,5 +1,5 @@
-use bendclaw::kernel::channel::plugins::feishu::FeishuChannel;
-use bendclaw::kernel::channel::ChannelPlugin;
+use bendclaw::kernel::channels::adapters::feishu::FeishuChannel;
+use bendclaw::kernel::channels::ChannelPlugin;
 
 #[tokio::test]
 async fn outbound_send_text_extract_credentials_error() {

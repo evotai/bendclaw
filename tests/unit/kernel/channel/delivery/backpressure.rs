@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use bendclaw::kernel::channel::delivery::backpressure::BackpressureConfig;
-use bendclaw::kernel::channel::delivery::backpressure::BackpressureResult;
-use bendclaw::kernel::channel::delivery::backpressure::BackpressureSender;
-use bendclaw::kernel::channel::status::ChannelStatus;
-use bendclaw::kernel::channel::InboundEvent;
-use bendclaw::kernel::channel::InboundMessage;
+use bendclaw::kernel::channels::egress::backpressure::BackpressureConfig;
+use bendclaw::kernel::channels::egress::backpressure::BackpressureResult;
+use bendclaw::kernel::channels::egress::backpressure::BackpressureSender;
+use bendclaw::kernel::channels::model::status::ChannelStatus;
+use bendclaw::kernel::channels::InboundEvent;
+use bendclaw::kernel::channels::InboundMessage;
 
 fn make_sender(
     capacity: usize,

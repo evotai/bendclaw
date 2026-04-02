@@ -1,6 +1,6 @@
-use bendclaw::kernel::channel::plugins::feishu::config::is_sender_allowed;
-use bendclaw::kernel::channel::plugins::feishu::config::ReconnectConfig;
-use bendclaw::kernel::channel::plugins::feishu::FeishuConfig;
+use bendclaw::kernel::channels::adapters::feishu::config::is_sender_allowed;
+use bendclaw::kernel::channels::adapters::feishu::config::ReconnectConfig;
+use bendclaw::kernel::channels::adapters::feishu::FeishuConfig;
 
 #[test]
 fn config_deserialize_defaults() {

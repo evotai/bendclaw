@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use crate::base::Result;
-use crate::kernel::channel::registry::ChannelRegistry;
-use crate::kernel::channel::send_text_to_account;
+use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
+use crate::kernel::channels::send_text_to_account;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;

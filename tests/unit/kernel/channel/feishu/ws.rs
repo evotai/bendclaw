@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use bendclaw::kernel::channel::plugins::feishu::ws::decode_frame;
-use bendclaw::kernel::channel::plugins::feishu::ws::redact_ws_url;
-use bendclaw::kernel::channel::plugins::feishu::ws::PbFrame;
-use bendclaw::kernel::channel::plugins::feishu::ws::PbHeader;
+use bendclaw::kernel::channels::adapters::feishu::ws::decode_frame;
+use bendclaw::kernel::channels::adapters::feishu::ws::redact_ws_url;
+use bendclaw::kernel::channels::adapters::feishu::ws::PbFrame;
+use bendclaw::kernel::channels::adapters::feishu::ws::PbHeader;
 use prost::Message as ProstMessage;
 
 const FRAME_METHOD_CONTROL: i32 = 0;

@@ -4,22 +4,22 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bendclaw::base::Result;
-use bendclaw::kernel::channel::account::ChannelAccount;
-use bendclaw::kernel::channel::chat_router::ChatRouter;
-use bendclaw::kernel::channel::chat_router::ChatRouterConfig;
-use bendclaw::kernel::channel::debouncer::DebounceConfig;
-use bendclaw::kernel::channel::delivery::health::ChannelHealthMonitor;
-use bendclaw::kernel::channel::delivery::health::HealthMonitorConfig;
-use bendclaw::kernel::channel::plugin::ChannelOutbound;
-use bendclaw::kernel::channel::plugin::ChannelPlugin;
-use bendclaw::kernel::channel::plugin::InboundEventSender;
-use bendclaw::kernel::channel::plugin::InboundKind;
-use bendclaw::kernel::channel::plugin::ReceiverFactory;
-use bendclaw::kernel::channel::ChannelCapabilities;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelRegistry;
-use bendclaw::kernel::channel::ChannelSupervisor;
-use bendclaw::kernel::channel::InboundMode;
+use bendclaw::kernel::channels::egress::health::ChannelHealthMonitor;
+use bendclaw::kernel::channels::egress::health::HealthMonitorConfig;
+use bendclaw::kernel::channels::model::account::ChannelAccount;
+use bendclaw::kernel::channels::routing::chat_router::ChatRouter;
+use bendclaw::kernel::channels::routing::chat_router::ChatRouterConfig;
+use bendclaw::kernel::channels::routing::debouncer::DebounceConfig;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
+use bendclaw::kernel::channels::runtime::channel_trait::ChannelPlugin;
+use bendclaw::kernel::channels::runtime::channel_trait::InboundEventSender;
+use bendclaw::kernel::channels::runtime::channel_trait::InboundKind;
+use bendclaw::kernel::channels::runtime::channel_trait::ReceiverFactory;
+use bendclaw::kernel::channels::ChannelCapabilities;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelRegistry;
+use bendclaw::kernel::channels::ChannelSupervisor;
+use bendclaw::kernel::channels::InboundMode;
 use tokio_util::sync::CancellationToken;
 
 struct DyingReceiverFactory;
@@ -113,7 +113,7 @@ async fn check_once_restarts_dead_receiver() {
     let supervisor = Arc::new(ChannelSupervisor::new(
         registry,
         router,
-        Arc::new(bendclaw::kernel::channel::status::ChannelStatus::new()),
+        Arc::new(bendclaw::kernel::channels::model::status::ChannelStatus::new()),
     ));
 
     let account = make_account();
@@ -152,7 +152,7 @@ async fn check_once_respects_max_restarts() {
     let supervisor = Arc::new(ChannelSupervisor::new(
         registry,
         router,
-        Arc::new(bendclaw::kernel::channel::status::ChannelStatus::new()),
+        Arc::new(bendclaw::kernel::channels::model::status::ChannelStatus::new()),
     ));
 
     let account = make_account();

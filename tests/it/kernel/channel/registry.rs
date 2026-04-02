@@ -4,13 +4,13 @@ use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
 use bendclaw::base::Result as BaseResult;
-use bendclaw::kernel::channel::ChannelCapabilities;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelOutbound;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::ChannelRegistry;
-use bendclaw::kernel::channel::InboundKind;
-use bendclaw::kernel::channel::InboundMode;
+use bendclaw::kernel::channels::ChannelCapabilities;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelOutbound;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::ChannelRegistry;
+use bendclaw::kernel::channels::InboundKind;
+use bendclaw::kernel::channels::InboundMode;
 
 // ── TestPlugin: in-memory mock, no I/O ──
 

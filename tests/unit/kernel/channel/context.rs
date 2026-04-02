@@ -1,4 +1,4 @@
-use bendclaw::kernel::channel::context::ChannelContext;
+use bendclaw::kernel::channels::model::context::ChannelContext;
 
 #[test]
 fn parse_feishu_session() {

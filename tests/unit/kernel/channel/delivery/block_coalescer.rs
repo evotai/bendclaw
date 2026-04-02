@@ -1,4 +1,4 @@
-use bendclaw::kernel::channel::delivery::block_coalescer::BlockCoalescer;
+use bendclaw::kernel::channels::egress::block_coalescer::BlockCoalescer;
 
 #[test]
 fn push_returns_none_below_max() {

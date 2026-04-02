@@ -88,7 +88,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
 
     let workspace = test_workspace(workspace_dir);
 
-    let channels = Arc::new(bendclaw::kernel::channel::registry::ChannelRegistry::new());
+    let channels =
+        Arc::new(bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry::new());
     let sink: Arc<dyn bendclaw::kernel::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let toolset = bendclaw::kernel::tools::selection::build_cloud_toolset(

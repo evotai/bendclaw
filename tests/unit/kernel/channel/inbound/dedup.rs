@@ -1,6 +1,6 @@
-use bendclaw::kernel::channel::account::ChannelAccount;
-use bendclaw::kernel::channel::message::InboundEvent;
-use bendclaw::kernel::channel::message::InboundMessage;
+use bendclaw::kernel::channels::model::account::ChannelAccount;
+use bendclaw::kernel::channels::model::message::InboundEvent;
+use bendclaw::kernel::channels::model::message::InboundMessage;
 use bendclaw::storage::dal::channel_message::repo::ChannelMessageRepo;
 
 use crate::common::fake_databend::paged_rows;

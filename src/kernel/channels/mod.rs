@@ -1,0 +1,30 @@
+pub mod adapters;
+pub mod egress;
+pub mod ingress;
+pub mod model;
+pub mod outbound;
+pub mod routing;
+pub mod runtime;
+
+// Re-exports for convenience
+pub use ingress::dispatch_debounced;
+pub use model::ChannelCapabilities;
+pub use model::ChannelKind;
+pub use model::Direction;
+pub use model::InboundEvent;
+pub use model::InboundMessage;
+pub use model::InboundMode;
+pub use model::ReplyContext;
+pub use outbound::send_text_to_account;
+pub use routing::ChannelDispatcher;
+pub use runtime::spawn_channel_message_writer;
+pub use runtime::ChannelEntry;
+pub use runtime::ChannelMessageWriter;
+pub use runtime::ChannelOutbound;
+pub use runtime::ChannelPlugin;
+pub use runtime::ChannelRegistry;
+pub use runtime::ChannelSupervisor;
+pub use runtime::InboundEventSender;
+pub use runtime::InboundKind;
+pub use runtime::ReceiverFactory;
+pub use runtime::WebhookHandler;

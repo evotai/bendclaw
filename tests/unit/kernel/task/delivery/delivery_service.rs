@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use bendclaw::kernel::channel::ChannelRegistry;
+use bendclaw::kernel::channels::ChannelRegistry;
 use bendclaw::kernel::task::delivery::delivery_service::deliver_result;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskRecord;

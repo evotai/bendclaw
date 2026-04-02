@@ -1,7 +1,7 @@
 use bendclaw::base::ErrorCode;
-use bendclaw::kernel::channel::delivery::retry::is_channel_retryable;
-use bendclaw::kernel::channel::delivery::retry::send_with_retry;
-use bendclaw::kernel::channel::delivery::retry::RetryConfig;
+use bendclaw::kernel::channels::egress::retry::is_channel_retryable;
+use bendclaw::kernel::channels::egress::retry::send_with_retry;
+use bendclaw::kernel::channels::egress::retry::RetryConfig;
 
 #[test]
 fn retryable_error_codes() {

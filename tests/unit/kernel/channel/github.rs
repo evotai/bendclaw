@@ -1,15 +1,15 @@
 use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::channel::plugins::github::GitHubChannel;
-use bendclaw::kernel::channel::plugins::github::GitHubWebhookHandler;
-use bendclaw::kernel::channel::plugins::github::GITHUB_CHANNEL_TYPE;
-use bendclaw::kernel::channel::ChannelKind;
-use bendclaw::kernel::channel::ChannelPlugin;
-use bendclaw::kernel::channel::InboundEvent;
-use bendclaw::kernel::channel::InboundKind;
-use bendclaw::kernel::channel::InboundMode;
-use bendclaw::kernel::channel::WebhookHandler;
+use bendclaw::kernel::channels::adapters::github::GitHubChannel;
+use bendclaw::kernel::channels::adapters::github::GitHubWebhookHandler;
+use bendclaw::kernel::channels::adapters::github::GITHUB_CHANNEL_TYPE;
+use bendclaw::kernel::channels::ChannelKind;
+use bendclaw::kernel::channels::ChannelPlugin;
+use bendclaw::kernel::channels::InboundEvent;
+use bendclaw::kernel::channels::InboundKind;
+use bendclaw::kernel::channels::InboundMode;
+use bendclaw::kernel::channels::WebhookHandler;
 
 #[test]
 fn channel_type() {

@@ -1,10 +1,10 @@
 use anyhow::bail;
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::channel::Direction;
-use bendclaw::kernel::channel::InboundEvent;
-use bendclaw::kernel::channel::InboundMessage;
-use bendclaw::kernel::channel::ReplyContext;
+use bendclaw::kernel::channels::Direction;
+use bendclaw::kernel::channels::InboundEvent;
+use bendclaw::kernel::channels::InboundMessage;
+use bendclaw::kernel::channels::ReplyContext;
 
 // ── InboundEvent serde roundtrip ──
 

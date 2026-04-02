@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use bendclaw::kernel::channel::plugins::feishu::message::parse_event;
-use bendclaw::kernel::channel::plugins::feishu::message::parse_post;
-use bendclaw::kernel::channel::plugins::feishu::message::should_respond_in_group;
-use bendclaw::kernel::channel::plugins::feishu::message::strip_at_placeholders;
-use bendclaw::kernel::channel::plugins::feishu::message::MessageDedup;
-use bendclaw::kernel::channel::plugins::feishu::FeishuConfig;
+use bendclaw::kernel::channels::adapters::feishu::message::parse_event;
+use bendclaw::kernel::channels::adapters::feishu::message::parse_post;
+use bendclaw::kernel::channels::adapters::feishu::message::should_respond_in_group;
+use bendclaw::kernel::channels::adapters::feishu::message::strip_at_placeholders;
+use bendclaw::kernel::channels::adapters::feishu::message::MessageDedup;
+use bendclaw::kernel::channels::adapters::feishu::FeishuConfig;
 
 #[test]
 fn strip_at_placeholders_basic() {
@@ -141,7 +141,7 @@ fn parse_event_text_message() {
     let event = make_text_event("msg_1", "hello");
     let result = parse_event(&event, &config, &mut dedup);
     assert!(result.is_some());
-    if let Some(bendclaw::kernel::channel::InboundEvent::Message(m)) = result {
+    if let Some(bendclaw::kernel::channels::InboundEvent::Message(m)) = result {
         assert_eq!(m.text, "hello");
         assert_eq!(m.chat_id, "oc_chat");
         assert_eq!(m.sender_id, "ou_sender");

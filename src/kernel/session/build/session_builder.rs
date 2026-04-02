@@ -149,8 +149,8 @@ impl SessionBuilder {
             self.runtime.persist_writer.clone(),
         );
 
-        let skill_executor: Arc<dyn crate::kernel::skills::execution::SkillExecutor> =
-            Arc::new(crate::kernel::skills::execution::SkillRunner::new(
+        let skill_executor: Arc<dyn crate::kernel::run::execution::skills::SkillExecutor> =
+            Arc::new(crate::kernel::run::execution::skills::SkillRunner::new(
                 agent_id,
                 user_id,
                 self.runtime.catalog.clone(),
@@ -302,7 +302,7 @@ pub fn build_local_assembly(
             directive: None,
             prompt_config: None,
             prompt_variables: vec![],
-            skill_executor: Arc::new(crate::kernel::skills::execution::NoopSkillExecutor),
+            skill_executor: Arc::new(crate::kernel::run::execution::skills::NoopSkillExecutor),
             memory_recaller: None,
         },
     })

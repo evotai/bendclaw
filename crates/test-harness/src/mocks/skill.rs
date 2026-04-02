@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::kernel::run::execution::skills::UsageSink;
 use bendclaw::kernel::skills::definition::skill::Skill;
-use bendclaw::kernel::skills::execution::UsageSink;
 use bendclaw::kernel::skills::store::SharedSkillStore;
 use bendclaw::kernel::skills::sync::SkillManager;
 use bendclaw::kernel::subscriptions::store::Subscription;

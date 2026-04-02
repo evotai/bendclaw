@@ -1,7 +1,7 @@
 mod builtin;
-mod catalog;
+mod definition;
 mod operation;
-mod runtime;
+mod selection;
 mod tool_contract;
 mod tool_id;
 mod web;

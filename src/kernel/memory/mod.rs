@@ -5,7 +5,6 @@ pub(crate) mod diagnostics;
 pub mod extractor;
 pub mod format;
 pub mod hygiene;
-pub mod pressure;
 pub mod service;
 
 pub use service::MemoryService;

@@ -132,7 +132,7 @@ fn test_session(session_id: &str, agent_id: &str) -> Arc<Session> {
                 bendclaw::kernel::session::backend::noop::NoopBackend,
             ),
             skill_executor: std::sync::Arc::new(
-                bendclaw::kernel::skills::execution::NoopSkillExecutor,
+                bendclaw::kernel::run::execution::skills::NoopSkillExecutor,
             ),
         },
     ))

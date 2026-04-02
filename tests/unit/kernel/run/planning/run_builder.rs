@@ -33,7 +33,7 @@ fn test_deps() -> RunAssemblyDeps {
             tools: Arc::new(vec![]),
             allowed_tool_names: None,
         },
-        skill_executor: Arc::new(bendclaw::kernel::skills::execution::NoopSkillExecutor),
+        skill_executor: Arc::new(bendclaw::kernel::run::execution::skills::NoopSkillExecutor),
         tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
         extract_memory: None,
         before_turn_hook: None,

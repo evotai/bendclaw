@@ -3,6 +3,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::kernel::directive::DirectiveService;
+use crate::kernel::run::execution::skills::SkillExecutor;
 use crate::kernel::run::hooks::BeforeTurnHook;
 use crate::kernel::run::hooks::SteeringSource;
 use crate::kernel::run::planning::PromptConfig;
@@ -14,7 +15,6 @@ use crate::kernel::session::backend::context::SessionContextProvider;
 use crate::kernel::session::backend::sink::RunInitializer;
 use crate::kernel::session::store::SessionStore;
 use crate::kernel::session::workspace::Workspace;
-use crate::kernel::skills::execution::SkillExecutor;
 use crate::kernel::tools::definition::toolset::Toolset;
 use crate::kernel::trace::factory::TraceFactory;
 use crate::llm::provider::LLMProvider;

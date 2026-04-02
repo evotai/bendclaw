@@ -1,6 +1,5 @@
 pub mod definition;
 pub(crate) mod diagnostics;
-pub mod execution;
 pub mod fs;
 pub mod sources;
 pub mod store;

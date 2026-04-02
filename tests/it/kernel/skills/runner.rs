@@ -5,14 +5,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use bendclaw::kernel::run::execution::skills::SkillExecutor;
+use bendclaw::kernel::run::execution::skills::SkillRunner;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::definition::skill::SkillFile;
 use bendclaw::kernel::skills::definition::skill::SkillScope;
 use bendclaw::kernel::skills::definition::skill::SkillSource;
-use bendclaw::kernel::skills::execution::SkillExecutor;
-use bendclaw::kernel::skills::execution::SkillRunner;
 use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw::kernel::variables::Variable;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -463,8 +463,8 @@ async fn runner_subscribed_skill_not_accessible_via_bare_name() -> Result<()> {
 
 // ── UsageSink contract ──
 
+use bendclaw::kernel::run::execution::skills::UsageSink;
 use bendclaw::kernel::skills::definition::skill::SkillId;
-use bendclaw::kernel::skills::execution::UsageSink;
 use parking_lot::Mutex;
 
 struct RecordingSink {

@@ -1,9 +1,8 @@
 pub mod checkpoint;
-pub mod compaction;
 pub mod context;
 pub mod default_identity;
-pub mod engine;
 pub mod event;
+pub mod execution;
 pub mod fmt;
 pub mod hooks;
 pub mod launcher;
@@ -21,9 +20,9 @@ pub mod runtime_context;
 pub mod usage;
 
 pub use checkpoint::CompactionCheckpoint;
-pub use engine::Engine;
 pub use event::Delta;
 pub use event::Event;
+pub use execution::llm::Engine;
 pub use result::ContentBlock;
 pub use result::Reason;
 pub use result::Result;

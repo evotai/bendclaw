@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::kernel::memory::MemoryService;
+use crate::kernel::run::execution::skills::SkillExecutor;
 use crate::kernel::run::hooks::BeforeTurnHook;
 use crate::kernel::run::hooks::SteeringSource;
 use crate::kernel::session::runtime::session_resources::SessionResources;
-use crate::kernel::skills::execution::SkillExecutor;
 use crate::kernel::tools::definition::toolset::Toolset;
 
 /// Narrow projection of SessionResources — only what run assembly needs.

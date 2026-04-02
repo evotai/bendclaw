@@ -66,7 +66,7 @@ pub struct AgentContext {
     pub directive: Option<Arc<DirectiveService>>,
     pub prompt_config: Option<PromptConfig>,
     pub prompt_variables: Vec<crate::kernel::run::planning::PromptVariable>,
-    pub skill_executor: Arc<dyn crate::kernel::skills::execution::SkillExecutor>,
+    pub skill_executor: Arc<dyn crate::kernel::run::execution::skills::SkillExecutor>,
     pub memory_recaller: Option<Arc<dyn MemoryRecaller>>,
 }
 

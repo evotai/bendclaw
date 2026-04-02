@@ -7,9 +7,9 @@
 use std::sync::Arc;
 
 use crate::base::Result;
+use crate::kernel::run::execution::skills::UsageSink;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillId;
-use crate::kernel::skills::execution::UsageSink;
 use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::skills::sync::SkillCatalog;
 use crate::kernel::subscriptions::SubscriptionStore;

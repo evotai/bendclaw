@@ -6,11 +6,11 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::kernel::run::execution::skills::SkillExecutor;
+use bendclaw::kernel::run::execution::skills::SkillOutput;
 use bendclaw::kernel::runtime::session_org::LocalOrgServices;
 use bendclaw::kernel::session::backend::noop::NoopBackend;
 use bendclaw::kernel::session::build::session_capabilities::*;
-use bendclaw::kernel::skills::execution::SkillExecutor;
-use bendclaw::kernel::skills::execution::SkillOutput;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::trace::factory::NoopTraceFactory;
 

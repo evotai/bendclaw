@@ -2,14 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use bendclaw::kernel::run::execution::skills::SkillExecutor;
+use bendclaw::kernel::run::execution::skills::SkillRunner;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::definition::skill::SkillFile;
 use bendclaw::kernel::skills::definition::skill::SkillScope;
 use bendclaw::kernel::skills::definition::skill::SkillSource;
-use bendclaw::kernel::skills::execution::SkillExecutor;
-use bendclaw::kernel::skills::execution::SkillRunner;
 use bendclaw::kernel::skills::sources::remote::writer;
 use bendclaw::kernel::skills::sync::SkillCatalog;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;

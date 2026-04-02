@@ -12,10 +12,10 @@ use bendclaw::kernel::run::hooks::SteeringDecision;
 use bendclaw::kernel::run::hooks::SteeringSource;
 use bendclaw::kernel::run::hooks::TurnDecision;
 use bendclaw::kernel::run::result::Reason;
+use bendclaw::kernel::tools::execution::tool_progressive::ProgressiveToolView;
+use bendclaw::kernel::tools::execution::ToolStack;
+use bendclaw::kernel::tools::execution::ToolStackConfig;
 use bendclaw::kernel::tools::run_labels::RunLabels;
-use bendclaw::kernel::tools::runtime::tool_progressive::ProgressiveToolView;
-use bendclaw::kernel::tools::runtime::ToolStack;
-use bendclaw::kernel::tools::runtime::ToolStackConfig;
 use bendclaw::kernel::tools::ToolRuntime;
 use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::kernel::Message;
@@ -102,7 +102,7 @@ fn build_engine(
         agent_id: "agent-1".to_string(),
     });
     let tool_stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::catalog::Toolset {
+        toolset: bendclaw::kernel::tools::definition::toolset::Toolset {
             definitions: Arc::new(vec![]),
             bindings: Arc::new(std::collections::HashMap::new()),
             tools: Arc::new(vec![]),

@@ -1,10 +1,10 @@
+pub mod app;
 pub mod base;
 pub mod cli;
 pub mod client;
 pub mod config;
 pub mod kernel;
 pub mod llm;
-pub mod local;
 pub mod observability;
 pub mod service;
 pub mod storage;

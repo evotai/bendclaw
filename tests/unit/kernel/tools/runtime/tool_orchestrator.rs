@@ -11,14 +11,14 @@ use async_trait::async_trait;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::skills::runtime::SkillExecutor;
 use bendclaw::kernel::skills::runtime::SkillOutput;
-use bendclaw::kernel::tools::catalog::tool_definition::ToolDefinition;
-use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
+use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::tool_events::EventEmitter;
+use bendclaw::kernel::tools::execution::tool_executor::CallExecutor;
+use bendclaw::kernel::tools::execution::tool_orchestrator::ToolOrchestrator;
+use bendclaw::kernel::tools::execution::tool_recorder::ExecutionRecorder;
+use bendclaw::kernel::tools::execution::TurnContext;
 use bendclaw::kernel::tools::run_labels::RunLabels;
-use bendclaw::kernel::tools::runtime::tool_events::EventEmitter;
-use bendclaw::kernel::tools::runtime::tool_executor::CallExecutor;
-use bendclaw::kernel::tools::runtime::tool_orchestrator::ToolOrchestrator;
-use bendclaw::kernel::tools::runtime::tool_recorder::ExecutionRecorder;
-use bendclaw::kernel::tools::runtime::TurnContext;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;
@@ -100,20 +100,20 @@ fn build_orchestrator(tools: Vec<Arc<dyn Tool>>) -> (ToolOrchestrator, mpsc::Rec
         .collect();
     let bindings: std::collections::HashMap<
         String,
-        bendclaw::kernel::tools::catalog::tool_target::ToolTarget,
+        bendclaw::kernel::tools::definition::tool_target::ToolTarget,
     > = registry
         .iter_tools()
         .map(|t| {
             (
                 t.name().to_string(),
-                bendclaw::kernel::tools::catalog::tool_target::ToolTarget::Builtin(t.clone()),
+                bendclaw::kernel::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
             )
         })
         .collect();
     let (tx, rx) = mpsc::channel(128);
     let tools_schema: Vec<bendclaw::llm::tool::ToolSchema> =
         definitions.iter().map(|d| d.to_tool_schema()).collect();
-    let toolset = bendclaw::kernel::tools::catalog::Toolset {
+    let toolset = bendclaw::kernel::tools::definition::toolset::Toolset {
         definitions: Arc::new(definitions),
         bindings: Arc::new(bindings),
         tools: Arc::new(tools_schema),

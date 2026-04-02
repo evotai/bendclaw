@@ -9,7 +9,7 @@ use crate::kernel::run::prompt::CloudPromptLoader;
 use crate::kernel::run::prompt::LocalPromptResolver;
 use crate::kernel::run::prompt::PromptResolver;
 use crate::kernel::runtime::org::OrgServices;
-use crate::kernel::tools::catalog::tool_definition::ToolDefinition;
+use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 
 pub fn build_local_prompt_resolver(
     tools: Arc<Vec<ToolDefinition>>,

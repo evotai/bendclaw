@@ -92,4 +92,6 @@ pub enum Command {
     Update,
     /// Run in foreground (default)
     Run,
+    /// Run a local agent session
+    Agent(super::agent_cmd::AgentArgs),
 }

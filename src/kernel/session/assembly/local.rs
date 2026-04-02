@@ -17,7 +17,7 @@ use crate::kernel::run::persist_op::PersistWriter;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::session_org::LocalOrgServices;
 use crate::kernel::session::store::json::JsonSessionStore;
-use crate::kernel::tools::catalog::build_local_toolset;
+use crate::kernel::tools::selection::build_local_toolset;
 use crate::kernel::tools::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::TraceWriter;
 use crate::kernel::writer::BackgroundWriter;

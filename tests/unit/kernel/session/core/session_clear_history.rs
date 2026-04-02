@@ -8,7 +8,7 @@ use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
 use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::tools::catalog::toolset::Toolset;
+use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;

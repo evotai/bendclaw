@@ -1,4 +1,4 @@
 pub mod action;
-mod databend_tool;
+mod databend_query;
 
-pub use databend_tool::DatabendTool;
+pub use databend_query::DatabendTool;

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::kernel::tools::runtime::tool_progressive::ProgressiveToolView;
+use crate::kernel::tools::execution::tool_progressive::ProgressiveToolView;
 use crate::kernel::Message;
 use crate::llm::provider::LLMProvider;
 

@@ -7,7 +7,7 @@ use super::prompt_contract::PromptResolver;
 use super::prompt_model::*;
 use super::prompt_renderer::build_prompt;
 use crate::base::Result;
-use crate::kernel::tools::catalog::tool_definition::ToolDefinition;
+use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 
 pub struct LocalPromptResolver {
     seed: PromptSeed,

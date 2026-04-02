@@ -11,7 +11,7 @@ use crate::kernel::memory::pressure::PressureLevel;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::hooks::SteeringDecision;
 use crate::kernel::run::prompt_projection;
-use crate::kernel::tools::runtime::TurnContext;
+use crate::kernel::tools::execution::TurnContext;
 use crate::llm::message::ToolCall;
 
 impl Engine {

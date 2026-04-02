@@ -1,6 +1,6 @@
 //! Tests for tools/selection — verifies tool filter parsing.
 
-use bendclaw::kernel::tools::catalog::tool_selection::parse_tool_selection;
+use bendclaw::kernel::tools::selection::tool_selection::parse_tool_selection;
 
 #[test]
 fn parse_all_returns_none() {

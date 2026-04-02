@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::tools::catalog::toolset::Toolset;
+use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolId;
 
@@ -33,8 +33,8 @@ fn make_toolset() -> Toolset {
     let secret_sink: Arc<dyn bendclaw::kernel::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
 
-    bendclaw::kernel::tools::catalog::build_cloud_toolset(
-        bendclaw::kernel::tools::catalog::CloudToolsetDeps {
+    bendclaw::kernel::tools::selection::build_cloud_toolset(
+        bendclaw::kernel::tools::selection::CloudToolsetDeps {
             org,
             databend_pool: pool,
             channels,

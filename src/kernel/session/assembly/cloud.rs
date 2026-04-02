@@ -13,8 +13,8 @@ use crate::kernel::agent_store::AgentStore;
 use crate::kernel::run::prompt::PromptConfig;
 use crate::kernel::run::prompt::PromptVariable;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::tools::catalog::build_cloud_toolset;
-use crate::kernel::tools::catalog::CloudToolsetDeps;
+use crate::kernel::tools::selection::build_cloud_toolset;
+use crate::kernel::tools::selection::CloudToolsetDeps;
 use crate::kernel::tools::tool_services::DbSecretUsageSink;
 
 /// Assembles a full session with cloud config, all tools, skills, memory.

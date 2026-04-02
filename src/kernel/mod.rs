@@ -1,5 +1,6 @@
 pub mod agent_store;
 pub mod channel;
+pub mod channels;
 pub mod cluster;
 pub mod directive;
 pub mod invocation;

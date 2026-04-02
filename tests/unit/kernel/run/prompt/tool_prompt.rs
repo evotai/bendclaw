@@ -1,5 +1,5 @@
 use bendclaw::kernel::run::prompt::tool_prompt::render_tools_section;
-use bendclaw::kernel::tools::catalog::tool_definition::ToolDefinition;
+use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
 
 #[test]
 fn render_tools_section_empty_produces_nothing() {

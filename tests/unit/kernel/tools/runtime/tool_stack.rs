@@ -10,11 +10,11 @@ use async_trait::async_trait;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::skills::runtime::SkillExecutor;
 use bendclaw::kernel::skills::runtime::SkillOutput;
-use bendclaw::kernel::tools::catalog::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::definition::tool_registry::ToolRegistry;
+use bendclaw::kernel::tools::execution::ToolStack;
+use bendclaw::kernel::tools::execution::ToolStackConfig;
+use bendclaw::kernel::tools::execution::TurnContext;
 use bendclaw::kernel::tools::run_labels::RunLabels;
-use bendclaw::kernel::tools::runtime::ToolStack;
-use bendclaw::kernel::tools::runtime::ToolStackConfig;
-use bendclaw::kernel::tools::runtime::TurnContext;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;
@@ -96,31 +96,31 @@ fn build_tool_stack(
         session_id: "s1".into(),
         agent_id: "a1".into(),
     });
-    let definitions: Vec<bendclaw::kernel::tools::catalog::tool_definition::ToolDefinition> =
+    let definitions: Vec<bendclaw::kernel::tools::definition::tool_definition::ToolDefinition> =
         registry
             .iter_tools()
             .map(|t| {
-                bendclaw::kernel::tools::catalog::tool_definition::ToolDefinition::from_builtin(
+                bendclaw::kernel::tools::definition::tool_definition::ToolDefinition::from_builtin(
                     t.as_ref(),
                 )
             })
             .collect();
     let bindings: std::collections::HashMap<
         String,
-        bendclaw::kernel::tools::catalog::tool_target::ToolTarget,
+        bendclaw::kernel::tools::definition::tool_target::ToolTarget,
     > = registry
         .iter_tools()
         .map(|t| {
             (
                 t.name().to_string(),
-                bendclaw::kernel::tools::catalog::tool_target::ToolTarget::Builtin(t.clone()),
+                bendclaw::kernel::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
             )
         })
         .collect();
     let tools_schema: Vec<bendclaw::llm::tool::ToolSchema> =
         definitions.iter().map(|d| d.to_tool_schema()).collect();
     let stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::catalog::Toolset {
+        toolset: bendclaw::kernel::tools::definition::toolset::Toolset {
             definitions: Arc::new(definitions),
             bindings: Arc::new(bindings),
             tools: Arc::new(tools_schema),

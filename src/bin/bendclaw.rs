@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Status => cmd_status(),
         Command::Update => bendclaw::cli::cmd_update().await?,
         Command::Run => cmd_run(cli.config, cli.overrides).await?,
+        Command::Agent(args) => cmd_agent(args).await?,
     }
 
     Ok(())
@@ -301,4 +302,34 @@ fn print_banner(config: &BendClawConfig) {
     let _ = writeln!(buf, "{line}");
 
     eprint!("{buf}");
+}
+
+async fn cmd_agent(args: bendclaw::cli::agent_cmd::AgentArgs) -> anyhow::Result<()> {
+    use bendclaw::storage::backend::kind::StorageKind;
+    use bendclaw::storage::backend::local_fs::LocalFsBackend;
+
+    let storage_type = std::env::var("BENDCLAW_STORAGE_TYPE").unwrap_or_else(|_| "local".into());
+    let kind = StorageKind::parse(&storage_type)?;
+
+    match kind {
+        StorageKind::Local => {
+            let backend = Arc::new(LocalFsBackend::new(LocalFsBackend::default_root()));
+            let session_repo =
+                backend.clone() as Arc<dyn bendclaw::storage::backend::session_repo::SessionRepo>;
+            let run_repo =
+                backend.clone() as Arc<dyn bendclaw::storage::backend::run_repo::RunRepo>;
+            let run_event_repo = backend.clone()
+                as Arc<dyn bendclaw::storage::backend::run_event_repo::RunEventRepo>;
+
+            bendclaw::cli::agent_cmd::execute(args, session_repo, run_repo, run_event_repo)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))
+        }
+        StorageKind::Cloud => {
+            anyhow::bail!(
+                "bendclaw agent subcommand currently supports local storage only. \
+                 Use 'bendclaw run' for cloud mode."
+            );
+        }
+    }
 }

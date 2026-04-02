@@ -6,7 +6,7 @@ use anyhow::Result;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::tools::builtin::skills::create::SkillCreateTool;
+use bendclaw::kernel::tools::builtin::skills::skill_create::SkillCreateTool;
 use bendclaw::kernel::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;

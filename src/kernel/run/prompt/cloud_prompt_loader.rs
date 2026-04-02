@@ -16,7 +16,7 @@ use crate::kernel::agent_store::AgentStore;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::run::prompt_diagnostics;
 use crate::kernel::runtime::org::OrgServices;
-use crate::kernel::tools::catalog::tool_definition::ToolDefinition;
+use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 
 const RECENT_ERRORS_LIMIT: u32 = 5;
 

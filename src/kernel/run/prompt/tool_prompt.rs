@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 use super::prompt_model::truncate_layer;
 use super::prompt_model::MAX_TOOLS_BYTES;
-use crate::kernel::tools::catalog::tool_definition::ToolDefinition;
+use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 
 /// Render the tools section of the system prompt from unified tool definitions.
 pub fn render_tools_section(prompt: &mut String, definitions: &[ToolDefinition]) {

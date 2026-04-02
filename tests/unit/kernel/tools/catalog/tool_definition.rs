@@ -1,5 +1,5 @@
-use bendclaw::kernel::tools::catalog::tool_definition::ToolDefinition;
-use bendclaw::kernel::tools::catalog::tool_target::ToolTarget;
+use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
+use bendclaw::kernel::tools::definition::tool_target::ToolTarget;
 use bendclaw::kernel::OpType;
 
 #[test]

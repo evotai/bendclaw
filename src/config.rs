@@ -4,8 +4,9 @@
 //!
 //! | Env var                     | TOML path              | Default        |
 //! |-----------------------------|------------------------|----------------|
-//! | `BENDCLAW_STORAGE_DATABEND_API_BASE_URL` | `storage.databend_api_base_url` | **required** |
-//! | `BENDCLAW_STORAGE_DATABEND_API_TOKEN` | `storage.databend_api_token` | **required** |
+//! | `BENDCLAW_STORAGE_TYPE`     | `storage.type`         | `local`        |
+//! | `BENDCLAW_STORAGE_DATABEND_API_BASE_URL` | `storage.databend_api_base_url` | required (cloud) |
+//! | `BENDCLAW_STORAGE_DATABEND_API_TOKEN` | `storage.databend_api_token` | required (cloud) |
 //! | `BENDCLAW_STORAGE_DATABEND_WAREHOUSE` | `storage.databend_warehouse` | `default` |
 //! | `BENDCLAW_SERVER_BIND_ADDR` | `server.bind_addr`     | `127.0.0.1:8787` |
 //! | `BENDCLAW_LOG_LEVEL`        | `log.level`            | `info`         |
@@ -208,9 +209,13 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StorageConfig {
-    /// Databend Cloud API base URL. Required.
+    /// Storage backend type: "local" or "cloud".
+    /// Env override: BENDCLAW_STORAGE_TYPE
+    #[serde(rename = "type")]
+    pub storage_type: String,
+    /// Databend Cloud API base URL. Required when type = "cloud".
     pub databend_api_base_url: String,
-    /// Databend Cloud API token. Required.
+    /// Databend Cloud API token. Required when type = "cloud".
     pub databend_api_token: String,
     /// Databend Cloud warehouse name. Empty means server-side default.
     pub databend_warehouse: String,
@@ -223,6 +228,7 @@ pub const DEFAULT_DB_PREFIX: &str = "bendclaw_v2_";
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
+            storage_type: "local".to_string(),
             databend_api_base_url: "https://api.databend.com/v1".to_string(),
             databend_api_token: String::new(),
             databend_warehouse: String::new(),
@@ -332,6 +338,7 @@ impl BendClawConfig {
     /// Apply `BENDCLAW_*` environment variable overrides.
     /// Env always takes precedence over file values.
     pub fn apply_env(&mut self) {
+        override_str(&mut self.storage.storage_type, "BENDCLAW_STORAGE_TYPE");
         override_str(
             &mut self.storage.databend_api_base_url,
             "BENDCLAW_STORAGE_DATABEND_API_BASE_URL",
@@ -476,19 +483,21 @@ impl BendClawConfig {
 
     /// Validate that all required fields are present. Call after all layers applied.
     pub fn validate(&self) -> anyhow::Result<()> {
-        if self.storage.databend_api_base_url.is_empty() {
-            anyhow::bail!(
-                "missing required configuration:\n  \
-                 storage.databend_api_base_url  →  set BENDCLAW_STORAGE_DATABEND_API_BASE_URL \
-                 or [storage] databend_api_base_url in config file"
-            );
-        }
-        if self.storage.databend_api_token.is_empty() {
-            anyhow::bail!(
-                "missing required configuration:\n  \
-                 storage.databend_api_token  →  set BENDCLAW_STORAGE_DATABEND_API_TOKEN \
-                 or [storage] databend_api_token in config file"
-            );
+        if self.storage.storage_type == "cloud" {
+            if self.storage.databend_api_base_url.is_empty() {
+                anyhow::bail!(
+                    "missing required configuration:\n  \
+                     storage.databend_api_base_url  →  set BENDCLAW_STORAGE_DATABEND_API_BASE_URL \
+                     or [storage] databend_api_base_url in config file"
+                );
+            }
+            if self.storage.databend_api_token.is_empty() {
+                anyhow::bail!(
+                    "missing required configuration:\n  \
+                     storage.databend_api_token  →  set BENDCLAW_STORAGE_DATABEND_API_TOKEN \
+                     or [storage] databend_api_token in config file"
+                );
+            }
         }
         if self.node_id.is_empty() {
             anyhow::bail!(

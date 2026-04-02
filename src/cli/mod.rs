@@ -1,3 +1,4 @@
+pub mod agent_cmd;
 mod args;
 pub mod control;
 pub mod input;

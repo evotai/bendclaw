@@ -3,14 +3,14 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use bendclaw::kernel::tools::catalog::build_local_toolset;
+use bendclaw::kernel::tools::selection::build_local_toolset;
 use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 
 fn sink() -> Arc<dyn bendclaw::kernel::tools::tool_services::SecretUsageSink> {
     Arc::new(NoopSecretUsageSink)
 }
 
-fn make_local_toolset() -> bendclaw::kernel::tools::catalog::toolset::Toolset {
+fn make_local_toolset() -> bendclaw::kernel::tools::definition::toolset::Toolset {
     build_local_toolset(None, sink())
 }
 

@@ -1,7 +1,9 @@
 mod agent_config;
+mod backend;
 mod cache;
 mod dal;
 mod databases;
+mod databend_backend;
 mod pool;
 mod session_record;
 mod sql;

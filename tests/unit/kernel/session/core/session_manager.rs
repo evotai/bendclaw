@@ -13,7 +13,7 @@ use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
 use bendclaw::kernel::session::SessionManager;
 use bendclaw::kernel::skills::catalog::SkillCatalog;
-use bendclaw::kernel::tools::catalog::toolset::Toolset;
+use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;

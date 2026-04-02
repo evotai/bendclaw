@@ -7,10 +7,6 @@ edition = "2021"
 name = "bendclaw"
 path = "src/bin/bendclaw.rs"
 
-[[bin]]
-name = "bendclaw-local"
-path = "src/bin/bendclaw-local.rs"
-
 [lints.clippy]
 module_inception = "allow"
 should_implement_trait = "allow"

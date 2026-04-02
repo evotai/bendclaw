@@ -8,6 +8,7 @@ pub mod event;
 pub mod fmt;
 pub mod hooks;
 pub mod launcher;
+pub mod persist;
 pub(crate) mod persist_diagnostics;
 pub mod persist_op;
 pub mod persister;

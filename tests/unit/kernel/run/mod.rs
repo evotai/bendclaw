@@ -6,6 +6,7 @@ mod engine;
 mod event;
 mod fmt;
 mod hooks;
+mod persist;
 mod persister;
 mod prompt;
 mod prompt_projection;

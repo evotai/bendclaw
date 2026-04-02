@@ -13,7 +13,7 @@ use super::session_manager::TurnStats;
 use super::session_state::SessionState;
 use crate::base::ErrorCode;
 use crate::base::Result;
-use crate::kernel::session::assembly::contract::SessionAssembly;
+use crate::kernel::session::build::session_capabilities::SessionAssembly;
 use crate::kernel::session::diagnostics;
 use crate::kernel::session::runtime::run_options::RunOptions;
 use crate::kernel::session::runtime::session_resources::SessionResources;

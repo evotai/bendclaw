@@ -5,9 +5,9 @@ use std::sync::Arc;
 use super::request::*;
 use crate::base::Result;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::session::assembly::cloud::CloudAssembler;
-use crate::kernel::session::assembly::cloud::CloudBuildOptions;
-use crate::kernel::session::assembly::contract::SessionOwner;
+use crate::kernel::session::build::session_builder::CloudBuildOptions;
+use crate::kernel::session::build::session_builder::SessionBuilder;
+use crate::kernel::session::build::session_capabilities::SessionOwner;
 use crate::kernel::session::Session;
 
 /// Acquire a one-shot session for the given invocation request.
@@ -21,10 +21,10 @@ pub async fn acquire_session(
         user_id: req.user_id.clone(),
     };
 
-    let assembly = CloudAssembler {
+    let assembly = SessionBuilder {
         runtime: runtime.clone(),
     }
-    .assemble(&session_id, &owner, CloudBuildOptions {
+    .build_cloud(&session_id, &owner, CloudBuildOptions {
         cwd: req.session_options.cwd.clone(),
         tool_filter: req.session_options.tool_filter.clone(),
         llm_override: req.session_options.llm_override.clone(),

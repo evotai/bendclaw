@@ -1,7 +1,7 @@
 /// Per-run identity labels for the tool runtime layer (recorder, messages, diagnostics).
 ///
 /// Carries trace_id + run_id so the runtime can stamp spans and audit events.
-/// Distinct from `session::assembly::contract::RunLabels` which is session-scoped
+/// Distinct from `session::build::session_capabilities::RunLabels` which is session-scoped
 /// (agent_id + user_id + session_id) and used during session assembly.
 #[derive(Clone, Debug)]
 pub struct RunLabels {

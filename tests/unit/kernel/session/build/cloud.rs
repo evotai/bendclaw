@@ -1,6 +1,6 @@
-use bendclaw::kernel::session::assembly::cloud::CloudAssembler;
-use bendclaw::kernel::session::assembly::cloud::CloudBuildOptions;
-use bendclaw::kernel::session::assembly::contract::SessionOwner;
+use bendclaw::kernel::session::build::session_builder::CloudBuildOptions;
+use bendclaw::kernel::session::build::session_builder::SessionBuilder;
+use bendclaw::kernel::session::build::session_capabilities::SessionOwner;
 use bendclaw::storage::pool::QueryResponse;
 
 use crate::common::fake_databend::FakeDatabend;
@@ -23,13 +23,13 @@ fn noop_fake() -> FakeDatabend {
 #[tokio::test]
 async fn cloud_assembly_labels_reflect_owner() {
     let runtime = test_runtime(noop_fake());
-    let assembler = CloudAssembler { runtime };
+    let builder = SessionBuilder { runtime };
     let owner = SessionOwner {
         agent_id: "agent-1".to_string(),
         user_id: "user-1".to_string(),
     };
-    let assembly = assembler
-        .assemble("session-1", &owner, CloudBuildOptions::default())
+    let assembly = builder
+        .build_cloud("session-1", &owner, CloudBuildOptions::default())
         .await
         .expect("assemble");
     assert_eq!(assembly.labels.agent_id.as_ref(), "agent-1");
@@ -40,13 +40,13 @@ async fn cloud_assembly_labels_reflect_owner() {
 #[tokio::test]
 async fn cloud_assembly_has_no_cluster_by_default() {
     let runtime = test_runtime(noop_fake());
-    let assembler = CloudAssembler { runtime };
+    let builder = SessionBuilder { runtime };
     let owner = SessionOwner {
         agent_id: "agent-2".to_string(),
         user_id: "user-2".to_string(),
     };
-    let assembly = assembler
-        .assemble("session-2", &owner, CloudBuildOptions::default())
+    let assembly = builder
+        .build_cloud("session-2", &owner, CloudBuildOptions::default())
         .await
         .expect("assemble");
     assert!(assembly.agent.cluster_client.is_none());
@@ -56,13 +56,13 @@ async fn cloud_assembly_has_no_cluster_by_default() {
 #[tokio::test]
 async fn cloud_assembly_prompt_config_none_without_db_record() {
     let runtime = test_runtime(noop_fake());
-    let assembler = CloudAssembler { runtime };
+    let builder = SessionBuilder { runtime };
     let owner = SessionOwner {
         agent_id: "agent-3".to_string(),
         user_id: "user-3".to_string(),
     };
-    let assembly = assembler
-        .assemble("session-3", &owner, CloudBuildOptions::default())
+    let assembly = builder
+        .build_cloud("session-3", &owner, CloudBuildOptions::default())
         .await
         .expect("assemble");
     // No config record in DB → prompt_config is None

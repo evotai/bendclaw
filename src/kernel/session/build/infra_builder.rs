@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::contract::RuntimeInfra;
+use super::session_capabilities::RuntimeInfra;
 use crate::kernel::session::store::SessionStore;
 use crate::kernel::trace::TraceWriter;
 use crate::storage::Pool;

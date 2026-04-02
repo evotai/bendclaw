@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
-use bendclaw::kernel::session::assembly::local::build_local_assembly;
-use bendclaw::kernel::session::assembly::local::LocalBuildOptions;
-use bendclaw::kernel::session::assembly::local::LocalRuntimeDeps;
+use bendclaw::kernel::session::build::session_builder::build_local_assembly;
+use bendclaw::kernel::session::build::session_builder::LocalBuildOptions;
+use bendclaw::kernel::session::build::session_builder::LocalRuntimeDeps;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 
 fn noop_llm() -> Arc<dyn bendclaw::llm::provider::LLMProvider> {

@@ -1,5 +1,5 @@
-pub mod assembly;
 pub mod backend;
+pub mod build;
 pub mod core;
 pub(crate) mod diagnostics;
 pub mod factory;

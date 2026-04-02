@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::builtin::skills::skill_read::SkillReadTool;
 use bendclaw::kernel::tools::OperationClassifier;
 use bendclaw::kernel::tools::Tool;
@@ -13,10 +13,10 @@ use serde_json::json;
 
 use crate::mocks::context::test_tool_context;
 
-fn make_tool() -> (SkillReadTool, Arc<SkillCatalog>) {
+fn make_tool() -> (SkillReadTool, Arc<SkillIndex>) {
     let dir = std::env::temp_dir().join(format!("bendclaw-read-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let catalog = Arc::new(SkillCatalog::new(
+    let catalog = Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

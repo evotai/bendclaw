@@ -1,14 +1,13 @@
-pub mod engine_deps;
 pub mod prompt_contract;
 pub mod prompt_loader;
 pub mod prompt_local;
 pub mod prompt_model;
 pub mod prompt_renderer;
 pub mod run_builder;
+pub mod run_deps;
 pub mod tool_prompt;
 pub mod tool_view;
 
-pub use engine_deps::RunAssemblyDeps;
 pub use prompt_contract::PromptResolver;
 pub use prompt_loader::CloudPromptLoader;
 pub use prompt_local::LocalPromptResolver;
@@ -33,3 +32,4 @@ pub use run_builder::build_run_driver;
 pub use run_builder::RunConfig;
 pub use run_builder::RunDriver;
 pub use run_builder::RunRequest;
+pub use run_deps::RunDeps;

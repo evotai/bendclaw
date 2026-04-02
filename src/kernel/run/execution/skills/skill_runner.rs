@@ -13,13 +13,13 @@ use crate::base::Result;
 use crate::kernel::session::workspace::Workspace;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::diagnostics;
-use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::variables::store::SharedVariableStore;
 use crate::kernel::variables::store::VariableStore;
 use crate::storage::pool::Pool;
 
 pub struct SkillRunner {
-    catalog: Arc<SkillCatalog>,
+    catalog: Arc<SkillIndex>,
     usage_sink: Arc<dyn UsageSink>,
     workspace: Arc<Workspace>,
     pool: Pool,
@@ -38,7 +38,7 @@ impl SkillRunner {
     pub fn new(
         agent_id: &str,
         user_id: &str,
-        catalog: Arc<SkillCatalog>,
+        catalog: Arc<SkillIndex>,
         usage_sink: Arc<dyn UsageSink>,
         workspace: Arc<Workspace>,
         pool: Pool,

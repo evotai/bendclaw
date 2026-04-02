@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::builtin::skills::skill_create::SkillCreateTool;
 use bendclaw::kernel::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -19,7 +19,7 @@ fn make_tool() -> SkillCreateTool {
         bendclaw::storage::Pool::new("http://localhost:0", "", "default").expect("dummy pool");
     let dir = std::env::temp_dir().join(format!("bendclaw-create-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

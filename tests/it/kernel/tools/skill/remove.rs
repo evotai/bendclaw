@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::builtin::skills::skill_remove::SkillRemoveTool;
 use bendclaw::kernel::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -20,7 +20,7 @@ fn make_tool() -> SkillRemoveTool {
     let fake = FakeDatabend::new(|_sql, _database| Ok(paged_rows(&[], None, None)));
     let dir = std::env::temp_dir().join(format!("bendclaw-rm-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

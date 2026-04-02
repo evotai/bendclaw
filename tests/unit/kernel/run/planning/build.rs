@@ -29,7 +29,7 @@ use bendclaw::kernel::run::planning::MAX_TOOLS_BYTES;
 use bendclaw::kernel::run::planning::MAX_VARIABLES_BYTES;
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::ToolDefinition;
 use bendclaw::kernel::OpType;
 use bendclaw::llm::message::ChatMessage;
@@ -251,7 +251,7 @@ fn make_cloud_loader(
     let pool = fake.pool();
     let workspace_root = prompt_test_workspace();
     std::fs::create_dir_all(&workspace_root)?;
-    let catalog = Arc::new(SkillCatalog::new(
+    let catalog = Arc::new(SkillIndex::new(
         workspace_root.clone(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolId;
@@ -18,7 +18,7 @@ fn make_toolset() -> Toolset {
                 .expect("meta pool for projector"),
         ),
     );
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         dir,
         skill_store,
         Arc::new(bendclaw_test_harness::mocks::skill::NoopSubscriptionStore),

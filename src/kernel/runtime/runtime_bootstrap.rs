@@ -24,7 +24,7 @@ use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
@@ -35,7 +35,7 @@ pub(super) struct RuntimeDeps {
     pub llm: Arc<dyn LLMProvider>,
     pub databases: Arc<crate::storage::AgentDatabases>,
     pub org: Arc<OrgServices>,
-    pub catalog: Arc<SkillCatalog>,
+    pub catalog: Arc<SkillIndex>,
     pub sync_cancel: CancellationToken,
 }
 
@@ -120,7 +120,7 @@ pub(super) async fn construct(
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::new(
         pool.with_database("evotai_meta")?,
     ));
-    let catalog = Arc::new(SkillCatalog::new(
+    let catalog = Arc::new(SkillIndex::new(
         workspace_root.to_path_buf(),
         skill_store_for_catalog,
         sub_store,
@@ -285,7 +285,7 @@ pub(super) async fn construct_minimal(
     let workspace_root = Path::new(&config.workspace.root_dir);
     let skill_store = Arc::new(crate::kernel::skills::store::DatabendSharedSkillStore::noop());
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::noop());
-    let catalog = Arc::new(SkillCatalog::new(
+    let catalog = Arc::new(SkillIndex::new(
         workspace_root.to_path_buf(),
         skill_store,
         sub_store,

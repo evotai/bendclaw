@@ -12,7 +12,7 @@ use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
 use bendclaw::kernel::session::SessionManager;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
@@ -79,7 +79,7 @@ fn test_session(session_id: &str, agent_id: &str) -> Arc<Session> {
         })
     });
     let pool = fake.pool();
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         workspace_dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

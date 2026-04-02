@@ -10,7 +10,7 @@ use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillFile;
 use crate::kernel::skills::definition::skill::SkillScope;
 use crate::kernel::skills::definition::skill::SkillSource;
-use crate::kernel::skills::sync::SkillManager;
+use crate::kernel::skills::sync::SkillWriter;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -18,11 +18,11 @@ use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::OpType;
 pub struct SkillCreateTool {
-    service: Arc<SkillManager>,
+    service: Arc<SkillWriter>,
 }
 
 impl SkillCreateTool {
-    pub fn new(service: Arc<SkillManager>) -> Self {
+    pub fn new(service: Arc<SkillWriter>) -> Self {
         Self { service }
     }
 }

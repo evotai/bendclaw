@@ -8,8 +8,8 @@ use tokio_util::sync::CancellationToken;
 use crate::base::Result as AgentBaseResult;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::planning::build_run_driver;
-use crate::kernel::run::planning::RunAssemblyDeps;
 use crate::kernel::run::planning::RunConfig;
+use crate::kernel::run::planning::RunDeps;
 use crate::kernel::run::planning::RunRequest;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::trace::TraceRecorder;
@@ -24,7 +24,7 @@ pub struct EngineHandle {
 }
 
 pub fn launch(
-    deps: RunAssemblyDeps,
+    deps: RunDeps,
     trace: TraceRecorder,
     request: RunRequest,
     config: RunConfig,

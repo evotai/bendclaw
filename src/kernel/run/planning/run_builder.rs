@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::engine_deps::RunAssemblyDeps;
+use super::run_deps::RunDeps;
 use super::tool_view::ProgressiveToolView;
 use crate::kernel::run::context::Context;
 use crate::kernel::run::event::Event;
@@ -50,7 +50,7 @@ pub struct RunDriver {
 }
 
 pub fn build_run_driver(
-    deps: RunAssemblyDeps,
+    deps: RunDeps,
     trace: TraceRecorder,
     request: RunRequest,
     config: RunConfig,

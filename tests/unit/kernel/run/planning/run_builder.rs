@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bendclaw::kernel::run::planning::build_run_driver;
-use bendclaw::kernel::run::planning::RunAssemblyDeps;
 use bendclaw::kernel::run::planning::RunConfig;
+use bendclaw::kernel::run::planning::RunDeps;
 use bendclaw::kernel::run::planning::RunRequest;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::trace::TraceRecorder;
@@ -21,11 +21,11 @@ fn test_trace_recorder() -> TraceRecorder {
     TraceRecorder::noop("t1", "r1", "a1", "s1", "u1")
 }
 
-fn test_deps() -> RunAssemblyDeps {
+fn test_deps() -> RunDeps {
     let workspace = bendclaw_test_harness::mocks::context::test_workspace(
         std::env::temp_dir().join("bendclaw-test-run-deps"),
     );
-    RunAssemblyDeps {
+    RunDeps {
         workspace,
         toolset: Toolset {
             definitions: Arc::new(vec![]),

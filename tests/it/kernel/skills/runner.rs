@@ -13,7 +13,7 @@ use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::definition::skill::SkillFile;
 use bendclaw::kernel::skills::definition::skill::SkillScope;
 use bendclaw::kernel::skills::definition::skill::SkillSource;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::variables::Variable;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
@@ -61,15 +61,15 @@ fn test_workspace_with_variables(variables: &[Variable]) -> Arc<Workspace> {
     ))
 }
 
-fn make_projector_with_skill(skill: &Skill) -> Arc<SkillCatalog> {
+fn make_projector_with_skill(skill: &Skill) -> Arc<SkillIndex> {
     make_projector_with_skill_for(skill, "u1")
 }
 
-fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillCatalog> {
+fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillIndex> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
     bendclaw::kernel::skills::sources::remote::writer::write_skill(&dir, user_id, skill);
-    Arc::new(SkillCatalog::new(
+    Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -77,10 +77,10 @@ fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillCatal
     ))
 }
 
-fn make_empty_projector() -> Arc<SkillCatalog> {
+fn make_empty_projector() -> Arc<SkillIndex> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    Arc::new(SkillCatalog::new(
+    Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -386,13 +386,13 @@ fn make_projector_with_subscribed_skill(
     skill: &Skill,
     subscriber: &str,
     owner: &str,
-) -> Arc<SkillCatalog> {
+) -> Arc<SkillIndex> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
     bendclaw::kernel::skills::sources::remote::writer::write_subscribed_skill(
         &dir, subscriber, owner, skill,
     );
-    Arc::new(SkillCatalog::new(
+    Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

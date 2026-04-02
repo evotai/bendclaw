@@ -1,8 +1,8 @@
-//! SkillManager — write-side orchestrator.
+//! SkillWriter — write-side orchestrator.
 //!
 //! Write: store + catalog.reconcile().
 //! Usage tracking: store.
-//! All reads go directly through SkillCatalog.
+//! All reads go directly through SkillIndex.
 
 use std::sync::Arc;
 
@@ -11,20 +11,20 @@ use crate::kernel::run::execution::skills::UsageSink;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillId;
 use crate::kernel::skills::store::SharedSkillStore;
-use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::subscriptions::SubscriptionStore;
 
-pub struct SkillManager {
+pub struct SkillWriter {
     store: Arc<dyn SharedSkillStore>,
     sub_store: Arc<dyn SubscriptionStore>,
-    catalog: Arc<SkillCatalog>,
+    catalog: Arc<SkillIndex>,
 }
 
-impl SkillManager {
+impl SkillWriter {
     pub fn new(
         store: Arc<dyn SharedSkillStore>,
         sub_store: Arc<dyn SubscriptionStore>,
-        catalog: Arc<SkillCatalog>,
+        catalog: Arc<SkillIndex>,
     ) -> Self {
         Self {
             store,
@@ -40,7 +40,7 @@ impl SkillManager {
         self.store.save(user_id, &skill).await?;
         if let Err(e) = self.catalog.reconcile(user_id).await {
             crate::observability::log::slog!(
-                warn, "skill_manager", "reconcile_after_create_failed",
+                warn, "skill_writer", "reconcile_after_create_failed",
                 user_id, error = %e,
             );
         }
@@ -51,7 +51,7 @@ impl SkillManager {
         self.store.remove(user_id, name).await?;
         if let Err(e) = self.catalog.reconcile(user_id).await {
             crate::observability::log::slog!(
-                warn, "skill_manager", "reconcile_after_delete_failed",
+                warn, "skill_writer", "reconcile_after_delete_failed",
                 user_id, error = %e,
             );
         }
@@ -70,7 +70,7 @@ impl SkillManager {
             .await?;
         if let Err(e) = self.catalog.reconcile(user_id).await {
             crate::observability::log::slog!(
-                warn, "skill_manager", "reconcile_after_subscribe_failed",
+                warn, "skill_writer", "reconcile_after_subscribe_failed",
                 user_id, error = %e,
             );
         }
@@ -83,7 +83,7 @@ impl SkillManager {
             .await?;
         if let Err(e) = self.catalog.reconcile(user_id).await {
             crate::observability::log::slog!(
-                warn, "skill_manager", "reconcile_after_unsubscribe_failed",
+                warn, "skill_writer", "reconcile_after_unsubscribe_failed",
                 user_id, error = %e,
             );
         }
@@ -91,7 +91,7 @@ impl SkillManager {
     }
 }
 
-impl UsageSink for SkillManager {
+impl UsageSink for SkillWriter {
     fn touch_used(&self, id: SkillId, agent_id: String) {
         let store = self.store.clone();
         crate::base::spawn_fire_and_forget("skill_touch", async move {

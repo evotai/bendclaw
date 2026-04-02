@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use bendclaw::kernel::run::execution::skills::UsageSink;
 use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::store::SharedSkillStore;
-use bendclaw::kernel::skills::sync::SkillManager;
+use bendclaw::kernel::skills::sync::SkillWriter;
 use bendclaw::kernel::subscriptions::store::Subscription;
 use bendclaw::kernel::subscriptions::store::SubscriptionStore;
 use parking_lot::Mutex;
@@ -166,8 +166,8 @@ impl UsageSink for NoopUsageSink {
 /// Build a test `SkillProjector` backed by a temp directory (no DB needed for hub-only tests).
 pub fn test_skill_projector(
     workspace_root: PathBuf,
-) -> Arc<bendclaw::kernel::skills::sync::SkillCatalog> {
-    Arc::new(bendclaw::kernel::skills::sync::SkillCatalog::new(
+) -> Arc<bendclaw::kernel::skills::sync::SkillIndex> {
+    Arc::new(bendclaw::kernel::skills::sync::SkillIndex::new(
         workspace_root,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -175,23 +175,23 @@ pub fn test_skill_projector(
     ))
 }
 
-/// Build a test `SkillManager` wrapping a catalog with noop stores.
+/// Build a test `SkillWriter` wrapping a catalog with noop stores.
 pub fn test_skill_service(
-    projector: Arc<bendclaw::kernel::skills::sync::SkillCatalog>,
-) -> Arc<SkillManager> {
-    Arc::new(SkillManager::new(
+    projector: Arc<bendclaw::kernel::skills::sync::SkillIndex>,
+) -> Arc<SkillWriter> {
+    Arc::new(SkillWriter::new(
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
         projector,
     ))
 }
 
-/// Build a test `SkillManager` with a custom `SharedSkillStore`.
+/// Build a test `SkillWriter` with a custom `SharedSkillStore`.
 pub fn test_skill_service_with_store(
     store: Arc<dyn SharedSkillStore>,
-    projector: Arc<bendclaw::kernel::skills::sync::SkillCatalog>,
-) -> Arc<SkillManager> {
-    Arc::new(SkillManager::new(
+    projector: Arc<bendclaw::kernel::skills::sync::SkillIndex>,
+) -> Arc<SkillWriter> {
+    Arc::new(SkillWriter::new(
         store,
         Arc::new(NoopSubscriptionStore),
         projector,

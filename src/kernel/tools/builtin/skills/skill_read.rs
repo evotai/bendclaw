@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::base::Result;
 use crate::kernel::skills::definition::sanitizer::sanitize_skill_content;
-use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -20,11 +20,11 @@ const MAX_SKILL_CONTENT_BYTES: usize = 64 * 1024;
 
 /// In-process tool that reads skill documentation.
 pub struct SkillReadTool {
-    catalog: Arc<SkillCatalog>,
+    catalog: Arc<SkillIndex>,
 }
 
 impl SkillReadTool {
-    pub fn new(catalog: Arc<SkillCatalog>) -> Self {
+    pub fn new(catalog: Arc<SkillIndex>) -> Self {
         Self { catalog }
     }
 }

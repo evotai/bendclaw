@@ -8,7 +8,7 @@ use crate::kernel::session::runtime::session_resources::SessionResources;
 use crate::kernel::tools::definition::toolset::Toolset;
 
 /// Narrow projection of SessionResources — only what run assembly needs.
-pub struct RunAssemblyDeps {
+pub struct RunDeps {
     pub workspace: Arc<crate::kernel::session::workspace::Workspace>,
     pub toolset: Toolset,
     pub skill_executor: Arc<dyn SkillExecutor>,
@@ -18,7 +18,7 @@ pub struct RunAssemblyDeps {
     pub steering_source: Option<Arc<dyn SteeringSource>>,
 }
 
-impl RunAssemblyDeps {
+impl RunDeps {
     pub fn from_resources(r: &SessionResources) -> Self {
         Self {
             workspace: r.workspace.clone(),

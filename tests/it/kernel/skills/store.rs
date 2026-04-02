@@ -11,7 +11,7 @@ use bendclaw::kernel::skills::definition::skill::SkillFile;
 use bendclaw::kernel::skills::definition::skill::SkillScope;
 use bendclaw::kernel::skills::definition::skill::SkillSource;
 use bendclaw::kernel::skills::sources::remote::writer;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 use bendclaw_test_harness::mocks::skill::NoopUsageSink;
@@ -97,7 +97,7 @@ fn for_user_deduplicates_user_skill_over_hub_and_sorts_names() -> Result<()> {
     writer::write_skill(workspace.path(), "user-a", &beta_skill)
         .ok_or_else(|| anyhow::anyhow!("failed to write beta skill"))?;
 
-    let catalog = SkillCatalog::new(
+    let catalog = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -134,7 +134,7 @@ fn get_hub_reads_latest_version_from_versioned_layout() -> Result<()> {
         "---\nname: tool\nversion: 2.0.0\ndescription: tool\n---\nnew",
     )?;
 
-    let catalog = SkillCatalog::new(
+    let catalog = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -167,7 +167,7 @@ fn disk_checksum_changes_when_creator_changes() -> Result<()> {
     let checksum_v2 = writer::read_disk_checksum(workspace.path(), "user-a", "creator-skill")
         .ok_or_else(|| anyhow::anyhow!("missing checksum v2"))?;
 
-    let catalog = SkillCatalog::new(
+    let catalog = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -210,7 +210,7 @@ fn same_user_same_name_overwrite_replaces_files_and_creator() -> Result<()> {
     ]);
     writer::write_skill(workspace.path(), "user-a", &skill_v2);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -247,7 +247,7 @@ fn same_name_can_exist_under_different_users() -> Result<()> {
         &make_user_skill("user-b", "shared-name", "user b", "user-b"),
     );
 
-    let projector_a = SkillCatalog::new(
+    let projector_a = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -278,7 +278,7 @@ async fn hub_and_remote_updates_are_visible_and_remote_skill_reads_variables() -
     )?;
     std::fs::write(hub_dir.join("references/guide.md"), "# Guide V1")?;
 
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -359,7 +359,7 @@ fn subscribed_skill_visible_under_namespaced_key() -> Result<()> {
     let skill = make_user_skill("alice", "report", "alice report", "alice");
     writer::write_subscribed_skill(workspace.path(), "bob", "alice", &skill);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -388,7 +388,7 @@ fn subscribed_skill_in_visible_list_with_tool_key() -> Result<()> {
     let subscribed = make_user_skill("alice", "shared-tool", "alice tool", "alice");
     writer::write_subscribed_skill(workspace.path(), "bob", "alice", &subscribed);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -424,7 +424,7 @@ fn same_name_subscribed_from_different_owners_both_visible_and_stable() -> Resul
     let charlie_skill = make_user_skill("charlie", "report", "charlie report", "charlie");
     writer::write_subscribed_skill(workspace.path(), "viewer", "charlie", &charlie_skill);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -469,7 +469,7 @@ fn subscribed_skill_read_skill_with_doc_path() -> Result<()> {
     ];
     writer::write_subscribed_skill(workspace.path(), "bob", "alice", &skill);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -500,7 +500,7 @@ fn owned_skill_overrides_hub_but_subscribed_coexists() -> Result<()> {
     let subscribed = make_user_skill("alice", "report", "alice report", "alice");
     writer::write_subscribed_skill(workspace.path(), "bob", "alice", &subscribed);
 
-    let projector = SkillCatalog::new(
+    let projector = SkillIndex::new(
         workspace.path().to_path_buf(),
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

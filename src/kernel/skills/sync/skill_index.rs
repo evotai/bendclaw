@@ -1,4 +1,4 @@
-//! SkillCatalog — single read-side entry point for skill visibility + filesystem mirror.
+//! SkillIndex — single read-side entry point for skill visibility + filesystem mirror.
 //!
 //! Owns:
 //! - `reconcile()`: writes/evicts filesystem mirror from DB state
@@ -25,14 +25,14 @@ use crate::kernel::skills::sources::remote;
 use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 
-pub struct SkillCatalog {
+pub struct SkillIndex {
     workspace_root: PathBuf,
     store: Arc<dyn SharedSkillStore>,
     sub_store: Arc<dyn SubscriptionStore>,
     hub_config: Option<HubConfig>,
 }
 
-impl SkillCatalog {
+impl SkillIndex {
     pub fn new(
         workspace_root: PathBuf,
         store: Arc<dyn SharedSkillStore>,

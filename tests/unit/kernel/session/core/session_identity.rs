@@ -7,7 +7,7 @@ use bendclaw::kernel::session::runtime::session_resources::SessionResources;
 use bendclaw::kernel::session::workspace::SandboxResolver;
 use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::session::Session;
-use bendclaw::kernel::skills::sync::SkillCatalog;
+use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
@@ -31,7 +31,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         Arc::new(SandboxResolver),
     ));
     let pool = bendclaw_test_harness::mocks::context::dummy_pool();
-    let projector = Arc::new(SkillCatalog::new(
+    let projector = Arc::new(SkillIndex::new(
         workspace_dir,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),

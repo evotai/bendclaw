@@ -6,8 +6,8 @@ use crate::kernel::memory::store::SharedMemoryStore;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::skills::store::DatabendSharedSkillStore;
-use crate::kernel::skills::sync::SkillCatalog;
-use crate::kernel::skills::sync::SkillManager;
+use crate::kernel::skills::sync::SkillIndex;
+use crate::kernel::skills::sync::SkillWriter;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::kernel::variables::service::VariableService;
@@ -17,8 +17,8 @@ use crate::storage::pool::Pool;
 
 pub struct OrgServices {
     variables: Arc<VariableService>,
-    catalog: Arc<SkillCatalog>,
-    manager: Arc<SkillManager>,
+    catalog: Arc<SkillIndex>,
+    manager: Arc<SkillWriter>,
     memory: Option<Arc<MemoryService>>,
     subscriptions: Arc<dyn SubscriptionStore>,
 }
@@ -26,7 +26,7 @@ pub struct OrgServices {
 impl OrgServices {
     pub fn new(
         meta_pool: Pool,
-        catalog: Arc<SkillCatalog>,
+        catalog: Arc<SkillIndex>,
         config: &AgentConfig,
         llm: Arc<dyn LLMProvider>,
     ) -> Self {
@@ -37,7 +37,7 @@ impl OrgServices {
         let variables = Arc::new(VariableService::new(variable_store, sub_store.clone()));
 
         let skill_store = Arc::new(DatabendSharedSkillStore::new(meta_pool.clone()));
-        let manager = Arc::new(SkillManager::new(
+        let manager = Arc::new(SkillWriter::new(
             skill_store,
             sub_store.clone(),
             catalog.clone(),
@@ -64,11 +64,11 @@ impl OrgServices {
         &self.variables
     }
 
-    pub(crate) fn catalog(&self) -> &Arc<SkillCatalog> {
+    pub(crate) fn catalog(&self) -> &Arc<SkillIndex> {
         &self.catalog
     }
 
-    pub fn manager(&self) -> &Arc<SkillManager> {
+    pub fn manager(&self) -> &Arc<SkillWriter> {
         &self.manager
     }
 

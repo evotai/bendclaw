@@ -14,8 +14,8 @@ use crate::base::Result;
 use crate::kernel::run::launcher;
 use crate::kernel::run::launcher::EngineHandle;
 use crate::kernel::run::persist::persister::TurnPersister;
-use crate::kernel::run::planning::RunAssemblyDeps;
 use crate::kernel::run::planning::RunConfig;
+use crate::kernel::run::planning::RunDeps;
 use crate::kernel::run::planning::RunRequest;
 use crate::kernel::session::core::session_state::SessionState;
 use crate::kernel::session::diagnostics;
@@ -231,7 +231,7 @@ impl<'a> SessionRunCoordinator<'a> {
         is_dispatched: bool,
         opts: &RunOptions,
     ) -> EngineHandle {
-        let deps = RunAssemblyDeps::from_resources(self.resources);
+        let deps = RunDeps::from_resources(self.resources);
         let request = RunRequest {
             user_id: self.user_id.clone(),
             agent_id: self.agent_id.clone(),

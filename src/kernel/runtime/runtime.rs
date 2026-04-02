@@ -20,7 +20,7 @@ use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;
-use crate::kernel::skills::sync::SkillCatalog;
+use crate::kernel::skills::sync::SkillIndex;
 use crate::llm::provider::LLMProvider;
 use crate::storage::pool::Pool;
 
@@ -30,7 +30,7 @@ pub struct Runtime {
     pub(crate) llm: RwLock<Arc<dyn LLMProvider>>,
     pub(crate) agent_llms: RwLock<HashMap<String, Arc<dyn LLMProvider>>>,
     pub(crate) org: Arc<OrgServices>,
-    pub(crate) catalog: Arc<SkillCatalog>,
+    pub(crate) catalog: Arc<SkillIndex>,
     pub(crate) sessions: Arc<SessionManager>,
     pub(crate) session_lifecycle: Arc<SessionLifecycle>,
     pub(crate) channels: Arc<ChannelRegistry>,

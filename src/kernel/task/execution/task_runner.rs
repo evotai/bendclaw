@@ -17,7 +17,7 @@ pub async fn execute_task(
     task: &TaskRecord,
     lease_token: &str,
     http_client: &reqwest::Client,
-) -> crate::base::Result<()> {
+) -> crate::types::Result<()> {
     let pool = runtime.databases().agent_pool(agent_id)?;
     let node_id = runtime.config().node_id.clone();
 

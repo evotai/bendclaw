@@ -36,7 +36,7 @@ fn registry_unknown_provider_returns_llm_request_error() {
     let result = registry.create(&ep);
     assert!(result.is_err());
     let err = result.err().unwrap();
-    assert_eq!(err.code, bendclaw::base::ErrorCode::LLM_REQUEST);
+    assert_eq!(err.code, bendclaw::types::ErrorCode::LLM_REQUEST);
 }
 
 #[test]

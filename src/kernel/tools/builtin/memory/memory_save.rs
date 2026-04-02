@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::base::Result;
 use crate::kernel::memory::MemoryScope;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -15,6 +14,7 @@ use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
+use crate::types::Result;
 
 pub struct MemorySaveTool {
     memory: Arc<MemoryService>,

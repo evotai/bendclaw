@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::base::Result as BaseResult;
 use bendclaw::kernel::channels::model::account::ChannelAccount;
 use bendclaw::kernel::channels::model::capabilities::ChannelCapabilities;
 use bendclaw::kernel::channels::model::capabilities::ChannelKind;
@@ -18,6 +17,7 @@ use bendclaw::kernel::task::delivery::channel_delivery::render_delivery_text;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskRecord;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::types::Result as BaseResult;
 use tokio_util::sync::CancellationToken;
 
 use crate::common::fake_databend::FakeDatabend;

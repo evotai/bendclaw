@@ -27,7 +27,7 @@ impl DatabendClient for RecordingClient {
         &self,
         sql: &str,
         _database: Option<&str>,
-    ) -> bendclaw::base::Result<QueryResponse> {
+    ) -> bendclaw::types::Result<QueryResponse> {
         self.sqls
             .lock()
             .expect("trace sqls lock")
@@ -43,11 +43,11 @@ impl DatabendClient for RecordingClient {
         })
     }
 
-    async fn page(&self, _uri: &str) -> bendclaw::base::Result<QueryResponse> {
+    async fn page(&self, _uri: &str) -> bendclaw::types::Result<QueryResponse> {
         unreachable!("trace recorder should not request pages")
     }
 
-    async fn finalize(&self, _uri: &str) -> bendclaw::base::Result<()> {
+    async fn finalize(&self, _uri: &str) -> bendclaw::types::Result<()> {
         Ok(())
     }
 }

@@ -1,9 +1,9 @@
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::runtime::RuntimeStatus;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 impl Runtime {
     pub fn status(&self) -> RuntimeStatus {
@@ -66,9 +66,9 @@ impl Runtime {
                         })
                     })
                     .collect();
-                crate::base::runtime::join_bounded(
+                crate::types::runtime::join_bounded(
                     futs,
-                    crate::base::runtime::CONCURRENCY_SHUTDOWN,
+                    crate::types::runtime::CONCURRENCY_SHUTDOWN,
                 )
                 .await;
             }

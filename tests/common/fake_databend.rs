@@ -3,13 +3,13 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use bendclaw::base::ErrorCode;
-use bendclaw::base::Result;
 use bendclaw::storage::pool::ApiError;
 use bendclaw::storage::pool::DatabendClient;
 use bendclaw::storage::pool::QueryResponse;
 use bendclaw::storage::pool::SchemaField;
 use bendclaw::storage::Pool;
+use bendclaw::types::ErrorCode;
+use bendclaw::types::Result;
 use databend_common_ast::parser::parse_sql;
 use databend_common_ast::parser::tokenize_sql;
 use databend_common_ast::parser::Dialect;

@@ -1,5 +1,4 @@
 use super::record::ConfigVersionRecord;
-use crate::base::Result;
 use crate::llm::config::LLMConfig;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -7,6 +6,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 #[derive(Clone)]
 struct VersionMapper;
@@ -19,7 +19,7 @@ impl RowMapper for VersionMapper {
          identity, soul, token_limit_total, token_limit_daily, llm_config, notes, TO_VARCHAR(created_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<ConfigVersionRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<ConfigVersionRecord> {
         Ok(ConfigVersionRecord {
             id: sql::col(row, 0),
             agent_id: sql::col(row, 1),
@@ -134,7 +134,7 @@ fn parse_optional_u64(raw: &str) -> Option<u64> {
 fn parse_optional_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     label: &str,
-) -> crate::base::Result<Option<T>> {
+) -> crate::types::Result<Option<T>> {
     if raw.is_empty() || raw == "NULL" || raw == "null" {
         return Ok(None);
     }

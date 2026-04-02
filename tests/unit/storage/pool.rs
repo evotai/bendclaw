@@ -105,7 +105,7 @@ async fn pool_exec_classifies_api_error_from_injected_client() {
 
     let error = pool.exec("SELECT 1").await.expect_err("query should fail");
 
-    assert_eq!(error.code, bendclaw::base::ErrorCode::NOT_FOUND);
+    assert_eq!(error.code, bendclaw::types::ErrorCode::NOT_FOUND);
     assert!(error.message.contains("Unknown database"));
 }
 

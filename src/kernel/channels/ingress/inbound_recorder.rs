@@ -1,10 +1,10 @@
-use crate::base::new_id;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::model::message::InboundEvent;
 use crate::kernel::channels::runtime::writer::ChannelMessageOp;
 use crate::kernel::runtime::Runtime;
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
+use crate::types::new_id;
 
 /// Record all inbound messages (fire-and-forget).
 pub(crate) fn record_inbound(

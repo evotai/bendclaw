@@ -8,7 +8,6 @@ use parking_lot::Mutex;
 use super::persist_op::PersistOp;
 use super::persist_op::PersistWriter;
 use super::persister_diagnostics;
-use crate::base::ErrorCode;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::result::Reason;
 use crate::kernel::run::result::Result as AgentResult;
@@ -22,6 +21,7 @@ use crate::observability::server_log;
 use crate::storage::dal::run::record::RunMetrics;
 use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
+use crate::types::ErrorCode;
 
 struct Inner {
     storage: Arc<dyn SessionStore>,

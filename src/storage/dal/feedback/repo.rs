@@ -1,5 +1,4 @@
 use super::record::FeedbackRecord;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -7,6 +6,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "feedback";
 
@@ -20,7 +20,7 @@ impl RowMapper for FeedbackMapper {
         "id, agent_id, session_id, run_id, user_id, scope, created_by, rating, comment, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<FeedbackRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<FeedbackRecord> {
         Ok(FeedbackRecord {
             id: sql::col(row, 0),
             agent_id: sql::col(row, 1),

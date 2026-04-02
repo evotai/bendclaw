@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-use crate::base::Result;
+use crate::config::agent::AgentConfig;
+use crate::config::agent::CheckpointConfig;
 use crate::config::ClusterConfig;
 use crate::config::DirectiveConfig;
 use crate::config::WorkspaceConfig;
 use crate::kernel::cluster::ClusterOptions;
-use crate::kernel::runtime::agent_config::AgentConfig;
-use crate::kernel::runtime::agent_config::CheckpointConfig;
 use crate::kernel::runtime::runtime::Runtime;
 use crate::kernel::runtime::runtime_bootstrap::construct;
 use crate::kernel::runtime::runtime_bootstrap::construct_minimal;
 use crate::llm::provider::LLMProvider;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 pub struct Builder {
     api_base_url: String,
@@ -161,7 +161,7 @@ impl Builder {
             max_duration_secs: self.max_duration_secs,
             workspace: self.workspace.clone(),
             checkpoint: CheckpointConfig::default(),
-            memory: crate::kernel::runtime::agent_config::MemoryConfig::default(),
+            memory: crate::config::agent::MemoryConfig::default(),
         }
     }
 }

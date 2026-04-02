@@ -8,7 +8,7 @@
 
 use async_trait::async_trait;
 
-use crate::base::Result;
+use crate::types::Result;
 
 /// Canonical contract: execute a planned run and produce a result.
 ///

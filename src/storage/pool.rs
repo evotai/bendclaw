@@ -9,12 +9,12 @@ use backon::Retryable;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::http;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::observability::log::slog;
 use crate::observability::log::storage_log;
 use crate::storage::http_adapter;
+use crate::types::http;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(60);
 const SQL_LOG_MAX_LEN: usize = 200;

@@ -41,10 +41,10 @@ impl ChannelOutbound for MockOutbound {
         _: &serde_json::Value,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<String> {
+    ) -> bendclaw::types::Result<String> {
         Ok(self.draft_msg_id.clone())
     }
-    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::base::Result<()> {
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn edit_message(
@@ -53,7 +53,7 @@ impl ChannelOutbound for MockOutbound {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn add_reaction(
@@ -62,7 +62,7 @@ impl ChannelOutbound for MockOutbound {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn send_draft(
@@ -70,7 +70,7 @@ impl ChannelOutbound for MockOutbound {
         _: &serde_json::Value,
         _: &str,
         text: &str,
-    ) -> bendclaw::base::Result<String> {
+    ) -> bendclaw::types::Result<String> {
         self.calls.lock().push(OutboundCall::SendDraft {
             text: text.to_string(),
         });
@@ -82,7 +82,7 @@ impl ChannelOutbound for MockOutbound {
         _: &str,
         msg_id: &str,
         text: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         self.calls.lock().push(OutboundCall::UpdateDraft {
             msg_id: msg_id.to_string(),
             text: text.to_string(),
@@ -95,7 +95,7 @@ impl ChannelOutbound for MockOutbound {
         _: &str,
         msg_id: &str,
         text: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         self.calls.lock().push(OutboundCall::FinalizeDraft {
             msg_id: msg_id.to_string(),
             text: text.to_string(),

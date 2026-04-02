@@ -70,7 +70,7 @@ impl Tool for TaskHistoryTool {
         &self,
         args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> crate::base::Result<ToolResult> {
+    ) -> crate::types::Result<ToolResult> {
         let task_id = match args.get("task_id").and_then(|v| v.as_str()) {
             Some(id) if !id.is_empty() => id,
             _ => return Ok(ToolResult::error("task_id is required")),

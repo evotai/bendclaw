@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 
-use crate::base::Result;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
@@ -15,6 +14,7 @@ use crate::kernel::lease::types::ResourceEntry;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
 use crate::storage::pool::Pool;
 use crate::storage::AgentDatabases;
+use crate::types::Result;
 
 pub struct ChannelLeaseResource {
     databases: Arc<AgentDatabases>,
@@ -112,7 +112,7 @@ impl LeaseResource for ChannelLeaseResource {
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         let repo = ChannelAccountRepo::new(entry.pool.clone());
         let account = repo.load(&entry.id).await?.ok_or_else(|| {
-            crate::base::ErrorCode::internal(format!(
+            crate::types::ErrorCode::internal(format!(
                 "channel account '{}' disappeared after claim",
                 entry.id
             ))

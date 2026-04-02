@@ -4,9 +4,9 @@ use std::time::Duration;
 use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::client::DirectiveClient;
 use crate::kernel::directive::diagnostics;
+use crate::types::Result;
 
 /// Runtime-owned directive cache.
 /// Keeps prompt reads off the request path and refreshes in the background.
@@ -56,7 +56,7 @@ impl DirectiveService {
     ) -> tokio::task::JoinHandle<()> {
         let service = self.clone();
         let interval_duration = self.refresh_interval;
-        crate::base::spawn_named("directive_refresh_loop", async move {
+        crate::types::spawn_named("directive_refresh_loop", async move {
             let mut interval = tokio::time::interval(interval_duration);
             interval.tick().await;
             diagnostics::log_loop_started(interval_duration.as_millis() as u64);

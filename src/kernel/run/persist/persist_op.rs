@@ -425,7 +425,7 @@ async fn record_usage(
     model: &str,
     input_price: f64,
     output_price: f64,
-) -> crate::base::Result<()> {
+) -> crate::types::Result<()> {
     if usage.total_tokens == 0 {
         return Ok(());
     }
@@ -456,7 +456,7 @@ async fn persist_event_records(
     storage: &dyn SessionStore,
     ctx: &server_log::ServerCtx<'_>,
     records: &[RunEventRecord],
-) -> crate::base::Result<()> {
+) -> crate::types::Result<()> {
     if records.is_empty() {
         return Ok(());
     }

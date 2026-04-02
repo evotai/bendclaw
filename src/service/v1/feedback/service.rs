@@ -1,11 +1,11 @@
 use super::http::CreateFeedbackRequest;
-use crate::base::new_id;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 use crate::service::v1::common::count_u64;
 use crate::service::v1::common::ListQuery;
 use crate::storage::dal::feedback::FeedbackRecord;
 use crate::storage::dal::feedback::FeedbackRepo;
+use crate::types::new_id;
 
 pub(super) async fn list_feedback(
     state: &AppState,

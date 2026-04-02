@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::kernel::runtime::agent_config::AgentConfig;
+use crate::config::agent::AgentConfig;
 use crate::kernel::session::workspace::OpenResolver;
 use crate::kernel::session::workspace::SandboxResolver;
 use crate::kernel::session::workspace::Workspace;
@@ -19,9 +19,9 @@ pub fn build_workspace_from_dir(
     workspace_dir: PathBuf,
     cwd_override: Option<&Path>,
     variables: &[Variable],
-) -> crate::base::Result<Arc<Workspace>> {
+) -> crate::types::Result<Arc<Workspace>> {
     if let Err(e) = std::fs::create_dir_all(&workspace_dir) {
-        return Err(crate::base::ErrorCode::internal(format!(
+        return Err(crate::types::ErrorCode::internal(format!(
             "failed to create session workspace: {e}"
         )));
     }
@@ -65,7 +65,7 @@ pub fn build_workspace(
     user_id: &str,
     cwd_override: Option<&Path>,
     variables: &[Variable],
-) -> crate::base::Result<Arc<Workspace>> {
+) -> crate::types::Result<Arc<Workspace>> {
     let workspace_dir = config.workspace.session_dir(user_id, agent_id, session_id);
     build_workspace_from_dir(config, workspace_dir, cwd_override, variables)
 }

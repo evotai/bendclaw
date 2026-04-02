@@ -1,4 +1,4 @@
-use bendclaw::base::entities::*;
+use bendclaw::types::entities::*;
 
 #[test]
 fn run_has_all_scope_fields() {

@@ -6,8 +6,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::model::capabilities::ChannelCapabilities;
 use crate::kernel::channels::model::capabilities::ChannelKind;
@@ -20,6 +18,8 @@ use crate::kernel::channels::runtime::channel_trait::InboundEventSender;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
 use crate::kernel::channels::runtime::channel_trait::ReceiverFactory;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub const TELEGRAM_CHANNEL_TYPE: &str = "telegram";
 const TELEGRAM_API: &str = "https://api.telegram.org";
@@ -118,7 +118,7 @@ impl ReceiverFactory for TelegramReceiverFactory {
         let client = self.client.clone();
         let account_id = account.channel_account_id.clone();
 
-        let handle = crate::base::spawn_named("telegram_long_poll", async move {
+        let handle = crate::types::spawn_named("telegram_long_poll", async move {
             let mut offset: i64 = 0;
             let mut attempt: u64 = 0;
             loop {

@@ -16,29 +16,29 @@ pub struct NoopSkillStore;
 
 #[async_trait]
 impl SharedSkillStore for NoopSkillStore {
-    async fn list(&self, _user_id: &str) -> bendclaw::base::Result<Vec<Skill>> {
+    async fn list(&self, _user_id: &str) -> bendclaw::types::Result<Vec<Skill>> {
         Ok(vec![])
     }
-    async fn get(&self, _user_id: &str, _name: &str) -> bendclaw::base::Result<Option<Skill>> {
+    async fn get(&self, _user_id: &str, _name: &str) -> bendclaw::types::Result<Option<Skill>> {
         Ok(None)
     }
-    async fn save(&self, _user_id: &str, _skill: &Skill) -> bendclaw::base::Result<()> {
+    async fn save(&self, _user_id: &str, _skill: &Skill) -> bendclaw::types::Result<()> {
         Ok(())
     }
-    async fn remove(&self, _user_id: &str, _name: &str) -> bendclaw::base::Result<()> {
+    async fn remove(&self, _user_id: &str, _name: &str) -> bendclaw::types::Result<()> {
         Ok(())
     }
-    async fn checksums(&self, _user_id: &str) -> bendclaw::base::Result<HashMap<String, String>> {
+    async fn checksums(&self, _user_id: &str) -> bendclaw::types::Result<HashMap<String, String>> {
         Ok(HashMap::new())
     }
     async fn touch_last_used(
         &self,
         _id: &bendclaw::kernel::skills::definition::skill::SkillId,
         _agent_id: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
-    async fn list_shared(&self, _user_id: &str) -> bendclaw::base::Result<Vec<Skill>> {
+    async fn list_shared(&self, _user_id: &str) -> bendclaw::types::Result<Vec<Skill>> {
         Ok(vec![])
     }
 }
@@ -66,25 +66,25 @@ impl MockSkillStore {
 
 #[async_trait]
 impl SharedSkillStore for MockSkillStore {
-    async fn list(&self, _user_id: &str) -> bendclaw::base::Result<Vec<Skill>> {
+    async fn list(&self, _user_id: &str) -> bendclaw::types::Result<Vec<Skill>> {
         Ok(self.skills.lock().values().cloned().collect())
     }
 
-    async fn get(&self, _user_id: &str, name: &str) -> bendclaw::base::Result<Option<Skill>> {
+    async fn get(&self, _user_id: &str, name: &str) -> bendclaw::types::Result<Option<Skill>> {
         Ok(self.skills.lock().get(name).cloned())
     }
 
-    async fn save(&self, _user_id: &str, skill: &Skill) -> bendclaw::base::Result<()> {
+    async fn save(&self, _user_id: &str, skill: &Skill) -> bendclaw::types::Result<()> {
         self.skills.lock().insert(skill.name.clone(), skill.clone());
         Ok(())
     }
 
-    async fn remove(&self, _user_id: &str, name: &str) -> bendclaw::base::Result<()> {
+    async fn remove(&self, _user_id: &str, name: &str) -> bendclaw::types::Result<()> {
         self.skills.lock().remove(name);
         Ok(())
     }
 
-    async fn checksums(&self, _user_id: &str) -> bendclaw::base::Result<HashMap<String, String>> {
+    async fn checksums(&self, _user_id: &str) -> bendclaw::types::Result<HashMap<String, String>> {
         let map = self
             .skills
             .lock()
@@ -98,11 +98,11 @@ impl SharedSkillStore for MockSkillStore {
         &self,
         _id: &bendclaw::kernel::skills::definition::skill::SkillId,
         _agent_id: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
 
-    async fn list_shared(&self, _user_id: &str) -> bendclaw::base::Result<Vec<Skill>> {
+    async fn list_shared(&self, _user_id: &str) -> bendclaw::types::Result<Vec<Skill>> {
         Ok(vec![])
     }
 }
@@ -118,7 +118,7 @@ impl SubscriptionStore for NoopSubscriptionStore {
         _resource_type: &str,
         _resource_key: &str,
         _owner_id: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
 
@@ -128,7 +128,7 @@ impl SubscriptionStore for NoopSubscriptionStore {
         _resource_type: &str,
         _resource_key: &str,
         _owner_id: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
 
@@ -136,7 +136,7 @@ impl SubscriptionStore for NoopSubscriptionStore {
         &self,
         _user_id: &str,
         _resource_type: &str,
-    ) -> bendclaw::base::Result<Vec<Subscription>> {
+    ) -> bendclaw::types::Result<Vec<Subscription>> {
         Ok(vec![])
     }
 
@@ -146,7 +146,7 @@ impl SubscriptionStore for NoopSubscriptionStore {
         _resource_type: &str,
         _resource_key: &str,
         _owner_id: &str,
-    ) -> bendclaw::base::Result<bool> {
+    ) -> bendclaw::types::Result<bool> {
         Ok(false)
     }
 }

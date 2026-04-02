@@ -12,9 +12,9 @@ use tokio_util::sync::CancellationToken;
 use super::diagnostics;
 use super::types::LeaseResource;
 use super::types::ResourceEntry;
-use crate::base::id::new_id;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
+use crate::types::id::new_id;
 
 // ── Builder ──────────────────────────────────────────────────────────────────
 
@@ -120,7 +120,8 @@ impl LeaseServiceHandle {
             }
             self.lease_counts[i].store(0, Ordering::Relaxed);
         }
-        crate::base::runtime::join_bounded(futs, crate::base::runtime::CONCURRENCY_SHUTDOWN).await;
+        crate::types::runtime::join_bounded(futs, crate::types::runtime::CONCURRENCY_SHUTDOWN)
+            .await;
     }
 
     /// Wait for all scan loops to finish (call after cancellation).
@@ -148,7 +149,7 @@ fn spawn_scan_loop(
     lease_count: Arc<AtomicUsize>,
     cancel: CancellationToken,
 ) -> JoinHandle<()> {
-    crate::base::spawn_named("lease_scan_loop", async move {
+    crate::types::spawn_named("lease_scan_loop", async move {
         let interval = Duration::from_secs(resource.scan_interval_secs());
         let mut consecutive_errors: u64 = 0;
         let mut prev_count: u64 = 0;
@@ -206,7 +207,7 @@ async fn scan_once(
     lease_count: &Arc<AtomicUsize>,
     cancel: &CancellationToken,
     prev_count: &mut u64,
-) -> crate::base::Result<()> {
+) -> crate::types::Result<()> {
     if cancel.is_cancelled() {
         return Ok(());
     }
@@ -285,7 +286,7 @@ async fn scan_once(
                         let cnt = release_count.clone();
                         let res = release_resource.clone();
                         let id = resource_id.to_string();
-                        crate::base::spawn_named("lease_release", async move {
+                        crate::types::spawn_named("lease_release", async move {
                             let pool = if let Some(lease) = h.lock().await.remove(&id) {
                                 let p = lease.pool.clone();
                                 let _ = release_sql(&p, &t, &id, &lease.token).await;
@@ -378,7 +379,7 @@ async fn claim_sql(
     token: &str,
     lease_secs: u64,
     extra_cond: Option<&str>,
-) -> crate::base::Result<bool> {
+) -> crate::types::Result<bool> {
     let mut update = sql::Sql::update(table)
         .set("lease_node_id", node_id)
         .set("lease_token", token)
@@ -399,7 +400,7 @@ async fn claim_sql(
     }
     tokio::time::timeout(LEASE_SQL_TIMEOUT, pool.exec(&update.build()))
         .await
-        .map_err(|_| crate::base::ErrorCode::timeout("claim update timed out"))??;
+        .map_err(|_| crate::types::ErrorCode::timeout("claim update timed out"))??;
 
     let check = sql::Sql::select("COUNT(*)")
         .from(table)
@@ -409,7 +410,7 @@ async fn claim_sql(
         .build();
     let row = tokio::time::timeout(LEASE_SQL_TIMEOUT, pool.query_row(&check))
         .await
-        .map_err(|_| crate::base::ErrorCode::timeout("claim check timed out"))??;
+        .map_err(|_| crate::types::ErrorCode::timeout("claim check timed out"))??;
     let count = row
         .as_ref()
         .and_then(|r| r.as_array())
@@ -427,7 +428,7 @@ async fn renew_sql(
     id: &str,
     token: &str,
     lease_secs: u64,
-) -> crate::base::Result<()> {
+) -> crate::types::Result<()> {
     let update = sql::Sql::update(table)
         .set_raw(
             "lease_expires_at",
@@ -439,11 +440,11 @@ async fn renew_sql(
         .build();
     tokio::time::timeout(LEASE_SQL_TIMEOUT, pool.exec(&update))
         .await
-        .map_err(|_| crate::base::ErrorCode::timeout("renew timed out"))?
+        .map_err(|_| crate::types::ErrorCode::timeout("renew timed out"))?
 }
 
 /// Release a single lease. Only clears lease columns.
-async fn release_sql(pool: &Pool, table: &str, id: &str, token: &str) -> crate::base::Result<()> {
+async fn release_sql(pool: &Pool, table: &str, id: &str, token: &str) -> crate::types::Result<()> {
     let update = sql::Sql::update(table)
         .set_raw("lease_node_id", "NULL")
         .set_raw("lease_token", "NULL")

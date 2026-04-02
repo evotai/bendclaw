@@ -1,7 +1,7 @@
 use std::fmt;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageKind {

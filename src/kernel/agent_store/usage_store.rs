@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::base::Result;
 use crate::kernel::agent_store::diagnostics;
 use crate::kernel::run::usage::CostSummary;
 use crate::kernel::run::usage::UsageEvent;
@@ -11,6 +10,7 @@ use crate::llm::provider::LLMProvider;
 use crate::storage::dal::usage::record::UsageRecord;
 use crate::storage::dal::usage::repo::UsageRepo;
 use crate::storage::time::now;
+use crate::types::Result;
 
 const FALLBACK_INPUT: f64 = 3.0;
 const FALLBACK_OUTPUT: f64 = 15.0;

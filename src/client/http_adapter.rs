@@ -1,5 +1,5 @@
-use crate::base::ErrorCode;
-use crate::base::HttpTransportError;
+use crate::types::ErrorCode;
+use crate::types::HttpTransportError;
 
 pub(crate) fn to_cluster_dispatch(operation: &str, err: HttpTransportError) -> ErrorCode {
     ErrorCode::cluster_dispatch(format!("{operation}: {err}"))

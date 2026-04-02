@@ -13,9 +13,9 @@ use super::provider::LLMResponse;
 use super::stream::ResponseStream;
 use super::stream::StreamEvent;
 use super::tool::ToolSchema;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::observability::log::slog;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 const DEFAULT_MAX_RETRIES: u32 = 3;
 const DEFAULT_BASE_BACKOFF_MS: u64 = 1000;
@@ -107,7 +107,7 @@ impl LLMProvider for ReliableProvider {
         let tools = tools.to_vec();
         let span = tracing::Span::current();
 
-        crate::base::spawn_fire_and_forget(
+        crate::types::spawn_fire_and_forget(
             "llm_retry_stream",
             async move {
                 loop {

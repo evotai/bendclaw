@@ -249,7 +249,7 @@ impl LLMProvider for TraceLlm {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         let ex = self.next_exchange();
         let usage = mock_usage_from(ex.usage.as_ref());
         let (turn, resp) = fixture_turn_to_response(ex.response, usage.clone());

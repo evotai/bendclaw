@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use super::ChannelRegistry;
-use crate::base::truncate_bytes_on_char_boundary;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::runtime::diagnostics;
 use crate::storage::dal::channel_account::record::ChannelAccountRecord;
+use crate::types::truncate_bytes_on_char_boundary;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub async fn send_text_to_account(
     channels: &ChannelRegistry,

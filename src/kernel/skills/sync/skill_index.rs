@@ -11,7 +11,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::config::HubConfig;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillScope;
@@ -24,6 +23,7 @@ use crate::kernel::skills::sources::hub;
 use crate::kernel::skills::sources::remote;
 use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::subscriptions::SubscriptionStore;
+use crate::types::Result;
 
 pub struct SkillIndex {
     workspace_root: PathBuf,

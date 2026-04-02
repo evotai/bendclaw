@@ -96,7 +96,7 @@ impl ExecutionRecorder {
         meta: &OperationMeta,
         error: String,
     ) {
-        let err = crate::base::truncate_bytes_on_char_boundary(&error, MAX_SPAN_ERROR);
+        let err = crate::types::truncate_bytes_on_char_boundary(&error, MAX_SPAN_ERROR);
         span.fail(
             meta.duration_ms,
             "tool_error",

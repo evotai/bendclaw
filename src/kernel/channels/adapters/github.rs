@@ -5,8 +5,6 @@ use axum::http::HeaderMap;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::model::capabilities::ChannelCapabilities;
 use crate::kernel::channels::model::capabilities::ChannelKind;
 use crate::kernel::channels::model::capabilities::InboundMode;
@@ -17,6 +15,8 @@ use crate::kernel::channels::runtime::channel_trait::ChannelPlugin;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
 use crate::kernel::channels::runtime::channel_trait::WebhookHandler;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub const GITHUB_CHANNEL_TYPE: &str = "github";
 const GITHUB_API: &str = "https://api.github.com";

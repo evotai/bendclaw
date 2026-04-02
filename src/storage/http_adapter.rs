@@ -1,6 +1,6 @@
-use crate::base::ErrorCode;
-use crate::base::HttpErrorKind;
-use crate::base::HttpTransportError;
+use crate::types::ErrorCode;
+use crate::types::HttpErrorKind;
+use crate::types::HttpTransportError;
 
 pub(crate) fn to_storage_error(operation: &str, err: HttpTransportError) -> ErrorCode {
     match err.kind {

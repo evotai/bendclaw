@@ -74,7 +74,7 @@ impl bendclaw::kernel::run::execution::skills::SkillExecutor for NoopSkillExecut
         &self,
         _skill_name: &str,
         _args: &[String],
-    ) -> bendclaw::base::Result<bendclaw::kernel::run::execution::skills::SkillOutput> {
+    ) -> bendclaw::types::Result<bendclaw::kernel::run::execution::skills::SkillOutput> {
         Ok(bendclaw::kernel::run::execution::skills::SkillOutput {
             data: None,
             error: Some("not implemented".into()),

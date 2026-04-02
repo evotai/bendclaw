@@ -91,9 +91,9 @@ struct StorageProxyErrorBody {
     message: String,
 }
 
-impl From<crate::base::ErrorCode> for ServiceError {
-    fn from(e: crate::base::ErrorCode) -> Self {
-        use crate::base::ErrorCode;
+impl From<crate::types::ErrorCode> for ServiceError {
+    fn from(e: crate::types::ErrorCode) -> Self {
+        use crate::types::ErrorCode;
 
         match e.code {
             ErrorCode::NOT_FOUND | ErrorCode::SKILL_NOT_FOUND => {

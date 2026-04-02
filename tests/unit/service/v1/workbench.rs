@@ -9,7 +9,7 @@ use crate::common::fake_databend::FakeDatabend;
 use crate::common::test_runtime::test_runtime;
 
 fn app_state(
-    query_handler: impl Fn(&str, Option<&str>) -> bendclaw::base::Result<bendclaw::storage::pool::QueryResponse>
+    query_handler: impl Fn(&str, Option<&str>) -> bendclaw::types::Result<bendclaw::storage::pool::QueryResponse>
         + Send
         + Sync
         + 'static,

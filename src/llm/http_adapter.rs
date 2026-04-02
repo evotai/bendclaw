@@ -1,5 +1,5 @@
-use crate::base::ErrorCode;
-use crate::base::HttpTransportError;
+use crate::types::ErrorCode;
+use crate::types::HttpTransportError;
 
 pub(crate) fn to_llm_error(err: HttpTransportError) -> ErrorCode {
     ErrorCode::llm_request(err.summary())

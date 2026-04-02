@@ -3,11 +3,11 @@ use async_trait::async_trait;
 use super::context::SessionContextProvider;
 use super::sink::RunInitializer;
 use super::sink::RunPersister;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::Message;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// No-op backend for ephemeral sessions. All operations are silent no-ops.
 pub struct NoopBackend;
@@ -30,7 +30,7 @@ impl RunInitializer for NoopBackend {
         _parent_run_id: Option<&str>,
         _node_id: &str,
     ) -> Result<String> {
-        Ok(crate::base::id::new_run_id())
+        Ok(crate::types::id::new_run_id())
     }
 }
 

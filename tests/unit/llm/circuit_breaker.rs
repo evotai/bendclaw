@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use bendclaw::base::ErrorCode;
 use bendclaw::llm::circuit_breaker::is_transient;
 use bendclaw::llm::circuit_breaker::CircuitBreaker;
+use bendclaw::types::ErrorCode;
 
 #[test]
 fn test_starts_available() -> Result<()> {

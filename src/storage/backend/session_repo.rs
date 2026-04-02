@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Session;
-use crate::base::Result;
+use crate::types::entities::Session;
+use crate::types::Result;
 
 #[async_trait]
 pub trait SessionRepo: Send + Sync {

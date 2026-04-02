@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::base::ErrorCode;
-use bendclaw::base::Result as BaseResult;
 use bendclaw::kernel::channels::egress::delivery_service::ChannelDeliveryService;
 use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
+use bendclaw::types::ErrorCode;
+use bendclaw::types::Result as BaseResult;
 use parking_lot::Mutex;
 
 struct MockOutbound {

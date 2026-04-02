@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
-use crate::base::validate_agent_id;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::storage::cache::TtlCache;
 use crate::storage::pool::Pool;
+use crate::types::validate_agent_id;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Only allow alphanumeric, underscore, and hyphen in DB prefix.
 fn validate_prefix(prefix: &str) -> Result<()> {

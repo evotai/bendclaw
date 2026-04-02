@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
@@ -9,6 +8,7 @@ use crate::kernel::skills::definition::skill::Skill;
 use crate::llm::config::LLMConfig;
 use crate::observability::redaction;
 use crate::storage::dal::session::record::SessionRecord;
+use crate::types::Result;
 
 /// Validate that an LLMConfig can actually produce a working LLMRouter.
 /// Called before persisting to avoid storing broken configs.

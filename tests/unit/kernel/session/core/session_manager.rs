@@ -3,8 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bendclaw::base::ErrorCode;
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::session::core::session_state::SessionState;
 use bendclaw::kernel::session::runtime::session_resources::SessionResources;
@@ -19,6 +18,7 @@ use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
 use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::tool::ToolSchema;
+use bendclaw::types::ErrorCode;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 use parking_lot::RwLock;
@@ -36,7 +36,7 @@ impl LLMProvider for NoopLLM {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         Err(ErrorCode::internal("noop llm"))
     }
 

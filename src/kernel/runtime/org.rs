@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use crate::config::agent::AgentConfig;
 use crate::kernel::memory::store::SharedMemoryStore;
 use crate::kernel::memory::MemoryService;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::skills::store::DatabendSharedSkillStore;
 use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::skills::sync::SkillWriter;

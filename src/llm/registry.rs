@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::provider::LLMProvider;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::llm::config::ProviderEndpoint;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Factory function type for creating LLM providers.
 type ProviderFactoryFn = dyn Fn(&str, &str) -> Result<Arc<dyn LLMProvider>> + Send + Sync;

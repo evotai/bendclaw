@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::kernel::lease::types::LeaseResource;
 use crate::kernel::lease::types::ReleaseFn;
 use crate::kernel::lease::types::ResourceEntry;
@@ -11,6 +10,7 @@ use crate::kernel::runtime::Runtime;
 use crate::kernel::task::diagnostics;
 use crate::storage::dal::task::repo::TaskRepo;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 /// Maximum wall-clock time a single task execution may take.
 /// Prevents runaway LLM calls or hung deliveries from holding a lease forever.
@@ -109,11 +109,14 @@ impl LeaseResource for TaskLeaseResource {
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         let repo = TaskRepo::new(entry.pool.clone());
         let task = repo.get(&entry.id).await?.ok_or_else(|| {
-            crate::base::ErrorCode::internal(format!("task '{}' disappeared after claim", entry.id))
+            crate::types::ErrorCode::internal(format!(
+                "task '{}' disappeared after claim",
+                entry.id
+            ))
         })?;
 
         let agent_id = if entry.context.is_empty() {
-            return Err(crate::base::ErrorCode::internal(format!(
+            return Err(crate::types::ErrorCode::internal(format!(
                 "no agent_id context for task '{}'",
                 entry.id
             )));
@@ -131,7 +134,7 @@ impl LeaseResource for TaskLeaseResource {
         let client = self.http_client.clone();
         let guard = runtime.track_task();
 
-        crate::base::spawn_fire_and_forget("task_execution", async move {
+        crate::types::spawn_fire_and_forget("task_execution", async move {
             let _guard = guard;
             let _lease_guard = LeaseGuard {
                 task_id,

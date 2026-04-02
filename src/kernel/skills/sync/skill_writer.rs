@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::kernel::run::execution::skills::UsageSink;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillId;
 use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::subscriptions::SubscriptionStore;
+use crate::types::Result;
 
 pub struct SkillWriter {
     store: Arc<dyn SharedSkillStore>,
@@ -94,7 +94,7 @@ impl SkillWriter {
 impl UsageSink for SkillWriter {
     fn touch_used(&self, id: SkillId, agent_id: String) {
         let store = self.store.clone();
-        crate::base::spawn_fire_and_forget("skill_touch", async move {
+        crate::types::spawn_fire_and_forget("skill_touch", async move {
             let _ = store.touch_last_used(&id, &agent_id).await;
         });
     }

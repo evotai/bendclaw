@@ -10,10 +10,10 @@ use super::registry::ProviderRegistry;
 use super::reliable::ReliableProvider;
 use super::stream::ResponseStream;
 use super::tracing::TracingProvider;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::llm::config::ProviderEndpoint;
 use crate::observability::log::slog;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Weighted provider pool with circuit-breaker failover.
 ///

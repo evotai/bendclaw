@@ -1,8 +1,8 @@
 //! Memory hygiene — automated cleanup of stale memories.
 
-use crate::base::Result;
 use crate::kernel::memory::diagnostics;
 use crate::kernel::memory::store::MemoryStore;
+use crate::types::Result;
 
 /// Default: prune memories not accessed in 30 days with fewer than 2 accesses.
 const DEFAULT_MAX_AGE_DAYS: u32 = 30;

@@ -78,66 +78,66 @@ pub fn col_opt(row: &serde_json::Value, idx: usize) -> Option<String> {
         .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("null"))
 }
 
-pub fn col_i32(row: &serde_json::Value, idx: usize) -> crate::base::Result<i32> {
+pub fn col_i32(row: &serde_json::Value, idx: usize) -> crate::types::Result<i32> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn col_i64(row: &serde_json::Value, idx: usize) -> crate::base::Result<i64> {
+pub fn col_i64(row: &serde_json::Value, idx: usize) -> crate::types::Result<i64> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn col_u32(row: &serde_json::Value, idx: usize) -> crate::base::Result<u32> {
+pub fn col_u32(row: &serde_json::Value, idx: usize) -> crate::types::Result<u32> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn col_u64(row: &serde_json::Value, idx: usize) -> crate::base::Result<u64> {
+pub fn col_u64(row: &serde_json::Value, idx: usize) -> crate::types::Result<u64> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn col_f32(row: &serde_json::Value, idx: usize) -> crate::base::Result<f32> {
+pub fn col_f32(row: &serde_json::Value, idx: usize) -> crate::types::Result<f32> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn col_f64(row: &serde_json::Value, idx: usize) -> crate::base::Result<f64> {
+pub fn col_f64(row: &serde_json::Value, idx: usize) -> crate::types::Result<f64> {
     let raw = col(row, idx);
     parse_number(&raw, format!("col {idx}"))
 }
 
-pub fn parse_number<T, E>(raw: &str, label: impl Into<String>) -> crate::base::Result<T>
+pub fn parse_number<T, E>(raw: &str, label: impl Into<String>) -> crate::types::Result<T>
 where
     T: FromStr<Err = E>,
     E: Display,
 {
     let label = label.into();
     raw.parse().map_err(|e| {
-        crate::base::ErrorCode::storage_serde(format!("{label}: {e} (value: '{raw}')"))
+        crate::types::ErrorCode::storage_serde(format!("{label}: {e} (value: '{raw}')"))
     })
 }
 
 pub fn parse_json<T: DeserializeOwned>(
     raw: &str,
     label: impl Into<String>,
-) -> crate::base::Result<T> {
+) -> crate::types::Result<T> {
     let label = label.into();
     serde_json::from_str(raw).map_err(|e| {
-        crate::base::ErrorCode::storage_serde(format!("{label}: {e} (value: '{raw}')"))
+        crate::types::ErrorCode::storage_serde(format!("{label}: {e} (value: '{raw}')"))
     })
 }
 
-pub fn agg_u64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::base::Result<u64> {
+pub fn agg_u64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::types::Result<u64> {
     parse_aggregate_or_zero(row, idx)
 }
 
-pub fn agg_i64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::base::Result<i64> {
+pub fn agg_i64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::types::Result<i64> {
     parse_aggregate_or_zero(row, idx)
 }
 
-pub fn agg_f64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::base::Result<f64> {
+pub fn agg_f64_or_zero(row: Option<&serde_json::Value>, idx: usize) -> crate::types::Result<f64> {
     parse_aggregate_or_zero(row, idx)
 }
 
@@ -148,7 +148,7 @@ pub fn agg_str(row: Option<&serde_json::Value>, idx: usize) -> String {
 fn parse_aggregate_or_zero<T, E>(
     row: Option<&serde_json::Value>,
     idx: usize,
-) -> crate::base::Result<T>
+) -> crate::types::Result<T>
 where
     T: FromStr<Err = E> + Default,
     E: Display,

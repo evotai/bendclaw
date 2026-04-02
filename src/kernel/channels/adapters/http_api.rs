@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::model::capabilities::ChannelCapabilities;
 use crate::kernel::channels::model::capabilities::ChannelKind;
 use crate::kernel::channels::model::capabilities::InboundMode;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::channel_trait::ChannelPlugin;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub const HTTP_API_CHANNEL_TYPE: &str = "http_api";
 

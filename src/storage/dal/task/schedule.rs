@@ -5,10 +5,10 @@ use cron::Schedule;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::ErrorCode;
-use crate::base::Result as BaseResult;
 use crate::observability::log::slog;
 use crate::storage::sql;
+use crate::types::ErrorCode;
+use crate::types::Result as BaseResult;
 
 /// Parse a cron expression, auto-padding 5-field user input to the 7-field
 /// format required by the `cron` crate (prepend seconds, append year).

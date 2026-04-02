@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+use crate::config::agent::AgentConfig;
 use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
 use crate::kernel::channels::routing::chat_router::ChatRouter;
 use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
@@ -10,7 +11,6 @@ use crate::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::ActivityTracker;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
 use crate::kernel::session::SessionManager;

@@ -1,8 +1,8 @@
 use anyhow::bail;
 use anyhow::Result;
-use bendclaw::base::OptionExt;
-use bendclaw::base::ResultExt;
 use bendclaw::kernel::ErrorCode;
+use bendclaw::types::OptionExt;
+use bendclaw::types::ResultExt;
 
 #[test]
 fn error_code_internal() {

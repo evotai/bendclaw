@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillFile;
 use crate::kernel::skills::definition::skill::SkillId;
@@ -15,6 +14,7 @@ use crate::kernel::skills::definition::skill::SkillSource;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
+use crate::types::Result;
 
 const SKILLS_TABLE: &str = "evotai_meta.skills";
 const FILES_TABLE: &str = "evotai_meta.skill_files";

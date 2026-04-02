@@ -9,8 +9,8 @@ use super::provider::LLMResponse;
 use super::stream::ResponseStream;
 use super::stream::StreamEvent;
 use super::tool::ToolSchema;
-use crate::base::Result;
 use crate::observability::log::slog;
+use crate::types::Result;
 
 pub struct TracingProvider {
     inner: Arc<dyn LLMProvider>,
@@ -41,7 +41,7 @@ impl LLMProvider for TracingProvider {
         tools: &[ToolSchema],
         temperature: f64,
     ) -> Result<LLMResponse> {
-        let provider_call_id = format!("provider_{}", crate::base::new_id());
+        let provider_call_id = format!("provider_{}", crate::types::new_id());
 
         slog!(info, "llm", "provider_request",
             provider_call_id = %provider_call_id,
@@ -88,7 +88,7 @@ impl LLMProvider for TracingProvider {
         tools: &[ToolSchema],
         temperature: f64,
     ) -> ResponseStream {
-        let provider_call_id = format!("provider_{}", crate::base::new_id());
+        let provider_call_id = format!("provider_{}", crate::types::new_id());
 
         slog!(info, "llm", "provider_stream_request",
             provider_call_id = %provider_call_id,
@@ -106,7 +106,7 @@ impl LLMProvider for TracingProvider {
         let provider_name = self.provider_name.clone();
         let model_name = model.to_string();
 
-        crate::base::spawn_fire_and_forget("llm_tracing_stream", async move {
+        crate::types::spawn_fire_and_forget("llm_tracing_stream", async move {
             let mut inner_stream = inner_stream;
             let mut text = String::new();
             let mut thinking = String::new();

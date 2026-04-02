@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use super::stream_delivery::StreamDelivery;
 use super::stream_delivery::StreamDeliveryConfig;
-use crate::base::Result;
 use crate::kernel::channels::egress::retry::send_with_retry;
 use crate::kernel::channels::egress::retry::RetryConfig;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
 use crate::kernel::run::event::Event;
+use crate::types::Result;
 
 /// How the message was ultimately delivered.
 pub enum DeliveryMethod {
@@ -89,9 +89,9 @@ impl FallbackDelivery {
 
         if !sent || !finalized {
             if !sent {
-                diagnostics::log_channel_send_draft_failed(None::<&crate::base::ErrorCode>);
+                diagnostics::log_channel_send_draft_failed(None::<&crate::types::ErrorCode>);
             } else {
-                diagnostics::log_channel_finalize_draft_failed(None::<&crate::base::ErrorCode>);
+                diagnostics::log_channel_finalize_draft_failed(None::<&crate::types::ErrorCode>);
             }
             return self.fallback_send_text(&text).await;
         }

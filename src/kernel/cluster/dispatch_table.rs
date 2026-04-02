@@ -5,9 +5,9 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::client::BendclawClient;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Whether a run status string represents a terminal state.
 fn is_terminal(status: &str) -> bool {

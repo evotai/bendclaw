@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -14,6 +13,7 @@ use crate::kernel::tools::web::duckduckgo;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::observability::log::slog;
+use crate::types::Result;
 
 const DESCRIPTION: &str = "\
 Search the web for current information, news, documentation, or any topic. \

@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use super::skill_executor::SkillExecutor;
 use super::skill_executor::SkillOutput;
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct NoopSkillExecutor;
 

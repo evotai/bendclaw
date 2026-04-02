@@ -62,7 +62,7 @@ impl Tool for TaskUpdateTool {
         &self,
         args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> crate::base::Result<ToolResult> {
+    ) -> crate::types::Result<ToolResult> {
         let input: TaskUpdateToolInput = match serde_json::from_value(args) {
             Ok(input) => input,
             Err(error) => {

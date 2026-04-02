@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use super::contract::SessionStore;
-use crate::base::Result;
 use crate::kernel::run::usage::CostSummary;
 use crate::kernel::run::usage::UsageEvent;
 use crate::kernel::run::usage::UsageScope;
@@ -22,6 +21,7 @@ use crate::storage::dal::usage::record::UsageRecord;
 use crate::storage::dal::usage::repo::UsageRepo;
 use crate::storage::time::now;
 use crate::storage::Pool;
+use crate::types::Result;
 
 const FLUSH_THRESHOLD: usize = 50;
 

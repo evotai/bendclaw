@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::base::ErrorCode;
-use bendclaw::base::Result;
 use bendclaw::kernel::channels::egress::fallback::DeliveryMethod;
 use bendclaw::kernel::channels::egress::fallback::FallbackDelivery;
 use bendclaw::kernel::channels::egress::retry::RetryConfig;
@@ -10,6 +8,8 @@ use bendclaw::kernel::channels::egress::stream_delivery::StreamDeliveryConfig;
 use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use bendclaw::kernel::run::event::Delta;
 use bendclaw::kernel::run::event::Event;
+use bendclaw::types::ErrorCode;
+use bendclaw::types::Result;
 use parking_lot::Mutex;
 
 // ── Mock outbound ────────────────────────────────────────────────────────────

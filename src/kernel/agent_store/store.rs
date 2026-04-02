@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use super::usage_store::UsageStore;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::usage::UsageEvent;
 use crate::kernel::run::usage::UsageScope;
 use crate::llm::config::LLMConfig;
@@ -27,6 +25,8 @@ use crate::storage::dal::usage::types::CostSummary;
 use crate::storage::dal::variable::VariableRecord;
 use crate::storage::dal::variable::VariableRepo;
 use crate::storage::pool::Pool;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct AgentStore {
     pool: Pool,
@@ -261,7 +261,7 @@ impl AgentStore {
         let version_repo = ConfigVersionRepo::new(self.pool.clone());
         let next = version_repo.next_version(agent_id).await?;
         let record = ConfigVersionRecord {
-            id: crate::base::new_id(),
+            id: crate::types::new_id(),
             agent_id: agent_id.to_string(),
             version: next,
             label: label.unwrap_or_default().to_string(),

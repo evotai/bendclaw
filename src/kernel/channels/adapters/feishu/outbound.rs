@@ -6,10 +6,10 @@ use super::config::FEISHU_API;
 use super::token::get_token;
 use super::token::is_token_error;
 use super::token::TokenCache;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 // ── Outbound ──
 

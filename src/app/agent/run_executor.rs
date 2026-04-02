@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use super::run_planner::RunPlan;
 use crate::app::result::event_envelope::EventEnvelope;
-use crate::base::entities::Run;
-use crate::base::entities::RunEvent;
-use crate::base::entities::RunEventKind;
-use crate::base::entities::RunStatus;
-use crate::base::id::new_id;
-use crate::base::id::new_run_id;
-use crate::base::Result;
 use crate::storage::backend::run_event_repo::RunEventRepo;
 use crate::storage::backend::run_repo::RunRepo;
+use crate::types::entities::Run;
+use crate::types::entities::RunEvent;
+use crate::types::entities::RunEventKind;
+use crate::types::entities::RunStatus;
+use crate::types::id::new_id;
+use crate::types::id::new_run_id;
+use crate::types::Result;
 
 /// Execute a run and return a vec of EventEnvelopes.
 ///

@@ -1,11 +1,11 @@
 use super::http::CreateVariableRequest;
 use super::http::UpdateVariableRequest;
-use crate::base::new_id;
 use crate::kernel::variables::store::Variable;
 use crate::kernel::variables::store::VariableScope;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;
+use crate::types::new_id;
 
 pub(super) async fn list_variables(state: &AppState, user_id: &str) -> Result<Vec<Variable>> {
     let vars = state.runtime.org().variables().list_all(user_id).await?;

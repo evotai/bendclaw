@@ -3,7 +3,6 @@ use super::record::TraceRecord;
 use super::types::AgentTraceBreakdown;
 use super::types::AgentTraceDetails;
 use super::types::AgentTraceSummary;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -11,6 +10,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 // ── TraceRepo ─────────────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ impl RowMapper for TraceMapper {
         "trace_id, run_id, session_id, agent_id, user_id, name, status, duration_ms, input_tokens, output_tokens, total_cost, parent_trace_id, origin_node_id, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TraceRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<TraceRecord> {
         Ok(TraceRecord {
             trace_id: sql::col(row, 0),
             run_id: sql::col(row, 1),
@@ -371,7 +371,7 @@ impl RowMapper for SpanMapper {
         "span_id, trace_id, parent_span_id, name, kind, model_role, status, duration_ms, ttft_ms, input_tokens, output_tokens, reasoning_tokens, cost, error_code, error_message, summary, meta, TO_VARCHAR(created_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<SpanRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<SpanRecord> {
         Ok(SpanRecord {
             span_id: sql::col(row, 0),
             trace_id: sql::col(row, 1),

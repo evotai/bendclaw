@@ -8,6 +8,7 @@ use super::runtime_parts::RuntimeStatus;
 use super::ActivityGuard;
 use super::ActivityTracker;
 use super::SuspendStatus;
+use crate::config::agent::AgentConfig;
 use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
 use crate::kernel::channels::routing::chat_router::ChatRouter;
 use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
@@ -15,7 +16,6 @@ use crate::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::session::store::lifecycle::SessionLifecycle;
@@ -162,7 +162,7 @@ impl Runtime {
         &self,
         agent_id: &str,
         pool: &Pool,
-    ) -> crate::base::Result<Arc<dyn LLMProvider>> {
+    ) -> crate::types::Result<Arc<dyn LLMProvider>> {
         let (llm, _config) = self.resolve_agent_llm_and_config(agent_id, pool).await?;
         Ok(llm)
     }
@@ -174,7 +174,7 @@ impl Runtime {
         &self,
         agent_id: &str,
         pool: &Pool,
-    ) -> crate::base::Result<(
+    ) -> crate::types::Result<(
         Arc<dyn LLMProvider>,
         Option<crate::storage::dal::agent_config::record::AgentConfigRecord>,
     )> {

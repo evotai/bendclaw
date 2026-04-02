@@ -1,12 +1,12 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Content;
-use crate::base::ErrorSource;
-use crate::base::Role;
-use crate::base::ToolCall;
 use crate::kernel::tools::operation::OpType;
 use crate::kernel::tools::operation::OperationMeta;
+use crate::types::Content;
+use crate::types::ErrorSource;
+use crate::types::Role;
+use crate::types::ToolCall;
 
 /// Per-message token and timing metrics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

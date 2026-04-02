@@ -11,12 +11,12 @@ use async_trait::async_trait;
 use super::prompt_contract::PromptResolver;
 use super::prompt_model::*;
 use super::prompt_renderer::build_prompt;
-use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::run::prompt_diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::tools::definition::tool_definition::ToolDefinition;
+use crate::types::Result;
 
 const RECENT_ERRORS_LIMIT: u32 = 5;
 

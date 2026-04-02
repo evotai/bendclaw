@@ -12,8 +12,6 @@ use super::config::FEISHU_MAX_MESSAGE_LEN;
 use super::outbound::FeishuOutbound;
 use super::token::TokenCache;
 use super::ws::ws_receive_loop;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::model::capabilities::ChannelCapabilities;
 use crate::kernel::channels::model::capabilities::ChannelKind;
@@ -24,6 +22,8 @@ use crate::kernel::channels::runtime::channel_trait::InboundEventSender;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
 use crate::kernel::channels::runtime::channel_trait::ReceiverFactory;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 // ── Plugin ──
 
@@ -113,7 +113,7 @@ impl ReceiverFactory for FeishuReceiverFactory {
         let token_cache = self.token_cache.clone();
         let account_id = account.channel_account_id.clone();
 
-        let handle = crate::base::spawn_named("feishu_receiver", async move {
+        let handle = crate::types::spawn_named("feishu_receiver", async move {
             diagnostics::log_feishu_receiver_started(&account_id);
             let mut reconnect_config = ReconnectConfig::default();
             let mut attempt: u64 = 0;

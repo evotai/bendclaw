@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::kernel::channels::egress::outbound::deliver_outbound;
 use crate::kernel::channels::egress::outbound::OutboundResult;
 use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
@@ -8,6 +7,7 @@ use crate::kernel::channels::egress::retry::send_with_retry;
 use crate::kernel::channels::egress::retry::RetryConfig;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::session::runtime::session_stream::Stream;
+use crate::types::Result;
 
 /// Unified channel delivery entry point.
 /// Both inbound conversation pipeline and task delivery route through here.

@@ -3,7 +3,6 @@ mod common;
 
 mod app;
 mod architecture;
-mod base;
 mod boundary;
 mod cli;
 mod config;
@@ -14,4 +13,5 @@ mod llm;
 mod observability;
 mod service;
 mod storage;
+mod types;
 mod version;

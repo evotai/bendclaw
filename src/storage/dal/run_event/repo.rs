@@ -1,5 +1,4 @@
 use super::record::RunEventRecord;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -7,6 +6,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "run_events";
 
@@ -20,7 +20,7 @@ impl RowMapper for RunEventMapper {
         "id, run_id, session_id, agent_id, user_id, seq, event, payload, TO_VARCHAR(created_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<RunEventRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<RunEventRecord> {
         Ok(RunEventRecord {
             id: sql::col(row, 0),
             run_id: sql::col(row, 1),

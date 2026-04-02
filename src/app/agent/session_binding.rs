@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::base::entities::Session;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::storage::backend::session_repo::SessionRepo;
+use crate::types::entities::Session;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Resolve, resume, or create a session. This is the single session owner
 /// at the app layer. Kernel modules never touch SessionRepo directly.
@@ -31,7 +31,7 @@ pub async fn bind_session(
         let latest = session_repo.find_latest_session(user_id, agent_id).await?;
         latest.ok_or_else(|| ErrorCode::not_found("no session to resume"))
     } else {
-        let sid = crate::base::id::new_session_id();
+        let sid = crate::types::id::new_session_id();
         let session = new_session(user_id, agent_id, &sid);
         session_repo.create_session(&session).await?;
         Ok(session)

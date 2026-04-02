@@ -1,7 +1,7 @@
-use bendclaw::base::truncate_bytes_on_char_boundary;
-use bendclaw::base::truncate_chars_with_ellipsis;
-use bendclaw::base::truncate_head_tail;
-use bendclaw::base::truncate_with_notice;
+use bendclaw::types::truncate_bytes_on_char_boundary;
+use bendclaw::types::truncate_chars_with_ellipsis;
+use bendclaw::types::truncate_head_tail;
+use bendclaw::types::truncate_with_notice;
 
 #[test]
 fn truncate_chars_with_ellipsis_preserves_unicode_boundaries() {

@@ -4,7 +4,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::base::Result;
 use crate::kernel::cluster::DispatchTable;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
@@ -14,6 +13,7 @@ use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::observability::log::slog;
+use crate::types::Result;
 
 /// Collect results from previously dispatched subtasks.
 pub struct ClusterCollectTool {

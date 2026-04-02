@@ -48,7 +48,7 @@ impl<Op: Send + 'static> BackgroundWriter<Op> {
     {
         let (tx, rx) = mpsc::channel(capacity);
         let handle =
-            crate::base::spawn_named("background_drain_loop", drain_loop(name, rx, handler));
+            crate::types::spawn_named("background_drain_loop", drain_loop(name, rx, handler));
         Self {
             inner: Arc::new(Inner {
                 tx,

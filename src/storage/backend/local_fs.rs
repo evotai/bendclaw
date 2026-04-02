@@ -15,9 +15,9 @@ use super::storage_backend::StorageBackend;
 use super::task_history_repo::TaskHistoryRepo;
 use super::task_repo::TaskRepo;
 use super::trace_repo::TraceRepo;
-use crate::base::entities::*;
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::entities::*;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Local-first filesystem storage backend.
 ///

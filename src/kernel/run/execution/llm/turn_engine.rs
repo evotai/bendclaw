@@ -16,7 +16,6 @@ use super::engine_state::RunLoopState;
 use super::response_mapper::LLMResponse;
 use super::transition::apply_turn_result;
 use super::transition::TurnTransition;
-use crate::base::Result;
 use crate::kernel::memory::MemoryService;
 use crate::kernel::run::checkpoint::CompactionCheckpoint;
 use crate::kernel::run::context::Context;
@@ -35,6 +34,7 @@ use crate::kernel::trace::TraceRecorder;
 use crate::kernel::Message;
 use crate::observability::audit;
 use crate::observability::server_log;
+use crate::types::Result;
 
 pub(super) const EVENT_CAPACITY: usize = 128;
 pub(super) const INBOX_CAPACITY: usize = 16;

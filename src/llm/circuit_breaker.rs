@@ -5,8 +5,8 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 
-use crate::base::ErrorCode;
 use crate::observability::log::slog;
+use crate::types::ErrorCode;
 
 /// Whether an error is transient (network, rate-limit, server) and should
 /// count toward the circuit breaker threshold. Non-transient errors (auth,

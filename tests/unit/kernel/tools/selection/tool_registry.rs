@@ -43,7 +43,7 @@ impl Tool for StubTool {
         &self,
         _args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> bendclaw::base::Result<ToolResult> {
+    ) -> bendclaw::types::Result<ToolResult> {
         Ok(ToolResult::ok("ok"))
     }
 }

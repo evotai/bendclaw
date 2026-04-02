@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bendclaw::base::Result as BaseResult;
 use bendclaw::kernel::tools::Impact;
 use bendclaw::kernel::tools::OpType;
 use bendclaw::kernel::tools::OperationClassifier;
@@ -8,6 +7,7 @@ use bendclaw::kernel::tools::Tool;
 use bendclaw::kernel::tools::ToolContext;
 use bendclaw::kernel::tools::ToolResult;
 use bendclaw::kernel::tools::ToolSpec;
+use bendclaw::types::Result as BaseResult;
 use bendclaw_test_harness::mocks::context::test_tool_context;
 use serde_json::json;
 

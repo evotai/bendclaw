@@ -1,6 +1,6 @@
-use crate::base::ErrorCode;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::result::Result as AgentResult;
+use crate::types::ErrorCode;
 
 /// Session-level: creates a run record and returns the run_id.
 pub trait RunInitializer: Send + Sync {
@@ -9,7 +9,7 @@ pub trait RunInitializer: Send + Sync {
         input: &str,
         parent_run_id: Option<&str>,
         node_id: &str,
-    ) -> crate::base::Result<String>;
+    ) -> crate::types::Result<String>;
 }
 
 /// Per-run: persists the outcome of a single run (success/error/cancelled).

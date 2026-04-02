@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::base::Result;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::sync::SkillWriter;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -14,6 +13,7 @@ use crate::kernel::tools::tool_contract::Tool;
 use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::OpType;
+use crate::types::Result;
 pub struct SkillRemoveTool {
     service: Arc<SkillWriter>,
 }

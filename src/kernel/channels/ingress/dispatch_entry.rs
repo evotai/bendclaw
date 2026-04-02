@@ -58,7 +58,7 @@ async fn try_dispatch_debounced(
 
     channel_log!(info, "inbound", "accepted",
         msg = format!("channel \u{2190} {}", account.channel_type),
-        input_preview = %crate::base::truncate_bytes_on_char_boundary(text, 100),
+        input_preview = %crate::types::truncate_bytes_on_char_boundary(text, 100),
         input_bytes = text.len(),
         channel_type = %account.channel_type,
         account_id = %account.channel_account_id,

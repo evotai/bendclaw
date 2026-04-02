@@ -7,8 +7,6 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::event::Delta;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::result::Reason;
@@ -18,6 +16,8 @@ use crate::kernel::session::backend::sink::RunPersister;
 use crate::kernel::session::core::session_state::SessionState;
 use crate::kernel::ErrorSource;
 use crate::kernel::Message;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Backward-compatible alias. New code should use `RunOutput` directly.
 pub type FinishedRunOutput = RunOutput;

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Channel;
-use crate::base::Result;
+use crate::types::entities::Channel;
+use crate::types::Result;
 
 #[async_trait]
 pub trait ChannelRepo: Send + Sync {

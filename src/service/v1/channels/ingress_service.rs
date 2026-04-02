@@ -75,7 +75,7 @@ impl ChannelIngressService {
 
         // Process events in background so the webhook returns 200 quickly.
         // Sequential route().await preserves event ordering within the batch.
-        crate::base::spawn_fire_and_forget("webhook_event_dispatch", async move {
+        crate::types::spawn_fire_and_forget("webhook_event_dispatch", async move {
             for event in events {
                 runtime.chat_router().route(account.clone(), event).await;
             }

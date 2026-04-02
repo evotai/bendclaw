@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Trace;
-use crate::base::Result;
+use crate::types::entities::Trace;
+use crate::types::Result;
 
 #[async_trait]
 pub trait TraceRepo: Send + Sync {

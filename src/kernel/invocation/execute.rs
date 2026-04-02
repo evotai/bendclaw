@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use super::request::*;
 use super::session_route::acquire_session;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::planning::PromptRequestMeta;
 use crate::kernel::run::result::RunOutput;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::runtime::run_options::RunOptions;
 use crate::kernel::session::runtime::session_stream::Stream;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Convert ConversationContext + RunOptions into neutral PromptRequestMeta.
 /// Lives here in invocation/ — run/prompt/* never imports invocation types.

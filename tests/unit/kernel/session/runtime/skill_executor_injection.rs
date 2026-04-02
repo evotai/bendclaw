@@ -25,7 +25,7 @@ impl SkillExecutor for MockSkillExecutor {
         &self,
         _skill_name: &str,
         _args: &[String],
-    ) -> bendclaw::base::Result<SkillOutput> {
+    ) -> bendclaw::types::Result<SkillOutput> {
         self.called.store(true, Ordering::SeqCst);
         Ok(SkillOutput {
             data: None,
@@ -77,7 +77,7 @@ fn build_assembly_with_mock(executor: Arc<dyn SkillExecutor>) -> SessionAssembly
         },
         agent: AgentContext {
             org: Arc::new(LocalOrgServices),
-            config: Arc::new(bendclaw::kernel::runtime::agent_config::AgentConfig::default()),
+            config: Arc::new(bendclaw::config::agent::AgentConfig::default()),
             cluster_client: None,
             directive: None,
             prompt_config: None,

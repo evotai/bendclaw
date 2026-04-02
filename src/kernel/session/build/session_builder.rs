@@ -14,13 +14,13 @@ use super::infra_builder;
 use super::prompt_builder;
 use super::session_capabilities::*;
 use super::workspace_builder;
-use crate::base::Result;
+use crate::config::agent::AgentConfig;
 use crate::kernel::run::persist::persist_op::PersistWriter;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::tools::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::TraceWriter;
 use crate::kernel::writer::BackgroundWriter;
 use crate::llm::provider::LLMProvider;
+use crate::types::Result;
 
 type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
 
@@ -68,7 +68,7 @@ impl SessionBuilder {
             .list_active(user_id)
             .await
             .map_err(|e| {
-                crate::base::ErrorCode::internal(format!("failed to load variables: {e}"))
+                crate::types::ErrorCode::internal(format!("failed to load variables: {e}"))
             })?;
         let variables: Vec<_> = {
             let mut seen = std::collections::HashSet::new();

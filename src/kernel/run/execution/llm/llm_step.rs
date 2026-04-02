@@ -19,7 +19,7 @@ impl Engine {
         state: &mut RunLoopState,
         iteration: u32,
     ) -> (LLMResponse, Option<String>) {
-        let llm_call_id = format!("llm_{}", crate::base::new_id());
+        let llm_call_id = format!("llm_{}", crate::types::new_id());
         let mut prepared = self.prepare_llm_request(iteration);
         let prepared_summary = diagnostics::summarize_prepared_llm_request(&prepared);
         diagnostics::log_llm_context_with_call_id(

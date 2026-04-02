@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
-use bendclaw::base::ErrorCode;
 use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::run::persist::persist_op::spawn_persist_writer;
 use bendclaw::kernel::run::persist::persist_op::PersistOp;
@@ -18,6 +17,7 @@ use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::storage::dal::run::record::RunStatus;
 use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
+use bendclaw::types::ErrorCode;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 
 use crate::common::fake_databend::paged_rows;

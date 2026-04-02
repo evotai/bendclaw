@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::toolset::Toolset;

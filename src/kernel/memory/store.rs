@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Result;
 use crate::storage::cache::TtlCache;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
+use crate::types::Result;
 
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(120);
 const SEARCH_CACHE_CAPACITY: usize = 128;

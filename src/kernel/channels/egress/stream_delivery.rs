@@ -4,12 +4,12 @@ use std::time::Instant;
 
 use tokio_stream::StreamExt;
 
-use crate::base::truncate_bytes_on_char_boundary;
-use crate::base::Result;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
 use crate::kernel::run::event::Delta;
 use crate::kernel::run::event::Event;
+use crate::types::truncate_bytes_on_char_boundary;
+use crate::types::Result;
 
 const STREAM_CHUNK_TIMEOUT: Duration = Duration::from_secs(300);
 const BROKEN_RETRY_INTERVAL: u32 = 5;

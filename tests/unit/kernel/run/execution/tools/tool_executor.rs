@@ -64,7 +64,7 @@ impl Tool for MockTool {
         &self,
         _args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> bendclaw::base::Result<ToolResult> {
+    ) -> bendclaw::types::Result<ToolResult> {
         match &self.behavior {
             MockToolBehavior::Ok(out) => Ok(ToolResult::ok(out.clone())),
             MockToolBehavior::ToolError(msg) => Ok(ToolResult::error(msg.clone())),
@@ -107,7 +107,7 @@ impl SkillExecutor for MockSkillExecutor {
         &self,
         _skill_name: &str,
         args: &[String],
-    ) -> bendclaw::base::Result<SkillOutput> {
+    ) -> bendclaw::types::Result<SkillOutput> {
         *self.seen_args.lock() = args.to_vec();
         match &self.behavior {
             MockSkillBehavior::OkString(s) => Ok(SkillOutput {
@@ -559,7 +559,7 @@ async fn execute_calls_runs_tools_in_parallel() -> Result<()> {
             &self,
             _args: serde_json::Value,
             _ctx: &ToolContext,
-        ) -> bendclaw::base::Result<ToolResult> {
+        ) -> bendclaw::types::Result<ToolResult> {
             tokio::time::sleep(self.delay).await;
             Ok(ToolResult::ok(format!("{} done", self.name)))
         }

@@ -4,8 +4,6 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::action::Action;
-use crate::base::truncate_bytes_on_char_boundary;
-use crate::base::Result;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -14,6 +12,8 @@ use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::storage::Pool;
+use crate::types::truncate_bytes_on_char_boundary;
+use crate::types::Result;
 
 /// Maximum rows returned before truncation.
 const MAX_RESULT_ROWS: usize = 1000;

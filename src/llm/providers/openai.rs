@@ -4,9 +4,6 @@ use serde_json::json;
 use tokio_stream::StreamExt;
 
 use super::common;
-use crate::base::http;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::llm::http_adapter;
 use crate::llm::message::ChatMessage;
 use crate::llm::message::Content;
@@ -21,6 +18,9 @@ use crate::llm::stream::StreamWriter;
 use crate::llm::stream::ToolCallAccumulator;
 use crate::llm::tool::ToolSchema;
 use crate::llm::usage::TokenUsage;
+use crate::types::http;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// OpenAI-compatible provider. Works with OpenAI, DeepSeek, Groq, OpenRouter, etc.
 pub struct OpenAIProvider {
@@ -30,7 +30,7 @@ pub struct OpenAIProvider {
 }
 
 impl OpenAIProvider {
-    pub fn new(base_url: &str, api_key: &str) -> crate::base::Result<Self> {
+    pub fn new(base_url: &str, api_key: &str) -> crate::types::Result<Self> {
         let client = common::build_http_client()?;
         Ok(Self {
             client,
@@ -139,7 +139,7 @@ impl LLMProvider for OpenAIProvider {
         let api_key = self.api_key.clone();
         let model_owned = model.to_string();
 
-        crate::base::spawn_fire_and_forget("openai_stream_driver", async move {
+        crate::types::spawn_fire_and_forget("openai_stream_driver", async move {
             let request_ctx = http::HttpRequestContext::new("llm", "stream_open")
                 .with_endpoint("openai")
                 .with_model(model_owned.clone())
@@ -455,7 +455,7 @@ fn serialize_messages(messages: &[ChatMessage]) -> Vec<serde_json::Value> {
 }
 
 fn parse_response(data: &serde_json::Value) -> Result<LLMResponse> {
-    use crate::base::OptionExt;
+    use crate::types::OptionExt;
 
     if let Some(message) = stream_error_message(data) {
         return Err(ErrorCode::llm_request(message));

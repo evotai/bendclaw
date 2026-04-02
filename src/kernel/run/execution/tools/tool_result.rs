@@ -23,5 +23,5 @@ pub(crate) fn truncate_output(text: String) -> String {
     if text.len() <= MAX_TOOL_OUTPUT {
         return text;
     }
-    crate::base::truncate_with_notice(&text, MAX_TOOL_OUTPUT)
+    crate::types::truncate_with_notice(&text, MAX_TOOL_OUTPUT)
 }

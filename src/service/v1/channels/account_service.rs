@@ -1,12 +1,12 @@
 use super::http::ChannelAccountView;
 use super::http::CreateChannelAccountRequest;
-use crate::base::new_id;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;
 use crate::storage::dal::channel_account::record::ChannelAccountRecord;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
+use crate::types::new_id;
 
 pub struct ChannelAccountService {
     state: AppState,

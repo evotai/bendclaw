@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::record::AgentConfigRecord;
-use crate::base::Result;
 use crate::llm::config::LLMConfig;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
@@ -10,6 +9,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "agent_config";
 const CACHE_TTL: Duration = Duration::from_secs(60);
@@ -26,7 +26,7 @@ impl RowMapper for ConfigMapper {
          llm_config, TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<AgentConfigRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<AgentConfigRecord> {
         Ok(AgentConfigRecord {
             agent_id: sql::col(row, 0),
             system_prompt: sql::col(row, 1),
@@ -161,7 +161,7 @@ fn parse_optional_u64(raw: &str) -> Option<u64> {
 fn parse_optional_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     label: &str,
-) -> crate::base::Result<Option<T>> {
+) -> crate::types::Result<Option<T>> {
     if raw.is_empty() || raw == "NULL" || raw == "null" {
         return Ok(None);
     }

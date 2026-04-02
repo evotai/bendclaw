@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::base::http;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::client::http_adapter;
+use crate::types::http;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Client for the evot-ai directive API.
 /// Fetches platform-driven directives (e.g. resource warnings) to inject into agent prompts.

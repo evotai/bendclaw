@@ -1,13 +1,13 @@
 use super::record::UsageRecord;
 use super::types::CostSummary;
 use super::types::DailyUsage;
-use crate::base::Result;
 use crate::observability::log::slog;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
+use crate::types::Result;
 
 #[derive(Clone)]
 struct UsageMapper;
@@ -17,7 +17,7 @@ impl RowMapper for UsageMapper {
     fn columns(&self) -> &str {
         "id"
     }
-    fn parse(&self, _row: &serde_json::Value) -> crate::base::Result<()> {
+    fn parse(&self, _row: &serde_json::Value) -> crate::types::Result<()> {
         Ok(())
     }
 }

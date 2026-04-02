@@ -15,11 +15,11 @@ use super::message::parse_event;
 use super::message::MessageDedup;
 use super::outbound::add_reaction;
 use super::token::TokenCache;
-use crate::base::spawn_fire_and_forget;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::runtime::channel_trait::InboundEventSender;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::spawn_fire_and_forget;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 // ── Protobuf (pbbp2) ──
 

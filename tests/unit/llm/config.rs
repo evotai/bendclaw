@@ -46,7 +46,7 @@ fn test_provider_endpoint_default_weight() -> Result<()> {
 #[test]
 fn test_validate_rejects_empty_provider_list() {
     let err = LLMConfig::default().validate().unwrap_err();
-    assert_eq!(err.code, bendclaw::base::ErrorCode::INVALID_INPUT);
+    assert_eq!(err.code, bendclaw::types::ErrorCode::INVALID_INPUT);
     assert!(err.message.contains("providers must not be empty"));
 }
 
@@ -81,7 +81,7 @@ fn test_validate_rejects_duplicate_provider_names() {
     };
 
     let err = cfg.validate().unwrap_err();
-    assert_eq!(err.code, bendclaw::base::ErrorCode::INVALID_INPUT);
+    assert_eq!(err.code, bendclaw::types::ErrorCode::INVALID_INPUT);
     assert!(err.message.contains("must be unique"));
 }
 

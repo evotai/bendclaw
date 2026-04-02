@@ -1,9 +1,9 @@
-use crate::base::Result;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::dal::task::TaskRepo;
 use crate::storage::dal::task_history::TaskHistoryRecord;
 use crate::storage::dal::task_history::TaskHistoryRepo;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 pub async fn list_tasks(pool: &Pool, limit: u32) -> Result<Vec<TaskRecord>> {
     let repo = TaskRepo::new(pool.clone());

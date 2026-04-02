@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Skill;
-use crate::base::Result;
+use crate::types::entities::Skill;
+use crate::types::Result;
 
 #[async_trait]
 pub trait SkillRepo: Send + Sync {

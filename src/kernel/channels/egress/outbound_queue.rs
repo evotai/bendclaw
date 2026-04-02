@@ -62,7 +62,7 @@ pub fn spawn_outbound_queue(config: OutboundQueueConfig) -> OutboundQueue {
     let max_attempts = config.max_attempts;
     let retry_config = Arc::new(config.retry_config);
 
-    crate::base::spawn_fire_and_forget(
+    crate::types::spawn_fire_and_forget(
         "outbound_dispatch_loop",
         dispatch_loop(rx, re_enqueue_tx, max_attempts, retry_config),
     );
@@ -80,7 +80,7 @@ async fn dispatch_loop(
     while let Some(msg) = rx.recv().await {
         let tx = re_enqueue_tx.clone();
         let cfg = retry_config.clone();
-        crate::base::spawn_fire_and_forget("outbound_message_handler", async move {
+        crate::types::spawn_fire_and_forget("outbound_message_handler", async move {
             handle_queued_message(msg, max_attempts, &cfg, &tx).await;
         });
     }

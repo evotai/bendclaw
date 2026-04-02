@@ -227,7 +227,7 @@ pub async fn execute_run(
     let spawned_agent_id = agent_id.clone();
     let spawned_session_id = session_id.clone();
     let spawned_run_id = run_id.clone();
-    crate::base::spawn_fire_and_forget("run_execution_stream", async move {
+    crate::types::spawn_fire_and_forget("run_execution_stream", async move {
         if let Some(from) = continue_from_run_id {
             let payload = stream::base_event_payload(
                 &spawned_agent_id,
@@ -344,7 +344,7 @@ pub(super) fn should_skip_event(event: &Event) -> bool {
 fn to_response(
     record: RunRecord,
     events: Option<Vec<RunEventResponse>>,
-) -> std::result::Result<RunResponse, crate::base::ErrorCode> {
+) -> std::result::Result<RunResponse, crate::types::ErrorCode> {
     let metrics = record.metrics_json()?;
     Ok(RunResponse {
         id: record.id,

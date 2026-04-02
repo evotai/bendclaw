@@ -10,7 +10,6 @@ use tokio_util::sync::CancellationToken;
 use super::run_options::RunOptions;
 use super::session_resources::SessionResources;
 use super::session_stream::Stream;
-use crate::base::Result;
 use crate::kernel::run::launcher;
 use crate::kernel::run::launcher::EngineHandle;
 use crate::kernel::run::persist::persister::TurnPersister;
@@ -24,6 +23,7 @@ use crate::kernel::Message;
 use crate::llm::provider::LLMProvider;
 use crate::observability::audit;
 use crate::observability::server_log;
+use crate::types::Result;
 
 const USAGE_PROVIDER_UNKNOWN: &str = "unknown";
 

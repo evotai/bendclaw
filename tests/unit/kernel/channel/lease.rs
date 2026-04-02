@@ -35,7 +35,7 @@ impl ReceiverFactory for FakeReceiverFactory {
         _account: &ChannelAccount,
         _event_tx: bendclaw::kernel::channels::runtime::channel_trait::InboundEventSender,
         cancel: tokio_util::sync::CancellationToken,
-    ) -> bendclaw::base::Result<tokio::task::JoinHandle<()>> {
+    ) -> bendclaw::types::Result<tokio::task::JoinHandle<()>> {
         Ok(tokio::spawn(async move { cancel.cancelled().await }))
     }
 }
@@ -49,10 +49,10 @@ impl ChannelOutbound for FakeOutbound {
         _: &serde_json::Value,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<String> {
+    ) -> bendclaw::types::Result<String> {
         Ok(String::new())
     }
-    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::base::Result<()> {
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn edit_message(
@@ -61,7 +61,7 @@ impl ChannelOutbound for FakeOutbound {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn add_reaction(
@@ -70,7 +70,7 @@ impl ChannelOutbound for FakeOutbound {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
 }
@@ -95,7 +95,7 @@ impl ChannelPlugin for ReceiverPlugin {
             stale_event_threshold: None,
         }
     }
-    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> {
+    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::types::Result<()> {
         Ok(())
     }
     fn outbound(&self) -> Arc<dyn ChannelOutbound> {
@@ -126,7 +126,7 @@ impl ChannelPlugin for WebhookOnlyPlugin {
             stale_event_threshold: None,
         }
     }
-    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::base::Result<()> {
+    fn validate_config(&self, _: &serde_json::Value) -> bendclaw::types::Result<()> {
         Ok(())
     }
     fn outbound(&self) -> Arc<dyn ChannelOutbound> {
@@ -182,7 +182,7 @@ fn build_resource_inner(
 ) -> (ChannelLeaseResource, Arc<ChannelSupervisor>) {
     let handler = query_handler.clone();
     let fake = FakeDatabend::new(move |sql, db| {
-        handler(sql, db).map_err(|e| bendclaw::base::ErrorCode::internal(e))
+        handler(sql, db).map_err(|e| bendclaw::types::ErrorCode::internal(e))
     });
     let pool = fake.pool();
     let databases = Arc::new(AgentDatabases::new(pool, "test_").unwrap());

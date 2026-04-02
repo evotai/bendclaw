@@ -3,12 +3,12 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Result;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::run::event::Event;
 use crate::kernel::workbench::sem_event::SemEvent;
 use crate::storage::dal::run::record::RunRecord;
 use crate::storage::dal::run_event::record::RunEventRecord;
+use crate::types::Result;
 
 // ── Output types ────────────────────────────────────────────────────────
 

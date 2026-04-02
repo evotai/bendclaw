@@ -134,7 +134,7 @@ impl LLMProvider for MockLLMProvider {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         let turn = self.next_turn();
         match turn {
             MockTurn::Text(text) => Ok(LLMResponse {

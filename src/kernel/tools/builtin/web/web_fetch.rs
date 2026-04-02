@@ -2,9 +2,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::base::truncate_chars_with_ellipsis;
-use crate::base::truncate_with_notice;
-use crate::base::Result;
 use crate::kernel::tools::tool_context::ToolContext;
 use crate::kernel::tools::tool_contract::OperationClassifier;
 use crate::kernel::tools::tool_contract::Tool;
@@ -13,6 +10,9 @@ use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::observability::log::slog;
+use crate::types::truncate_chars_with_ellipsis;
+use crate::types::truncate_with_notice;
+use crate::types::Result;
 
 const DESCRIPTION: &str = "\
 Fetch a URL and return its content. HTML pages are converted to readable markdown. \

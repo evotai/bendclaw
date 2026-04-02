@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Span;
-use crate::base::Result;
+use crate::types::entities::Span;
+use crate::types::Result;
 
 #[async_trait]
 pub trait SpanRepo: Send + Sync {

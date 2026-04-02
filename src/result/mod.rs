@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 
-use crate::base::Result;
+use crate::types::Result;
 
 /// Canonical contract: format and deliver an event stream to a consumer.
 ///

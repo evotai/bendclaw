@@ -1,5 +1,4 @@
 use super::record::TaskHistoryRecord;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::dal::task::TaskSchedule;
@@ -9,6 +8,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "task_history";
 
@@ -22,7 +22,7 @@ impl RowMapper for TaskHistoryMapper {
         "id, task_id, run_id, task_name, schedule, prompt, status, output, error, duration_ms, delivery, delivery_status, delivery_error, user_id, executed_by_node_id, TO_VARCHAR(created_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TaskHistoryRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<TaskHistoryRecord> {
         Ok(TaskHistoryRecord {
             id: sql::col(row, 0),
             task_id: sql::col(row, 1),

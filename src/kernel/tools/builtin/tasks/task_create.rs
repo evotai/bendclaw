@@ -65,7 +65,7 @@ impl Tool for TaskCreateTool {
         &self,
         args: serde_json::Value,
         ctx: &ToolContext,
-    ) -> crate::base::Result<ToolResult> {
+    ) -> crate::types::Result<ToolResult> {
         let mut spec: TaskCreateSpec = match serde_json::from_value(args) {
             Ok(spec) => spec,
             Err(error) => {

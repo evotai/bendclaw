@@ -3,9 +3,6 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::base::new_session_id;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::persist::persist_op::PersistOp;
 use crate::kernel::run::persist::persist_op::PersistWriter;
 use crate::kernel::session::core::session_manager::SessionManager;
@@ -15,6 +12,9 @@ use crate::storage::dal::session::repo::SessionRepo;
 use crate::storage::dal::session::repo::SessionWrite;
 use crate::storage::time;
 use crate::storage::AgentDatabases;
+use crate::types::new_session_id;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 #[derive(Debug, Clone)]
 struct SessionDraft {

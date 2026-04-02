@@ -63,7 +63,7 @@ impl Tool for TaskListTool {
         &self,
         args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> crate::base::Result<ToolResult> {
+    ) -> crate::types::Result<ToolResult> {
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
 
         match ops::list_tasks(&self.pool, limit).await {

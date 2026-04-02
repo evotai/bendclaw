@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::channels::routing::chat_router::ChatRouter;
 use bendclaw::kernel::channels::routing::chat_router::ChatRouterConfig;
 use bendclaw::kernel::channels::routing::debouncer::DebounceConfig;
 use bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry;
 use bendclaw::kernel::channels::runtime::supervisor::ChannelSupervisor;
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::runtime::ActivityTracker;
 use bendclaw::kernel::runtime::Runtime;
@@ -39,8 +39,8 @@ impl LLMProvider for NoopLLM {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
-        Err(bendclaw::base::ErrorCode::internal("noop llm"))
+    ) -> bendclaw::types::Result<LLMResponse> {
+        Err(bendclaw::types::ErrorCode::internal("noop llm"))
     }
 
     fn chat_stream(

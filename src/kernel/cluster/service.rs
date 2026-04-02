@@ -6,11 +6,11 @@ use tokio_util::sync::CancellationToken;
 use super::diagnostics;
 use super::ClusterOptions;
 use super::DispatchTable;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::client::BendclawClient;
 use crate::client::ClusterClient;
 use crate::client::NodeEntry;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Unified cluster abstraction owning registration, peer cache, and node-to-node client.
 /// Runtime holds a single `Arc<ClusterService>` instead of scattered fields.
@@ -116,7 +116,7 @@ impl ClusterService {
     ) -> tokio::task::JoinHandle<()> {
         let svc = self.clone();
         let interval_duration = self.options.heartbeat_interval;
-        crate::base::spawn_named("cluster_heartbeat", async move {
+        crate::types::spawn_named("cluster_heartbeat", async move {
             let mut interval = tokio::time::interval(interval_duration);
             diagnostics::log_cluster_heartbeat_started(interval_duration.as_millis() as u64);
             loop {

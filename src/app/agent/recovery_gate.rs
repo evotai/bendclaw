@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::storage::backend::run_repo::RunRepo;
+use crate::types::Result;
 
 pub enum CleanupPolicy {
     Full,

@@ -5,16 +5,15 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::client::BendclawClient;
 use crate::client::ClusterClient;
 use crate::client::DirectiveClient;
+use crate::config::agent::AgentConfig;
 use crate::config::ClusterConfig;
 use crate::config::DirectiveConfig;
 use crate::kernel::cluster::ClusterOptions;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::runtime::runtime::Runtime;
@@ -29,6 +28,7 @@ use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 pub(super) struct RuntimeDeps {
     pub config: AgentConfig,
@@ -164,7 +164,7 @@ pub(super) async fn construct(
     if let Some(dc) = directive_config {
         let rt = runtime.clone();
         let cancel = sync_cancel.clone();
-        crate::base::spawn_fire_and_forget("directive_init", async move {
+        crate::types::spawn_fire_and_forget("directive_init", async move {
             let client = match DirectiveClient::new(&dc.api_base, &dc.token) {
                 Ok(c) => Arc::new(c),
                 Err(e) => {
@@ -188,7 +188,7 @@ pub(super) async fn construct(
     if let Some(cc) = cluster_config {
         let rt = runtime.clone();
         let cancel = sync_cancel;
-        crate::base::spawn_fire_and_forget("cluster_init", async move {
+        crate::types::spawn_fire_and_forget("cluster_init", async move {
             let cluster_client = Arc::new(ClusterClient::new(
                 &cc.registry_url,
                 &cc.registry_token,
@@ -220,7 +220,7 @@ pub(super) async fn construct(
         let sync_catalog = runtime.catalog.clone();
         let sync_databases = runtime.databases().clone();
         let cancel = runtime.sync_cancel.clone();
-        let sync_handle = crate::base::spawn_named("skill_sync_loop", async move {
+        let sync_handle = crate::types::spawn_named("skill_sync_loop", async move {
             let base_interval = std::time::Duration::from_secs(skills_sync_interval_secs);
             let mut consecutive_errors: u64 = 0;
             let mut next_sleep = std::time::Duration::ZERO;

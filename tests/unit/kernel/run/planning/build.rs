@@ -7,6 +7,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use anyhow::Result;
 use async_trait::async_trait;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::agent_store::AgentStore;
 use bendclaw::kernel::run::planning::build_prompt;
 use bendclaw::kernel::run::planning::substitute_template;
@@ -27,7 +28,6 @@ use bendclaw::kernel::run::planning::MAX_SOUL_BYTES;
 use bendclaw::kernel::run::planning::MAX_SYSTEM_BYTES;
 use bendclaw::kernel::run::planning::MAX_TOOLS_BYTES;
 use bendclaw::kernel::run::planning::MAX_VARIABLES_BYTES;
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::definition::ToolDefinition;
@@ -209,8 +209,8 @@ impl LLMProvider for NoopLLM {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
-        Err(bendclaw::base::ErrorCode::internal("noop llm"))
+    ) -> bendclaw::types::Result<LLMResponse> {
+        Err(bendclaw::types::ErrorCode::internal("noop llm"))
     }
 
     fn chat_stream(
@@ -239,7 +239,7 @@ fn prompt_test_workspace() -> PathBuf {
 
 /// Build a CloudPromptLoader backed by a FakeDatabend for DB-fetching tests.
 fn make_cloud_loader(
-    query: impl Fn(&str, Option<&str>) -> bendclaw::base::Result<bendclaw::storage::pool::QueryResponse>
+    query: impl Fn(&str, Option<&str>) -> bendclaw::types::Result<bendclaw::storage::pool::QueryResponse>
         + Send
         + Sync
         + 'static,

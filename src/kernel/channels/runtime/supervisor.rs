@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::kernel::channels::egress::backpressure::BackpressureConfig;
 use crate::kernel::channels::egress::backpressure::BackpressureSender;
 use crate::kernel::channels::model::account::ChannelAccount;
@@ -13,6 +12,7 @@ use crate::kernel::channels::model::status::ChannelStatus;
 use crate::kernel::channels::routing::chat_router::ChatRouter;
 use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
 use crate::kernel::channels::runtime::channel_trait::InboundKind;
+use crate::types::Result;
 
 struct ReceiverSlot {
     cancel: CancellationToken,
@@ -81,7 +81,7 @@ impl ChannelSupervisor {
 
         let router = self.router.clone();
         let account_clone = account.clone();
-        crate::base::spawn_fire_and_forget("channel_event_consumer", async move {
+        crate::types::spawn_fire_and_forget("channel_event_consumer", async move {
             while let Some(event) = event_rx.recv().await {
                 router.route(account_clone.clone(), event).await;
             }

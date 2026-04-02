@@ -6,10 +6,10 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Result;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
+use crate::types::Result;
 
 const TABLE: &str = "evotai_meta.variables";
 const MAX_LIST_LIMIT: u32 = 10_000;

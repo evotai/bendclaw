@@ -1,5 +1,5 @@
-use crate::base::Result;
 use crate::kernel::runtime::Runtime;
+use crate::types::Result;
 impl Runtime {
     pub fn agent_config_store(
         &self,

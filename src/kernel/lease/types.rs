@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 /// Callback to release a lease from held state after async work completes.
 /// Removes the resource from the in-memory held map and releases the DB lease.

@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use bendclaw::base::ErrorCode;
-use bendclaw::base::Result;
 use bendclaw::kernel::channels::egress::outbound_queue::spawn_outbound_queue;
 use bendclaw::kernel::channels::egress::outbound_queue::OutboundQueueConfig;
 use bendclaw::kernel::channels::egress::outbound_queue::QueuedMessage;
 use bendclaw::kernel::channels::egress::retry::RetryConfig;
 use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
+use bendclaw::types::ErrorCode;
+use bendclaw::types::Result;
 use parking_lot::Mutex;
 
 struct CountingOutbound {

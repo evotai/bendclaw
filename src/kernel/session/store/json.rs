@@ -17,8 +17,6 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 
 use super::contract::SessionStore;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::usage::CostSummary;
 use crate::kernel::run::usage::UsageEvent;
 use crate::kernel::run::usage::UsageScope;
@@ -27,6 +25,8 @@ use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
 use crate::storage::dal::session::record::SessionRecord;
 use crate::storage::dal::session::repo::SessionWrite;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct JsonSessionStore {
     base_dir: PathBuf,

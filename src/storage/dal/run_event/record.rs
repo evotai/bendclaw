@@ -15,7 +15,7 @@ pub struct RunEventRecord {
 }
 
 impl RunEventRecord {
-    pub fn payload_json(&self) -> crate::base::Result<serde_json::Value> {
+    pub fn payload_json(&self) -> crate::types::Result<serde_json::Value> {
         crate::storage::sql::parse_json(&self.payload, "run_events.payload")
     }
 }

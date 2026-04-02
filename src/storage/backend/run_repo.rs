@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::entities::Run;
-use crate::base::Result;
+use crate::types::entities::Run;
+use crate::types::Result;
 
 #[async_trait]
 pub trait RunRepo: Send + Sync {

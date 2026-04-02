@@ -9,8 +9,6 @@ use async_trait::async_trait;
 
 use super::context::SessionContextProvider;
 use super::sink::RunInitializer;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::run::persist::persist_op::PersistOp;
 use crate::kernel::run::persist::persist_op::PersistWriter;
 use crate::kernel::run::planning::PromptConfig;
@@ -18,6 +16,8 @@ use crate::kernel::run::usage::UsageScope;
 use crate::kernel::session::runtime::history_loader::SessionHistoryLoader;
 use crate::kernel::session::store::SessionStore;
 use crate::kernel::Message;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Persistent backend generic over any SessionStore implementation.
 /// Local uses `PersistentBackend<JsonSessionStore>`,

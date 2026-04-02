@@ -1,7 +1,7 @@
-use bendclaw::base::ErrorCode;
 use bendclaw::kernel::channels::egress::retry::is_channel_retryable;
 use bendclaw::kernel::channels::egress::retry::send_with_retry;
 use bendclaw::kernel::channels::egress::retry::RetryConfig;
+use bendclaw::types::ErrorCode;
 
 #[test]
 fn retryable_error_codes() {
@@ -102,7 +102,7 @@ async fn send_with_retry_exhausts_retries() {
         max_delay_ms: 50,
     };
     let c = counter.clone();
-    let result: bendclaw::base::Result<i32> = send_with_retry(
+    let result: bendclaw::types::Result<i32> = send_with_retry(
         move || {
             c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             async { Err(ErrorCode::channel_send("always fails")) }
@@ -124,7 +124,7 @@ async fn send_with_retry_no_retry_on_non_retryable() {
         max_delay_ms: 50,
     };
     let c = counter.clone();
-    let result: bendclaw::base::Result<i32> = send_with_retry(
+    let result: bendclaw::types::Result<i32> = send_with_retry(
         move || {
             c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             async { Err(ErrorCode::not_found("permanent")) }

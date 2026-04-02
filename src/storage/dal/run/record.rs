@@ -98,14 +98,14 @@ impl RunRecord {
         self.kind == RunKind::SessionCheckpoint.as_str()
     }
 
-    pub fn parse_metrics(&self) -> crate::base::Result<RunMetrics> {
+    pub fn parse_metrics(&self) -> crate::types::Result<RunMetrics> {
         if self.metrics.is_empty() {
             return Ok(RunMetrics::default());
         }
         crate::storage::sql::parse_json(&self.metrics, "runs.metrics")
     }
 
-    pub fn metrics_json(&self) -> crate::base::Result<serde_json::Value> {
+    pub fn metrics_json(&self) -> crate::types::Result<serde_json::Value> {
         if self.metrics.is_empty() {
             return Ok(serde_json::Value::Null);
         }

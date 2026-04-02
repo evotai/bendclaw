@@ -20,13 +20,13 @@ pub struct RunHandoff {
 }
 
 impl RunHandoff {
-    pub fn to_json(&self) -> crate::base::Result<serde_json::Value> {
+    pub fn to_json(&self) -> crate::types::Result<serde_json::Value> {
         serde_json::to_value(self)
-            .map_err(|e| crate::base::ErrorCode::internal(format!("serialize handoff: {e}")))
+            .map_err(|e| crate::types::ErrorCode::internal(format!("serialize handoff: {e}")))
     }
 
-    pub fn from_json(val: &serde_json::Value) -> crate::base::Result<Self> {
+    pub fn from_json(val: &serde_json::Value) -> crate::types::Result<Self> {
         serde_json::from_value(val.clone())
-            .map_err(|e| crate::base::ErrorCode::internal(format!("parse handoff: {e}")))
+            .map_err(|e| crate::types::ErrorCode::internal(format!("parse handoff: {e}")))
     }
 }

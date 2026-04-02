@@ -4,9 +4,9 @@ use std::time::Duration;
 use backon::ExponentialBuilder;
 use backon::Retryable;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::channels::runtime::diagnostics;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Retry configuration for channel delivery operations.
 pub struct RetryConfig {

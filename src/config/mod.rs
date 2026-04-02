@@ -29,6 +29,8 @@
 //! | `BENDCLAW_ADMIN_BIND_ADDR`   | `admin.bind_addr`      | *(optional)*   |
 //! | `BENDCLAW_CLUSTER_ID`        | `cluster.cluster_id`   | **required when cluster enabled** |
 
+pub mod agent;
+
 use std::fs;
 
 use anyhow::Context;

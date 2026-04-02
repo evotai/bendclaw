@@ -1,9 +1,9 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::storage::sql;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]

@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::build::session_builder::CloudBuildOptions;
 use crate::kernel::session::build::session_builder::SessionBuilder;
 use crate::kernel::session::build::session_capabilities::SessionOwner;
 use crate::kernel::session::Session;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Acquire a persistent cloud session by identity. Used by server-side callers
 /// (session_router, task executor) and the invocation layer's Persistent branch.

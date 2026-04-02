@@ -85,7 +85,7 @@ impl ChannelHealthMonitor {
         accounts: Vec<ChannelAccount>,
         cancel: CancellationToken,
     ) -> JoinHandle<()> {
-        crate::base::spawn_named("health_monitor", async move {
+        crate::types::spawn_named("health_monitor", async move {
             let mut restart_counts: HashMap<String, u32> = HashMap::new();
             let mut last_restart: HashMap<String, Instant> = HashMap::new();
 

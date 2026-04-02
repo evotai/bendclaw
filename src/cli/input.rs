@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Resolve a string that may be a `@file` reference.
 /// If the string starts with `@`, read the file contents.

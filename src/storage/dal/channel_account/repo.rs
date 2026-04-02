@@ -1,11 +1,11 @@
 use super::record::ChannelAccountRecord;
-use crate::base::Result;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
 use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 #[derive(Clone)]
 struct Mapper;
@@ -17,7 +17,7 @@ impl RowMapper for Mapper {
         "id, channel_type, account_id, agent_id, user_id, scope, node_id, created_by, config, enabled, lease_node_id, lease_token, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<Self::Entity> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<Self::Entity> {
         let config_raw: String = sql::col(row, 8);
         let config: serde_json::Value = sql::parse_json(&config_raw, "channel_accounts.config")?;
         Ok(ChannelAccountRecord {

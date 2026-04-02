@@ -47,7 +47,7 @@ pub struct TraceWriter {
 impl TraceWriter {
     pub fn spawn() -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(CHANNEL_CAPACITY);
-        let handle = crate::base::spawn_named("trace_drain_loop", trace_drain_loop(rx));
+        let handle = crate::types::spawn_named("trace_drain_loop", trace_drain_loop(rx));
 
         // Build a BackgroundWriter manually using the internal spawn with
         // a simple forwarding handler, OR we can use the raw tx/rx approach.

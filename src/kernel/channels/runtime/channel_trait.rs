@@ -4,11 +4,11 @@ use async_trait::async_trait;
 use axum::http::HeaderMap;
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::kernel::channels::egress::backpressure::BackpressureSender;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::model::capabilities::ChannelCapabilities;
 use crate::kernel::channels::model::message::InboundEvent;
+use crate::types::Result;
 
 /// Sender for pushing inbound events from long-lived connections (WebSocket, polling).
 pub type InboundEventSender = BackpressureSender;

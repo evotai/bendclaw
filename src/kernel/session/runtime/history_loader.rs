@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::kernel::session::diagnostics;
 use crate::kernel::session::store::SessionStore;
 use crate::kernel::Message;
+use crate::types::Result;
 
 pub(crate) struct SessionHistoryLoader {
     storage: Arc<dyn SessionStore>,

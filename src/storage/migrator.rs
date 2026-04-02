@@ -28,7 +28,7 @@ pub async fn run_agent(pool: &Pool) {
     let futs = BASE_MIGRATIONS
         .iter()
         .map(|sql| run_one_file(pool, sql, "base"));
-    crate::base::runtime::join_bounded(futs, crate::base::runtime::CONCURRENCY_DB).await;
+    crate::types::runtime::join_bounded(futs, crate::types::runtime::CONCURRENCY_DB).await;
     slog!(
         info,
         "storage",
@@ -43,7 +43,7 @@ pub async fn run_org(pool: &Pool) {
     let futs = ORG_MIGRATIONS
         .iter()
         .map(|sql| run_one_file(pool, sql, "org"));
-    crate::base::runtime::join_bounded(futs, crate::base::runtime::CONCURRENCY_DB).await;
+    crate::types::runtime::join_bounded(futs, crate::types::runtime::CONCURRENCY_DB).await;
     slog!(
         info,
         "storage",

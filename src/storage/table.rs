@@ -12,7 +12,7 @@ use super::pool::Pool;
 use super::sql;
 use super::sql::Sql;
 use super::sql::SqlVal;
-use crate::base::Result;
+use crate::types::Result;
 const DEFAULT_CACHE_CAPACITY: usize = 128;
 
 /// Maps a raw JSON row to a domain type.
@@ -21,7 +21,7 @@ pub trait RowMapper: Send + Sync {
     /// Column expression for SELECT (e.g. "id, name, TO_VARCHAR(created_at)").
     fn columns(&self) -> &str;
     /// Parse a single row into the domain entity.
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<Self::Entity>;
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<Self::Entity>;
 }
 
 /// A WHERE condition: column name + rendered SQL value.

@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::kernel::variables::store::Variable;
 use crate::kernel::variables::store::VariableStore;
+use crate::types::Result;
 
 pub struct VariableService {
     store: Arc<dyn VariableStore>,
@@ -76,7 +76,7 @@ impl VariableService {
     /// Fire-and-forget touch for variable usage tracking.
     pub fn touch_used(&self, ids: Vec<String>, agent_id: String) {
         let store = self.store.clone();
-        crate::base::spawn_fire_and_forget("variable_touch", async move {
+        crate::types::spawn_fire_and_forget("variable_touch", async move {
             let _ = store.touch_last_used_many(&ids, &agent_id).await;
         });
     }

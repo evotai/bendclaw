@@ -1,11 +1,11 @@
-use crate::base::new_id;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::dal::task::TaskRepo;
 use crate::storage::dal::task::TaskSchedule;
 use crate::storage::pool::Pool;
+use crate::types::new_id;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct CreateTaskParams {
     pub node_id: String,

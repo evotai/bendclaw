@@ -1,5 +1,3 @@
-use crate::base::new_id;
-use crate::base::Result;
 use crate::kernel::task::diagnostics;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::dal::task::TaskRepo;
@@ -7,6 +5,8 @@ use crate::storage::dal::task::TaskSchedule;
 use crate::storage::dal::task_history::TaskHistoryRecord;
 use crate::storage::dal::task_history::TaskHistoryRepo;
 use crate::storage::pool::Pool;
+use crate::types::new_id;
+use crate::types::Result;
 
 /// Record execution results and update task state.
 #[allow(clippy::too_many_arguments)]

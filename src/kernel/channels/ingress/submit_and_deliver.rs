@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use super::dispatch_context::DispatchContext;
-use crate::base::new_id;
 use crate::kernel::channels::egress::deliver_outbound;
 use crate::kernel::channels::model::account::ChannelAccount;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
@@ -11,6 +10,7 @@ use crate::kernel::runtime::SubmitResult;
 use crate::observability::log::channel_log;
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
+use crate::types::new_id;
 
 /// Submit turn and deliver response (with followup loop).
 pub(crate) async fn submit_and_deliver(
@@ -96,7 +96,7 @@ pub(crate) async fn submit_and_deliver(
 
                 channel_log!(info, "outbound", "sent",
                     msg = format!("channel \u{2192} {}", account.channel_type),
-                    output_preview = %crate::base::truncate_bytes_on_char_boundary(&output_text, 100),
+                    output_preview = %crate::types::truncate_bytes_on_char_boundary(&output_text, 100),
                     output_bytes = output_text.len(),
                     channel_type = %account.channel_type,
                     account_id = %account.channel_account_id,
@@ -158,7 +158,7 @@ async fn send_control_reply(
             Ok(platform_message_id) => {
                 channel_log!(info, "outbound", "sent",
                     msg = format!("channel \u{2192} {} (control)", account.channel_type),
-                    output_preview = %crate::base::truncate_bytes_on_char_boundary(message, 100),
+                    output_preview = %crate::types::truncate_bytes_on_char_boundary(message, 100),
                     output_bytes = message.len(),
                     channel_type = %account.channel_type,
                     account_id = %account.channel_account_id,
@@ -188,7 +188,7 @@ async fn send_control_reply(
             Err(error) => {
                 channel_log!(warn, "outbound", "failed",
                     msg = format!("channel \u{2192} {} (control)", account.channel_type),
-                    output_preview = %crate::base::truncate_bytes_on_char_boundary(message, 100),
+                    output_preview = %crate::types::truncate_bytes_on_char_boundary(message, 100),
                     output_bytes = message.len(),
                     channel_type = %account.channel_type,
                     account_id = %account.channel_account_id,

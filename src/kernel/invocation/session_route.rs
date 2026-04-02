@@ -3,19 +3,19 @@
 use std::sync::Arc;
 
 use super::request::*;
-use crate::base::Result;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::build::session_builder::CloudBuildOptions;
 use crate::kernel::session::build::session_builder::SessionBuilder;
 use crate::kernel::session::build::session_capabilities::SessionOwner;
 use crate::kernel::session::Session;
+use crate::types::Result;
 
 /// Acquire a one-shot session for the given invocation request.
 pub async fn acquire_session(
     runtime: &Arc<Runtime>,
     req: &InvocationRequest,
 ) -> Result<Arc<Session>> {
-    let session_id = crate::base::id::new_session_id();
+    let session_id = crate::types::id::new_session_id();
     let owner = SessionOwner {
         agent_id: req.agent_id.clone(),
         user_id: req.user_id.clone(),

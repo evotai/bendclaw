@@ -3,16 +3,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use parking_lot::RwLock;
 
-use crate::base::Result;
+use crate::config::agent::AgentConfig;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::run::planning::PromptConfig;
 use crate::kernel::run::planning::PromptResolver;
-use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::session::backend::context::SessionContextProvider;
 use crate::kernel::session::backend::sink::RunInitializer;
 use crate::kernel::session::workspace::Workspace;
 use crate::kernel::tools::definition::toolset::Toolset;
 use crate::llm::provider::LLMProvider;
+use crate::types::Result;
 
 /// Owner identity for session assembly. Callers (invocation layer, factory) construct this.
 pub struct SessionOwner {

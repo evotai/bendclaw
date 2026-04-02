@@ -18,7 +18,7 @@ impl RowMapper for TextMapper {
         "value"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> bendclaw::base::Result<Self::Entity> {
+    fn parse(&self, row: &serde_json::Value) -> bendclaw::types::Result<Self::Entity> {
         Ok(row[0].as_str().unwrap_or_default().to_string())
     }
 }

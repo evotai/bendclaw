@@ -8,8 +8,6 @@ use serde_json::json;
 use super::skill_executor::SkillExecutor;
 use super::skill_executor::SkillOutput;
 use super::usage_sink::UsageSink;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::session::workspace::Workspace;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::diagnostics;
@@ -17,6 +15,8 @@ use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::variables::store::SharedVariableStore;
 use crate::kernel::variables::store::VariableStore;
 use crate::storage::pool::Pool;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct SkillRunner {
     catalog: Arc<SkillIndex>,
@@ -224,7 +224,7 @@ impl SkillRunner {
         }
         let pool = self.pool.clone();
         let user_id = self.user_id.clone();
-        crate::base::spawn_fire_and_forget("variable_touch_last_used", async move {
+        crate::types::spawn_fire_and_forget("variable_touch_last_used", async move {
             let store = SharedVariableStore::new(pool);
             let _ = store.touch_last_used_many(&ids, &user_id).await;
         });

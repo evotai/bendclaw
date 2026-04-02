@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use bendclaw::base::ErrorCode;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
@@ -10,6 +9,7 @@ use bendclaw::llm::reliable::ReliableProvider;
 use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::tool::ToolSchema;
 use bendclaw::llm::usage::TokenUsage;
+use bendclaw::types::ErrorCode;
 use parking_lot::Mutex;
 
 /// Provider that fails N times then succeeds.
@@ -35,7 +35,7 @@ impl LLMProvider for FailThenSucceed {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         let mut remaining = self.remaining_failures.lock();
         if *remaining > 0 {
             *remaining -= 1;
@@ -96,7 +96,7 @@ impl LLMProvider for AlwaysFail {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         Err(ErrorCode::llm_rate_limit("rate limited"))
     }
 
@@ -263,7 +263,7 @@ impl LLMProvider for CountingFail {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         *self.call_count.lock() += 1;
         Err(ErrorCode::new(self.error_code, "TestError", &self.message))
     }
@@ -639,7 +639,7 @@ impl LLMProvider for PartialThenSucceed {
         _messages: &[ChatMessage],
         _tools: &[ToolSchema],
         _temperature: f64,
-    ) -> bendclaw::base::Result<LLMResponse> {
+    ) -> bendclaw::types::Result<LLMResponse> {
         Ok(LLMResponse {
             content: Some("ok".into()),
             tool_calls: vec![],

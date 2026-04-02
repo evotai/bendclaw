@@ -67,7 +67,7 @@ impl ResponseStream {
     }
 
     /// Create a stream that immediately yields an error event.
-    pub fn from_error(e: crate::base::ErrorCode) -> Self {
+    pub fn from_error(e: crate::types::ErrorCode) -> Self {
         let (tx, rx) = mpsc::channel::<StreamEvent>(1);
         // Send error and drop tx to close
         let _ = tx.try_send(StreamEvent::Error(format!("{}", e)));

@@ -8,10 +8,10 @@ use crate::app::agent::run_executor;
 use crate::app::agent::run_planner;
 use crate::app::agent::session_binding;
 use crate::app::result::formats;
-use crate::base::Result;
 use crate::storage::backend::run_event_repo::RunEventRepo;
 use crate::storage::backend::run_repo::RunRepo;
 use crate::storage::backend::session_repo::SessionRepo;
+use crate::types::Result;
 
 #[derive(clap::Args, Debug)]
 pub struct AgentArgs {
@@ -150,7 +150,7 @@ pub async fn execute(
 fn resolve_input(input: &str) -> Result<String> {
     if let Some(path) = input.strip_prefix('@') {
         std::fs::read_to_string(path)
-            .map_err(|e| crate::base::ErrorCode::internal(format!("read {path}: {e}")))
+            .map_err(|e| crate::types::ErrorCode::internal(format!("read {path}: {e}")))
     } else {
         Ok(input.to_string())
     }

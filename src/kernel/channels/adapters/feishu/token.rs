@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::config::FEISHU_API;
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 // ── TokenCache ──
 

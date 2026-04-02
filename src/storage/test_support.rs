@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use super::pool::DatabendClient;
 use super::pool::QueryResponse;
 use super::Pool;
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 type QueryHandler = dyn Fn(&str, Option<&str>) -> Result<QueryResponse> + Send + Sync;
 type PageHandler = dyn Fn(&str) -> Result<QueryResponse> + Send + Sync;

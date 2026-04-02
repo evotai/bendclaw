@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::tools::builtin::skills::skill_create::SkillCreateTool;

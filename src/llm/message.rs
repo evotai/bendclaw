@@ -1,9 +1,9 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-pub use crate::base::Content;
-pub use crate::base::Role;
-pub use crate::base::ToolCall;
+pub use crate::types::Content;
+pub use crate::types::Role;
+pub use crate::types::ToolCall;
 
 /// Anthropic prompt caching control.
 ///

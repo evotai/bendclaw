@@ -1,5 +1,5 @@
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
-use bendclaw::kernel::runtime::agent_config::CheckpointConfig;
+use bendclaw::config::agent::AgentConfig;
+use bendclaw::config::agent::CheckpointConfig;
 
 // ── AgentConfig defaults ──
 

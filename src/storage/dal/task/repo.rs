@@ -1,7 +1,6 @@
 use super::delivery::TaskDelivery;
 use super::record::TaskRecord;
 use super::schedule::TaskSchedule;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -9,6 +8,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "task";
 
@@ -22,7 +22,7 @@ impl RowMapper for TaskMapper {
         "id, node_id, name, prompt, enabled, status, schedule, delivery, user_id, scope, created_by, last_error, delete_after_run, run_count, TO_VARCHAR(last_run_at), TO_VARCHAR(next_run_at), lease_token, lease_node_id, TO_VARCHAR(lease_expires_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<TaskRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<TaskRecord> {
         let enabled_str = sql::col(row, 4);
         let enabled = enabled_str == "1" || enabled_str.eq_ignore_ascii_case("true");
         let delete_after_run_str: String = sql::col(row, 12);

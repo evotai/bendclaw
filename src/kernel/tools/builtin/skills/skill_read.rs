@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::base::Result;
 use crate::kernel::skills::definition::sanitizer::sanitize_skill_content;
 use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -13,6 +12,7 @@ use crate::kernel::tools::tool_contract::ToolResult;
 use crate::kernel::tools::tool_id::ToolId;
 use crate::kernel::OpType;
 use crate::observability::log::slog;
+use crate::types::Result;
 
 /// Maximum skill content size returned to the LLM (64 KiB).
 /// Matches ironclaw's `MAX_PROMPT_FILE_SIZE`.

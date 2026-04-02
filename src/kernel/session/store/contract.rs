@@ -6,7 +6,6 @@
 
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::kernel::run::usage::CostSummary;
 use crate::kernel::run::usage::UsageEvent;
 use crate::kernel::run::usage::UsageScope;
@@ -15,6 +14,7 @@ use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
 use crate::storage::dal::session::record::SessionRecord;
 use crate::storage::dal::session::repo::SessionWrite;
+use crate::types::Result;
 
 #[async_trait]
 #[allow(clippy::too_many_arguments)]

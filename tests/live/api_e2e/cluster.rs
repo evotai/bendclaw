@@ -3,8 +3,6 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::base::ErrorCode;
-use bendclaw::base::Role;
 use bendclaw::client::NodeEntry;
 use bendclaw::config::ClusterConfig;
 use bendclaw::kernel::cluster::ClusterOptions;
@@ -12,6 +10,8 @@ use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::message::ToolCall;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
+use bendclaw::types::ErrorCode;
+use bendclaw::types::Role;
 use serde_json::Value;
 
 use crate::common::fake_cluster::FakeClusterRegistry;
@@ -32,7 +32,7 @@ fn tool_call(id: &str, name: &str, arguments: serde_json::Value) -> ToolCall {
     }
 }
 
-fn text_response(text: impl Into<String>) -> bendclaw::base::Result<LLMResponse> {
+fn text_response(text: impl Into<String>) -> bendclaw::types::Result<LLMResponse> {
     Ok(LLMResponse {
         content: Some(text.into()),
         tool_calls: Vec::new(),
@@ -42,7 +42,7 @@ fn text_response(text: impl Into<String>) -> bendclaw::base::Result<LLMResponse>
     })
 }
 
-fn tool_response(tool_calls: Vec<ToolCall>) -> bendclaw::base::Result<LLMResponse> {
+fn tool_response(tool_calls: Vec<ToolCall>) -> bendclaw::types::Result<LLMResponse> {
     Ok(LLMResponse {
         content: None,
         tool_calls,
@@ -60,7 +60,7 @@ fn parse_tool_json_values(messages: &[ChatMessage]) -> Vec<Value> {
         .collect()
 }
 
-fn latest_peer_nodes(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<NodeEntry>> {
+fn latest_peer_nodes(messages: &[ChatMessage]) -> bendclaw::types::Result<Vec<NodeEntry>> {
     parse_tool_json_values(messages)
         .into_iter()
         .rev()
@@ -68,7 +68,7 @@ fn latest_peer_nodes(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<Nod
         .ok_or_else(|| ErrorCode::llm_request("cluster_nodes output missing from tool history"))
 }
 
-fn latest_dispatch_ids(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<String>> {
+fn latest_dispatch_ids(messages: &[ChatMessage]) -> bendclaw::types::Result<Vec<String>> {
     let dispatch_ids: Vec<String> = parse_tool_json_values(messages)
         .into_iter()
         .filter_map(|value| {
@@ -87,7 +87,7 @@ fn latest_dispatch_ids(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<S
     Ok(dispatch_ids)
 }
 
-fn latest_collect_entries(messages: &[ChatMessage]) -> bendclaw::base::Result<Vec<Value>> {
+fn latest_collect_entries(messages: &[ChatMessage]) -> bendclaw::types::Result<Vec<Value>> {
     parse_tool_json_values(messages)
         .into_iter()
         .rev()

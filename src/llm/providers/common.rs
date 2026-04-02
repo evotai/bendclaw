@@ -2,8 +2,8 @@ use reqwest::Client;
 use reqwest::Response;
 use reqwest::StatusCode;
 
-use crate::base::http;
-use crate::base::ErrorCode;
+use crate::types::http;
+use crate::types::ErrorCode;
 
 pub struct StreamApiError {
     pub status: StatusCode,
@@ -15,7 +15,7 @@ pub struct StreamFallbackBody {
     pub data: serde_json::Value,
 }
 
-pub fn build_http_client() -> crate::base::Result<Client> {
+pub fn build_http_client() -> crate::types::Result<Client> {
     Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .timeout(std::time::Duration::from_secs(300))
@@ -24,7 +24,7 @@ pub fn build_http_client() -> crate::base::Result<Client> {
 }
 
 pub fn truncate_for_log(text: &str) -> String {
-    crate::base::truncate_bytes_on_char_boundary(text, 512)
+    crate::types::truncate_bytes_on_char_boundary(text, 512)
 }
 
 pub fn is_streaming_content_type(content_type: &str) -> bool {

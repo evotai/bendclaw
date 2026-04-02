@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::base::Result;
 use crate::kernel::Message;
+use crate::types::Result;
 
 /// Provides session context data (history, quota enforcement).
 /// PersistentBackend binds labels at construction; trait methods only take runtime params.

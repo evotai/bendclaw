@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::diagnostics;
-use crate::base::Result;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::runtime::session_stream::Stream;
+use crate::types::Result;
 
 #[allow(clippy::large_enum_variant)]
 pub enum SubmitResult {

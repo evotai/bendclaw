@@ -11,8 +11,6 @@ use parking_lot::Mutex;
 use super::session_manager::SessionInfo;
 use super::session_manager::TurnStats;
 use super::session_state::SessionState;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::kernel::session::build::session_capabilities::SessionAssembly;
 use crate::kernel::session::diagnostics;
 use crate::kernel::session::runtime::run_options::RunOptions;
@@ -20,6 +18,8 @@ use crate::kernel::session::runtime::session_resources::SessionResources;
 use crate::kernel::session::runtime::session_run::SessionRunCoordinator;
 use crate::kernel::session::runtime::session_stream::Stream;
 use crate::kernel::Message;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub struct Session {
     pub id: String,

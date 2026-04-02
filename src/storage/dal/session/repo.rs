@@ -1,8 +1,6 @@
 use std::time::Duration;
 
 use super::record::SessionRecord;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -10,6 +8,8 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 const REPO: &str = "sessions";
 const CACHE_TTL: Duration = Duration::from_secs(15);
@@ -53,7 +53,7 @@ impl RowMapper for SessionMapper {
         "id, agent_id, user_id, title, scope, base_key, replaced_by_session_id, reset_reason, PARSE_JSON(session_state), PARSE_JSON(meta), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<SessionRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<SessionRecord> {
         Ok(SessionRecord {
             id: sql::col(row, 0),
             agent_id: sql::col(row, 1),
@@ -290,7 +290,7 @@ impl SessionRepo {
     }
 }
 
-fn parse_variant_json(raw: &str) -> crate::base::Result<serde_json::Value> {
+fn parse_variant_json(raw: &str) -> crate::types::Result<serde_json::Value> {
     if raw.trim().is_empty() {
         return Ok(serde_json::Value::Null);
     }

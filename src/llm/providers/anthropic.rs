@@ -4,8 +4,6 @@ use serde_json::json;
 use tokio_stream::StreamExt;
 
 use super::common;
-use crate::base::http;
-use crate::base::Result;
 use crate::llm::http_adapter;
 use crate::llm::message::CacheControl;
 use crate::llm::message::ChatMessage;
@@ -22,6 +20,8 @@ use crate::llm::stream::StreamWriter;
 use crate::llm::stream::ToolCallAccumulator;
 use crate::llm::tool::ToolSchema;
 use crate::llm::usage::TokenUsage;
+use crate::types::http;
+use crate::types::Result;
 
 const MAX_TOKENS: u32 = 8192;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -34,7 +34,7 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
-    pub fn new(base_url: &str, api_key: &str) -> crate::base::Result<Self> {
+    pub fn new(base_url: &str, api_key: &str) -> crate::types::Result<Self> {
         let client = common::build_http_client()?;
         Ok(Self {
             client,
@@ -148,7 +148,7 @@ impl LLMProvider for AnthropicProvider {
         let api_key = self.api_key.clone();
         let model_owned = model.to_string();
 
-        crate::base::spawn_fire_and_forget("anthropic_stream_driver", async move {
+        crate::types::spawn_fire_and_forget("anthropic_stream_driver", async move {
             let request_ctx = http::HttpRequestContext::new("llm", "stream_open")
                 .with_endpoint("anthropic")
                 .with_model(model_owned.clone())

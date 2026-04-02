@@ -1,8 +1,8 @@
 use anyhow::Result;
 use axum::body::to_bytes;
 use axum::http::StatusCode;
-use bendclaw::base::ErrorCode;
 use bendclaw::service::error::ServiceError;
+use bendclaw::types::ErrorCode;
 use serde_json::Value;
 
 fn status(e: ServiceError) -> StatusCode {

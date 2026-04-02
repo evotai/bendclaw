@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bendclaw::kernel::runtime::agent_config::AgentConfig;
+use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::session::build::session_builder::build_local_assembly;
 use bendclaw::kernel::session::build::session_builder::LocalBuildOptions;
 use bendclaw::kernel::session::build::session_builder::LocalRuntimeDeps;

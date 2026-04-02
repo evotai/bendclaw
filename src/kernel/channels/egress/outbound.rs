@@ -28,7 +28,7 @@ pub async fn deliver_outbound(
     chat_id: &str,
     max_message_len: usize,
     run_stream: Stream,
-) -> crate::base::Result<Option<OutboundResult>> {
+) -> crate::types::Result<Option<OutboundResult>> {
     let run_id = run_stream.run_id().to_string();
     let finished = run_stream.finish_output().await?;
     let text = finished.text;
@@ -64,7 +64,7 @@ async fn send_text_chunk(
     channel_config: &serde_json::Value,
     chat_id: &str,
     text: String,
-) -> crate::base::Result<String> {
+) -> crate::types::Result<String> {
     let ob = outbound.clone();
     let cfg = channel_config.clone();
     let cid = chat_id.to_string();

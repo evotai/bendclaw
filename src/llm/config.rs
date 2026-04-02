@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// LLM configuration with a weighted provider list.
 #[derive(Debug, Clone, Serialize, Deserialize)]

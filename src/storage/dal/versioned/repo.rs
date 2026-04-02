@@ -1,7 +1,7 @@
-use crate::base::Result;
 use crate::storage::pool::Pool;
 use crate::storage::sql::escape;
 use crate::storage::time::now;
+use crate::types::Result;
 
 /// Insert a new versioned record (action = 'create').
 pub async fn insert_versioned(

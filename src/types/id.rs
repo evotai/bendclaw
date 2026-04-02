@@ -1,5 +1,5 @@
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 pub fn new_id() -> String {
     ulid::Ulid::new().to_string().to_lowercase()

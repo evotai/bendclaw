@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use tokio::io::AsyncReadExt;
 
-use crate::base::truncate_head_tail;
 use crate::kernel::variables::Variable;
+use crate::types::truncate_head_tail;
 
 // ── Path resolver ──
 

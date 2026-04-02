@@ -2,12 +2,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::base::Result;
 use bendclaw::kernel::memory::MemoryEntry;
 use bendclaw::kernel::memory::MemoryScope;
 use bendclaw::kernel::memory::MemorySearchResult;
 use bendclaw::kernel::memory::MemoryService;
 use bendclaw::kernel::memory::MemoryStore;
+use bendclaw::types::Result;
 use tokio_util::sync::CancellationToken;
 
 // ── Fake MemoryStore ──
@@ -102,7 +102,7 @@ impl bendclaw::llm::provider::LLMProvider for NoOpLlm {
         _t: &[bendclaw::llm::tool::ToolSchema],
         _temp: f64,
     ) -> bendclaw::llm::stream::ResponseStream {
-        bendclaw::llm::stream::ResponseStream::from_error(bendclaw::base::ErrorCode::internal(
+        bendclaw::llm::stream::ResponseStream::from_error(bendclaw::types::ErrorCode::internal(
             "not implemented",
         ))
     }

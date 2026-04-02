@@ -174,7 +174,7 @@ async fn stream_channel_error_event() -> Result<()> {
 
 #[tokio::test]
 async fn stream_from_error() -> Result<()> {
-    let err = bendclaw::base::ErrorCode::llm_request("test error");
+    let err = bendclaw::types::ErrorCode::llm_request("test error");
     let mut stream = ResponseStream::from_error(err);
 
     let event = stream

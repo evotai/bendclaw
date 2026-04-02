@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::base::Result;
 use bendclaw::kernel::lease::LeaseResource;
 use bendclaw::kernel::lease::LeaseServiceBuilder;
 use bendclaw::kernel::lease::ResourceEntry;
 use bendclaw::storage::Pool;
+use bendclaw::types::Result;
 use tokio_util::sync::CancellationToken;
 
 use crate::common::fake_databend::paged_rows;
@@ -104,7 +104,7 @@ impl LeaseResource for FakeResource {
 
     async fn on_acquired(&self, entry: &ResourceEntry) -> Result<()> {
         if *self.fail_on_acquired.lock().unwrap() {
-            return Err(bendclaw::base::ErrorCode::internal("forced failure"));
+            return Err(bendclaw::types::ErrorCode::internal("forced failure"));
         }
         self.events
             .lock()

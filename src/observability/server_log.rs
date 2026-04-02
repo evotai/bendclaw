@@ -4,8 +4,8 @@ use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
 
-use crate::base::truncate_bytes_on_char_boundary;
 use crate::observability::redaction;
+use crate::types::truncate_bytes_on_char_boundary;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ServerCtx<'a> {

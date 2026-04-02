@@ -8,8 +8,8 @@ use serde_json::json;
 
 use super::manifest::SkillManifest;
 use super::sanitizer::sanitize_skill_description;
-use crate::base::ErrorCode;
-use crate::base::Result;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 

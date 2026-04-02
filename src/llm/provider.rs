@@ -44,7 +44,7 @@ use super::message::ChatMessage;
 use super::stream::ResponseStream;
 use super::tool::ToolSchema;
 use super::usage::TokenUsage;
-use crate::base::Result;
+use crate::types::Result;
 
 /// Parsed response from a non-streaming LLM call.
 #[derive(Debug, Clone)]

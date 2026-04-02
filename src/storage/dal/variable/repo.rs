@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::record::VariableRecord;
-use crate::base::Result;
 use crate::observability::log::slog;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
@@ -10,6 +9,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "variable";
 const MAX_LIST_LIMIT: u64 = 10_000;
@@ -25,7 +25,7 @@ impl RowMapper for VariableMapper {
         "id, key, value, secret, revoked, user_id, scope, created_by, TO_VARCHAR(last_used_at), TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<VariableRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<VariableRecord> {
         let secret_str: String = sql::col(row, 3);
         let secret = matches!(secret_str.as_str(), "1" | "true");
         let revoked_str: String = sql::col(row, 4);

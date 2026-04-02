@@ -90,18 +90,18 @@ pub(super) fn summarize_prepared_llm_request(
             .last()
             .map(|msg| msg.role.to_string())
             .unwrap_or_default(),
-        last_user: last_chat_preview(&prepared.chat_messages, crate::base::Role::User),
-        last_assistant: last_chat_preview(&prepared.chat_messages, crate::base::Role::Assistant),
+        last_user: last_chat_preview(&prepared.chat_messages, crate::types::Role::User),
+        last_assistant: last_chat_preview(&prepared.chat_messages, crate::types::Role::Assistant),
         role_counts: chat_role_count_summary(&prepared.chat_messages),
         tool_result_messages: prepared
             .chat_messages
             .iter()
-            .filter(|msg| msg.role == crate::base::Role::Tool)
+            .filter(|msg| msg.role == crate::types::Role::Tool)
             .count(),
         assistant_tool_call_messages: prepared
             .chat_messages
             .iter()
-            .filter(|msg| msg.role == crate::base::Role::Assistant && !msg.tool_calls.is_empty())
+            .filter(|msg| msg.role == crate::types::Role::Assistant && !msg.tool_calls.is_empty())
             .count(),
     }
 }
@@ -380,24 +380,24 @@ pub(super) fn log_message_injected(session_id: &str) {
 fn chat_role_count_summary(messages: &[ChatMessage]) -> String {
     let system = messages
         .iter()
-        .filter(|msg| msg.role == crate::base::Role::System)
+        .filter(|msg| msg.role == crate::types::Role::System)
         .count();
     let user = messages
         .iter()
-        .filter(|msg| msg.role == crate::base::Role::User)
+        .filter(|msg| msg.role == crate::types::Role::User)
         .count();
     let assistant = messages
         .iter()
-        .filter(|msg| msg.role == crate::base::Role::Assistant)
+        .filter(|msg| msg.role == crate::types::Role::Assistant)
         .count();
     let tool = messages
         .iter()
-        .filter(|msg| msg.role == crate::base::Role::Tool)
+        .filter(|msg| msg.role == crate::types::Role::Tool)
         .count();
     format!("system:{system},user:{user},assistant:{assistant},tool:{tool}")
 }
 
-fn last_chat_preview(messages: &[ChatMessage], role: crate::base::Role) -> String {
+fn last_chat_preview(messages: &[ChatMessage], role: crate::types::Role) -> String {
     messages
         .iter()
         .rev()

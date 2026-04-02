@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bendclaw::base::Result;
 use bendclaw::kernel::channels::egress::health::ChannelHealthMonitor;
 use bendclaw::kernel::channels::egress::health::HealthMonitorConfig;
 use bendclaw::kernel::channels::model::account::ChannelAccount;
@@ -20,6 +19,7 @@ use bendclaw::kernel::channels::ChannelKind;
 use bendclaw::kernel::channels::ChannelRegistry;
 use bendclaw::kernel::channels::ChannelSupervisor;
 use bendclaw::kernel::channels::InboundMode;
+use bendclaw::types::Result;
 use tokio_util::sync::CancellationToken;
 
 struct DyingReceiverFactory;

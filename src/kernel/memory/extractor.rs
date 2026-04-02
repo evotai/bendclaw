@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::kernel::memory::store::MemoryEntry;
 use crate::kernel::memory::store::MemoryScope;
 use crate::kernel::memory::store::MemoryStore;
@@ -12,6 +11,7 @@ use crate::llm::message::ChatMessage;
 use crate::llm::provider::LLMProvider;
 use crate::llm::usage::TokenUsage;
 use crate::observability::log::slog;
+use crate::types::Result;
 
 /// Maximum facts to extract per call (prevent noise).
 const MAX_FACTS: usize = 10;
@@ -83,7 +83,7 @@ impl Extractor {
         let mut written = 0;
         for fact in facts.into_iter().take(MAX_FACTS) {
             let entry = MemoryEntry {
-                id: crate::base::new_id(),
+                id: crate::types::new_id(),
                 user_id: user_id.to_string(),
                 agent_id: agent_id.to_string(),
                 scope: parse_fact_scope(&fact.scope),
@@ -179,7 +179,7 @@ fn parse_facts(text: &str) -> Result<Vec<RawFact>> {
     };
 
     let facts: Vec<RawFact> = serde_json::from_str(json_str).map_err(|e| {
-        crate::base::ErrorCode::internal(format!("failed to parse extraction JSON: {e}"))
+        crate::types::ErrorCode::internal(format!("failed to parse extraction JSON: {e}"))
     })?;
 
     Ok(facts

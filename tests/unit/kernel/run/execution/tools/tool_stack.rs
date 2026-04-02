@@ -58,7 +58,7 @@ impl Tool for MockTool {
         &self,
         _args: serde_json::Value,
         _ctx: &ToolContext,
-    ) -> bendclaw::base::Result<ToolResult> {
+    ) -> bendclaw::types::Result<ToolResult> {
         Ok(ToolResult::ok(format!("{} output", self.name)))
     }
 }
@@ -67,7 +67,7 @@ struct NoopSkillExecutor;
 
 #[async_trait]
 impl SkillExecutor for NoopSkillExecutor {
-    async fn execute(&self, _: &str, _: &[String]) -> bendclaw::base::Result<SkillOutput> {
+    async fn execute(&self, _: &str, _: &[String]) -> bendclaw::types::Result<SkillOutput> {
         Ok(SkillOutput {
             data: None,
             error: Some("not implemented".into()),

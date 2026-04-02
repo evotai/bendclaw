@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::base::Result;
 use crate::kernel::run::persist::persist_op::PersistOp;
 use crate::kernel::run::persist::persist_op::PersistWriter;
 use crate::kernel::session::store::SessionStore;
+use crate::types::Result;
 
 /// Create session record (first turn) and run record. Returns the run_id.
 /// DB writes are fire-and-forget via the background PersistWriter.

@@ -3,11 +3,11 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::http;
-use crate::base::ErrorCode;
-use crate::base::Result;
 use crate::client::cluster_diagnostics;
 use crate::client::http_adapter;
+use crate::types::http;
+use crate::types::ErrorCode;
+use crate::types::Result;
 
 /// Client for the evot-ai cluster registry API.
 /// Handles node registration, heartbeat, discovery, and deregistration.

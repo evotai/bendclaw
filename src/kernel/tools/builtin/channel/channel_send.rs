@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::base::Result;
 use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
 use crate::kernel::channels::send_text_to_account;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -15,6 +14,7 @@ use crate::kernel::Impact;
 use crate::kernel::OpType;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
 use crate::storage::pool::Pool;
+use crate::types::Result;
 
 /// Send a message to an external channel (Telegram, Feishu, GitHub, etc.).
 pub struct ChannelSendTool {

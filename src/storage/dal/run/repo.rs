@@ -1,7 +1,6 @@
 use super::record::RunKind;
 use super::record::RunRecord;
 use super::record::RunStatus;
-use crate::base::Result;
 use crate::storage::dal::logging::repo_error;
 use crate::storage::pool::Pool;
 use crate::storage::sql;
@@ -9,6 +8,7 @@ use crate::storage::sql::SqlVal;
 use crate::storage::table::DatabendTable;
 use crate::storage::table::RowMapper;
 use crate::storage::table::Where;
+use crate::types::Result;
 
 const REPO: &str = "runs";
 
@@ -22,7 +22,7 @@ impl RowMapper for RunMapper {
         "id, session_id, agent_id, user_id, kind, parent_run_id, node_id, status, input, output, error, metrics, stop_reason, checkpoint_through_run_id, iterations, TO_VARCHAR(created_at), TO_VARCHAR(updated_at)"
     }
 
-    fn parse(&self, row: &serde_json::Value) -> crate::base::Result<RunRecord> {
+    fn parse(&self, row: &serde_json::Value) -> crate::types::Result<RunRecord> {
         Ok(RunRecord {
             id: sql::col(row, 0),
             session_id: sql::col(row, 1),

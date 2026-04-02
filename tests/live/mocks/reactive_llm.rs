@@ -3,7 +3,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::base::Result;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
@@ -11,6 +10,7 @@ use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::stream::StreamEvent;
 use bendclaw::llm::tool::ToolSchema;
 use bendclaw::llm::usage::TokenUsage;
+use bendclaw::types::Result;
 
 type ReactiveHandler =
     dyn Fn(usize, &[ChatMessage], &[ToolSchema], f64) -> Result<LLMResponse> + Send + Sync;

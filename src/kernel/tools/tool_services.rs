@@ -23,7 +23,7 @@ impl SecretUsageSink for DbSecretUsageSink {
         let pool = self.pool.clone();
         let id = id.to_string();
         let agent_id = agent_id.to_string();
-        crate::base::spawn_fire_and_forget("variable_touch_last_used", async move {
+        crate::types::spawn_fire_and_forget("variable_touch_last_used", async move {
             let store = crate::kernel::variables::store::SharedVariableStore::new(pool);
             use crate::kernel::variables::store::VariableStore;
             let _ = store.touch_last_used(&id, &agent_id).await;
@@ -37,7 +37,7 @@ impl SecretUsageSink for DbSecretUsageSink {
         let pool = self.pool.clone();
         let ids = ids.to_vec();
         let agent_id = agent_id.to_string();
-        crate::base::spawn_fire_and_forget("variable_touch_last_used", async move {
+        crate::types::spawn_fire_and_forget("variable_touch_last_used", async move {
             let store = crate::kernel::variables::store::SharedVariableStore::new(pool);
             use crate::kernel::variables::store::VariableStore;
             let _ = store.touch_last_used_many(&ids, &agent_id).await;

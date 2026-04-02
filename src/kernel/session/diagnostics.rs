@@ -28,8 +28,8 @@ impl ContextPreview {
     ) -> Self {
         let repeated_inputs = repeated_prior_input_run_ids(history, current_input, current_run_id);
         Self {
-            previous_user: last_role_preview(prior_history, crate::base::Role::User),
-            previous_assistant: last_role_preview(prior_history, crate::base::Role::Assistant),
+            previous_user: last_role_preview(prior_history, crate::types::Role::User),
+            previous_assistant: last_role_preview(prior_history, crate::types::Role::Assistant),
             role_counts: role_count_summary(history),
             source_counts: source_count_summary(history, current_run_id),
             repeated_input_count: repeated_inputs.len(),
@@ -53,18 +53,18 @@ pub(crate) fn summarize_loaded_history(
         .join(",");
 
     HistoryLoadSummary {
-        last_user: last_role_preview(seeded, crate::base::Role::User),
-        last_assistant: last_role_preview(seeded, crate::base::Role::Assistant),
+        last_user: last_role_preview(seeded, crate::types::Role::User),
+        last_assistant: last_role_preview(seeded, crate::types::Role::Assistant),
         checkpoint_run_id: checkpoint
             .map(|run| run.checkpoint_through_run_id.clone())
             .unwrap_or_default(),
         replayed_user_messages: seeded
             .iter()
-            .filter(|msg| msg.role() == Some(crate::base::Role::User))
+            .filter(|msg| msg.role() == Some(crate::types::Role::User))
             .count(),
         replayed_assistant_messages: seeded
             .iter()
-            .filter(|msg| msg.role() == Some(crate::base::Role::Assistant))
+            .filter(|msg| msg.role() == Some(crate::types::Role::Assistant))
             .count(),
         replayed_run_ids,
         checkpoint_summary_bytes: checkpoint.map(|run| run.output.len()).unwrap_or(0),
@@ -207,7 +207,7 @@ pub(crate) fn log_session_created(session_id: &str, user_id: &str) {
     );
 }
 
-fn last_role_preview(history: &[Message], role: crate::base::Role) -> String {
+fn last_role_preview(history: &[Message], role: crate::types::Role) -> String {
     history
         .iter()
         .rev()
@@ -219,19 +219,19 @@ fn last_role_preview(history: &[Message], role: crate::base::Role) -> String {
 fn role_count_summary(history: &[Message]) -> String {
     let system = history
         .iter()
-        .filter(|msg| msg.role() == Some(crate::base::Role::System))
+        .filter(|msg| msg.role() == Some(crate::types::Role::System))
         .count();
     let user = history
         .iter()
-        .filter(|msg| msg.role() == Some(crate::base::Role::User))
+        .filter(|msg| msg.role() == Some(crate::types::Role::User))
         .count();
     let assistant = history
         .iter()
-        .filter(|msg| msg.role() == Some(crate::base::Role::Assistant))
+        .filter(|msg| msg.role() == Some(crate::types::Role::Assistant))
         .count();
     let tool = history
         .iter()
-        .filter(|msg| msg.role() == Some(crate::base::Role::Tool))
+        .filter(|msg| msg.role() == Some(crate::types::Role::Tool))
         .count();
     format!("system:{system},user:{user},assistant:{assistant},tool:{tool}")
 }

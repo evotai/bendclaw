@@ -2,11 +2,11 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Result;
 pub use crate::kernel::tools::tool_context::ToolContext;
 pub use crate::kernel::tools::tool_context::ToolRuntime;
 use crate::kernel::Impact;
 use crate::kernel::OpType;
+use crate::types::Result;
 
 /// Result of an in-process tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -36,13 +36,13 @@ impl ChannelOutbound for TypingMock {
         _: &serde_json::Value,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<String> {
+    ) -> bendclaw::types::Result<String> {
         Ok(String::new())
     }
-    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::base::Result<()> {
+    async fn send_typing(&self, _: &serde_json::Value, _: &str) -> bendclaw::types::Result<()> {
         self.typing_count.fetch_add(1, Ordering::Relaxed);
         if self.fail {
-            Err(bendclaw::base::ErrorCode::internal("mock typing error"))
+            Err(bendclaw::types::ErrorCode::internal("mock typing error"))
         } else {
             Ok(())
         }
@@ -53,7 +53,7 @@ impl ChannelOutbound for TypingMock {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
     async fn add_reaction(
@@ -62,7 +62,7 @@ impl ChannelOutbound for TypingMock {
         _: &str,
         _: &str,
         _: &str,
-    ) -> bendclaw::base::Result<()> {
+    ) -> bendclaw::types::Result<()> {
         Ok(())
     }
 }

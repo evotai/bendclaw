@@ -5,7 +5,7 @@ use std::fmt;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::base::Result;
+use crate::types::Result;
 
 /// Output from a successful (or gracefully failed) skill execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]

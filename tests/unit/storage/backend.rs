@@ -1,4 +1,3 @@
-use bendclaw::base::entities::*;
 use bendclaw::storage::backend::agent_repo::AgentRepo;
 use bendclaw::storage::backend::channel_repo::ChannelRepo;
 use bendclaw::storage::backend::kind::StorageKind;
@@ -12,6 +11,7 @@ use bendclaw::storage::backend::storage_backend::StorageBackend;
 use bendclaw::storage::backend::task_history_repo::TaskHistoryRepo;
 use bendclaw::storage::backend::task_repo::TaskRepo;
 use bendclaw::storage::backend::trace_repo::TraceRepo;
+use bendclaw::types::entities::*;
 
 fn ts() -> String {
     "2026-01-01T00:00:00Z".to_string()

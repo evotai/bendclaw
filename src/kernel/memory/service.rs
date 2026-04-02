@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::base::Result;
 use crate::kernel::memory::diagnostics;
 use crate::kernel::memory::extractor::ExtractionResult;
 use crate::kernel::memory::extractor::Extractor;
@@ -16,6 +15,7 @@ use crate::kernel::memory::store::MemoryScope;
 use crate::kernel::memory::store::MemorySearchResult;
 use crate::kernel::memory::store::MemoryStore;
 use crate::llm::provider::LLMProvider;
+use crate::types::Result;
 
 /// The strategy-layer facade. Callers interact only with this.
 pub struct MemoryService {
@@ -61,7 +61,7 @@ impl MemoryService {
     ) -> Result<()> {
         diagnostics::log_save(user_id, agent_id, key, &scope.to_string());
         let entry = MemoryEntry {
-            id: crate::base::new_id(),
+            id: crate::types::new_id(),
             user_id: user_id.to_string(),
             agent_id: agent_id.to_string(),
             scope,

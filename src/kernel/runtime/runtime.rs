@@ -46,7 +46,7 @@ pub struct Runtime {
     pub(crate) directive_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) activity_tracker: Arc<ActivityTracker>,
     pub(crate) trace_writer: crate::kernel::trace::TraceWriter,
-    pub(crate) persist_writer: crate::kernel::run::persist_op::PersistWriter,
+    pub(crate) persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
     pub(crate) channel_message_writer: crate::kernel::channel::ChannelMessageWriter,
     pub(crate) rate_limiter: Arc<OutboundRateLimiter>,
     pub(crate) tool_writer: crate::kernel::writer::tool_op::ToolWriter,
@@ -141,7 +141,9 @@ impl Runtime {
     pub async fn flush_persist(&self) {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.persist_writer
-            .send(crate::kernel::run::persist_op::PersistOp::Flush(tx));
+            .send(crate::kernel::run::persist::persist_op::PersistOp::Flush(
+                tx,
+            ));
         let _ = rx.await;
     }
 

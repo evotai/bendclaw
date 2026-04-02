@@ -13,7 +13,7 @@ use super::session_stream::Stream;
 use crate::base::Result;
 use crate::kernel::run::launcher;
 use crate::kernel::run::launcher::EngineHandle;
-use crate::kernel::run::persister::TurnPersister;
+use crate::kernel::run::persist::persister::TurnPersister;
 use crate::kernel::run::planning::RunAssemblyDeps;
 use crate::kernel::run::planning::RunConfig;
 use crate::kernel::run::planning::RunRequest;

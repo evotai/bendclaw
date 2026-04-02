@@ -5,11 +5,11 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 
+use super::persist_op::PersistOp;
+use super::persist_op::PersistWriter;
+use super::persister_diagnostics;
 use crate::base::ErrorCode;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::persist_op::PersistOp;
-use crate::kernel::run::persist_op::PersistWriter;
-use crate::kernel::run::persister_diagnostics;
 use crate::kernel::run::result::Reason;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::session::backend::sink::RunPersister;

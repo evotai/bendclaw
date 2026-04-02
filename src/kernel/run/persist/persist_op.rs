@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use super::persist_diagnostics;
 use crate::kernel::run::event::Event;
-use crate::kernel::run::persist_diagnostics;
 use crate::kernel::run::result::Reason;
 use crate::kernel::run::usage::ModelRole;
 use crate::kernel::run::usage::UsageEvent;

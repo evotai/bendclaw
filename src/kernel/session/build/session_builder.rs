@@ -15,7 +15,7 @@ use super::prompt_builder;
 use super::session_capabilities::*;
 use super::workspace_builder;
 use crate::base::Result;
-use crate::kernel::run::persist_op::PersistWriter;
+use crate::kernel::run::persist::persist_op::PersistWriter;
 use crate::kernel::runtime::agent_config::AgentConfig;
 use crate::kernel::tools::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::TraceWriter;
@@ -220,7 +220,7 @@ impl LocalRuntimeDeps {
             llm: Arc::new(RwLock::new(llm)),
             tool_writer: BackgroundWriter::noop("tool_write"),
             trace_writer: TraceWriter::noop(),
-            persist_writer: crate::kernel::run::persist_op::spawn_persist_writer(),
+            persist_writer: crate::kernel::run::persist::persist_op::spawn_persist_writer(),
         }
     }
 }

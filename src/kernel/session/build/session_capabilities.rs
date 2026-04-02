@@ -55,7 +55,7 @@ pub struct RuntimeInfra {
     pub trace_factory: Arc<dyn crate::kernel::trace::factory::TraceFactory>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     pub trace_writer: crate::kernel::trace::TraceWriter,
-    pub persist_writer: crate::kernel::run::persist_op::PersistWriter,
+    pub persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
 }
 
 /// Agent-level context: org, config, prompt data, optional services.

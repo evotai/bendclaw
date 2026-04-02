@@ -32,7 +32,7 @@ pub struct SessionResources {
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     pub trace_writer: crate::kernel::trace::TraceWriter,
     pub trace_factory: Arc<dyn TraceFactory>,
-    pub persist_writer: crate::kernel::run::persist_op::PersistWriter,
+    pub persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
     pub prompt_config: Option<PromptConfig>,
     pub before_turn_hook: Option<Arc<dyn BeforeTurnHook>>,
     pub steering_source: Option<Arc<dyn SteeringSource>>,

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::management;
+use crate::kernel::task::ops;
 use crate::kernel::task::view::TaskHistoryView;
 use crate::kernel::tools::operation::OpType;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -78,7 +78,7 @@ impl Tool for TaskHistoryTool {
 
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as u32;
 
-        match management::list_task_history(&self.pool, task_id, limit).await {
+        match ops::list_task_history(&self.pool, task_id, limit).await {
             Ok(entries) => Ok(ToolResult::ok(
                 serde_json::to_string_pretty(
                     &entries

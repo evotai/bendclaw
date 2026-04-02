@@ -1,7 +1,7 @@
-use bendclaw::kernel::task::management::create_task;
-use bendclaw::kernel::task::management::update_task;
-use bendclaw::kernel::task::management::CreateTaskParams;
-use bendclaw::kernel::task::management::UpdateTaskParams;
+use bendclaw::kernel::task::ops::create_task;
+use bendclaw::kernel::task::ops::update_task;
+use bendclaw::kernel::task::ops::CreateTaskParams;
+use bendclaw::kernel::task::ops::UpdateTaskParams;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskSchedule;
 

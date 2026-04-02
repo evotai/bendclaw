@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::management;
+use crate::kernel::task::ops;
 use crate::kernel::tools::operation::Impact;
 use crate::kernel::tools::operation::OpType;
 use crate::kernel::tools::tool_context::ToolContext;
@@ -75,7 +75,7 @@ impl Tool for TaskRunTool {
             None => return Ok(ToolResult::error("missing required parameter: task_id")),
         };
 
-        let task = match management::get_task(&self.pool, task_id).await? {
+        let task = match ops::get_task(&self.pool, task_id).await? {
             Some(t) => t,
             None => return Ok(ToolResult::error(format!("task {task_id} not found"))),
         };

@@ -2,6 +2,6 @@ mod delivery;
 mod execution;
 mod input;
 mod lease;
-mod management;
+mod ops;
 mod schedule;
 mod view;

@@ -2,11 +2,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::kernel::memory::MemoryEntry;
-use bendclaw::kernel::memory::MemoryScope;
-use bendclaw::kernel::memory::MemorySearchResult;
-use bendclaw::kernel::memory::MemoryService;
-use bendclaw::kernel::memory::MemoryStore;
+use bendclaw::memory::MemoryEntry;
+use bendclaw::memory::MemoryScope;
+use bendclaw::memory::MemorySearchResult;
+use bendclaw::memory::MemoryService;
+use bendclaw::memory::MemoryStore;
 use bendclaw::types::Result;
 use tokio_util::sync::CancellationToken;
 

@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::kernel::memory::store::MemoryEntry;
-use crate::kernel::memory::store::MemoryScope;
-use crate::kernel::memory::store::MemoryStore;
 use crate::llm::message::ChatMessage;
 use crate::llm::provider::LLMProvider;
 use crate::llm::usage::TokenUsage;
+use crate::memory::store::MemoryEntry;
+use crate::memory::store::MemoryScope;
+use crate::memory::store::MemoryStore;
 use crate::observability::log::slog;
 use crate::types::Result;
 

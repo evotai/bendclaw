@@ -2,7 +2,6 @@ pub mod agent_store;
 pub mod cluster;
 pub mod directive;
 pub mod lease;
-pub mod memory;
 pub mod runtime;
 pub mod subscriptions;
 pub mod variables;

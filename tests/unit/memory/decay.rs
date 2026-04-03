@@ -1,4 +1,4 @@
-use bendclaw::kernel::memory::decay::decay_score;
+use bendclaw::memory::decay::decay_score;
 
 #[test]
 fn fresh_high_access() {

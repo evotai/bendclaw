@@ -5,6 +5,7 @@ pub mod client;
 pub mod config;
 pub mod kernel;
 pub mod llm;
+pub mod memory;
 pub mod observability;
 pub mod service;
 pub mod sessions;

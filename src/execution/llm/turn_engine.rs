@@ -28,7 +28,7 @@ use crate::execution::result::Reason;
 use crate::execution::result::Result as AgentResult;
 use crate::execution::result::Usage;
 use crate::execution::tools::ToolOrchestrator;
-use crate::kernel::memory::MemoryService;
+use crate::memory::MemoryService;
 use crate::observability::audit;
 use crate::observability::server_log;
 use crate::sessions::Message;

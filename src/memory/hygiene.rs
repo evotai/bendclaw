@@ -1,7 +1,7 @@
 //! Memory hygiene — automated cleanup of stale memories.
 
-use crate::kernel::memory::diagnostics;
-use crate::kernel::memory::store::MemoryStore;
+use crate::memory::diagnostics;
+use crate::memory::store::MemoryStore;
 use crate::types::Result;
 
 /// Default: prune memories not accessed in 30 days with fewer than 2 accesses.

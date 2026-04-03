@@ -7,14 +7,14 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::kernel::memory::diagnostics;
-use crate::kernel::memory::extractor::ExtractionResult;
-use crate::kernel::memory::extractor::Extractor;
-use crate::kernel::memory::store::MemoryEntry;
-use crate::kernel::memory::store::MemoryScope;
-use crate::kernel::memory::store::MemorySearchResult;
-use crate::kernel::memory::store::MemoryStore;
 use crate::llm::provider::LLMProvider;
+use crate::memory::diagnostics;
+use crate::memory::extractor::ExtractionResult;
+use crate::memory::extractor::Extractor;
+use crate::memory::store::MemoryEntry;
+use crate::memory::store::MemoryScope;
+use crate::memory::store::MemorySearchResult;
+use crate::memory::store::MemoryStore;
 use crate::types::Result;
 
 /// The strategy-layer facade. Callers interact only with this.

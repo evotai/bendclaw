@@ -1,6 +1,6 @@
-use bendclaw::kernel::memory::format::format_for_prompt;
-use bendclaw::kernel::memory::MemoryEntry;
-use bendclaw::kernel::memory::MemoryScope;
+use bendclaw::memory::format::format_for_prompt;
+use bendclaw::memory::MemoryEntry;
+use bendclaw::memory::MemoryScope;
 
 fn entry(key: &str, content: &str) -> MemoryEntry {
     MemoryEntry {

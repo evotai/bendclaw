@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::kernel::memory::MemoryService;
+use crate::memory::MemoryService;
 use crate::skills::definition::skill::Skill;
 
 /// Minimal org services needed by session core at runtime.

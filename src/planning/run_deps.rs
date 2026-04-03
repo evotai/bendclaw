@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::execution::hooks::BeforeTurnHook;
 use crate::execution::hooks::SteeringSource;
 use crate::execution::skills::SkillExecutor;
-use crate::kernel::memory::MemoryService;
+use crate::memory::MemoryService;
 use crate::sessions::runtime::session_resources::SessionResources;
 use crate::tools::definition::toolset::Toolset;
 

@@ -237,7 +237,7 @@ impl CloudPromptLoader {
         }
         let fetch_limit = (budget / 80).clamp(5, 50) as u32;
         let entries = mem.recall(&self.user_id, &self.agent_id, fetch_limit).await;
-        crate::kernel::memory::format::format_for_prompt(&entries, budget)
+        crate::memory::format::format_for_prompt(&entries, budget)
     }
 
     async fn build_errors_text(&self, session_id: &str) -> String {

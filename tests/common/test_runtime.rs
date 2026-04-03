@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::channels::routing::chat_router::ChatRouter;
+use bendclaw::channels::routing::chat_router::ChatRouterConfig;
+use bendclaw::channels::routing::debouncer::DebounceConfig;
+use bendclaw::channels::runtime::channel_registry::ChannelRegistry;
+use bendclaw::channels::runtime::supervisor::ChannelSupervisor;
 use bendclaw::config::agent::AgentConfig;
-use bendclaw::kernel::channels::routing::chat_router::ChatRouter;
-use bendclaw::kernel::channels::routing::chat_router::ChatRouterConfig;
-use bendclaw::kernel::channels::routing::debouncer::DebounceConfig;
-use bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry;
-use bendclaw::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::runtime::ActivityTracker;
 use bendclaw::kernel::runtime::Runtime;
@@ -84,7 +84,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
     let supervisor = Arc::new(ChannelSupervisor::new(
         channels.clone(),
         chat_router.clone(),
-        Arc::new(bendclaw::kernel::channels::model::status::ChannelStatus::new()),
+        Arc::new(bendclaw::channels::model::status::ChannelStatus::new()),
     ));
     let sessions = Arc::new(SessionManager::new());
     let persist_writer = bendclaw::kernel::writer::BackgroundWriter::noop("persist");
@@ -119,8 +119,8 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         persist_writer,
         channel_message_writer: bendclaw::kernel::writer::BackgroundWriter::noop("channel_message"),
         rate_limiter: std::sync::Arc::new(
-            bendclaw::kernel::channels::egress::rate_limit::OutboundRateLimiter::new(
-                bendclaw::kernel::channels::egress::rate_limit::RateLimitConfig::default(),
+            bendclaw::channels::egress::rate_limit::OutboundRateLimiter::new(
+                bendclaw::channels::egress::rate_limit::RateLimitConfig::default(),
             ),
         ),
         tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),

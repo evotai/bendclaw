@@ -1,6 +1,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod channels;
 mod kernel;
 mod llm;
 mod mocks;

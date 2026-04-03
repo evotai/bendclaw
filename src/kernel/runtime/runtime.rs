@@ -8,11 +8,11 @@ use super::runtime_parts::RuntimeStatus;
 use super::ActivityGuard;
 use super::ActivityTracker;
 use super::SuspendStatus;
+use crate::channels::egress::rate_limit::OutboundRateLimiter;
+use crate::channels::routing::chat_router::ChatRouter;
+use crate::channels::runtime::channel_registry::ChannelRegistry;
+use crate::channels::runtime::supervisor::ChannelSupervisor;
 use crate::config::agent::AgentConfig;
-use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
-use crate::kernel::channels::routing::chat_router::ChatRouter;
-use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
-use crate::kernel::channels::runtime::supervisor::ChannelSupervisor;
 use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
@@ -47,7 +47,7 @@ pub struct Runtime {
     pub(crate) activity_tracker: Arc<ActivityTracker>,
     pub(crate) trace_writer: crate::kernel::trace::TraceWriter,
     pub(crate) persist_writer: crate::execution::persist::persist_op::PersistWriter,
-    pub(crate) channel_message_writer: crate::kernel::channels::ChannelMessageWriter,
+    pub(crate) channel_message_writer: crate::channels::ChannelMessageWriter,
     pub(crate) rate_limiter: Arc<OutboundRateLimiter>,
     pub(crate) tool_writer: crate::kernel::writer::tool_op::ToolWriter,
 }

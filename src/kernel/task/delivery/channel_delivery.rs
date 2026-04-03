@@ -1,5 +1,5 @@
-use crate::kernel::channels::egress::delivery_service::ChannelDeliveryService;
-use crate::kernel::channels::ChannelRegistry;
+use crate::channels::egress::delivery_service::ChannelDeliveryService;
+use crate::channels::ChannelRegistry;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::Pool;

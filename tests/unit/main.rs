@@ -5,6 +5,7 @@ mod app;
 mod architecture;
 mod binding;
 mod boundary;
+mod channels;
 mod cli;
 mod config;
 mod config_cluster;

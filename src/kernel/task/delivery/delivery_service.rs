@@ -1,6 +1,6 @@
 use super::channel_delivery::deliver_channel;
 use super::webhook_delivery::deliver_webhook;
-use crate::kernel::channels::ChannelRegistry;
+use crate::channels::ChannelRegistry;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::Pool;

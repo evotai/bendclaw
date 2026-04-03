@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::kernel::channels::model::context::ChannelContext;
+use crate::channels::model::context::ChannelContext;
 use crate::kernel::task::input::task_create_schema;
 use crate::kernel::task::input::TaskCreateSpec;
 use crate::kernel::task::ops;

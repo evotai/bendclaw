@@ -1,5 +1,4 @@
 pub mod agent_store;
-pub mod channels;
 pub mod cluster;
 pub mod directive;
 pub mod lease;

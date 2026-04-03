@@ -1,7 +1,7 @@
 use axum::http::HeaderMap;
 
 use super::account_service::record_to_domain;
-use crate::kernel::channels::runtime::channel_trait::InboundKind;
+use crate::channels::runtime::channel_trait::InboundKind;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;

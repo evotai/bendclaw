@@ -27,8 +27,7 @@ fn make_toolset() -> Toolset {
         Arc::new(bendclaw_test_harness::mocks::llm::MockLLMProvider::with_text("ok"));
     let meta_pool = pool.with_database("evotai_meta").expect("meta pool");
     let org = Arc::new(OrgServices::new(meta_pool, projector, &config, llm));
-    let channels =
-        Arc::new(bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry::new());
+    let channels = Arc::new(bendclaw::channels::runtime::channel_registry::ChannelRegistry::new());
     let secret_sink: Arc<dyn bendclaw::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
 

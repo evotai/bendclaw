@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::kernel::channels::model::context::ChannelContext;
+use crate::channels::model::context::ChannelContext;
 use crate::sessions::runtime::run_options::RunOptions;
 
 /// Per-invocation conversation context.

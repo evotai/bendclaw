@@ -148,7 +148,7 @@ pub(super) async fn construct(
     let mut lease_builder =
         crate::kernel::lease::LeaseServiceBuilder::new(&runtime.config().node_id);
     lease_builder.register(Arc::new(
-        crate::kernel::channels::model::lease::ChannelLeaseResource::new(
+        crate::channels::model::lease::ChannelLeaseResource::new(
             runtime.databases().clone(),
             runtime.channels().clone(),
             runtime.supervisor().clone(),

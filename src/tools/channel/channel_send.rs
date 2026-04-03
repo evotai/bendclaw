@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::channels::runtime::channel_registry::ChannelRegistry;
-use crate::kernel::channels::send_text_to_account;
+use crate::channels::runtime::channel_registry::ChannelRegistry;
+use crate::channels::send_text_to_account;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
 use crate::storage::pool::Pool;
 use crate::tools::tool_context::ToolContext;

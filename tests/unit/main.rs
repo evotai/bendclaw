@@ -21,5 +21,6 @@ mod skills;
 mod storage;
 mod tasks;
 mod tools;
+mod traces;
 mod types;
 mod version;

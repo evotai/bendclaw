@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::kernel::trace::recorder::TraceRecorder;
-use crate::kernel::trace::TraceWriter;
 use crate::storage::dal::trace::repo::SpanRepo;
 use crate::storage::dal::trace::repo::TraceRepo;
+use crate::traces::recorder::TraceRecorder;
+use crate::traces::TraceWriter;
 
 pub trait TraceFactory: Send + Sync {
     fn create_recorder(

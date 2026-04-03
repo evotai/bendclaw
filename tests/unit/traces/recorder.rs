@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::kernel::trace::recorder::Trace;
-use bendclaw::kernel::trace::recorder::TraceRecorder;
 use bendclaw::storage::pool::DatabendClient;
 use bendclaw::storage::pool::QueryResponse;
 use bendclaw::storage::Pool;
 use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
+use bendclaw::traces::recorder::Trace;
+use bendclaw::traces::recorder::TraceRecorder;
 
 #[derive(Clone, Default)]
 struct RecordingClient {

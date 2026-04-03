@@ -115,7 +115,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         directive: RwLock::new(None),
         directive_handle: RwLock::new(None),
         activity_tracker: Arc::new(ActivityTracker::new()),
-        trace_writer: bendclaw::kernel::trace::TraceWriter::noop(),
+        trace_writer: bendclaw::traces::TraceWriter::noop(),
         persist_writer,
         channel_message_writer: bendclaw::kernel::writer::BackgroundWriter::noop("channel_message"),
         rate_limiter: std::sync::Arc::new(

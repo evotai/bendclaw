@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use super::session_capabilities::RuntimeInfra;
-use crate::kernel::trace::TraceWriter;
 use crate::sessions::store::SessionStore;
 use crate::storage::Pool;
+use crate::traces::TraceWriter;
 
 pub fn build_local_infra(
     store: Arc<dyn SessionStore>,
@@ -13,7 +13,7 @@ pub fn build_local_infra(
 ) -> RuntimeInfra {
     RuntimeInfra {
         store,
-        trace_factory: Arc::new(crate::kernel::trace::factory::NoopTraceFactory),
+        trace_factory: Arc::new(crate::traces::factory::NoopTraceFactory),
         tool_writer,
         trace_writer,
         persist_writer,
@@ -27,7 +27,7 @@ pub fn build_cloud_infra(
     trace_writer: TraceWriter,
     persist_writer: crate::execution::persist::persist_op::PersistWriter,
 ) -> RuntimeInfra {
-    let trace_factory = Arc::new(crate::kernel::trace::factory::DbTraceFactory {
+    let trace_factory = Arc::new(crate::traces::factory::DbTraceFactory {
         trace_repo: Arc::new(crate::storage::dal::trace::repo::TraceRepo::new(
             pool.clone(),
         )),

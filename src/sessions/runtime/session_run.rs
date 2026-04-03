@@ -13,7 +13,6 @@ use super::session_stream::Stream;
 use crate::execution::launcher;
 use crate::execution::launcher::EngineHandle;
 use crate::execution::persist::persister::TurnPersister;
-use crate::kernel::trace::TraceRecorder;
 use crate::llm::provider::LLMProvider;
 use crate::observability::audit;
 use crate::observability::server_log;
@@ -23,6 +22,7 @@ use crate::planning::RunRequest;
 use crate::sessions::core::session_state::SessionState;
 use crate::sessions::diagnostics;
 use crate::sessions::Message;
+use crate::traces::TraceRecorder;
 use crate::types::Result;
 
 const USAGE_PROVIDER_UNKNOWN: &str = "unknown";

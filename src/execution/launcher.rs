@@ -7,12 +7,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::execution::event::Event;
 use crate::execution::result::Result as AgentResult;
-use crate::kernel::trace::TraceRecorder;
 use crate::planning::build_run_driver;
 use crate::planning::RunConfig;
 use crate::planning::RunDeps;
 use crate::planning::RunRequest;
 use crate::sessions::Message;
+use crate::traces::TraceRecorder;
 use crate::types::Result as AgentBaseResult;
 
 pub struct EngineHandle {

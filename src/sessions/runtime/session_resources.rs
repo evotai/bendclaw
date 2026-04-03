@@ -8,7 +8,6 @@ use crate::execution::hooks::SteeringSource;
 use crate::execution::skills::SkillExecutor;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::runtime::session_org::SessionOrgServices;
-use crate::kernel::trace::factory::TraceFactory;
 use crate::llm::provider::LLMProvider;
 use crate::planning::PromptConfig;
 use crate::planning::PromptResolver;
@@ -18,6 +17,7 @@ use crate::sessions::backend::sink::RunInitializer;
 use crate::sessions::store::SessionStore;
 use crate::sessions::workspace::Workspace;
 use crate::tools::definition::toolset::Toolset;
+use crate::traces::factory::TraceFactory;
 
 pub struct SessionResources {
     pub workspace: Arc<Workspace>,
@@ -30,7 +30,7 @@ pub struct SessionResources {
     pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
     pub directive: Option<Arc<DirectiveService>>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
-    pub trace_writer: crate::kernel::trace::TraceWriter,
+    pub trace_writer: crate::traces::TraceWriter,
     pub trace_factory: Arc<dyn TraceFactory>,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub prompt_config: Option<PromptConfig>,

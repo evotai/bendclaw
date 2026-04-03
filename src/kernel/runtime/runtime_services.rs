@@ -9,7 +9,7 @@ use crate::channels::routing::chat_router::ChatRouterConfig;
 use crate::channels::routing::debouncer::DebounceConfig;
 use crate::channels::runtime::supervisor::ChannelSupervisor;
 use crate::kernel::runtime::runtime::Runtime;
-use crate::kernel::trace::TraceWriter;
+use crate::traces::TraceWriter;
 
 pub fn build_channel_registry() -> crate::channels::runtime::channel_registry::ChannelRegistry {
     use crate::channels::adapters::feishu::FeishuChannel;
@@ -36,7 +36,7 @@ pub fn spawn_writers() -> RuntimeWriters {
 }
 
 pub struct RuntimeWriters {
-    pub trace_writer: crate::kernel::trace::TraceWriter,
+    pub trace_writer: crate::traces::TraceWriter,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub channel_message_writer: crate::channels::ChannelMessageWriter,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,

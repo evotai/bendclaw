@@ -8,10 +8,10 @@ use super::response_mapper::LLMResponse;
 use super::turn_engine::Engine;
 use crate::execution::event::Delta;
 use crate::execution::event::Event;
-use crate::kernel::trace::SpanMeta;
 use crate::sessions::Message;
 use crate::tools::OpType;
 use crate::tools::OperationMeta;
+use crate::traces::SpanMeta;
 
 impl Engine {
     pub(super) async fn call_llm(
@@ -93,7 +93,7 @@ impl Engine {
         &mut self,
         iteration: u32,
         llm_call_id: &str,
-        llm_span: &crate::kernel::trace::TraceSpan,
+        llm_span: &crate::traces::TraceSpan,
         turn: &LLMResponse,
         err: &str,
         ttft_ms: u64,
@@ -141,7 +141,7 @@ impl Engine {
         &mut self,
         iteration: u32,
         llm_call_id: &str,
-        llm_span: &crate::kernel::trace::TraceSpan,
+        llm_span: &crate::traces::TraceSpan,
         turn: &LLMResponse,
         ttft_ms: u64,
     ) {

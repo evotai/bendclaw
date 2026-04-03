@@ -14,13 +14,13 @@ use bendclaw::execution::llm::Engine;
 use bendclaw::execution::result::Reason;
 use bendclaw::execution::tools::ToolStack;
 use bendclaw::execution::tools::ToolStackConfig;
-use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::planning::tool_view::ProgressiveToolView;
 use bendclaw::sessions::Message;
 use bendclaw::storage::dal::trace::repo::SpanRepo;
 use bendclaw::storage::dal::trace::repo::TraceRepo;
 use bendclaw::tools::run_labels::RunLabels;
 use bendclaw::tools::ToolRuntime;
+use bendclaw::traces::TraceRecorder;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use tokio_util::sync::CancellationToken;
 
@@ -55,7 +55,7 @@ impl BeforeTurnHook for InjectHook {
 fn test_trace_recorder() -> TraceRecorder {
     let pool = bendclaw_test_harness::mocks::context::dummy_pool();
     TraceRecorder::with_writer(
-        bendclaw::kernel::trace::TraceWriter::noop(),
+        bendclaw::traces::TraceWriter::noop(),
         Arc::new(TraceRepo::new(pool.clone())),
         Arc::new(SpanRepo::new(pool)),
         "trace-1",
@@ -126,7 +126,7 @@ fn build_engine(
         },
         labels,
         cancel: cancel.clone(),
-        trace: bendclaw::kernel::trace::Trace::new(trace.clone()),
+        trace: bendclaw::traces::Trace::new(trace.clone()),
         event_tx: tx.clone(),
     });
 

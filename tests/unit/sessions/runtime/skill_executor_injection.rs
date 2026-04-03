@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillOutput;
 use bendclaw::kernel::runtime::session_org::LocalOrgServices;
-use bendclaw::kernel::trace::factory::NoopTraceFactory;
 use bendclaw::sessions::backend::noop::NoopBackend;
 use bendclaw::sessions::build::session_capabilities::*;
 use bendclaw::tools::definition::toolset::Toolset;
+use bendclaw::traces::factory::NoopTraceFactory;
 
 /// Mock executor that records whether it was called.
 struct MockSkillExecutor {
@@ -70,7 +70,7 @@ fn build_assembly_with_mock(executor: Arc<dyn SkillExecutor>) -> SessionAssembly
             )),
             trace_factory: Arc::new(NoopTraceFactory),
             tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
-            trace_writer: bendclaw::kernel::trace::TraceWriter::noop(),
+            trace_writer: bendclaw::traces::TraceWriter::noop(),
             persist_writer: bendclaw::kernel::writer::BackgroundWriter::noop("persist"),
         },
         agent: AgentContext {

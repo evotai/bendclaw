@@ -12,6 +12,7 @@ pub mod skills;
 pub mod storage;
 pub mod tasks;
 pub mod tools;
+pub mod traces;
 pub mod tracing_fmt;
 pub mod types;
 pub mod version;

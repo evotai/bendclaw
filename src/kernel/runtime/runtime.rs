@@ -45,7 +45,7 @@ pub struct Runtime {
     pub(crate) directive: RwLock<Option<Arc<DirectiveService>>>,
     pub(crate) directive_handle: RwLock<Option<tokio::task::JoinHandle<()>>>,
     pub(crate) activity_tracker: Arc<ActivityTracker>,
-    pub(crate) trace_writer: crate::kernel::trace::TraceWriter,
+    pub(crate) trace_writer: crate::traces::TraceWriter,
     pub(crate) persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub(crate) channel_message_writer: crate::channels::ChannelMessageWriter,
     pub(crate) rate_limiter: Arc<OutboundRateLimiter>,

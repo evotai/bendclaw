@@ -13,12 +13,12 @@ use crate::execution::event::Event;
 use crate::execution::llm::Engine;
 use crate::execution::tools::ToolStack;
 use crate::execution::tools::ToolStackConfig;
-use crate::kernel::trace::TraceRecorder;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::Message;
 use crate::tools::run_labels::RunLabels;
 use crate::tools::ToolContext;
 use crate::tools::ToolRuntime;
+use crate::traces::TraceRecorder;
 
 /// High-level run request from session layer.
 pub struct RunRequest {
@@ -105,7 +105,7 @@ pub fn build_run_driver(
         },
         labels,
         cancel: cancel.clone(),
-        trace: crate::kernel::trace::Trace::new(trace.clone()),
+        trace: crate::traces::Trace::new(trace.clone()),
         event_tx: tx.clone(),
     });
 

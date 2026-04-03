@@ -29,11 +29,11 @@ use crate::execution::result::Result as AgentResult;
 use crate::execution::result::Usage;
 use crate::execution::tools::ToolOrchestrator;
 use crate::kernel::memory::MemoryService;
-use crate::kernel::trace::Trace;
-use crate::kernel::trace::TraceRecorder;
 use crate::observability::audit;
 use crate::observability::server_log;
 use crate::sessions::Message;
+use crate::traces::Trace;
+use crate::traces::TraceRecorder;
 use crate::types::Result;
 
 pub(super) const EVENT_CAPACITY: usize = 128;

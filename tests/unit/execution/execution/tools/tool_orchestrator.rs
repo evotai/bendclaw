@@ -84,8 +84,8 @@ impl SkillExecutor for NoopSkillExecutor {
     }
 }
 
-fn test_trace_recorder() -> bendclaw::kernel::trace::TraceRecorder {
-    bendclaw::kernel::trace::TraceRecorder::noop("t1", "r1", "a1", "s1", "u1")
+fn test_trace_recorder() -> bendclaw::traces::TraceRecorder {
+    bendclaw::traces::TraceRecorder::noop("t1", "r1", "a1", "s1", "u1")
 }
 
 fn build_orchestrator(tools: Vec<Arc<dyn Tool>>) -> (ToolOrchestrator, mpsc::Receiver<Event>) {
@@ -150,7 +150,7 @@ fn build_orchestrator(tools: Vec<Arc<dyn Tool>>) -> (ToolOrchestrator, mpsc::Rec
     });
     let recorder = ExecutionRecorder::new(
         labels,
-        bendclaw::kernel::trace::Trace::new(test_trace_recorder()),
+        bendclaw::traces::Trace::new(test_trace_recorder()),
         tx.clone(),
     );
     let emitter = EventEmitter::new(tx);

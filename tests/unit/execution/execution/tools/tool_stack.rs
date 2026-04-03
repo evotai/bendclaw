@@ -141,7 +141,7 @@ fn build_tool_stack(
         },
         labels,
         cancel,
-        trace: bendclaw::kernel::trace::Trace::new(bendclaw::kernel::trace::TraceRecorder::noop(
+        trace: bendclaw::traces::Trace::new(bendclaw::traces::TraceRecorder::noop(
             "t1", "r1", "a1", "s1", "u1",
         )),
         event_tx: tx,

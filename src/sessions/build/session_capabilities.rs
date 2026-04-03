@@ -52,9 +52,9 @@ pub struct SessionCore {
 /// Infrastructure: storage, writers, tracing.
 pub struct RuntimeInfra {
     pub store: Arc<dyn crate::sessions::store::SessionStore>,
-    pub trace_factory: Arc<dyn crate::kernel::trace::factory::TraceFactory>,
+    pub trace_factory: Arc<dyn crate::traces::factory::TraceFactory>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
-    pub trace_writer: crate::kernel::trace::TraceWriter,
+    pub trace_writer: crate::traces::TraceWriter,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
 }
 

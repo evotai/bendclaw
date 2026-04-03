@@ -11,7 +11,6 @@ use super::persister_diagnostics;
 use crate::execution::event::Event;
 use crate::execution::result::Reason;
 use crate::execution::result::Result as AgentResult;
-use crate::kernel::trace::TraceRecorder;
 use crate::llm::provider::LLMProvider;
 use crate::observability::audit;
 use crate::observability::log::run_log;
@@ -21,6 +20,7 @@ use crate::sessions::store::SessionStore;
 use crate::storage::dal::run::record::RunMetrics;
 use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;
+use crate::traces::TraceRecorder;
 use crate::types::ErrorCode;
 
 struct Inner {

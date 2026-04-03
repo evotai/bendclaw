@@ -3,12 +3,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::kernel::trace::diagnostics;
 use crate::kernel::writer::BackgroundWriter;
 use crate::storage::dal::trace::record::SpanRecord;
 use crate::storage::dal::trace::record::TraceRecord;
 use crate::storage::dal::trace::repo::SpanRepo;
 use crate::storage::dal::trace::repo::TraceRepo;
+use crate::traces::diagnostics;
 
 const CHANNEL_CAPACITY: usize = 1024;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(100);

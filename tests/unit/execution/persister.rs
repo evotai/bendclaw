@@ -12,11 +12,11 @@ use bendclaw::execution::result::ContentBlock;
 use bendclaw::execution::result::Reason;
 use bendclaw::execution::result::Result as AgentResult;
 use bendclaw::execution::result::Usage as AgentUsage;
-use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::sessions::backend::sink::RunPersister;
 use bendclaw::storage::dal::run::record::RunStatus;
 use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
+use bendclaw::traces::TraceRecorder;
 use bendclaw::types::ErrorCode;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 

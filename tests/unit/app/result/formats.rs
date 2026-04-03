@@ -1,5 +1,5 @@
-use bendclaw::app::result::event_envelope::EventEnvelope;
-use bendclaw::app::result::formats;
+use bendclaw::result::event_envelope::EventEnvelope;
+use bendclaw::result::formats;
 
 fn sample_envelopes() -> Vec<EventEnvelope> {
     vec![

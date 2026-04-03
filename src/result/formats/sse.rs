@@ -1,4 +1,4 @@
-use crate::app::result::event_envelope::EventEnvelope;
+use crate::result::event_envelope::EventEnvelope;
 
 /// Encode a single envelope as an SSE event.
 pub fn encode(envelope: &EventEnvelope) -> String {

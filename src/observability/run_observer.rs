@@ -1,4 +1,4 @@
-use crate::app::result::event_envelope::EventEnvelope;
+use crate::result::event_envelope::EventEnvelope;
 
 /// Subscribes to EventEnvelope stream and emits semantic logs.
 pub fn observe_event(envelope: &EventEnvelope) {

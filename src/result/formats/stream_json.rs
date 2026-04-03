@@ -1,4 +1,4 @@
-use crate::app::result::event_envelope::EventEnvelope;
+use crate::result::event_envelope::EventEnvelope;
 
 /// Encode a single envelope as a JSON line.
 pub fn encode(envelope: &EventEnvelope) -> String {

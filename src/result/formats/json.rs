@@ -1,4 +1,4 @@
-use crate::app::result::event_envelope::EventEnvelope;
+use crate::result::event_envelope::EventEnvelope;
 
 /// Collect a stream of envelopes into aggregated JSON.
 pub fn collect_json(envelopes: &[EventEnvelope]) -> serde_json::Value {

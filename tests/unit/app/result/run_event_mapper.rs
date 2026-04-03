@@ -1,4 +1,4 @@
-use bendclaw::app::result::run_event_mapper::map_run_event;
+use bendclaw::result::run_event_mapper::map_run_event;
 use bendclaw::types::entities::RunEvent;
 use bendclaw::types::entities::RunEventKind;
 

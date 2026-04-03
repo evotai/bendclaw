@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use crate::app::result::event_envelope::EventEnvelope;
 use crate::request::AgentRequest;
+use crate::result::event_envelope::EventEnvelope;
 use crate::storage::run_events::RunEventRepo;
 use crate::storage::runs::RunRepo;
 use crate::types::entities::Run;

@@ -1,4 +1,4 @@
-use crate::app::result::event_envelope::EventEnvelope;
+use crate::result::event_envelope::EventEnvelope;
 
 /// Collect a stream of envelopes into aggregated text.
 /// Extracts text content from assistant.output events, concatenates the rest

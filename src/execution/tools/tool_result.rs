@@ -1,4 +1,4 @@
-use crate::kernel::OperationMeta;
+use crate::tools::OperationMeta;
 
 /// Hard upper limit on any tool/skill output (~64K tokens).
 const MAX_TOOL_OUTPUT: usize = 256_000;

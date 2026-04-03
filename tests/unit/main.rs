@@ -17,5 +17,6 @@ mod planning;
 mod service;
 mod sessions;
 mod storage;
+mod tools;
 mod types;
 mod version;

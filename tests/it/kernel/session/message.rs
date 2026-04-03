@@ -3,13 +3,13 @@ use anyhow::Result;
 use bendclaw::execution::fmt::to_chat_messages;
 use bendclaw::kernel::Content;
 use bendclaw::kernel::ErrorSource;
-use bendclaw::kernel::OpType;
-use bendclaw::kernel::OperationMeta;
 use bendclaw::kernel::Role;
 use bendclaw::kernel::ToolCall;
 use bendclaw::llm::message::CacheControl;
 use bendclaw::sessions::message::MessageMetrics;
 use bendclaw::sessions::Message;
+use bendclaw::tools::OpType;
+use bendclaw::tools::OperationMeta;
 
 // ── Message constructors ──
 

@@ -371,6 +371,6 @@ const ALLOWED_SCRIPT_EXTENSIONS: &[&str] = &["py", "sh"];
 const ALLOWED_REFERENCE_EXTENSIONS: &[&str] = &["md"];
 
 fn is_reserved_tool_name(name: &str) -> bool {
-    use crate::kernel::tools::tool_id::ToolId;
+    use crate::tools::tool_id::ToolId;
     ToolId::ALL.iter().any(|id| id.as_str() == name)
 }

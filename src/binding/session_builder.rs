@@ -13,13 +13,13 @@ use super::prompt_builder;
 use super::workspace_binding;
 use crate::config::agent::AgentConfig;
 use crate::execution::persist::persist_op::PersistWriter;
-use crate::kernel::tools::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::TraceWriter;
 use crate::kernel::writer::BackgroundWriter;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::build::backend_builder;
 use crate::sessions::build::infra_builder;
 use crate::sessions::build::session_capabilities::*;
+use crate::tools::tool_services::NoopSecretUsageSink;
 use crate::types::Result;
 
 type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
@@ -30,11 +30,11 @@ type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
 
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::tools::selection::build_cloud_toolset;
-use crate::kernel::tools::selection::CloudToolsetDeps;
-use crate::kernel::tools::tool_services::DbSecretUsageSink;
 use crate::planning::PromptConfig;
 use crate::planning::PromptVariable;
+use crate::tools::selection::build_cloud_toolset;
+use crate::tools::selection::CloudToolsetDeps;
+use crate::tools::tool_services::DbSecretUsageSink;
 
 /// Builds a full cloud session with all services, tools, skills, memory.
 pub struct SessionBuilder {
@@ -92,7 +92,7 @@ impl SessionBuilder {
 
         let storage = Arc::new(AgentStore::new(pool.clone(), agent_llm.clone()));
 
-        let secret_sink: Arc<dyn crate::kernel::tools::tool_services::SecretUsageSink> =
+        let secret_sink: Arc<dyn crate::tools::tool_services::SecretUsageSink> =
             Arc::new(DbSecretUsageSink::new(pool.clone()));
         let cluster_ref = self.runtime.cluster.read().clone();
         let memory_ref = self.runtime.org.memory().cloned();
@@ -201,8 +201,8 @@ pub struct CloudBuildOptions {
 // ═══════════════════════════════════════════════════════════════════
 
 use crate::kernel::runtime::session_org::LocalOrgServices;
-use crate::kernel::tools::selection::build_local_toolset;
 use crate::sessions::store::json::JsonSessionStore;
+use crate::tools::selection::build_local_toolset;
 
 /// Minimal dependency set for local (CLI) sessions.
 pub struct LocalRuntimeDeps {
@@ -258,7 +258,7 @@ pub fn build_local_assembly(
         .map(|o| Arc::new(RwLock::new(o)) as Arc<RwLock<Arc<dyn LLMProvider>>>)
         .unwrap_or_else(|| deps.llm.clone());
 
-    let secret_sink: Arc<dyn crate::kernel::tools::tool_services::SecretUsageSink> =
+    let secret_sink: Arc<dyn crate::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     let toolset = build_local_toolset(opts.tool_filter, secret_sink);
 

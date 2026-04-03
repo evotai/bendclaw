@@ -1,7 +1,7 @@
 use super::tool_result::ToolCallResult;
-use crate::kernel::tools::definition::tool_definition::ToolDefinition;
-use crate::kernel::tools::definition::tool_target::ToolTarget;
 use crate::llm::message::ToolCall;
+use crate::tools::definition::tool_definition::ToolDefinition;
+use crate::tools::definition::tool_target::ToolTarget;
 
 /// Parsed tool call with resolved definition and dispatch target.
 #[derive(Debug, Clone)]

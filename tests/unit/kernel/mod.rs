@@ -7,7 +7,6 @@ mod memory;
 mod runtime;
 mod skills;
 mod task;
-mod tools;
 mod trace;
 mod workbench;
 mod writer;

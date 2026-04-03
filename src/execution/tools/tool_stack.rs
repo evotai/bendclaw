@@ -11,10 +11,10 @@ use super::tool_orchestrator::ToolOrchestrator;
 use super::tool_recorder::ExecutionRecorder;
 use crate::execution::event::Event;
 use crate::execution::skills::SkillExecutor;
-use crate::kernel::tools::definition::toolset::Toolset;
-use crate::kernel::tools::run_labels::RunLabels;
-use crate::kernel::tools::ToolContext;
 use crate::kernel::trace::Trace;
+use crate::tools::definition::toolset::Toolset;
+use crate::tools::run_labels::RunLabels;
+use crate::tools::ToolContext;
 
 pub struct ToolStackConfig {
     pub toolset: Toolset,

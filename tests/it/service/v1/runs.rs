@@ -6,8 +6,8 @@ use axum::body::Body;
 use axum::http::Request;
 use axum::http::StatusCode;
 use bendclaw::execution::event::Event;
-use bendclaw::kernel::tools::OperationMeta;
-use bendclaw::kernel::OpType;
+use bendclaw::tools::OpType;
+use bendclaw::tools::OperationMeta;
 use tower::ServiceExt;
 
 use crate::common::fake_databend::paged_rows;

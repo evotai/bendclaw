@@ -8,16 +8,16 @@ use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillOutput;
 use bendclaw::execution::tools::tool_executor::CallExecutor;
 use bendclaw::execution::tools::tool_result::ToolCallResult;
-use bendclaw::kernel::tools::definition::tool_definition::ToolDefinition;
-use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
-use bendclaw::kernel::tools::OperationClassifier;
-use bendclaw::kernel::tools::Tool;
-use bendclaw::kernel::tools::ToolContext;
-use bendclaw::kernel::tools::ToolResult;
 use bendclaw::kernel::ErrorCode;
-use bendclaw::kernel::Impact;
-use bendclaw::kernel::OpType;
 use bendclaw::llm::message::ToolCall;
+use bendclaw::tools::definition::tool_definition::ToolDefinition;
+use bendclaw::tools::selection::tool_registry::ToolRegistry;
+use bendclaw::tools::Impact;
+use bendclaw::tools::OpType;
+use bendclaw::tools::OperationClassifier;
+use bendclaw::tools::Tool;
+use bendclaw::tools::ToolContext;
+use bendclaw::tools::ToolResult;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -151,13 +151,13 @@ fn build_executor_with_skills(
         .collect();
     let mut bindings: std::collections::HashMap<
         String,
-        bendclaw::kernel::tools::definition::tool_target::ToolTarget,
+        bendclaw::tools::definition::tool_target::ToolTarget,
     > = registry
         .iter_tools()
         .map(|t| {
             (
                 t.name().to_string(),
-                bendclaw::kernel::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
+                bendclaw::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
             )
         })
         .collect();
@@ -169,12 +169,12 @@ fn build_executor_with_skills(
         ));
         bindings.insert(
             name.to_string(),
-            bendclaw::kernel::tools::definition::tool_target::ToolTarget::Skill,
+            bendclaw::tools::definition::tool_target::ToolTarget::Skill,
         );
     }
     let tools_schema: Vec<bendclaw::llm::tool::ToolSchema> =
         definitions.iter().map(|d| d.to_tool_schema()).collect();
-    let toolset = bendclaw::kernel::tools::definition::toolset::Toolset {
+    let toolset = bendclaw::tools::definition::toolset::Toolset {
         definitions: Arc::new(definitions),
         bindings: Arc::new(bindings),
         tools: Arc::new(tools_schema),
@@ -193,7 +193,7 @@ fn build_executor_with_skills(
                 std::env::temp_dir().join("bendclaw-test-dispatcher"),
             ),
             is_dispatched: false,
-            runtime: bendclaw::kernel::tools::ToolRuntime {
+            runtime: bendclaw::tools::ToolRuntime {
                 event_tx: None,
                 cancel: cancel.clone(),
                 tool_call_id: None,

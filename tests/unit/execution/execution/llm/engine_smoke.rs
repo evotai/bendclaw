@@ -10,17 +10,17 @@ use bendclaw::execution::llm::Engine;
 use bendclaw::execution::result::Reason;
 use bendclaw::execution::tools::ToolStack;
 use bendclaw::execution::tools::ToolStackConfig;
-use bendclaw::kernel::tools::run_labels::RunLabels;
-use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
-use bendclaw::kernel::tools::tool_id::ToolId;
-use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
-use bendclaw::kernel::tools::ToolContext;
-use bendclaw::kernel::tools::ToolRuntime;
 use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::planning::tool_view::ProgressiveToolView;
 use bendclaw::sessions::Message;
 use bendclaw::storage::dal::trace::repo::SpanRepo;
 use bendclaw::storage::dal::trace::repo::TraceRepo;
+use bendclaw::tools::run_labels::RunLabels;
+use bendclaw::tools::selection::tool_registry::ToolRegistry;
+use bendclaw::tools::tool_id::ToolId;
+use bendclaw::tools::tool_services::NoopSecretUsageSink;
+use bendclaw::tools::ToolContext;
+use bendclaw::tools::ToolRuntime;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::llm::MockTurn;
 use tokio_util::sync::CancellationToken;
@@ -41,21 +41,19 @@ fn trace() -> TraceRecorder {
 
 fn real_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
-    let sink: Arc<dyn bendclaw::kernel::tools::tool_services::SecretUsageSink> =
+    let sink: Arc<dyn bendclaw::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
     registry.register_builtin(
         ToolId::ListDir,
-        Arc::new(bendclaw::kernel::tools::builtin::filesystem::ListDirTool),
+        Arc::new(bendclaw::tools::filesystem::ListDirTool),
     );
     registry.register_builtin(
         ToolId::Glob,
-        Arc::new(bendclaw::kernel::tools::builtin::filesystem::GlobTool),
+        Arc::new(bendclaw::tools::filesystem::GlobTool),
     );
     registry.register_builtin(
         ToolId::Bash,
-        Arc::new(bendclaw::kernel::tools::builtin::shell::ShellTool::new(
-            sink,
-        )),
+        Arc::new(bendclaw::tools::shell::ShellTool::new(sink)),
     );
     registry
 }
@@ -77,31 +75,28 @@ fn build_engine_with_filter(
         session_id: "session-1".to_string(),
         agent_id: "agent-1".to_string(),
     });
-    let definitions: Vec<bendclaw::kernel::tools::definition::tool_definition::ToolDefinition> =
-        registry
-            .iter_tools()
-            .map(|t| {
-                bendclaw::kernel::tools::definition::tool_definition::ToolDefinition::from_builtin(
-                    t.as_ref(),
-                )
-            })
-            .collect();
+    let definitions: Vec<bendclaw::tools::definition::tool_definition::ToolDefinition> = registry
+        .iter_tools()
+        .map(|t| {
+            bendclaw::tools::definition::tool_definition::ToolDefinition::from_builtin(t.as_ref())
+        })
+        .collect();
     let bindings: std::collections::HashMap<
         String,
-        bendclaw::kernel::tools::definition::tool_target::ToolTarget,
+        bendclaw::tools::definition::tool_target::ToolTarget,
     > = registry
         .iter_tools()
         .map(|t| {
             (
                 t.name().to_string(),
-                bendclaw::kernel::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
+                bendclaw::tools::definition::tool_target::ToolTarget::Builtin(t.clone()),
             )
         })
         .collect();
     let tools_schema: Vec<bendclaw::llm::tool::ToolSchema> =
         definitions.iter().map(|d| d.to_tool_schema()).collect();
     let tool_stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::definition::toolset::Toolset {
+        toolset: bendclaw::tools::definition::toolset::Toolset {
             definitions: Arc::new(definitions),
             bindings: Arc::new(bindings),
             tools: Arc::new(tools_schema),

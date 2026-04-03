@@ -4,9 +4,9 @@ use serde::Serialize;
 use crate::execution::result::Reason;
 use crate::execution::result::Usage;
 use crate::kernel::workbench::sem_event::SemEvent;
-use crate::kernel::OperationMeta;
 use crate::llm::stream::StreamEvent;
 use crate::llm::usage::TokenUsage;
+use crate::tools::OperationMeta;
 
 /// Fine-grained lifecycle events emitted by the agent loop.
 ///

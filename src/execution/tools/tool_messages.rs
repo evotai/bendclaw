@@ -7,9 +7,9 @@ use std::sync::Arc;
 use super::parsed_tool_call::DispatchOutcome;
 use super::parsed_tool_call::ParsedToolCall;
 use super::tool_result::ToolCallResult;
-use crate::kernel::tools::run_labels::RunLabels;
-use crate::kernel::OperationMeta;
 use crate::sessions::Message;
+use crate::tools::run_labels::RunLabels;
+use crate::tools::OperationMeta;
 
 /// Operation event emitted when a tool starts.
 pub fn tool_started_message(parsed: &ParsedToolCall) -> Message {

@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::kernel::tools::operation::OpType;
-use crate::kernel::tools::operation::OperationMeta;
+use crate::tools::operation::OpType;
+use crate::tools::operation::OperationMeta;
 use crate::types::Content;
 use crate::types::ErrorSource;
 use crate::types::Role;

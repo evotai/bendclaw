@@ -2,7 +2,7 @@
 
 use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::definition::skill::SkillFile;
-use bendclaw::kernel::tools::ToolId;
+use bendclaw::tools::ToolId;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Skill::validate_name — accepted

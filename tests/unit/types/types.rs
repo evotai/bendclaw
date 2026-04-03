@@ -4,10 +4,10 @@ use bendclaw::kernel::new_id;
 use bendclaw::kernel::validate_agent_id;
 use bendclaw::kernel::Content;
 use bendclaw::kernel::ErrorSource;
-use bendclaw::kernel::Impact;
-use bendclaw::kernel::OpType;
 use bendclaw::kernel::Role;
 use bendclaw::kernel::ToolCall;
+use bendclaw::tools::Impact;
+use bendclaw::tools::OpType;
 
 // ── Role ──
 

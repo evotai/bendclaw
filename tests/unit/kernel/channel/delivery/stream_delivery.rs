@@ -6,8 +6,8 @@ use bendclaw::execution::event::Event;
 use bendclaw::kernel::channels::egress::stream_delivery::StreamDelivery;
 use bendclaw::kernel::channels::egress::stream_delivery::StreamDeliveryConfig;
 use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
-use bendclaw::kernel::tools::OpType;
-use bendclaw::kernel::OperationMeta;
+use bendclaw::tools::OpType;
+use bendclaw::tools::OperationMeta;
 use parking_lot::Mutex;
 
 #[derive(Debug, Clone)]

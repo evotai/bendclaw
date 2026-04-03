@@ -4,10 +4,10 @@ use bendclaw::execution::Delta;
 use bendclaw::execution::Event;
 use bendclaw::execution::Reason;
 use bendclaw::execution::Usage;
-use bendclaw::kernel::tools::operation::OpType;
-use bendclaw::kernel::tools::operation::OperationMeta;
 use bendclaw::llm::stream::StreamEvent;
 use bendclaw::llm::usage::TokenUsage;
+use bendclaw::tools::operation::OpType;
+use bendclaw::tools::operation::OperationMeta;
 
 // ── Delta::from_stream_event ──
 

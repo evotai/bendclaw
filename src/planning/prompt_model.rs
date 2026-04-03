@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 use crate::planning::prompt_diagnostics;
+use crate::tools::definition::tool_definition::ToolDefinition;
 
 const _RECENT_ERRORS_LIMIT: u32 = 5;
 

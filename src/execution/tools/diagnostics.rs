@@ -2,8 +2,8 @@ use serde_json::Map;
 use serde_json::Value;
 
 use super::parsed_tool_call::ParsedToolCall;
-use crate::kernel::OperationMeta;
 use crate::observability::server_log;
+use crate::tools::OperationMeta;
 
 pub(crate) fn log_tool_parse_failed(
     tool_name: &str,

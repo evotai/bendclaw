@@ -8,6 +8,7 @@ pub mod observability;
 pub mod service;
 pub mod sessions;
 pub mod storage;
+pub mod tools;
 pub mod tracing_fmt;
 pub mod types;
 pub mod version;

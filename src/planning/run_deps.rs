@@ -4,8 +4,8 @@ use crate::execution::hooks::BeforeTurnHook;
 use crate::execution::hooks::SteeringSource;
 use crate::execution::skills::SkillExecutor;
 use crate::kernel::memory::MemoryService;
-use crate::kernel::tools::definition::toolset::Toolset;
 use crate::sessions::runtime::session_resources::SessionResources;
+use crate::tools::definition::toolset::Toolset;
 
 /// Narrow projection of SessionResources — only what run assembly needs.
 pub struct RunDeps {

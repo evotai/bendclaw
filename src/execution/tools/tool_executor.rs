@@ -15,16 +15,16 @@ use super::tool_result::ToolCallResult;
 use crate::execution::event::Event;
 use crate::execution::skills::parse_skill_args;
 use crate::execution::skills::SkillExecutor;
-use crate::kernel::tools::definition::tool_definition::ToolDefinition;
-use crate::kernel::tools::definition::tool_target::ToolTarget;
-use crate::kernel::tools::definition::toolset::Toolset;
-use crate::kernel::tools::Tool;
-use crate::kernel::tools::ToolContext;
-use crate::kernel::tools::ToolRuntime;
-use crate::kernel::OpType;
-use crate::kernel::OperationMeta;
-use crate::kernel::OperationTracker;
 use crate::llm::message::ToolCall;
+use crate::tools::definition::tool_definition::ToolDefinition;
+use crate::tools::definition::tool_target::ToolTarget;
+use crate::tools::definition::toolset::Toolset;
+use crate::tools::OpType;
+use crate::tools::OperationMeta;
+use crate::tools::OperationTracker;
+use crate::tools::Tool;
+use crate::tools::ToolContext;
+use crate::tools::ToolRuntime;
 
 const MAX_PER_TOOL_TIMEOUT: Duration = Duration::from_secs(300);
 

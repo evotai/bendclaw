@@ -9,9 +9,9 @@ use super::turn_engine::Engine;
 use crate::execution::event::Delta;
 use crate::execution::event::Event;
 use crate::kernel::trace::SpanMeta;
-use crate::kernel::OpType;
-use crate::kernel::OperationMeta;
 use crate::sessions::Message;
+use crate::tools::OpType;
+use crate::tools::OperationMeta;
 
 impl Engine {
     pub(super) async fn call_llm(

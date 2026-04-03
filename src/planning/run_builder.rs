@@ -13,12 +13,12 @@ use crate::execution::event::Event;
 use crate::execution::llm::Engine;
 use crate::execution::tools::ToolStack;
 use crate::execution::tools::ToolStackConfig;
-use crate::kernel::tools::run_labels::RunLabels;
-use crate::kernel::tools::ToolContext;
-use crate::kernel::tools::ToolRuntime;
 use crate::kernel::trace::TraceRecorder;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::Message;
+use crate::tools::run_labels::RunLabels;
+use crate::tools::ToolContext;
+use crate::tools::ToolRuntime;
 
 /// High-level run request from session layer.
 pub struct RunRequest {

@@ -11,8 +11,6 @@ use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::agent_store::AgentStore;
 use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::kernel::skills::sync::SkillIndex;
-use bendclaw::kernel::tools::definition::ToolDefinition;
-use bendclaw::kernel::OpType;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
@@ -38,6 +36,8 @@ use bendclaw::planning::MAX_SYSTEM_BYTES;
 use bendclaw::planning::MAX_TOOLS_BYTES;
 use bendclaw::planning::MAX_VARIABLES_BYTES;
 use bendclaw::storage::AgentDatabases;
+use bendclaw::tools::definition::ToolDefinition;
+use bendclaw::tools::OpType;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 

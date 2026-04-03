@@ -8,7 +8,6 @@ use crate::execution::hooks::SteeringSource;
 use crate::execution::skills::SkillExecutor;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::runtime::session_org::SessionOrgServices;
-use crate::kernel::tools::definition::toolset::Toolset;
 use crate::kernel::trace::factory::TraceFactory;
 use crate::llm::provider::LLMProvider;
 use crate::planning::PromptConfig;
@@ -18,6 +17,7 @@ use crate::sessions::backend::context::SessionContextProvider;
 use crate::sessions::backend::sink::RunInitializer;
 use crate::sessions::store::SessionStore;
 use crate::sessions::workspace::Workspace;
+use crate::tools::definition::toolset::Toolset;
 
 pub struct SessionResources {
     pub workspace: Arc<Workspace>,

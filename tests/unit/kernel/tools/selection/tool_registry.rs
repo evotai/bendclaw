@@ -3,14 +3,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::kernel::tools::selection::tool_registry::ToolRegistry;
-use bendclaw::kernel::tools::OperationClassifier;
-use bendclaw::kernel::tools::Tool;
-use bendclaw::kernel::tools::ToolContext;
-use bendclaw::kernel::tools::ToolId;
-use bendclaw::kernel::tools::ToolResult;
-use bendclaw::kernel::Impact;
-use bendclaw::kernel::OpType;
+use bendclaw::tools::selection::tool_registry::ToolRegistry;
+use bendclaw::tools::OperationClassifier;
+use bendclaw::tools::Tool;
+use bendclaw::tools::ToolContext;
+use bendclaw::tools::ToolId;
+use bendclaw::tools::ToolResult;
+use bendclaw::tools::Impact;
+use bendclaw::tools::OpType;
 
 struct StubTool {
     name: &'static str,

@@ -14,13 +14,13 @@ use bendclaw::execution::llm::Engine;
 use bendclaw::execution::result::Reason;
 use bendclaw::execution::tools::ToolStack;
 use bendclaw::execution::tools::ToolStackConfig;
-use bendclaw::kernel::tools::run_labels::RunLabels;
-use bendclaw::kernel::tools::ToolRuntime;
 use bendclaw::kernel::trace::TraceRecorder;
 use bendclaw::planning::tool_view::ProgressiveToolView;
 use bendclaw::sessions::Message;
 use bendclaw::storage::dal::trace::repo::SpanRepo;
 use bendclaw::storage::dal::trace::repo::TraceRepo;
+use bendclaw::tools::run_labels::RunLabels;
+use bendclaw::tools::ToolRuntime;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use tokio_util::sync::CancellationToken;
 
@@ -102,14 +102,14 @@ fn build_engine(
         agent_id: "agent-1".to_string(),
     });
     let tool_stack = ToolStack::build(ToolStackConfig {
-        toolset: bendclaw::kernel::tools::definition::toolset::Toolset {
+        toolset: bendclaw::tools::definition::toolset::Toolset {
             definitions: Arc::new(vec![]),
             bindings: Arc::new(std::collections::HashMap::new()),
             tools: Arc::new(vec![]),
             allowed_tool_names: None,
         },
         skill_executor: Arc::new(NoopSkillExecutor),
-        tool_context: bendclaw::kernel::tools::ToolContext {
+        tool_context: bendclaw::tools::ToolContext {
             user_id: "user-1".into(),
             session_id: "session-1".into(),
             agent_id: "agent-1".into(),

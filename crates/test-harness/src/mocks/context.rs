@@ -6,14 +6,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
-use bendclaw::kernel::tools::ToolContext;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::sessions::runtime::session_resources::SessionResources;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
 use bendclaw::sessions::Session;
 use bendclaw::storage::Pool;
+use bendclaw::tools::tool_services::NoopSecretUsageSink;
+use bendclaw::tools::ToolContext;
 use parking_lot::RwLock;
 
 use crate::mocks::skill::test_skill_projector;
@@ -52,7 +52,7 @@ pub fn test_tool_context() -> ToolContext {
         trace_id: "t-test".into(),
         workspace: test_workspace(dir),
         is_dispatched: false,
-        runtime: bendclaw::kernel::tools::ToolRuntime {
+        runtime: bendclaw::tools::ToolRuntime {
             event_tx: None,
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
@@ -90,10 +90,10 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
 
     let channels =
         Arc::new(bendclaw::kernel::channels::runtime::channel_registry::ChannelRegistry::new());
-    let sink: Arc<dyn bendclaw::kernel::tools::tool_services::SecretUsageSink> =
+    let sink: Arc<dyn bendclaw::tools::tool_services::SecretUsageSink> =
         Arc::new(NoopSecretUsageSink);
-    let toolset = bendclaw::kernel::tools::selection::build_cloud_toolset(
-        bendclaw::kernel::tools::selection::CloudToolsetDeps {
+    let toolset = bendclaw::tools::selection::build_cloud_toolset(
+        bendclaw::tools::selection::CloudToolsetDeps {
             org: org.clone(),
             databend_pool: pool.clone(),
             channels,

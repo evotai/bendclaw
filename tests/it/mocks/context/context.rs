@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bendclaw::kernel::tools::ToolContext;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
 use bendclaw::storage::Pool;
+use bendclaw::tools::ToolContext;
 
 /// Build a test Workspace for a temp directory.
 pub fn test_workspace(dir: std::path::PathBuf) -> Arc<Workspace> {
@@ -42,7 +42,7 @@ pub fn test_tool_context() -> ToolContext {
         trace_id: "t-test".into(),
         workspace: test_workspace(dir),
         is_dispatched: false,
-        runtime: bendclaw::kernel::tools::ToolRuntime {
+        runtime: bendclaw::tools::ToolRuntime {
             event_tx: None,
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,

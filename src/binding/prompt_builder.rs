@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::org::OrgServices;
-use crate::kernel::tools::definition::tool_definition::ToolDefinition;
 use crate::planning::prompt_model::PromptConfig;
 use crate::planning::prompt_model::PromptSeed;
 use crate::planning::prompt_model::PromptVariable;
 use crate::planning::CloudPromptLoader;
 use crate::planning::LocalPromptResolver;
 use crate::planning::PromptResolver;
+use crate::tools::definition::tool_definition::ToolDefinition;
 
 pub fn build_local_prompt_resolver(
     tools: Arc<Vec<ToolDefinition>>,

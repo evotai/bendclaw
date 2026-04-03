@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillOutput;
 use bendclaw::kernel::runtime::session_org::LocalOrgServices;
-use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::trace::factory::NoopTraceFactory;
 use bendclaw::sessions::backend::noop::NoopBackend;
 use bendclaw::sessions::build::session_capabilities::*;
+use bendclaw::tools::definition::toolset::Toolset;
 
 /// Mock executor that records whether it was called.
 struct MockSkillExecutor {

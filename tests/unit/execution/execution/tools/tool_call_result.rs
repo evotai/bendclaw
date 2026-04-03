@@ -1,6 +1,6 @@
 use anyhow::Result;
-use bendclaw::kernel::tools::ToolResult;
-use bendclaw::kernel::tools::ToolSpec;
+use bendclaw::tools::ToolResult;
+use bendclaw::tools::ToolSpec;
 
 #[test]
 fn tool_result_ok_sets_success_true() {

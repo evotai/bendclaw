@@ -5,13 +5,13 @@ use parking_lot::RwLock;
 
 use crate::config::agent::AgentConfig;
 use crate::kernel::directive::DirectiveService;
-use crate::kernel::tools::definition::toolset::Toolset;
 use crate::llm::provider::LLMProvider;
 use crate::planning::PromptConfig;
 use crate::planning::PromptResolver;
 use crate::sessions::backend::context::SessionContextProvider;
 use crate::sessions::backend::sink::RunInitializer;
 use crate::sessions::workspace::Workspace;
+use crate::tools::definition::toolset::Toolset;
 use crate::types::Result;
 
 /// Owner identity for session assembly. Callers (invocation layer, factory) construct this.

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use super::prompt_contract::PromptResolver;
 use super::prompt_model::*;
 use super::prompt_renderer::build_prompt;
-use crate::kernel::tools::definition::tool_definition::ToolDefinition;
+use crate::tools::definition::tool_definition::ToolDefinition;
 use crate::types::Result;
 
 pub struct LocalPromptResolver {

@@ -10,13 +10,13 @@ use super::diagnostics;
 use super::parsed_tool_call::ParsedToolCall;
 use super::turn_context::TurnContext;
 use crate::execution::event::Event;
-use crate::kernel::tools::run_labels::RunLabels;
 use crate::kernel::trace::SpanMeta;
 use crate::kernel::trace::Trace;
 use crate::kernel::trace::TraceSpan;
-use crate::kernel::OperationMeta;
 use crate::observability::audit;
 use crate::observability::server_log;
+use crate::tools::run_labels::RunLabels;
+use crate::tools::OperationMeta;
 
 /// Max bytes for span error messages stored in trace DB.
 const MAX_SPAN_ERROR: usize = 2_000;

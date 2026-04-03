@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use crate::app::agent::recovery_gate;
 use crate::app::agent::recovery_gate::CleanupPolicy;
-use crate::app::agent::request::AgentRequest;
-use crate::app::agent::request::OutputFormat;
 use crate::app::agent::run_executor;
 use crate::app::agent::run_planner;
 use crate::app::agent::session_binding;
 use crate::app::result::formats;
+use crate::request::AgentRequest;
+use crate::request::OutputFormat;
 use crate::storage::run_events::RunEventRepo;
 use crate::storage::runs::RunRepo;
 use crate::storage::sessions::SessionRepo;

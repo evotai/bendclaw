@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use super::request::*;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::build::session_builder::CloudBuildOptions;
 use crate::kernel::session::build::session_builder::SessionBuilder;
 use crate::kernel::session::build::session_capabilities::SessionOwner;
 use crate::kernel::session::Session;
+use crate::request::invocation::*;
 use crate::types::Result;
 
 /// Acquire a one-shot session for the given invocation request.

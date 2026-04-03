@@ -5,3 +5,11 @@
 //! entry point for the pipeline.
 //!
 //! Pipeline position: **first stage** — feeds into `binding/`.
+
+pub mod invocation;
+pub mod model;
+pub mod validate;
+
+pub use invocation::*;
+pub use model::*;
+pub use validate::validate;

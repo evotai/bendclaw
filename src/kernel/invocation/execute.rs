@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use super::request::*;
 use super::session_route::acquire_session;
 use crate::kernel::run::planning::PromptRequestMeta;
 use crate::kernel::run::result::RunOutput;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::session::runtime::run_options::RunOptions;
 use crate::kernel::session::runtime::session_stream::Stream;
-use crate::types::ErrorCode;
+use crate::request::invocation::*;
+use crate::request::validate;
 use crate::types::Result;
 
 /// Convert ConversationContext + RunOptions into neutral PromptRequestMeta.
@@ -27,16 +27,6 @@ fn build_prompt_meta(context: &ConversationContext, options: &RunOptions) -> Pro
         system_overlay: options.system_overlay.clone(),
         skill_overlay: options.skill_overlay.clone(),
     }
-}
-
-pub fn validate(req: &InvocationRequest) -> Result<()> {
-    if req.agent_id.is_empty() {
-        return Err(ErrorCode::invalid_input("agent_id must not be empty"));
-    }
-    if req.user_id.is_empty() {
-        return Err(ErrorCode::invalid_input("user_id must not be empty"));
-    }
-    Ok(())
 }
 
 impl Runtime {

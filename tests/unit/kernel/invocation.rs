@@ -1,8 +1,8 @@
 //! Tests for the invocation layer: request validation.
 
-use bendclaw::kernel::invocation::request::*;
-use bendclaw::kernel::invocation::validate;
 use bendclaw::kernel::session::runtime::run_options::RunOptions;
+use bendclaw::request::invocation::*;
+use bendclaw::request::validate;
 
 fn make_request(agent_id: &str, user_id: &str) -> InvocationRequest {
     InvocationRequest {

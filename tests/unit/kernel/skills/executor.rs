@@ -1,7 +1,7 @@
 use anyhow::Result;
-use bendclaw::kernel::run::execution::skills::parse_skill_args;
-use bendclaw::kernel::run::execution::skills::SkillError;
-use bendclaw::kernel::run::execution::skills::SkillOutput;
+use bendclaw::execution::skills::parse_skill_args;
+use bendclaw::execution::skills::SkillError;
+use bendclaw::execution::skills::SkillOutput;
 
 #[test]
 fn skill_output_is_error_true() {

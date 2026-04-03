@@ -9,7 +9,7 @@ pub fn build_local_infra(
     store: Arc<dyn SessionStore>,
     tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     trace_writer: TraceWriter,
-    persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
+    persist_writer: crate::execution::persist::persist_op::PersistWriter,
 ) -> RuntimeInfra {
     RuntimeInfra {
         store,
@@ -25,7 +25,7 @@ pub fn build_cloud_infra(
     pool: Pool,
     tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     trace_writer: TraceWriter,
-    persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
+    persist_writer: crate::execution::persist::persist_op::PersistWriter,
 ) -> RuntimeInfra {
     let trace_factory = Arc::new(crate::kernel::trace::factory::DbTraceFactory {
         trace_repo: Arc::new(crate::storage::dal::trace::repo::TraceRepo::new(

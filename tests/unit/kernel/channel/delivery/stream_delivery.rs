@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bendclaw::execution::event::Delta;
+use bendclaw::execution::event::Event;
 use bendclaw::kernel::channels::egress::stream_delivery::StreamDelivery;
 use bendclaw::kernel::channels::egress::stream_delivery::StreamDeliveryConfig;
 use bendclaw::kernel::channels::runtime::channel_trait::ChannelOutbound;
-use bendclaw::kernel::run::event::Delta;
-use bendclaw::kernel::run::event::Event;
 use bendclaw::kernel::tools::OpType;
 use bendclaw::kernel::OperationMeta;
 use parking_lot::Mutex;

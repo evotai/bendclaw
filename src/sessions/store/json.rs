@@ -17,9 +17,9 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 
 use super::contract::SessionStore;
-use crate::kernel::run::usage::CostSummary;
-use crate::kernel::run::usage::UsageEvent;
-use crate::kernel::run::usage::UsageScope;
+use crate::execution::usage::CostSummary;
+use crate::execution::usage::UsageEvent;
+use crate::execution::usage::UsageScope;
 use crate::storage::dal::run::record::RunRecord;
 use crate::storage::dal::run::record::RunStatus;
 use crate::storage::dal::run_event::record::RunEventRecord;

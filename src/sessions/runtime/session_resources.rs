@@ -3,10 +3,10 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::config::agent::AgentConfig;
+use crate::execution::hooks::BeforeTurnHook;
+use crate::execution::hooks::SteeringSource;
+use crate::execution::skills::SkillExecutor;
 use crate::kernel::directive::DirectiveService;
-use crate::kernel::run::execution::skills::SkillExecutor;
-use crate::kernel::run::hooks::BeforeTurnHook;
-use crate::kernel::run::hooks::SteeringSource;
 use crate::kernel::runtime::session_org::SessionOrgServices;
 use crate::kernel::tools::definition::toolset::Toolset;
 use crate::kernel::trace::factory::TraceFactory;
@@ -32,7 +32,7 @@ pub struct SessionResources {
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     pub trace_writer: crate::kernel::trace::TraceWriter,
     pub trace_factory: Arc<dyn TraceFactory>,
-    pub persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
+    pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub prompt_config: Option<PromptConfig>,
     pub before_turn_hook: Option<Arc<dyn BeforeTurnHook>>,
     pub steering_source: Option<Arc<dyn SteeringSource>>,

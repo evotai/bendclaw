@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use super::usage_store::UsageStore;
-use crate::kernel::run::usage::UsageEvent;
-use crate::kernel::run::usage::UsageScope;
+use crate::execution::usage::UsageEvent;
+use crate::execution::usage::UsageScope;
 use crate::llm::config::LLMConfig;
 use crate::llm::provider::LLMProvider;
 use crate::storage::dal::agent_config::record::AgentConfigRecord;

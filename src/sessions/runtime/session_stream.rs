@@ -7,11 +7,11 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::kernel::run::event::Delta;
-use crate::kernel::run::event::Event;
-use crate::kernel::run::result::Reason;
-use crate::kernel::run::result::Result as AgentResult;
-use crate::kernel::run::result::RunOutput;
+use crate::execution::event::Delta;
+use crate::execution::event::Event;
+use crate::execution::result::Reason;
+use crate::execution::result::Result as AgentResult;
+use crate::execution::result::RunOutput;
 use crate::kernel::ErrorSource;
 use crate::sessions::backend::sink::RunPersister;
 use crate::sessions::core::session_state::SessionState;

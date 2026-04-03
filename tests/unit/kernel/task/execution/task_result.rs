@@ -1,4 +1,4 @@
-use bendclaw::kernel::run::result::Reason;
+use bendclaw::execution::result::Reason;
 use bendclaw::kernel::task::execution::classify_task_run_output;
 use bendclaw::sessions::runtime::session_stream::FinishedRunOutput;
 

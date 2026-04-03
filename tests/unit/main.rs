@@ -9,6 +9,7 @@ mod cli;
 mod config;
 mod config_cluster;
 mod config_directive;
+mod execution;
 mod kernel;
 mod llm;
 mod observability;

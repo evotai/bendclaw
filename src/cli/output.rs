@@ -1,4 +1,4 @@
-use crate::kernel::run::result::RunOutput;
+use crate::execution::result::RunOutput;
 
 /// Print a RunOutput to stdout.
 pub fn print_run_output(output: &RunOutput) {

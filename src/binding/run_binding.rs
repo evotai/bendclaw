@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::cloud_session::acquire_session;
-use crate::kernel::run::result::RunOutput;
+use crate::execution::result::RunOutput;
 use crate::kernel::runtime::Runtime;
 use crate::planning::PromptRequestMeta;
 use crate::request::invocation::*;

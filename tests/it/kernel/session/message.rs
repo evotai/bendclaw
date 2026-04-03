@@ -1,6 +1,6 @@
 use anyhow::bail;
 use anyhow::Result;
-use bendclaw::kernel::run::fmt::to_chat_messages;
+use bendclaw::execution::fmt::to_chat_messages;
 use bendclaw::kernel::Content;
 use bendclaw::kernel::ErrorSource;
 use bendclaw::kernel::OpType;

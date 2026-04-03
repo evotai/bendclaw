@@ -1,7 +1,7 @@
 use serde_json::Map;
 use serde_json::Value;
 
-use crate::kernel::run::event::Event;
+use crate::execution::event::Event;
 use crate::observability::redaction;
 use crate::observability::server_log::ServerCtx;
 

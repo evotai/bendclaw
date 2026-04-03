@@ -1,5 +1,5 @@
-use crate::kernel::run::event::Event;
-use crate::kernel::run::result::Result as AgentResult;
+use crate::execution::event::Event;
+use crate::execution::result::Result as AgentResult;
 use crate::types::ErrorCode;
 
 /// Session-level: creates a run record and returns the run_id.

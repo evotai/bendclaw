@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::kernel::run::event::Event;
+use crate::execution::event::Event;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::tool_key;
 use crate::llm::tool::ToolSchema;

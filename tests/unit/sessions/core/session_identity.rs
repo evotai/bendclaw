@@ -71,9 +71,7 @@ async fn session_belongs_to_matches_exact_agent_and_user() -> Result<()> {
         )),
         context_provider: std::sync::Arc::new(bendclaw::sessions::backend::noop::NoopBackend),
         run_initializer: std::sync::Arc::new(bendclaw::sessions::backend::noop::NoopBackend),
-        skill_executor: std::sync::Arc::new(
-            bendclaw::kernel::run::execution::skills::NoopSkillExecutor,
-        ),
+        skill_executor: std::sync::Arc::new(bendclaw::execution::skills::NoopSkillExecutor),
     });
 
     assert!(session.belongs_to("a1", "u1"));

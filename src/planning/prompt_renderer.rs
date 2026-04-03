@@ -4,8 +4,8 @@ use std::fmt::Write;
 
 use super::prompt_model::*;
 use super::tool_prompt;
-use crate::kernel::run::default_identity;
-use crate::kernel::run::runtime_context;
+use crate::execution::default_identity;
+use crate::execution::runtime_context;
 
 /// Build a complete system prompt from pre-fetched inputs. Pure, sync, no DB.
 pub fn build_prompt(inputs: PromptInputs) -> String {

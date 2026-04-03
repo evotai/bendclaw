@@ -9,9 +9,9 @@ use async_trait::async_trait;
 
 use super::context::SessionContextProvider;
 use super::sink::RunInitializer;
-use crate::kernel::run::persist::persist_op::PersistOp;
-use crate::kernel::run::persist::persist_op::PersistWriter;
-use crate::kernel::run::usage::UsageScope;
+use crate::execution::persist::persist_op::PersistOp;
+use crate::execution::persist::persist_op::PersistWriter;
+use crate::execution::usage::UsageScope;
 use crate::planning::PromptConfig;
 use crate::sessions::runtime::history_loader::SessionHistoryLoader;
 use crate::sessions::store::SessionStore;

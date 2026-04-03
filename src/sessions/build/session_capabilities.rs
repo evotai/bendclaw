@@ -55,7 +55,7 @@ pub struct RuntimeInfra {
     pub trace_factory: Arc<dyn crate::kernel::trace::factory::TraceFactory>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
     pub trace_writer: crate::kernel::trace::TraceWriter,
-    pub persist_writer: crate::kernel::run::persist::persist_op::PersistWriter,
+    pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
 }
 
 /// Agent-level context: org, config, prompt data, optional services.
@@ -66,7 +66,7 @@ pub struct AgentContext {
     pub directive: Option<Arc<DirectiveService>>,
     pub prompt_config: Option<PromptConfig>,
     pub prompt_variables: Vec<crate::planning::PromptVariable>,
-    pub skill_executor: Arc<dyn crate::kernel::run::execution::skills::SkillExecutor>,
+    pub skill_executor: Arc<dyn crate::execution::skills::SkillExecutor>,
     pub memory_recaller: Option<Arc<dyn MemoryRecaller>>,
 }
 

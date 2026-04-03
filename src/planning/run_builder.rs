@@ -7,12 +7,12 @@ use tokio_util::sync::CancellationToken;
 
 use super::run_deps::RunDeps;
 use super::tool_view::ProgressiveToolView;
-use crate::kernel::run::context::Context;
-use crate::kernel::run::event::Event;
-use crate::kernel::run::execution::compaction::Compactor;
-use crate::kernel::run::execution::llm::Engine;
-use crate::kernel::run::execution::tools::ToolStack;
-use crate::kernel::run::execution::tools::ToolStackConfig;
+use crate::execution::compaction::Compactor;
+use crate::execution::context::Context;
+use crate::execution::event::Event;
+use crate::execution::llm::Engine;
+use crate::execution::tools::ToolStack;
+use crate::execution::tools::ToolStackConfig;
 use crate::kernel::tools::run_labels::RunLabels;
 use crate::kernel::tools::ToolContext;
 use crate::kernel::tools::ToolRuntime;

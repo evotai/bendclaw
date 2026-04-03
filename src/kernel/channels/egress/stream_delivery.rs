@@ -4,10 +4,10 @@ use std::time::Instant;
 
 use tokio_stream::StreamExt;
 
+use crate::execution::event::Delta;
+use crate::execution::event::Event;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
-use crate::kernel::run::event::Delta;
-use crate::kernel::run::event::Event;
 use crate::types::truncate_bytes_on_char_boundary;
 use crate::types::Result;
 

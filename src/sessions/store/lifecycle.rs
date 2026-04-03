@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::kernel::run::persist::persist_op::PersistOp;
-use crate::kernel::run::persist::persist_op::PersistWriter;
+use crate::execution::persist::persist_op::PersistOp;
+use crate::execution::persist::persist_op::PersistWriter;
 use crate::sessions::core::session_manager::SessionManager;
 use crate::sessions::diagnostics;
 use crate::storage::dal::session::record::SessionRecord;

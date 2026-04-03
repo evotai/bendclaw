@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::kernel::run::execution::skills::UsageSink;
+use crate::execution::skills::UsageSink;
 use crate::kernel::skills::definition::skill::Skill;
 use crate::kernel::skills::definition::skill::SkillId;
 use crate::kernel::skills::store::SharedSkillStore;

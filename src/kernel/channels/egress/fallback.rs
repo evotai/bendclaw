@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use super::stream_delivery::StreamDelivery;
 use super::stream_delivery::StreamDeliveryConfig;
+use crate::execution::event::Event;
 use crate::kernel::channels::egress::retry::send_with_retry;
 use crate::kernel::channels::egress::retry::RetryConfig;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
-use crate::kernel::run::event::Event;
 use crate::types::Result;
 
 /// How the message was ultimately delivered.

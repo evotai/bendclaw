@@ -118,11 +118,11 @@ fn four_continuity_models_are_separate_files() {
         "session_memory.rs must exist"
     );
     assert!(
-        Path::new(&format!("{src}/kernel/run/persist/run_handoff.rs")).exists(),
+        Path::new(&format!("{src}/execution/persist/run_handoff.rs")).exists(),
         "run_handoff.rs must exist"
     );
     assert!(
-        Path::new(&format!("{src}/kernel/run/persist/run_cleanup.rs")).exists(),
+        Path::new(&format!("{src}/execution/persist/run_cleanup.rs")).exists(),
         "run_cleanup.rs must exist"
     );
 }

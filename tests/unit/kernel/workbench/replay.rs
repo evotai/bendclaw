@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bendclaw::kernel::run::Event;
+use bendclaw::execution::Event;
 use bendclaw::kernel::tools::operation::OpType;
 use bendclaw::kernel::tools::operation::OperationMeta;
 use bendclaw::kernel::workbench::replay::project_replay;
@@ -148,7 +148,7 @@ fn project_replay_capabilities_from_semantic_event() {
 
 #[test]
 fn project_replay_skips_stream_delta() {
-    let delta = Event::StreamDelta(bendclaw::kernel::run::Delta::Text {
+    let delta = Event::StreamDelta(bendclaw::execution::Delta::Text {
         content: "hello".into(),
     });
     let facts = ReplayFacts {

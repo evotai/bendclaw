@@ -1,5 +1,5 @@
-use bendclaw::kernel::run::execution::memory::pressure::assess;
-use bendclaw::kernel::run::execution::memory::pressure::PressureLevel;
+use bendclaw::execution::memory::pressure::assess;
+use bendclaw::execution::memory::pressure::PressureLevel;
 
 #[test]
 fn normal() {

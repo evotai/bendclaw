@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use bendclaw::kernel::run::execution::skills::SkillExecutor;
-use bendclaw::kernel::run::execution::skills::SkillRunner;
+use bendclaw::execution::skills::SkillExecutor;
+use bendclaw::execution::skills::SkillRunner;
 use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::skills::definition::skill::SkillFile;
 use bendclaw::kernel::skills::definition::skill::SkillScope;

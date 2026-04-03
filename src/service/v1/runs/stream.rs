@@ -1,8 +1,8 @@
 use axum::response::sse::Event as SseEvent;
 
 use super::service::should_skip_event;
-use crate::kernel::run::event::Delta;
-use crate::kernel::run::event::Event;
+use crate::execution::event::Delta;
+use crate::execution::event::Event;
 
 pub fn map_event_to_sse(
     agent_id: &str,

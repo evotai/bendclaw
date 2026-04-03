@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use super::prompt_builder;
 use super::workspace_binding;
 use crate::config::agent::AgentConfig;
-use crate::kernel::run::persist::persist_op::PersistWriter;
+use crate::execution::persist::persist_op::PersistWriter;
 use crate::kernel::tools::tool_services::NoopSecretUsageSink;
 use crate::kernel::trace::TraceWriter;
 use crate::kernel::writer::BackgroundWriter;
@@ -149,8 +149,8 @@ impl SessionBuilder {
             self.runtime.persist_writer.clone(),
         );
 
-        let skill_executor: Arc<dyn crate::kernel::run::execution::skills::SkillExecutor> =
-            Arc::new(crate::kernel::run::execution::skills::SkillRunner::new(
+        let skill_executor: Arc<dyn crate::execution::skills::SkillExecutor> =
+            Arc::new(crate::execution::skills::SkillRunner::new(
                 agent_id,
                 user_id,
                 self.runtime.catalog.clone(),
@@ -220,7 +220,7 @@ impl LocalRuntimeDeps {
             llm: Arc::new(RwLock::new(llm)),
             tool_writer: BackgroundWriter::noop("tool_write"),
             trace_writer: TraceWriter::noop(),
-            persist_writer: crate::kernel::run::persist::persist_op::spawn_persist_writer(),
+            persist_writer: crate::execution::persist::persist_op::spawn_persist_writer(),
         }
     }
 }
@@ -302,7 +302,7 @@ pub fn build_local_assembly(
             directive: None,
             prompt_config: None,
             prompt_variables: vec![],
-            skill_executor: Arc::new(crate::kernel::run::execution::skills::NoopSkillExecutor),
+            skill_executor: Arc::new(crate::execution::skills::NoopSkillExecutor),
             memory_recaller: None,
         },
     })

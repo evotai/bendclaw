@@ -9,15 +9,15 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::paths;
-use crate::kernel::skills::definition::manifest::SkillManifest;
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::definition::skill::SkillParameter;
-use crate::kernel::skills::definition::skill::SkillRequirements;
-use crate::kernel::skills::diagnostics;
-use crate::kernel::skills::fs::is_safe_relative_path;
-use crate::kernel::skills::fs::load_skill_from_dir;
-use crate::kernel::skills::fs::load_skill_with_meta;
-use crate::kernel::skills::fs::LoadedSkill;
+use crate::skills::definition::manifest::SkillManifest;
+use crate::skills::definition::skill::Skill;
+use crate::skills::definition::skill::SkillParameter;
+use crate::skills::definition::skill::SkillRequirements;
+use crate::skills::diagnostics;
+use crate::skills::fs::is_safe_relative_path;
+use crate::skills::fs::load_skill_from_dir;
+use crate::skills::fs::load_skill_with_meta;
+use crate::skills::fs::LoadedSkill;
 
 /// Metadata persisted alongside SKILL.md so that scope, source, user_id,
 /// etc. survive a round-trip through the filesystem mirror.

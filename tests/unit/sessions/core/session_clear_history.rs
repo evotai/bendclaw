@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::sessions::runtime::session_resources::SessionResources;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
 use bendclaw::sessions::Session;
+use bendclaw::skills::sync::SkillIndex;
 use bendclaw::tools::definition::toolset::Toolset;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;

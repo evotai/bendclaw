@@ -3,9 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::skills::definition::sanitizer::sanitize_skill_content;
-use crate::kernel::skills::sync::SkillIndex;
 use crate::observability::log::slog;
+use crate::skills::definition::sanitizer::sanitize_skill_content;
+use crate::skills::sync::SkillIndex;
 use crate::tools::tool_context::ToolContext;
 use crate::tools::tool_contract::OperationClassifier;
 use crate::tools::tool_contract::Tool;

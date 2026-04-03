@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use bendclaw::kernel::skills::sync::SkillIndex;
+use bendclaw::skills::sync::SkillIndex;
 use bendclaw::tools::skills::skill_read::SkillReadTool;
 use bendclaw::tools::OperationClassifier;
 use bendclaw::tools::Tool;

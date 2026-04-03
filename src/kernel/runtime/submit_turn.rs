@@ -4,9 +4,9 @@ use std::time::Instant;
 use crate::kernel::agent_store::AgentStore;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::skills::definition::skill::Skill;
 use crate::llm::config::LLMConfig;
 use crate::observability::redaction;
+use crate::skills::definition::skill::Skill;
 use crate::storage::dal::session::record::SessionRecord;
 use crate::types::Result;
 

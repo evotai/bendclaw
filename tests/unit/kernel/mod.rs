@@ -5,7 +5,6 @@ mod directive;
 mod lease;
 mod memory;
 mod runtime;
-mod skills;
 mod task;
 mod trace;
 mod workbench;

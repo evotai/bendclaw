@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillIndex;
+use bendclaw::skills::sync::SkillIndex;
 use bendclaw::tools::definition::toolset::Toolset;
 use bendclaw::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::tools::ToolId;
@@ -12,12 +12,10 @@ fn make_toolset() -> Toolset {
         .expect("pool: static URL is always valid");
     let dir = std::env::temp_dir().join(format!("bendclaw-reg-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    let skill_store = Arc::new(
-        bendclaw::kernel::skills::store::DatabendSharedSkillStore::new(
-            pool.with_database("evotai_meta")
-                .expect("meta pool for projector"),
-        ),
-    );
+    let skill_store = Arc::new(bendclaw::skills::store::DatabendSharedSkillStore::new(
+        pool.with_database("evotai_meta")
+            .expect("meta pool for projector"),
+    ));
     let projector = Arc::new(SkillIndex::new(
         dir,
         skill_store,

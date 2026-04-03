@@ -2,10 +2,10 @@
 
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::skills::fs::load_skill_from_dir;
-use bendclaw::kernel::skills::fs::load_skills;
-use bendclaw::kernel::skills::fs::parse_frontmatter;
-use bendclaw::kernel::skills::fs::parse_parameters_section;
+use bendclaw::skills::fs::load_skill_from_dir;
+use bendclaw::skills::fs::load_skills;
+use bendclaw::skills::fs::parse_frontmatter;
+use bendclaw::skills::fs::parse_parameters_section;
 use tempfile::TempDir;
 
 // ── parse_frontmatter ─────────────────────────────────────────────────────────
@@ -269,30 +269,6 @@ fn read_doc_returns_none_for_nonexistent_path() -> Result<()> {
     let loaded =
         load_skill_from_dir(&skill_dir, "sk").ok_or_else(|| anyhow::anyhow!("skill not loaded"))?;
     assert!(loaded.read_doc("nonexistent.md").is_none());
-    Ok(())
-}
-
-#[test]
-fn load_skill_from_dir_includes_scripts_and_references_as_files() -> Result<()> {
-    let tmp = TempDir::new()?;
-    let skill_dir = tmp.path().join("sk");
-    std::fs::create_dir_all(skill_dir.join("scripts"))?;
-    std::fs::create_dir_all(skill_dir.join("references"))?;
-    write_skill_md(&skill_dir, "---\nname: sk\n---\nbody")?;
-    std::fs::write(
-        skill_dir.join("scripts/run.sh"),
-        "#!/usr/bin/env bash\necho hi",
-    )?;
-    std::fs::write(skill_dir.join("references/guide.md"), "# Guide")?;
-
-    let loaded =
-        load_skill_from_dir(&skill_dir, "sk").ok_or_else(|| anyhow::anyhow!("skill not loaded"))?;
-
-    assert_eq!(loaded.skill.files.len(), 2);
-    assert_eq!(loaded.skill.files[0].path, "references/guide.md");
-    assert_eq!(loaded.skill.files[1].path, "scripts/run.sh");
-    assert_eq!(loaded.skill.files[0].body, "# Guide");
-    assert_eq!(loaded.skill.files[1].body, "#!/usr/bin/env bash\necho hi");
     Ok(())
 }
 

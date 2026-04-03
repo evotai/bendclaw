@@ -1,6 +1,6 @@
-use bendclaw::kernel::skills::sources::hub::paths;
-use bendclaw::kernel::skills::sources::hub::sync::mark_synced;
-use bendclaw::kernel::skills::sources::hub::sync::should_sync;
+use bendclaw::skills::sources::hub::paths;
+use bendclaw::skills::sources::hub::sync::mark_synced;
+use bendclaw::skills::sources::hub::sync::should_sync;
 use tempfile::TempDir;
 
 #[test]

@@ -5,7 +5,6 @@ pub mod directive;
 pub mod lease;
 pub mod memory;
 pub mod runtime;
-pub mod skills;
 pub mod subscriptions;
 pub mod task;
 pub mod trace;

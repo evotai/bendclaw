@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bendclaw::execution::skills::UsageSink;
-use bendclaw::kernel::skills::definition::skill::Skill;
-use bendclaw::kernel::skills::store::SharedSkillStore;
-use bendclaw::kernel::skills::sync::SkillWriter;
 use bendclaw::kernel::subscriptions::store::Subscription;
 use bendclaw::kernel::subscriptions::store::SubscriptionStore;
+use bendclaw::skills::definition::skill::Skill;
+use bendclaw::skills::store::SharedSkillStore;
+use bendclaw::skills::sync::SkillWriter;
 use parking_lot::Mutex;
 
 /// Skill store that does nothing (for tests that don't need persistence).
@@ -33,7 +33,7 @@ impl SharedSkillStore for NoopSkillStore {
     }
     async fn touch_last_used(
         &self,
-        _id: &bendclaw::kernel::skills::definition::skill::SkillId,
+        _id: &bendclaw::skills::definition::skill::SkillId,
         _agent_id: &str,
     ) -> bendclaw::types::Result<()> {
         Ok(())
@@ -96,7 +96,7 @@ impl SharedSkillStore for MockSkillStore {
 
     async fn touch_last_used(
         &self,
-        _id: &bendclaw::kernel::skills::definition::skill::SkillId,
+        _id: &bendclaw::skills::definition::skill::SkillId,
         _agent_id: &str,
     ) -> bendclaw::types::Result<()> {
         Ok(())
@@ -155,19 +155,12 @@ impl SubscriptionStore for NoopSubscriptionStore {
 pub struct NoopUsageSink;
 
 impl UsageSink for NoopUsageSink {
-    fn touch_used(
-        &self,
-        _id: bendclaw::kernel::skills::definition::skill::SkillId,
-        _agent_id: String,
-    ) {
-    }
+    fn touch_used(&self, _id: bendclaw::skills::definition::skill::SkillId, _agent_id: String) {}
 }
 
 /// Build a test `SkillProjector` backed by a temp directory (no DB needed for hub-only tests).
-pub fn test_skill_projector(
-    workspace_root: PathBuf,
-) -> Arc<bendclaw::kernel::skills::sync::SkillIndex> {
-    Arc::new(bendclaw::kernel::skills::sync::SkillIndex::new(
+pub fn test_skill_projector(workspace_root: PathBuf) -> Arc<bendclaw::skills::sync::SkillIndex> {
+    Arc::new(bendclaw::skills::sync::SkillIndex::new(
         workspace_root,
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -176,9 +169,7 @@ pub fn test_skill_projector(
 }
 
 /// Build a test `SkillWriter` wrapping a catalog with noop stores.
-pub fn test_skill_service(
-    projector: Arc<bendclaw::kernel::skills::sync::SkillIndex>,
-) -> Arc<SkillWriter> {
+pub fn test_skill_service(projector: Arc<bendclaw::skills::sync::SkillIndex>) -> Arc<SkillWriter> {
     Arc::new(SkillWriter::new(
         Arc::new(NoopSkillStore),
         Arc::new(NoopSubscriptionStore),
@@ -189,7 +180,7 @@ pub fn test_skill_service(
 /// Build a test `SkillWriter` with a custom `SharedSkillStore`.
 pub fn test_skill_service_with_store(
     store: Arc<dyn SharedSkillStore>,
-    projector: Arc<bendclaw::kernel::skills::sync::SkillIndex>,
+    projector: Arc<bendclaw::skills::sync::SkillIndex>,
 ) -> Arc<SkillWriter> {
     Arc::new(SkillWriter::new(
         store,

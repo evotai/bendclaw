@@ -16,6 +16,7 @@ mod observability;
 mod planning;
 mod service;
 mod sessions;
+mod skills;
 mod storage;
 mod tools;
 mod types;

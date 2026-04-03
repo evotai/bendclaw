@@ -7,14 +7,14 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillRunner;
-use bendclaw::kernel::skills::definition::skill::Skill;
-use bendclaw::kernel::skills::definition::skill::SkillFile;
-use bendclaw::kernel::skills::definition::skill::SkillScope;
-use bendclaw::kernel::skills::definition::skill::SkillSource;
-use bendclaw::kernel::skills::sync::SkillIndex;
 use bendclaw::kernel::variables::Variable;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
+use bendclaw::skills::definition::skill::Skill;
+use bendclaw::skills::definition::skill::SkillFile;
+use bendclaw::skills::definition::skill::SkillScope;
+use bendclaw::skills::definition::skill::SkillSource;
+use bendclaw::skills::sync::SkillIndex;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 use bendclaw_test_harness::mocks::skill::NoopUsageSink;
@@ -68,7 +68,7 @@ fn make_projector_with_skill(skill: &Skill) -> Arc<SkillIndex> {
 fn make_projector_with_skill_for(skill: &Skill, user_id: &str) -> Arc<SkillIndex> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    bendclaw::kernel::skills::sources::remote::writer::write_skill(&dir, user_id, skill);
+    bendclaw::skills::sources::remote::writer::write_skill(&dir, user_id, skill);
     Arc::new(SkillIndex::new(
         dir,
         Arc::new(NoopSkillStore),
@@ -215,12 +215,10 @@ async fn runner_executes_skill_with_required_env_snapshot() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(
-        bendclaw::kernel::skills::definition::skill::SkillRequirements {
-            bins: vec!["bash".into()],
-            env: vec!["API_TOKEN".into()],
-        },
-    );
+    skill.requires = Some(bendclaw::skills::definition::skill::SkillRequirements {
+        bins: vec!["bash".into()],
+        env: vec!["API_TOKEN".into()],
+    });
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\"".into(),
@@ -254,12 +252,10 @@ async fn runner_executes_python_skill_with_required_env_snapshot() -> Result<()>
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(
-        bendclaw::kernel::skills::definition::skill::SkillRequirements {
-            bins: vec!["python3".into()],
-            env: vec!["API_TOKEN".into()],
-        },
-    );
+    skill.requires = Some(bendclaw::skills::definition::skill::SkillRequirements {
+        bins: vec!["python3".into()],
+        env: vec!["API_TOKEN".into()],
+    });
     skill.files = vec![SkillFile {
         path: "scripts/run.py".into(),
         body: "import os, sys\nsys.stdin.read()\nprint(os.environ['API_TOKEN'])".into(),
@@ -292,12 +288,10 @@ async fn runner_missing_required_env_returns_error() -> Result<()> {
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(
-        bendclaw::kernel::skills::definition::skill::SkillRequirements {
-            bins: vec![],
-            env: vec!["API_TOKEN".into()],
-        },
-    );
+    skill.requires = Some(bendclaw::skills::definition::skill::SkillRequirements {
+        bins: vec![],
+        env: vec!["API_TOKEN".into()],
+    });
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\nprintf 'ok'".into(),
@@ -335,12 +329,10 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
     skill.created_by = Some("u1".into());
     skill.last_used_by = None;
     skill.executable = true;
-    skill.requires = Some(
-        bendclaw::kernel::skills::definition::skill::SkillRequirements {
-            bins: vec!["bash".into()],
-            env: vec!["API_TOKEN".into()],
-        },
-    );
+    skill.requires = Some(bendclaw::skills::definition::skill::SkillRequirements {
+        bins: vec!["bash".into()],
+        env: vec!["API_TOKEN".into()],
+    });
     skill.files = vec![SkillFile {
         path: "scripts/run.sh".into(),
         body: "#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$API_TOKEN\"".into(),
@@ -389,7 +381,7 @@ fn make_projector_with_subscribed_skill(
 ) -> Arc<SkillIndex> {
     let dir = std::env::temp_dir().join(format!("bendclaw-runner-{}", ulid::Ulid::new()));
     let _ = std::fs::create_dir_all(&dir);
-    bendclaw::kernel::skills::sources::remote::writer::write_subscribed_skill(
+    bendclaw::skills::sources::remote::writer::write_subscribed_skill(
         &dir, subscriber, owner, skill,
     );
     Arc::new(SkillIndex::new(
@@ -464,7 +456,7 @@ async fn runner_subscribed_skill_not_accessible_via_bare_name() -> Result<()> {
 // ── UsageSink contract ──
 
 use bendclaw::execution::skills::UsageSink;
-use bendclaw::kernel::skills::definition::skill::SkillId;
+use bendclaw::skills::definition::skill::SkillId;
 use parking_lot::Mutex;
 
 struct RecordingSink {

@@ -97,11 +97,7 @@ fn sanitize(input: &str) -> SanitizeResult {
             continue;
         }
 
-        crate::kernel::skills::diagnostics::log_skill_sanitizer_detected(
-            p.label,
-            p.description,
-            p.needle,
-        );
+        crate::skills::diagnostics::log_skill_sanitizer_detected(p.label, p.description, p.needle);
 
         warnings.push(SanitizeWarning {
             pattern: p.label,
@@ -128,7 +124,7 @@ fn sanitize(input: &str) -> SanitizeResult {
         result.push_str(&content[search_start..]);
         content = result;
 
-        crate::kernel::skills::diagnostics::log_skill_sanitizer_replaced(p.label, match_count);
+        crate::skills::diagnostics::log_skill_sanitizer_replaced(p.label, match_count);
     }
 
     SanitizeResult { content, warnings }

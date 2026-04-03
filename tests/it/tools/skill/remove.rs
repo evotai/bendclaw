@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::skills::sync::SkillIndex;
+use bendclaw::skills::sync::SkillIndex;
 use bendclaw::tools::skills::skill_remove::SkillRemoveTool;
 use bendclaw::tools::Tool;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;

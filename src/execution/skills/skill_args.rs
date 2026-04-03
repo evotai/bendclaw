@@ -1,6 +1,6 @@
 //! Skill argument parsing for tool call dispatch.
 
-use crate::kernel::skills::diagnostics;
+use crate::skills::diagnostics;
 
 /// Parse JSON tool call arguments into CLI args for the skill executor.
 pub fn parse_skill_args(skill_name: &str, arguments: &str) -> Vec<String> {

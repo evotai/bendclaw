@@ -21,12 +21,12 @@ use crate::kernel::runtime::runtime_parts::RuntimeParts;
 use crate::kernel::runtime::runtime_parts::RuntimeStatus;
 use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::ActivityTracker;
-use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::store::lifecycle::SessionLifecycle;
 use crate::sessions::SessionManager;
+use crate::skills::sync::SkillIndex;
 use crate::storage::pool::Pool;
 use crate::types::Result;
 
@@ -113,10 +113,9 @@ pub(super) async fn construct(
     let sync_cancel = CancellationToken::new();
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let skill_store_for_catalog =
-        Arc::new(crate::kernel::skills::store::DatabendSharedSkillStore::new(
-            pool.with_database("evotai_meta")?,
-        ));
+    let skill_store_for_catalog = Arc::new(crate::skills::store::DatabendSharedSkillStore::new(
+        pool.with_database("evotai_meta")?,
+    ));
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::new(
         pool.with_database("evotai_meta")?,
     ));
@@ -232,7 +231,7 @@ pub(super) async fn construct(
                         let user_ids = match sync_databases.list_user_ids().await {
                             Ok(ids) => ids,
                             Err(e) => {
-                                crate::kernel::skills::diagnostics::log_skill_sync_failed(&e, consecutive_errors + 1);
+                                crate::skills::diagnostics::log_skill_sync_failed(&e, consecutive_errors + 1);
                                 consecutive_errors += 1;
                                 let secs = (60u64 << (consecutive_errors - 1).min(3)).min(300);
                                 next_sleep = std::time::Duration::from_secs(secs);
@@ -247,7 +246,7 @@ pub(super) async fn construct(
                                     had_error = true;
                                 }
                                 if consecutive_errors == 1 || consecutive_errors.is_multiple_of(20) {
-                                    crate::kernel::skills::diagnostics::log_skill_sync_failed(&e, consecutive_errors);
+                                    crate::skills::diagnostics::log_skill_sync_failed(&e, consecutive_errors);
                                 }
                             }
                         }
@@ -283,7 +282,7 @@ pub(super) async fn construct_minimal(
     )?);
 
     let workspace_root = Path::new(&config.workspace.root_dir);
-    let skill_store = Arc::new(crate::kernel::skills::store::DatabendSharedSkillStore::noop());
+    let skill_store = Arc::new(crate::skills::store::DatabendSharedSkillStore::noop());
     let sub_store: Arc<dyn SubscriptionStore> = Arc::new(SharedSubscriptionStore::noop());
     let catalog = Arc::new(SkillIndex::new(
         workspace_root.to_path_buf(),

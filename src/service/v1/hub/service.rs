@@ -1,6 +1,6 @@
-use crate::kernel::skills::definition::manifest::CredentialSpec;
-use crate::kernel::skills::definition::skill::Skill;
 use crate::service::state::AppState;
+use crate::skills::definition::manifest::CredentialSpec;
+use crate::skills::definition::skill::Skill;
 
 pub(super) fn list_hub_skills(state: &AppState) -> Vec<Skill> {
     state.runtime.org().catalog().hub_skills()

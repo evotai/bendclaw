@@ -1,8 +1,8 @@
 //! Tests for `SkillScope`, `SkillSource`, and `Skill::is_visible_to`.
 
-use bendclaw::kernel::skills::definition::skill::Skill;
-use bendclaw::kernel::skills::definition::skill::SkillScope;
-use bendclaw::kernel::skills::definition::skill::SkillSource;
+use bendclaw::skills::definition::skill::Skill;
+use bendclaw::skills::definition::skill::SkillScope;
+use bendclaw::skills::definition::skill::SkillSource;
 
 fn make_skill(scope: SkillScope, user_id: &str, created_by: Option<&str>) -> Skill {
     Skill {
@@ -151,7 +151,7 @@ fn loader_sets_shared_scope_and_local_source() -> Result<(), Box<dyn std::error:
         "---\nname: my-skill\nversion: 1.0.0\ndescription: d\n---\nbody",
     )?;
 
-    let loaded = bendclaw::kernel::skills::fs::load_skill_from_dir(&skill_dir, "my-skill")
+    let loaded = bendclaw::skills::fs::load_skill_from_dir(&skill_dir, "my-skill")
         .ok_or("failed to load skill")?;
     assert_eq!(loaded.skill.scope, SkillScope::Shared);
     assert_eq!(loaded.skill.source, SkillSource::Local);

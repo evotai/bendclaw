@@ -12,17 +12,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::HubConfig;
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::definition::skill::SkillScope;
-use crate::kernel::skills::definition::skill::SkillSource;
-use crate::kernel::skills::definition::tool_key;
-use crate::kernel::skills::diagnostics;
-use crate::kernel::skills::fs::load_skill_tree;
-use crate::kernel::skills::fs::LoadedSkill;
-use crate::kernel::skills::sources::hub;
-use crate::kernel::skills::sources::remote;
-use crate::kernel::skills::store::SharedSkillStore;
 use crate::kernel::subscriptions::SubscriptionStore;
+use crate::skills::definition::skill::Skill;
+use crate::skills::definition::skill::SkillScope;
+use crate::skills::definition::skill::SkillSource;
+use crate::skills::definition::tool_key;
+use crate::skills::diagnostics;
+use crate::skills::fs::load_skill_tree;
+use crate::skills::fs::LoadedSkill;
+use crate::skills::sources::hub;
+use crate::skills::sources::remote;
+use crate::skills::store::SharedSkillStore;
 use crate::types::Result;
 
 pub struct SkillIndex {
@@ -308,7 +308,7 @@ impl SkillIndex {
 
     fn load_hub_skills(&self) -> Vec<LoadedSkill> {
         let hub_dir = hub::paths::hub_dir(&self.workspace_root);
-        crate::kernel::skills::fs::load_skills(&hub_dir)
+        crate::skills::fs::load_skills(&hub_dir)
     }
 
     fn load_from_dir(dir: &Path) -> Vec<LoadedSkill> {

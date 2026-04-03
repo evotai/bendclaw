@@ -5,5 +5,6 @@ mod kernel;
 mod llm;
 mod mocks;
 mod service;
+mod skills;
 mod storage;
 mod tools;

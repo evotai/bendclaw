@@ -7,6 +7,7 @@ pub mod llm;
 pub mod observability;
 pub mod service;
 pub mod sessions;
+pub mod skills;
 pub mod storage;
 pub mod tools;
 pub mod tracing_fmt;

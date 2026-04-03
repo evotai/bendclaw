@@ -7,15 +7,15 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-use crate::kernel::skills::definition::manifest::SkillManifest;
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::definition::skill::SkillFile;
-use crate::kernel::skills::definition::skill::SkillParameter;
-use crate::kernel::skills::definition::skill::SkillRequirements;
-use crate::kernel::skills::definition::skill::SkillScope;
-use crate::kernel::skills::definition::skill::SkillSource;
-use crate::kernel::skills::diagnostics;
-use crate::kernel::skills::sources::remote::writer::SkillMeta;
+use crate::skills::definition::manifest::SkillManifest;
+use crate::skills::definition::skill::Skill;
+use crate::skills::definition::skill::SkillFile;
+use crate::skills::definition::skill::SkillParameter;
+use crate::skills::definition::skill::SkillRequirements;
+use crate::skills::definition::skill::SkillScope;
+use crate::skills::definition::skill::SkillSource;
+use crate::skills::diagnostics;
+use crate::skills::sources::remote::writer::SkillMeta;
 
 // ── LoadedSkill ───────────────────────────────────────────────────────────────
 

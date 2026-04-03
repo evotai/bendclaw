@@ -18,10 +18,10 @@ use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
-use crate::kernel::skills::sync::SkillIndex;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::store::lifecycle::SessionLifecycle;
 use crate::sessions::SessionManager;
+use crate::skills::sync::SkillIndex;
 use crate::storage::pool::Pool;
 
 pub struct Runtime {

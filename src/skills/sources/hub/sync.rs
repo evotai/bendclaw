@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use super::paths;
-use crate::kernel::skills::diagnostics;
+use crate::skills::diagnostics;
 
 const DEFAULT_REPO_URL: &str = "https://github.com/EvotAI/skills";
 

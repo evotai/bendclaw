@@ -1,8 +1,8 @@
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::skills::definition::skill::Skill;
-use bendclaw::kernel::skills::definition::skill::SkillParameter;
-use bendclaw::kernel::skills::definition::skill::SkillRequirements;
+use bendclaw::skills::definition::skill::Skill;
+use bendclaw::skills::definition::skill::SkillParameter;
+use bendclaw::skills::definition::skill::SkillRequirements;
 
 #[test]
 fn test_default_timeout_is_30() -> Result<()> {

@@ -5,11 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::definition::skill::SkillFile;
-use crate::kernel::skills::definition::skill::SkillScope;
-use crate::kernel::skills::definition::skill::SkillSource;
-use crate::kernel::skills::sync::SkillWriter;
+use crate::skills::definition::skill::Skill;
+use crate::skills::definition::skill::SkillFile;
+use crate::skills::definition::skill::SkillScope;
+use crate::skills::definition::skill::SkillSource;
+use crate::skills::sync::SkillWriter;
 use crate::tools::tool_context::ToolContext;
 use crate::tools::tool_contract::OperationClassifier;
 use crate::tools::tool_contract::Tool;
@@ -129,7 +129,7 @@ impl Tool for SkillCreateTool {
             last_used_by: None,
             timeout,
             executable: true,
-            parameters: crate::kernel::skills::fs::parse_parameters_section(&content),
+            parameters: crate::skills::fs::parse_parameters_section(&content),
             content,
             files,
             requires: None,

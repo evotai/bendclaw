@@ -5,8 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::sync::SkillWriter;
+use crate::skills::definition::skill::Skill;
+use crate::skills::sync::SkillWriter;
 use crate::tools::tool_context::ToolContext;
 use crate::tools::tool_contract::OperationClassifier;
 use crate::tools::tool_contract::Tool;
@@ -71,8 +71,7 @@ impl Tool for SkillRemoveTool {
             .unwrap_or("")
             .to_string();
 
-        let (owner, bare_name) =
-            crate::kernel::skills::definition::tool_key::parse(&name, &ctx.user_id);
+        let (owner, bare_name) = crate::skills::definition::tool_key::parse(&name, &ctx.user_id);
 
         // Validate bare name in all cases
         if let Err(e) = Skill::validate_name(bare_name) {

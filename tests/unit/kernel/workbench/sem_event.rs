@@ -1,11 +1,11 @@
 use anyhow::bail;
 use anyhow::Result;
 use bendclaw::execution::Event;
-use bendclaw::kernel::skills::definition::skill::Skill;
 use bendclaw::kernel::workbench::sem_event::capture_capabilities;
 use bendclaw::kernel::workbench::sem_event::SemEvent;
 use bendclaw::llm::tool::FunctionDef;
 use bendclaw::llm::tool::ToolSchema;
+use bendclaw::skills::definition::skill::Skill;
 
 // ── SemEvent serde ──
 

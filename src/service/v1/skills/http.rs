@@ -5,15 +5,15 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::service;
-use crate::kernel::skills::definition::manifest::SkillManifest;
-use crate::kernel::skills::definition::skill::Skill;
-use crate::kernel::skills::definition::skill::SkillFile;
-use crate::kernel::skills::definition::skill::SkillParameter;
-use crate::kernel::skills::definition::skill::SkillRequirements;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;
+use crate::skills::definition::manifest::SkillManifest;
+use crate::skills::definition::skill::Skill;
+use crate::skills::definition::skill::SkillFile;
+use crate::skills::definition::skill::SkillParameter;
+use crate::skills::definition::skill::SkillRequirements;
 
 #[derive(Serialize)]
 pub struct SkillResponse {
@@ -35,7 +35,7 @@ pub struct SkillResponse {
 
 fn to_response(s: &Skill, viewer_id: &str) -> SkillResponse {
     SkillResponse {
-        name: crate::kernel::skills::definition::tool_key::format(s, viewer_id),
+        name: crate::skills::definition::tool_key::format(s, viewer_id),
         owner_id: s.user_id.clone(),
         version: s.version.clone(),
         scope: s.scope.as_str().to_string(),

@@ -11,6 +11,7 @@ pub mod recovery_gate;
 pub mod run_binding;
 pub mod session_binding;
 pub mod session_builder;
+pub mod submit;
 pub mod workspace_binding;
 
 use async_trait::async_trait;

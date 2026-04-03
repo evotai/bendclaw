@@ -15,10 +15,10 @@ use super::http::RunEventResponse;
 use super::http::RunResponse;
 use super::http::RunsQuery;
 use super::stream;
+use crate::binding::submit::SubmitResult;
 use crate::execution::event::Delta;
 use crate::execution::event::Event;
 use crate::observability::log::slog;
-use crate::runtime::SubmitResult;
 use crate::server::context::RequestContext;
 use crate::server::error::Result;
 use crate::server::error::ServiceError;
@@ -164,20 +164,19 @@ pub async fn execute_run(
         .ensure_direct(&agent_id, &ctx.user_id, &session_id)
         .await?;
 
-    let submit = state
-        .runtime
-        .submit_turn(
-            &agent_id,
-            &session_id,
-            &ctx.user_id,
-            &input,
-            &ctx.trace_id,
-            parent_run_id.as_deref(),
-            &ctx.parent_trace_id,
-            &ctx.origin_node_id,
-            is_remote_dispatch,
-        )
-        .await?;
+    let submit = crate::binding::submit::submit_turn(
+        &state.runtime,
+        &agent_id,
+        &session_id,
+        &ctx.user_id,
+        &input,
+        &ctx.trace_id,
+        parent_run_id.as_deref(),
+        &ctx.parent_trace_id,
+        &ctx.origin_node_id,
+        is_remote_dispatch,
+    )
+    .await?;
     let mut run_stream = match submit {
         SubmitResult::Started { stream, .. } => stream,
         SubmitResult::Control { message } => {

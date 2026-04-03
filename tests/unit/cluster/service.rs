@@ -5,7 +5,7 @@ use bendclaw::client::BendclawClient;
 use bendclaw::client::ClusterClient;
 use bendclaw::client::NodeEntry;
 use bendclaw::client::NodeMeta;
-use bendclaw::kernel::cluster::ClusterService;
+use bendclaw::cluster::ClusterService;
 
 fn make_service() -> Arc<ClusterService> {
     let cc = Arc::new(ClusterClient::new(

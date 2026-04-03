@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bendclaw::kernel::writer::BackgroundWriter;
+use bendclaw::writer::BackgroundWriter;
 
 #[tokio::test]
 async fn processes_ops_in_order() {

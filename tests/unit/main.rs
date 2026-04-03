@@ -1,17 +1,21 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod agent_store;
 mod app;
 mod architecture;
 mod binding;
 mod boundary;
 mod channels;
 mod cli;
+mod cluster;
 mod config;
 mod config_cluster;
 mod config_directive;
+mod directive;
 mod execution;
 mod kernel;
+mod lease;
 mod llm;
 mod memory;
 mod observability;
@@ -25,3 +29,5 @@ mod tools;
 mod traces;
 mod types;
 mod version;
+mod workbench;
+mod writer;

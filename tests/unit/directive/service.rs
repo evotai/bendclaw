@@ -6,7 +6,7 @@ use axum::routing::get;
 use axum::Json;
 use axum::Router;
 use bendclaw::client::DirectiveClient;
-use bendclaw::kernel::directive::DirectiveService;
+use bendclaw::directive::DirectiveService;
 use parking_lot::RwLock;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;

@@ -1,4 +1,4 @@
-use bendclaw::kernel::lease::LeaseResource;
+use bendclaw::lease::LeaseResource;
 use bendclaw::tasks::lease::TaskLeaseResource;
 
 use crate::common::fake_databend::paged_rows;

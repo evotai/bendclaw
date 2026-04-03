@@ -1,9 +1,9 @@
 //! Background writer for channel messages — fire-and-forget persistence.
 
 use crate::channels::runtime::diagnostics;
-use crate::kernel::writer::BackgroundWriter;
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
+use crate::writer::BackgroundWriter;
 
 pub enum ChannelMessageOp {
     Insert {

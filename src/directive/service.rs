@@ -5,7 +5,7 @@ use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::client::DirectiveClient;
-use crate::kernel::directive::diagnostics;
+use crate::directive::diagnostics;
 use crate::types::Result;
 
 /// Runtime-owned directive cache.

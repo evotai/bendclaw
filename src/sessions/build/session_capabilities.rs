@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 
 use crate::config::agent::AgentConfig;
-use crate::kernel::directive::DirectiveService;
+use crate::directive::DirectiveService;
 use crate::llm::provider::LLMProvider;
 use crate::planning::PromptConfig;
 use crate::planning::PromptResolver;
@@ -53,7 +53,7 @@ pub struct SessionCore {
 pub struct RuntimeInfra {
     pub store: Arc<dyn crate::sessions::store::SessionStore>,
     pub trace_factory: Arc<dyn crate::traces::factory::TraceFactory>,
-    pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub tool_writer: crate::writer::tool_op::ToolWriter,
     pub trace_writer: crate::traces::TraceWriter,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
 }
@@ -62,7 +62,7 @@ pub struct RuntimeInfra {
 pub struct AgentContext {
     pub org: Arc<dyn crate::kernel::runtime::session_org::SessionOrgServices>,
     pub config: Arc<AgentConfig>,
-    pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
+    pub cluster_client: Option<Arc<crate::cluster::ClusterService>>,
     pub directive: Option<Arc<DirectiveService>>,
     pub prompt_config: Option<PromptConfig>,
     pub prompt_variables: Vec<crate::planning::PromptVariable>,

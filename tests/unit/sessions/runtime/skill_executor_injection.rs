@@ -69,9 +69,9 @@ fn build_assembly_with_mock(executor: Arc<dyn SkillExecutor>) -> SessionAssembly
                 std::path::PathBuf::from("/tmp/test-session-store"),
             )),
             trace_factory: Arc::new(NoopTraceFactory),
-            tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+            tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
             trace_writer: bendclaw::traces::TraceWriter::noop(),
-            persist_writer: bendclaw::kernel::writer::BackgroundWriter::noop("persist"),
+            persist_writer: bendclaw::writer::BackgroundWriter::noop("persist"),
         },
         agent: AgentContext {
             org: Arc::new(LocalOrgServices),

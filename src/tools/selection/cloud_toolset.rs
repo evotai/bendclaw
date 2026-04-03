@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::channels::runtime::channel_registry::ChannelRegistry;
-use crate::kernel::cluster::ClusterService;
-use crate::kernel::cluster::DispatchTable;
+use crate::cluster::ClusterService;
+use crate::cluster::DispatchTable;
 use crate::memory::MemoryService;
 use crate::storage::Pool;
 use crate::tools::definition::tool_definition::ToolDefinition;

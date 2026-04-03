@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::kernel::subscriptions::SubscriptionStore;
-use crate::kernel::variables::store::Variable;
-use crate::kernel::variables::store::VariableStore;
+use crate::subscriptions::SubscriptionStore;
 use crate::types::Result;
+use crate::variables::store::Variable;
+use crate::variables::store::VariableStore;
 
 pub struct VariableService {
     store: Arc<dyn VariableStore>,

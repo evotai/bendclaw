@@ -78,8 +78,8 @@ impl From<crate::storage::dal::variable::record::VariableRecord> for PromptVaria
     }
 }
 
-impl From<&crate::kernel::variables::Variable> for PromptVariable {
-    fn from(value: &crate::kernel::variables::Variable) -> Self {
+impl From<&crate::variables::Variable> for PromptVariable {
+    fn from(value: &crate::variables::Variable) -> Self {
         Self {
             key: value.key.clone(),
             value: value.value.clone(),

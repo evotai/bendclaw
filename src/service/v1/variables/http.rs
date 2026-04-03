@@ -6,11 +6,11 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::service;
-use crate::kernel::variables::store::Variable;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 use crate::service::v1::common::ListQuery;
+use crate::variables::store::Variable;
 
 #[derive(Serialize)]
 pub struct VariableResponse {

@@ -12,7 +12,7 @@ pub struct RunDeps {
     pub workspace: Arc<crate::sessions::workspace::Workspace>,
     pub toolset: Toolset,
     pub skill_executor: Arc<dyn SkillExecutor>,
-    pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub tool_writer: crate::writer::tool_op::ToolWriter,
     pub extract_memory: Option<Arc<MemoryService>>,
     pub before_turn_hook: Option<Arc<dyn BeforeTurnHook>>,
     pub steering_source: Option<Arc<dyn SteeringSource>>,

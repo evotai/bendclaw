@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::kernel::agent_store::AgentStore;
+use crate::agent_store::AgentStore;
 use crate::kernel::runtime::org::OrgServices;
 use crate::planning::prompt_model::PromptConfig;
 use crate::planning::prompt_model::PromptSeed;
@@ -25,8 +25,8 @@ pub struct CloudPromptResolverConfig {
     pub variables: Vec<PromptVariable>,
     pub prompt_config: Option<PromptConfig>,
     pub cwd: PathBuf,
-    pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
-    pub directive: Option<Arc<crate::kernel::directive::DirectiveService>>,
+    pub cluster_client: Option<Arc<crate::cluster::ClusterService>>,
+    pub directive: Option<Arc<crate::directive::DirectiveService>>,
     pub memory_enabled: bool,
     pub memory_recall_budget: usize,
     pub agent_id: String,

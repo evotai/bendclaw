@@ -15,7 +15,7 @@ use bendclaw::channels::runtime::channel_trait::ChannelPlugin;
 use bendclaw::channels::runtime::channel_trait::InboundKind;
 use bendclaw::channels::runtime::channel_trait::ReceiverFactory;
 use bendclaw::channels::runtime::supervisor::ChannelSupervisor;
-use bendclaw::kernel::lease::LeaseResource;
+use bendclaw::lease::LeaseResource;
 use bendclaw::storage::pool::QueryResponse;
 use bendclaw::storage::AgentDatabases;
 
@@ -284,7 +284,7 @@ async fn on_acquired_starts_supervisor() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
@@ -323,7 +323,7 @@ async fn on_released_stops_supervisor() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool: pool.clone(),
         lease_token: Some("tok-1".to_string()),
@@ -370,7 +370,7 @@ async fn is_healthy_reflects_supervisor_state() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
@@ -435,7 +435,7 @@ async fn is_healthy_returns_false_when_config_changed() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
@@ -482,7 +482,7 @@ async fn is_healthy_returns_true_when_config_unchanged() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
@@ -523,7 +523,7 @@ async fn is_healthy_returns_false_when_disconnected() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),
@@ -565,7 +565,7 @@ async fn is_healthy_returns_false_when_stale() {
         entries[0].pool.clone()
     };
 
-    let entry = bendclaw::kernel::lease::ResourceEntry {
+    let entry = bendclaw::lease::ResourceEntry {
         id: "acct-1".to_string(),
         pool,
         lease_token: Some("tok-1".to_string()),

@@ -167,7 +167,7 @@ pub struct TestNodeOptions {
     pub auth_key: String,
     pub llm: Arc<dyn bendclaw::llm::provider::LLMProvider>,
     pub cluster: Option<bendclaw::config::ClusterConfig>,
-    pub cluster_options: bendclaw::kernel::cluster::ClusterOptions,
+    pub cluster_options: bendclaw::cluster::ClusterOptions,
 }
 
 pub struct TestNode {

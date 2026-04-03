@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::HubConfig;
-use crate::kernel::subscriptions::SubscriptionStore;
 use crate::skills::definition::skill::Skill;
 use crate::skills::definition::skill::SkillScope;
 use crate::skills::definition::skill::SkillSource;
@@ -23,6 +22,7 @@ use crate::skills::fs::LoadedSkill;
 use crate::skills::sources::hub;
 use crate::skills::sources::remote;
 use crate::skills::store::SharedSkillStore;
+use crate::subscriptions::SubscriptionStore;
 use crate::types::Result;
 
 pub struct SkillIndex {

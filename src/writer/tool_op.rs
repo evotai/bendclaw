@@ -1,4 +1,4 @@
-use crate::kernel::writer::BackgroundWriter;
+use crate::writer::BackgroundWriter;
 
 pub enum ToolWriteOp {}
 

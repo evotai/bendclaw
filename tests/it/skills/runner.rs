@@ -7,7 +7,6 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillRunner;
-use bendclaw::kernel::variables::Variable;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
 use bendclaw::skills::definition::skill::Skill;
@@ -15,6 +14,7 @@ use bendclaw::skills::definition::skill::SkillFile;
 use bendclaw::skills::definition::skill::SkillScope;
 use bendclaw::skills::definition::skill::SkillSource;
 use bendclaw::skills::sync::SkillIndex;
+use bendclaw::variables::Variable;
 use bendclaw_test_harness::mocks::skill::NoopSkillStore;
 use bendclaw_test_harness::mocks::skill::NoopSubscriptionStore;
 use bendclaw_test_harness::mocks::skill::NoopUsageSink;
@@ -345,7 +345,7 @@ async fn runner_updates_last_used_for_consumed_secret_variables() -> Result<()> 
         secret: true,
         revoked: false,
         user_id: String::new(),
-        scope: bendclaw::kernel::variables::VariableScope::Shared,
+        scope: bendclaw::variables::VariableScope::Shared,
         created_by: String::new(),
         last_used_at: None,
         last_used_by: None,

@@ -138,7 +138,7 @@ impl<'a> SessionRunCoordinator<'a> {
                 payload.insert("prompt".to_string(), serde_json::json!(full_prompt.clone()));
                 audit::event_from_map("prompt.built", payload)
             },
-            crate::kernel::workbench::sem_event::capture_capabilities(
+            crate::workbench::sem_event::capture_capabilities(
                 self.resources.toolset.tools.as_ref(),
                 &self.resources.org.list_skills(self.user_id),
                 self.user_id,

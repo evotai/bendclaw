@@ -5,11 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::agent::AgentConfig;
-use crate::kernel::variables::Variable;
 use crate::llm::tool::ToolSchema;
 use crate::sessions::workspace::OpenResolver;
 use crate::sessions::workspace::SandboxResolver;
 use crate::sessions::workspace::Workspace;
+use crate::variables::Variable;
 
 /// Build workspace from a pre-computed workspace_dir + config policy.
 /// Both local and cloud assemblers call this — policy (sandbox, resolver, timeouts)

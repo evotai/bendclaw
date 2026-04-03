@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::kernel::lease::types::LeaseResource;
-use crate::kernel::lease::types::ReleaseFn;
-use crate::kernel::lease::types::ResourceEntry;
 use crate::kernel::runtime::Runtime;
+use crate::lease::types::LeaseResource;
+use crate::lease::types::ReleaseFn;
+use crate::lease::types::ResourceEntry;
 use crate::storage::dal::task::repo::TaskRepo;
 use crate::storage::pool::Pool;
 use crate::tasks::diagnostics;

@@ -47,6 +47,6 @@ pub fn test_tool_context() -> ToolContext {
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
         },
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     }
 }

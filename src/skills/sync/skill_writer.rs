@@ -7,11 +7,11 @@
 use std::sync::Arc;
 
 use crate::execution::skills::UsageSink;
-use crate::kernel::subscriptions::SubscriptionStore;
 use crate::skills::definition::skill::Skill;
 use crate::skills::definition::skill::SkillId;
 use crate::skills::store::SharedSkillStore;
 use crate::skills::sync::SkillIndex;
+use crate::subscriptions::SubscriptionStore;
 use crate::types::Result;
 
 pub struct SkillWriter {

@@ -13,7 +13,6 @@ use super::prompt_builder;
 use super::workspace_binding;
 use crate::config::agent::AgentConfig;
 use crate::execution::persist::persist_op::PersistWriter;
-use crate::kernel::writer::BackgroundWriter;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::build::backend_builder;
 use crate::sessions::build::infra_builder;
@@ -21,14 +20,15 @@ use crate::sessions::build::session_capabilities::*;
 use crate::tools::tool_services::NoopSecretUsageSink;
 use crate::traces::TraceWriter;
 use crate::types::Result;
+use crate::writer::BackgroundWriter;
 
-type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
+type ToolWriter = BackgroundWriter<crate::writer::tool_op::ToolWriteOp>;
 
 // ═══════════════════════════════════════════════════════════════════
 //  Cloud session building
 // ═══════════════════════════════════════════════════════════════════
 
-use crate::kernel::agent_store::AgentStore;
+use crate::agent_store::AgentStore;
 use crate::kernel::runtime::Runtime;
 use crate::planning::PromptConfig;
 use crate::planning::PromptVariable;

@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use bendclaw::kernel::lease::LeaseResource;
-use bendclaw::kernel::lease::LeaseServiceBuilder;
-use bendclaw::kernel::lease::ResourceEntry;
+use bendclaw::lease::LeaseResource;
+use bendclaw::lease::LeaseServiceBuilder;
+use bendclaw::lease::ResourceEntry;
 use bendclaw::storage::Pool;
 use bendclaw::types::Result;
 use tokio_util::sync::CancellationToken;
@@ -443,7 +443,7 @@ async fn release_fn_updates_counter_and_calls_on_released() {
 
     struct ReleaseFnCapture {
         inner: Arc<FakeResource>,
-        release_fns: Arc<Mutex<Vec<bendclaw::kernel::lease::ReleaseFn>>>,
+        release_fns: Arc<Mutex<Vec<bendclaw::lease::ReleaseFn>>>,
     }
 
     #[async_trait]
@@ -473,8 +473,7 @@ async fn release_fn_updates_counter_and_calls_on_released() {
 
     let inner = FakeResource::new(pool);
     inner.set_entries(vec![inner.entry("res-1")]);
-    let release_fns: Arc<Mutex<Vec<bendclaw::kernel::lease::ReleaseFn>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let release_fns: Arc<Mutex<Vec<bendclaw::lease::ReleaseFn>>> = Arc::new(Mutex::new(Vec::new()));
 
     let wrapper = Arc::new(ReleaseFnCapture {
         inner: inner.clone(),

@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use super::prompt_contract::PromptResolver;
 use super::prompt_model::*;
 use super::prompt_renderer::build_prompt;
-use crate::kernel::agent_store::AgentStore;
-use crate::kernel::cluster::ClusterService;
+use crate::agent_store::AgentStore;
+use crate::cluster::ClusterService;
 use crate::kernel::runtime::org::OrgServices;
 use crate::planning::prompt_diagnostics;
 use crate::tools::definition::tool_definition::ToolDefinition;
@@ -32,7 +32,7 @@ pub struct CloudPromptLoader {
     tools: Option<Arc<Vec<ToolDefinition>>>,
     variables: Option<Vec<PromptVariable>>,
     cluster_client: Option<Arc<ClusterService>>,
-    directive: Option<Arc<crate::kernel::directive::DirectiveService>>,
+    directive: Option<Arc<crate::directive::DirectiveService>>,
     cached_config: Option<PromptConfig>,
     memory_enabled: bool,
     memory_recall_budget: usize,
@@ -51,7 +51,7 @@ impl CloudPromptLoader {
         cached_config: Option<PromptConfig>,
         cwd: PathBuf,
         cluster_client: Option<Arc<ClusterService>>,
-        directive: Option<Arc<crate::kernel::directive::DirectiveService>>,
+        directive: Option<Arc<crate::directive::DirectiveService>>,
         memory_enabled: bool,
         memory_recall_budget: usize,
         agent_id: String,

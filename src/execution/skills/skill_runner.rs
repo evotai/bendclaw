@@ -8,8 +8,6 @@ use serde_json::json;
 use super::skill_executor::SkillExecutor;
 use super::skill_executor::SkillOutput;
 use super::usage_sink::UsageSink;
-use crate::kernel::variables::store::SharedVariableStore;
-use crate::kernel::variables::store::VariableStore;
 use crate::sessions::workspace::Workspace;
 use crate::skills::definition::skill::Skill;
 use crate::skills::diagnostics;
@@ -17,6 +15,8 @@ use crate::skills::sync::SkillIndex;
 use crate::storage::pool::Pool;
 use crate::types::ErrorCode;
 use crate::types::Result;
+use crate::variables::store::SharedVariableStore;
+use crate::variables::store::VariableStore;
 
 pub struct SkillRunner {
     catalog: Arc<SkillIndex>,

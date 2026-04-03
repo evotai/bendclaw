@@ -7,7 +7,7 @@ use crate::traces::TraceWriter;
 
 pub fn build_local_infra(
     store: Arc<dyn SessionStore>,
-    tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    tool_writer: crate::writer::tool_op::ToolWriter,
     trace_writer: TraceWriter,
     persist_writer: crate::execution::persist::persist_op::PersistWriter,
 ) -> RuntimeInfra {
@@ -23,7 +23,7 @@ pub fn build_local_infra(
 pub fn build_cloud_infra(
     store: Arc<dyn SessionStore>,
     pool: Pool,
-    tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    tool_writer: crate::writer::tool_op::ToolWriter,
     trace_writer: TraceWriter,
     persist_writer: crate::execution::persist::persist_op::PersistWriter,
 ) -> RuntimeInfra {

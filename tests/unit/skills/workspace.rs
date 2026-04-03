@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use bendclaw::kernel::variables::Variable;
-use bendclaw::kernel::variables::VariableScope;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;
+use bendclaw::variables::Variable;
+use bendclaw::variables::VariableScope;
 
 fn variable(id: &str, key: &str, value: &str, secret: bool) -> Variable {
     Variable {

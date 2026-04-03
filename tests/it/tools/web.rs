@@ -213,14 +213,14 @@ async fn web_search_success_formats_results_and_caps_count(
         Arc::new(NoopSecretUsageSink);
     let tool = WebSearchTool::new(format!("http://{addr}/search"), noop_sink);
     let _ws_dir = std::env::temp_dir().join(format!("bendclaw-web-search-{}", ulid::Ulid::new()));
-    let vars = vec![bendclaw::kernel::variables::Variable {
+    let vars = vec![bendclaw::variables::Variable {
         id: "var-brave".into(),
         key: "BRAVE_API_KEY".into(),
         value: "token".into(),
         secret: false,
         revoked: false,
         user_id: String::new(),
-        scope: bendclaw::kernel::variables::VariableScope::Shared,
+        scope: bendclaw::variables::VariableScope::Shared,
         created_by: String::new(),
         last_used_at: None,
         last_used_by: None,
@@ -250,7 +250,7 @@ async fn web_search_success_formats_results_and_caps_count(
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
         },
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     };
 
     let result = tool
@@ -443,14 +443,14 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
 
     let _ws_dir =
         std::env::temp_dir().join(format!("bendclaw-auto-fallback-{}", ulid::Ulid::new()));
-    let vars = vec![bendclaw::kernel::variables::Variable {
+    let vars = vec![bendclaw::variables::Variable {
         id: "var-brave".into(),
         key: "BRAVE_API_KEY".into(),
         value: "bad-token".into(),
         secret: false,
         revoked: false,
         user_id: String::new(),
-        scope: bendclaw::kernel::variables::VariableScope::Shared,
+        scope: bendclaw::variables::VariableScope::Shared,
         created_by: String::new(),
         last_used_at: None,
         last_used_by: None,
@@ -480,7 +480,7 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
         },
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     };
 
     // Auto mode: Brave will fail (500), then falls back to DDG.
@@ -556,14 +556,14 @@ async fn web_search_returns_cached_result_on_second_call() -> Result<(), Box<dyn
     .with_cache(cache.clone());
 
     let _ws_dir = std::env::temp_dir().join(format!("bendclaw-cache-test-{}", ulid::Ulid::new()));
-    let vars = vec![bendclaw::kernel::variables::Variable {
+    let vars = vec![bendclaw::variables::Variable {
         id: "var-brave".into(),
         key: "BRAVE_API_KEY".into(),
         value: "token".into(),
         secret: false,
         revoked: false,
         user_id: String::new(),
-        scope: bendclaw::kernel::variables::VariableScope::Shared,
+        scope: bendclaw::variables::VariableScope::Shared,
         created_by: String::new(),
         last_used_at: None,
         last_used_by: None,
@@ -593,7 +593,7 @@ async fn web_search_returns_cached_result_on_second_call() -> Result<(), Box<dyn
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
         },
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     };
 
     // First call — hits the server

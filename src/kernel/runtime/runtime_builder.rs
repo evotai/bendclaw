@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use crate::cluster::ClusterOptions;
 use crate::config::agent::AgentConfig;
 use crate::config::agent::CheckpointConfig;
 use crate::config::ClusterConfig;
 use crate::config::DirectiveConfig;
 use crate::config::WorkspaceConfig;
-use crate::kernel::cluster::ClusterOptions;
 use crate::kernel::runtime::runtime::Runtime;
 use crate::kernel::runtime::runtime_bootstrap::construct;
 use crate::kernel::runtime::runtime_bootstrap::construct_minimal;

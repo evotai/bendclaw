@@ -137,7 +137,7 @@ fn build_tool_stack(
                 cancel: cancel.clone(),
                 tool_call_id: None,
             },
-            tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+            tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
         },
         labels,
         cancel,

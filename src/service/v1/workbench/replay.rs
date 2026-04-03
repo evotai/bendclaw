@@ -2,12 +2,12 @@ use axum::extract::Path;
 use axum::extract::State;
 use axum::Json;
 
-use crate::kernel::agent_store::AgentStore;
-use crate::kernel::workbench::replay;
+use crate::agent_store::AgentStore;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::error::ServiceError;
 use crate::service::state::AppState;
+use crate::workbench::replay;
 
 pub async fn get_replay(
     State(state): State<AppState>,

@@ -30,7 +30,7 @@ pub fn spawn_writers() -> RuntimeWriters {
         trace_writer: TraceWriter::spawn(),
         persist_writer: crate::execution::persist::persist_op::spawn_persist_writer(),
         channel_message_writer: crate::channels::spawn_channel_message_writer(),
-        tool_writer: crate::kernel::writer::tool_op::spawn_tool_writer(),
+        tool_writer: crate::writer::tool_op::spawn_tool_writer(),
         rate_limiter: Arc::new(OutboundRateLimiter::new(RateLimitConfig::default())),
     }
 }
@@ -39,7 +39,7 @@ pub struct RuntimeWriters {
     pub trace_writer: crate::traces::TraceWriter,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub channel_message_writer: crate::channels::ChannelMessageWriter,
-    pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub tool_writer: crate::writer::tool_op::ToolWriter,
     pub rate_limiter: Arc<OutboundRateLimiter>,
 }
 

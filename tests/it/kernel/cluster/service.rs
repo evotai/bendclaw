@@ -4,8 +4,8 @@ use std::time::Duration;
 use anyhow::Result;
 use bendclaw::client::BendclawClient;
 use bendclaw::client::ClusterClient;
-use bendclaw::kernel::cluster::ClusterOptions;
-use bendclaw::kernel::cluster::ClusterService;
+use bendclaw::cluster::ClusterOptions;
+use bendclaw::cluster::ClusterService;
 use tokio_util::sync::CancellationToken;
 
 use crate::common::fake_cluster::FakeClusterRegistry;

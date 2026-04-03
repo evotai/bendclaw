@@ -7,11 +7,11 @@ use crate::channels::egress::rate_limit::OutboundRateLimiter;
 use crate::channels::routing::chat_router::ChatRouter;
 use crate::channels::runtime::channel_registry::ChannelRegistry;
 use crate::channels::runtime::supervisor::ChannelSupervisor;
+use crate::cluster::ClusterService;
 use crate::config::agent::AgentConfig;
-use crate::kernel::cluster::ClusterService;
-use crate::kernel::directive::DirectiveService;
-use crate::kernel::lease::LeaseServiceHandle;
+use crate::directive::DirectiveService;
 use crate::kernel::runtime::ActivityTracker;
+use crate::lease::LeaseServiceHandle;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::store::lifecycle::SessionLifecycle;
 use crate::sessions::SessionManager;
@@ -50,5 +50,5 @@ pub struct RuntimeParts {
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,
     pub channel_message_writer: crate::channels::ChannelMessageWriter,
     pub rate_limiter: Arc<OutboundRateLimiter>,
-    pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub tool_writer: crate::writer::tool_op::ToolWriter,
 }

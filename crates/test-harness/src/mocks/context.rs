@@ -57,7 +57,7 @@ pub fn test_tool_context() -> ToolContext {
             cancel: tokio_util::sync::CancellationToken::new(),
             tool_call_id: None,
         },
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     }
 }
 
@@ -120,8 +120,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
             directive: None,
             trace_writer: bendclaw::traces::TraceWriter::spawn(),
             trace_factory: Arc::new(bendclaw::traces::factory::NoopTraceFactory),
-            persist_writer: bendclaw::kernel::writer::BackgroundWriter::noop("persist"),
-            tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+            persist_writer: bendclaw::writer::BackgroundWriter::noop("persist"),
+            tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
             prompt_config: None,
             before_turn_hook: None,
             steering_source: None,

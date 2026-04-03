@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::cluster::ClusterService;
+use crate::cluster::ClusterService;
 use crate::observability::log::slog;
 use crate::tools::tool_context::ToolContext;
 use crate::tools::tool_contract::OperationClassifier;

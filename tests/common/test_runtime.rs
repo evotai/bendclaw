@@ -87,7 +87,7 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         Arc::new(bendclaw::channels::model::status::ChannelStatus::new()),
     ));
     let sessions = Arc::new(SessionManager::new());
-    let persist_writer = bendclaw::kernel::writer::BackgroundWriter::noop("persist");
+    let persist_writer = bendclaw::writer::BackgroundWriter::noop("persist");
     let session_lifecycle = Arc::new(SessionLifecycle::new(
         databases.clone(),
         sessions.clone(),
@@ -117,12 +117,12 @@ pub fn test_runtime(fake: FakeDatabend) -> Arc<Runtime> {
         activity_tracker: Arc::new(ActivityTracker::new()),
         trace_writer: bendclaw::traces::TraceWriter::noop(),
         persist_writer,
-        channel_message_writer: bendclaw::kernel::writer::BackgroundWriter::noop("channel_message"),
+        channel_message_writer: bendclaw::writer::BackgroundWriter::noop("channel_message"),
         rate_limiter: std::sync::Arc::new(
             bendclaw::channels::egress::rate_limit::OutboundRateLimiter::new(
                 bendclaw::channels::egress::rate_limit::RateLimitConfig::default(),
             ),
         ),
-        tool_writer: bendclaw::kernel::writer::BackgroundWriter::noop("tool_write"),
+        tool_writer: bendclaw::writer::BackgroundWriter::noop("tool_write"),
     }))
 }

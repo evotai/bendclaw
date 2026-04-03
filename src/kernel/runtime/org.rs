@@ -3,10 +3,6 @@
 use std::sync::Arc;
 
 use crate::config::agent::AgentConfig;
-use crate::kernel::subscriptions::SharedSubscriptionStore;
-use crate::kernel::subscriptions::SubscriptionStore;
-use crate::kernel::variables::service::VariableService;
-use crate::kernel::variables::store::SharedVariableStore;
 use crate::llm::provider::LLMProvider;
 use crate::memory::store::SharedMemoryStore;
 use crate::memory::MemoryService;
@@ -14,6 +10,10 @@ use crate::skills::store::DatabendSharedSkillStore;
 use crate::skills::sync::SkillIndex;
 use crate::skills::sync::SkillWriter;
 use crate::storage::pool::Pool;
+use crate::subscriptions::SharedSubscriptionStore;
+use crate::subscriptions::SubscriptionStore;
+use crate::variables::service::VariableService;
+use crate::variables::store::SharedVariableStore;
 
 pub struct OrgServices {
     variables: Arc<VariableService>,

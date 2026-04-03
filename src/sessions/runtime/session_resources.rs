@@ -3,10 +3,10 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 use crate::config::agent::AgentConfig;
+use crate::directive::DirectiveService;
 use crate::execution::hooks::BeforeTurnHook;
 use crate::execution::hooks::SteeringSource;
 use crate::execution::skills::SkillExecutor;
-use crate::kernel::directive::DirectiveService;
 use crate::kernel::runtime::session_org::SessionOrgServices;
 use crate::llm::provider::LLMProvider;
 use crate::planning::PromptConfig;
@@ -27,9 +27,9 @@ pub struct SessionResources {
     pub llm: Arc<RwLock<Arc<dyn LLMProvider>>>,
     pub config: Arc<AgentConfig>,
     pub prompt_variables: Vec<PromptVariable>,
-    pub cluster_client: Option<Arc<crate::kernel::cluster::ClusterService>>,
+    pub cluster_client: Option<Arc<crate::cluster::ClusterService>>,
     pub directive: Option<Arc<DirectiveService>>,
-    pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,
+    pub tool_writer: crate::writer::tool_op::ToolWriter,
     pub trace_writer: crate::traces::TraceWriter,
     pub trace_factory: Arc<dyn TraceFactory>,
     pub persist_writer: crate::execution::persist::persist_op::PersistWriter,

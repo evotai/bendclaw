@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bendclaw::execution::skills::UsageSink;
-use bendclaw::kernel::subscriptions::store::Subscription;
-use bendclaw::kernel::subscriptions::store::SubscriptionStore;
 use bendclaw::skills::definition::skill::Skill;
 use bendclaw::skills::store::SharedSkillStore;
 use bendclaw::skills::sync::SkillWriter;
+use bendclaw::subscriptions::store::Subscription;
+use bendclaw::subscriptions::store::SubscriptionStore;
 use parking_lot::Mutex;
 
 /// Skill store that does nothing (for tests that don't need persistence).

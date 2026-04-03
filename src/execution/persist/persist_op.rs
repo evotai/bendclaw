@@ -7,7 +7,6 @@ use crate::execution::event::Event;
 use crate::execution::result::Reason;
 use crate::execution::usage::ModelRole;
 use crate::execution::usage::UsageEvent;
-use crate::kernel::writer::BackgroundWriter;
 use crate::observability::log::run_log;
 use crate::observability::server_log;
 use crate::sessions::store::SessionStore;
@@ -18,6 +17,7 @@ use crate::storage::dal::run_event::record::RunEventRecord;
 use crate::storage::dal::session::repo::SessionRepo;
 use crate::storage::dal::session::repo::SessionWrite;
 use crate::traces::TraceRecorder;
+use crate::writer::BackgroundWriter;
 
 pub enum PersistOp {
     /// Barrier: signals all preceding ops are done. Used by non-stream path

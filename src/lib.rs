@@ -1,9 +1,13 @@
+pub mod agent_store;
 pub mod app;
 pub mod channels;
 pub mod cli;
 pub mod client;
+pub mod cluster;
 pub mod config;
+pub mod directive;
 pub mod kernel;
+pub mod lease;
 pub mod llm;
 pub mod memory;
 pub mod observability;
@@ -11,12 +15,16 @@ pub mod service;
 pub mod sessions;
 pub mod skills;
 pub mod storage;
+pub mod subscriptions;
 pub mod tasks;
 pub mod tools;
 pub mod traces;
 pub mod tracing_fmt;
 pub mod types;
+pub mod variables;
 pub mod version;
+pub mod workbench;
+pub mod writer;
 
 // Pipeline contracts (Phase 0 — canonical boundaries)
 pub mod binding;

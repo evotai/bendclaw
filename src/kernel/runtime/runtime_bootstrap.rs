@@ -8,12 +8,12 @@ use tokio_util::sync::CancellationToken;
 use crate::client::BendclawClient;
 use crate::client::ClusterClient;
 use crate::client::DirectiveClient;
+use crate::cluster::ClusterOptions;
+use crate::cluster::ClusterService;
 use crate::config::agent::AgentConfig;
 use crate::config::ClusterConfig;
 use crate::config::DirectiveConfig;
-use crate::kernel::cluster::ClusterOptions;
-use crate::kernel::cluster::ClusterService;
-use crate::kernel::directive::DirectiveService;
+use crate::directive::DirectiveService;
 use crate::kernel::runtime::diagnostics;
 use crate::kernel::runtime::org::OrgServices;
 use crate::kernel::runtime::runtime::Runtime;
@@ -21,13 +21,13 @@ use crate::kernel::runtime::runtime_parts::RuntimeParts;
 use crate::kernel::runtime::runtime_parts::RuntimeStatus;
 use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::ActivityTracker;
-use crate::kernel::subscriptions::SharedSubscriptionStore;
-use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
 use crate::sessions::store::lifecycle::SessionLifecycle;
 use crate::sessions::SessionManager;
 use crate::skills::sync::SkillIndex;
 use crate::storage::pool::Pool;
+use crate::subscriptions::SharedSubscriptionStore;
+use crate::subscriptions::SubscriptionStore;
 use crate::types::Result;
 
 pub(super) struct RuntimeDeps {
@@ -145,8 +145,7 @@ pub(super) async fn construct(
     });
 
     let http_client = reqwest::Client::new();
-    let mut lease_builder =
-        crate::kernel::lease::LeaseServiceBuilder::new(&runtime.config().node_id);
+    let mut lease_builder = crate::lease::LeaseServiceBuilder::new(&runtime.config().node_id);
     lease_builder.register(Arc::new(
         crate::channels::model::lease::ChannelLeaseResource::new(
             runtime.databases().clone(),

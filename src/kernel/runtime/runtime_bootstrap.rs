@@ -154,9 +154,10 @@ pub(super) async fn construct(
             runtime.supervisor().clone(),
         ),
     ));
-    lease_builder.register(Arc::new(
-        crate::kernel::task::lease::TaskLeaseResource::new(runtime.clone(), http_client),
-    ));
+    lease_builder.register(Arc::new(crate::tasks::lease::TaskLeaseResource::new(
+        runtime.clone(),
+        http_client,
+    )));
     let lease_handle = lease_builder.spawn(sync_cancel.clone());
     *runtime.lease_handle.write() = Some(lease_handle);
 

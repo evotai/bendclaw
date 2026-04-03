@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 
-use crate::kernel::task::input::task_update_schema;
-use crate::kernel::task::input::TaskUpdateToolInput;
-use crate::kernel::task::ops;
-use crate::kernel::task::view::TaskView;
 use crate::storage::pool::Pool;
+use crate::tasks::input::task_update_schema;
+use crate::tasks::input::TaskUpdateToolInput;
+use crate::tasks::ops;
+use crate::tasks::view::TaskView;
 use crate::tools::operation::Impact;
 use crate::tools::operation::OpType;
 use crate::tools::tool_context::ToolContext;

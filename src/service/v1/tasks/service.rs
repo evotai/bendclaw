@@ -1,14 +1,14 @@
 use super::http::CreateTaskRequest;
 use super::http::UpdateTaskRequest;
-use crate::kernel::task::ops;
-use crate::kernel::task::ops::CreateTaskParams;
-use crate::kernel::task::ops::UpdateTaskParams;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 use crate::service::v1::common::count_u64;
 use crate::service::v1::common::ListQuery;
 use crate::storage::dal::task::TaskRecord;
 use crate::storage::dal::task_history::TaskHistoryRecord;
+use crate::tasks::ops;
+use crate::tasks::ops::CreateTaskParams;
+use crate::tasks::ops::UpdateTaskParams;
 
 pub(super) async fn list_tasks(
     state: &AppState,

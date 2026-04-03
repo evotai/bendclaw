@@ -1,5 +1,5 @@
-use bendclaw::kernel::task::delivery::delivery_context::ChannelDeliveryContext;
-use bendclaw::kernel::task::execution::prompt_builder::apply_channel_context;
+use bendclaw::tasks::delivery::delivery_context::ChannelDeliveryContext;
+use bendclaw::tasks::execution::prompt_builder::apply_channel_context;
 
 #[test]
 fn with_context_appends_channel_send_instructions() {

@@ -5,7 +5,6 @@ pub mod lease;
 pub mod memory;
 pub mod runtime;
 pub mod subscriptions;
-pub mod task;
 pub mod trace;
 pub mod variables;
 pub mod workbench;

@@ -7,9 +7,9 @@ use crate::kernel::lease::types::LeaseResource;
 use crate::kernel::lease::types::ReleaseFn;
 use crate::kernel::lease::types::ResourceEntry;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::task::diagnostics;
 use crate::storage::dal::task::repo::TaskRepo;
 use crate::storage::pool::Pool;
+use crate::tasks::diagnostics;
 use crate::types::Result;
 
 /// Maximum wall-clock time a single task execution may take.

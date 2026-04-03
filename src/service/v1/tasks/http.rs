@@ -5,16 +5,16 @@ use axum::Json;
 use serde::Deserialize;
 
 use super::service;
-use crate::kernel::task::input::TaskCreateSpec;
-use crate::kernel::task::input::TaskUpdateSpec;
-use crate::kernel::task::view::TaskHistoryView;
-use crate::kernel::task::view::TaskSummaryView;
-use crate::kernel::task::view::TaskView;
 use crate::service::context::RequestContext;
 use crate::service::error::Result;
 use crate::service::state::AppState;
 use crate::service::v1::common::ListQuery;
 use crate::service::v1::common::Paginated;
+use crate::tasks::input::TaskCreateSpec;
+use crate::tasks::input::TaskUpdateSpec;
+use crate::tasks::view::TaskHistoryView;
+use crate::tasks::view::TaskSummaryView;
+use crate::tasks::view::TaskView;
 
 #[derive(Deserialize)]
 pub struct CreateTaskRequest {

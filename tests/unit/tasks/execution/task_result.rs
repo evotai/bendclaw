@@ -1,6 +1,6 @@
 use bendclaw::execution::result::Reason;
-use bendclaw::kernel::task::execution::classify_task_run_output;
 use bendclaw::sessions::runtime::session_stream::FinishedRunOutput;
+use bendclaw::tasks::execution::classify_task_run_output;
 
 #[test]
 fn marks_completed_runs_ok() {

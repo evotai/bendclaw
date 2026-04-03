@@ -12,11 +12,11 @@ use bendclaw::channels::runtime::channel_trait::InboundEventSender;
 use bendclaw::channels::runtime::channel_trait::InboundKind;
 use bendclaw::channels::runtime::channel_trait::ReceiverFactory;
 use bendclaw::channels::ChannelRegistry;
-use bendclaw::kernel::task::delivery::channel_delivery::deliver_channel;
-use bendclaw::kernel::task::delivery::channel_delivery::render_delivery_text;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskRecord;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::delivery::channel_delivery::deliver_channel;
+use bendclaw::tasks::delivery::channel_delivery::render_delivery_text;
 use bendclaw::types::Result as BaseResult;
 use tokio_util::sync::CancellationToken;
 

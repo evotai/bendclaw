@@ -1,6 +1,6 @@
-use bendclaw::kernel::task::ops::get_task;
-use bendclaw::kernel::task::ops::list_task_history;
-use bendclaw::kernel::task::ops::list_tasks;
+use bendclaw::tasks::ops::get_task;
+use bendclaw::tasks::ops::list_task_history;
+use bendclaw::tasks::ops::list_tasks;
 
 use crate::common::fake_databend::FakeDatabend;
 

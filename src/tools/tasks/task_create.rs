@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 
 use crate::channels::model::context::ChannelContext;
-use crate::kernel::task::input::task_create_schema;
-use crate::kernel::task::input::TaskCreateSpec;
-use crate::kernel::task::ops;
-use crate::kernel::task::view::TaskView;
 use crate::storage::dal::session::repo::SessionRepo;
 use crate::storage::dal::task::TaskDelivery;
 use crate::storage::pool::Pool;
 use crate::storage::TaskSchedule;
+use crate::tasks::input::task_create_schema;
+use crate::tasks::input::TaskCreateSpec;
+use crate::tasks::ops;
+use crate::tasks::view::TaskView;
 use crate::tools::operation::Impact;
 use crate::tools::operation::OpType;
 use crate::tools::tool_context::ToolContext;

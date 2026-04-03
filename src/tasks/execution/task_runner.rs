@@ -5,9 +5,9 @@ use super::finish_execution::finish_execution;
 use super::prompt_builder::enrich_prompt_with_delivery;
 use super::task_result::classify_task_run_output;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::task::delivery::delivery_service::deliver_result;
-use crate::kernel::task::diagnostics;
 use crate::storage::dal::task::TaskRecord;
+use crate::tasks::delivery::delivery_service::deliver_result;
+use crate::tasks::diagnostics;
 
 /// Execute a single claimed task: run prompt, deliver result,
 /// then delegate to finish_execution for history + state update.

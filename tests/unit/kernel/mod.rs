@@ -4,7 +4,6 @@ mod directive;
 mod lease;
 mod memory;
 mod runtime;
-mod task;
 mod trace;
 mod workbench;
 mod writer;

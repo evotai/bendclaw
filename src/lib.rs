@@ -10,6 +10,7 @@ pub mod service;
 pub mod sessions;
 pub mod skills;
 pub mod storage;
+pub mod tasks;
 pub mod tools;
 pub mod tracing_fmt;
 pub mod types;

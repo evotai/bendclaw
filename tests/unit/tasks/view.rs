@@ -1,11 +1,11 @@
 use anyhow::Result;
-use bendclaw::kernel::task::view::TaskHistoryView;
-use bendclaw::kernel::task::view::TaskSummaryView;
-use bendclaw::kernel::task::view::TaskView;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskHistoryRecord;
 use bendclaw::storage::TaskRecord;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::view::TaskHistoryView;
+use bendclaw::tasks::view::TaskSummaryView;
+use bendclaw::tasks::view::TaskView;
 
 fn sample_task() -> TaskRecord {
     TaskRecord {

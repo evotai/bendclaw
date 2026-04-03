@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use bendclaw::channels::ChannelRegistry;
-use bendclaw::kernel::task::delivery::delivery_service::deliver_result;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskRecord;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::delivery::delivery_service::deliver_result;
 
 use crate::common::fake_databend::FakeDatabend;
 

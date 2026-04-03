@@ -19,6 +19,7 @@ mod service;
 mod sessions;
 mod skills;
 mod storage;
+mod tasks;
 mod tools;
 mod types;
 mod version;

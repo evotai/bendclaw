@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::kernel::runtime::Runtime;
-use crate::kernel::task::delivery::delivery_context::resolve_channel_delivery_context;
-use crate::kernel::task::delivery::delivery_context::ChannelDeliveryContext;
-use crate::kernel::task::diagnostics;
 use crate::storage::dal::task::TaskDelivery;
+use crate::tasks::delivery::delivery_context::resolve_channel_delivery_context;
+use crate::tasks::delivery::delivery_context::ChannelDeliveryContext;
+use crate::tasks::diagnostics;
 
 /// If the task has channel delivery, append channel context to the prompt
 /// so the LLM can use `channel_send` with the correct parameters.

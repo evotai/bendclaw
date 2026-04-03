@@ -1,5 +1,5 @@
 use bendclaw::kernel::lease::LeaseResource;
-use bendclaw::kernel::task::lease::TaskLeaseResource;
+use bendclaw::tasks::lease::TaskLeaseResource;
 
 use crate::common::fake_databend::paged_rows;
 use crate::common::fake_databend::FakeDatabend;

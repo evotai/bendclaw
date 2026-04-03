@@ -1,7 +1,7 @@
-use bendclaw::kernel::task::execution::finish_execution;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskRecord;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::execution::finish_execution;
 
 use crate::common::fake_databend::FakeDatabend;
 use crate::common::fake_databend::FakeDatabendCall;

@@ -1,9 +1,9 @@
-use bendclaw::kernel::task::ops::create_task;
-use bendclaw::kernel::task::ops::update_task;
-use bendclaw::kernel::task::ops::CreateTaskParams;
-use bendclaw::kernel::task::ops::UpdateTaskParams;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::ops::create_task;
+use bendclaw::tasks::ops::update_task;
+use bendclaw::tasks::ops::CreateTaskParams;
+use bendclaw::tasks::ops::UpdateTaskParams;
 
 use crate::common::fake_databend::FakeDatabend;
 

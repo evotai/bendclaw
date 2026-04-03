@@ -1,9 +1,9 @@
 use anyhow::Result;
-use bendclaw::kernel::task::input::TaskCreateSpec;
-use bendclaw::kernel::task::input::TaskUpdateSpec;
-use bendclaw::kernel::task::input::TaskUpdateToolInput;
 use bendclaw::storage::TaskDelivery;
 use bendclaw::storage::TaskSchedule;
+use bendclaw::tasks::input::TaskCreateSpec;
+use bendclaw::tasks::input::TaskUpdateSpec;
+use bendclaw::tasks::input::TaskUpdateToolInput;
 
 #[test]
 fn task_create_spec_defaults_delivery_and_delete_after_run() -> Result<()> {

@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::kernel::task::ops;
-use crate::kernel::task::view::TaskView;
 use crate::storage::pool::Pool;
+use crate::tasks::ops;
+use crate::tasks::view::TaskView;
 use crate::tools::operation::Impact;
 use crate::tools::operation::OpType;
 use crate::tools::tool_context::ToolContext;

@@ -49,8 +49,8 @@ fn storage_type_only_in_startup_and_backend() {
 #[test]
 fn entity_run_has_session_id_field() {
     let src = src_dir();
-    let content =
-        std::fs::read_to_string(format!("{src}/types/entities/run.rs")).expect("run.rs exists");
+    let content = std::fs::read_to_string(format!("{src}/storage/runs/entity.rs"))
+        .expect("run entity exists");
     assert!(
         content.contains("pub session_id: String"),
         "Run must have session_id"
@@ -68,8 +68,8 @@ fn entity_run_has_session_id_field() {
 #[test]
 fn entity_span_has_all_ancestor_ids() {
     let src = src_dir();
-    let content =
-        std::fs::read_to_string(format!("{src}/types/entities/span.rs")).expect("span.rs exists");
+    let content = std::fs::read_to_string(format!("{src}/storage/traces/span_entity.rs"))
+        .expect("span entity exists");
     for field in ["user_id", "agent_id", "session_id", "run_id", "trace_id"] {
         assert!(
             content.contains(&format!("pub {field}: String")),
@@ -81,8 +81,8 @@ fn entity_span_has_all_ancestor_ids() {
 #[test]
 fn entity_task_has_agent_id() {
     let src = src_dir();
-    let content =
-        std::fs::read_to_string(format!("{src}/types/entities/task.rs")).expect("task.rs exists");
+    let content = std::fs::read_to_string(format!("{src}/storage/tasks/entity.rs"))
+        .expect("task entity exists");
     assert!(
         content.contains("pub agent_id: String"),
         "Task must have agent_id"
@@ -96,8 +96,8 @@ fn entity_task_has_agent_id() {
 #[test]
 fn entity_task_history_has_agent_id() {
     let src = src_dir();
-    let content = std::fs::read_to_string(format!("{src}/types/entities/task_history.rs"))
-        .expect("task_history.rs exists");
+    let content = std::fs::read_to_string(format!("{src}/storage/task_history/entity.rs"))
+        .expect("task_history entity exists");
     assert!(
         content.contains("pub agent_id: String"),
         "TaskHistory must have agent_id"
@@ -168,8 +168,8 @@ fn cli_output_deleted() {
 #[test]
 fn run_event_kind_has_custom_variant() {
     let src = src_dir();
-    let content = std::fs::read_to_string(format!("{src}/types/entities/run_event.rs"))
-        .expect("run_event.rs exists");
+    let content = std::fs::read_to_string(format!("{src}/storage/run_events/entity.rs"))
+        .expect("run_event entity exists");
     assert!(
         content.contains("Custom(String)"),
         "RunEventKind must have Custom(String) variant for extensibility"

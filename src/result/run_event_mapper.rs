@@ -1,5 +1,5 @@
 use super::event_envelope::EventEnvelope;
-use crate::types::entities::RunEvent;
+use crate::storage::run_events::RunEvent;
 
 /// Map a kernel RunEvent into an EventEnvelope.
 pub fn map_run_event(event: &RunEvent) -> EventEnvelope {

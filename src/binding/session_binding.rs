@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::storage::sessions::Session;
 use crate::storage::sessions::SessionRepo;
-use crate::types::entities::Session;
 use crate::types::ErrorCode;
 use crate::types::Result;
 

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::Session;
+use crate::storage::sessions::Session;
 use crate::types::Result;
 
 #[async_trait]

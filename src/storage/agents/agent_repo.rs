@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::Agent;
+use crate::storage::agents::Agent;
 use crate::types::Result;
 
 #[async_trait]

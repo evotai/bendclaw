@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::RunEvent;
+use crate::storage::run_events::RunEvent;
 use crate::types::Result;
 
 #[async_trait]

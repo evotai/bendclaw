@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::Span;
+use crate::storage::traces::Span;
 use crate::types::Result;
 
 #[async_trait]

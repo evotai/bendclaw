@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::Run;
+use crate::storage::runs::Run;
 use crate::types::Result;
 
 #[async_trait]

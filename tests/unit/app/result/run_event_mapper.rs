@@ -1,6 +1,6 @@
 use bendclaw::result::run_event_mapper::map_run_event;
-use bendclaw::types::entities::RunEvent;
-use bendclaw::types::entities::RunEventKind;
+use bendclaw::storage::run_events::RunEvent;
+use bendclaw::storage::run_events::RunEventKind;
 
 #[test]
 fn maps_run_event_to_envelope() {

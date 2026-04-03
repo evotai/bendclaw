@@ -3,9 +3,9 @@ use std::sync::Arc;
 use bendclaw::execution::persist::run_cleanup::cleanup;
 use bendclaw::execution::persist::run_cleanup::CleanupPolicy;
 use bendclaw::storage::local_fs::LocalFsBackend;
+use bendclaw::storage::runs::entity::RunStatus;
+use bendclaw::storage::runs::Run;
 use bendclaw::storage::runs::RunRepo;
-use bendclaw::types::entities::Run;
-use bendclaw::types::entities::RunStatus;
 
 fn ts() -> String {
     "2026-01-01T00:00:00Z".to_string()

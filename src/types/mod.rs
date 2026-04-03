@@ -1,4 +1,3 @@
-pub mod entities;
 pub mod error;
 pub mod error_source;
 pub mod http;

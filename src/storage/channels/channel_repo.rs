@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::Channel;
+use crate::storage::channels::Channel;
 use crate::types::Result;
 
 #[async_trait]

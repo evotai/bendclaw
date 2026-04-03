@@ -1,4 +1,16 @@
-use bendclaw::types::entities::*;
+use bendclaw::storage::agents::Agent;
+use bendclaw::storage::channels::Channel;
+use bendclaw::storage::run_events::RunEvent;
+use bendclaw::storage::run_events::RunEventKind;
+use bendclaw::storage::runs::entity::Run;
+use bendclaw::storage::runs::entity::RunKind;
+use bendclaw::storage::runs::entity::RunStatus;
+use bendclaw::storage::sessions::Session;
+use bendclaw::storage::skills::Skill;
+use bendclaw::storage::task_history::TaskHistory;
+use bendclaw::storage::tasks::Task;
+use bendclaw::storage::traces::Span;
+use bendclaw::storage::traces::Trace;
 
 #[test]
 fn run_has_all_scope_fields() {

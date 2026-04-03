@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::types::entities::TaskHistory;
+use crate::storage::task_history::TaskHistory;
 use crate::types::Result;
 
 #[async_trait]

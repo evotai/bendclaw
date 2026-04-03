@@ -1,14 +1,18 @@
+pub mod entity;
 pub mod record;
 pub mod repo;
+pub mod span_entity;
 pub mod span_repo;
 pub mod trace_repo;
 pub mod types;
 
+pub use entity::Trace;
 pub use record::SpanRecord;
 pub use record::TraceRecord;
 pub use repo::SpanRepo as SpanDalRepo;
 pub use repo::TraceListFilter;
 pub use repo::TraceRepo as TraceDalRepo;
+pub use span_entity::Span;
 pub use span_repo::SpanRepo;
 pub use trace_repo::TraceRepo;
 pub use types::AgentTraceBreakdown;

@@ -32,7 +32,13 @@ fn storage_type_only_in_startup_and_backend() {
     for f in &files {
         let f = f.replace(&src, "");
         assert!(
-            f.contains("/bin/") || f.contains("/storage/backend/") || f.contains("/config"),
+            f.contains("/bin/")
+                || f.contains("/storage/backend/")
+                || f.contains("/storage/kind.rs")
+                || f.contains("/storage/local_fs.rs")
+                || f.contains("/storage/databend_backend.rs")
+                || f.contains("/storage/storage_backend.rs")
+                || f.contains("/config"),
             "StorageKind referenced outside startup/backend: {f}"
         );
     }
@@ -175,21 +181,21 @@ fn run_event_kind_has_custom_variant() {
 #[test]
 fn all_entity_repos_exist() {
     let src = src_dir();
-    let backend_dir = format!("{src}/storage/backend");
-    for repo in [
-        "agent_repo.rs",
-        "skill_repo.rs",
-        "channel_repo.rs",
-        "session_repo.rs",
-        "run_repo.rs",
-        "run_event_repo.rs",
-        "trace_repo.rs",
-        "span_repo.rs",
-        "task_repo.rs",
-        "task_history_repo.rs",
-    ] {
+    let repo_paths = [
+        "storage/agents/agent_repo.rs",
+        "storage/skills/skill_repo.rs",
+        "storage/channels/channel_repo.rs",
+        "storage/sessions/session_repo.rs",
+        "storage/runs/run_repo.rs",
+        "storage/run_events/run_event_repo.rs",
+        "storage/traces/trace_repo.rs",
+        "storage/traces/span_repo.rs",
+        "storage/tasks/task_repo.rs",
+        "storage/task_history/task_history_repo.rs",
+    ];
+    for repo in repo_paths {
         assert!(
-            Path::new(&format!("{backend_dir}/{repo}")).exists(),
+            Path::new(&format!("{src}/{repo}")).exists(),
             "narrow repo trait {repo} must exist"
         );
     }
@@ -200,8 +206,8 @@ fn all_entity_repos_exist() {
 #[test]
 fn local_fs_backend_uses_user_agent_path() {
     let src = src_dir();
-    let content = std::fs::read_to_string(format!("{src}/storage/backend/local_fs.rs"))
-        .expect("local_fs.rs exists");
+    let content =
+        std::fs::read_to_string(format!("{src}/storage/local_fs.rs")).expect("local_fs.rs exists");
     assert!(
         content.contains(r#""users""#) && content.contains(r#""agents""#),
         "LocalFsBackend must use users/<user_id>/agents/<agent_id> path"

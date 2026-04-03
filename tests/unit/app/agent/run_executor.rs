@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use bendclaw::app::agent::run_executor::execute_run;
 use bendclaw::app::agent::run_planner::RunPlan;
-use bendclaw::storage::backend::local_fs::LocalFsBackend;
-use bendclaw::storage::backend::run_event_repo::RunEventRepo;
-use bendclaw::storage::backend::run_repo::RunRepo;
+use bendclaw::storage::local_fs::LocalFsBackend;
+use bendclaw::storage::run_events::RunEventRepo;
+use bendclaw::storage::runs::RunRepo;
 
 fn test_plan() -> RunPlan {
     RunPlan {

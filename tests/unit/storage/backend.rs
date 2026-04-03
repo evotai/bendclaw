@@ -1,16 +1,16 @@
-use bendclaw::storage::backend::agent_repo::AgentRepo;
-use bendclaw::storage::backend::channel_repo::ChannelRepo;
-use bendclaw::storage::backend::kind::StorageKind;
-use bendclaw::storage::backend::local_fs::LocalFsBackend;
-use bendclaw::storage::backend::run_event_repo::RunEventRepo;
-use bendclaw::storage::backend::run_repo::RunRepo;
-use bendclaw::storage::backend::session_repo::SessionRepo;
-use bendclaw::storage::backend::skill_repo::SkillRepo;
-use bendclaw::storage::backend::span_repo::SpanRepo;
-use bendclaw::storage::backend::storage_backend::StorageBackend;
-use bendclaw::storage::backend::task_history_repo::TaskHistoryRepo;
-use bendclaw::storage::backend::task_repo::TaskRepo;
-use bendclaw::storage::backend::trace_repo::TraceRepo;
+use bendclaw::storage::agents::AgentRepo;
+use bendclaw::storage::channels::ChannelRepo;
+use bendclaw::storage::kind::StorageKind;
+use bendclaw::storage::local_fs::LocalFsBackend;
+use bendclaw::storage::run_events::RunEventRepo;
+use bendclaw::storage::runs::RunRepo;
+use bendclaw::storage::sessions::SessionRepo;
+use bendclaw::storage::skills::SkillRepo;
+use bendclaw::storage::storage_backend::StorageBackend;
+use bendclaw::storage::task_history::TaskHistoryRepo;
+use bendclaw::storage::tasks::TaskRepo;
+use bendclaw::storage::traces::SpanRepo;
+use bendclaw::storage::traces::TraceRepo;
 use bendclaw::types::entities::*;
 
 fn ts() -> String {

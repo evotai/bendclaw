@@ -1,4 +1,3 @@
-pub mod backend;
 pub mod cache;
 pub mod dal;
 pub mod databases;
@@ -11,6 +10,27 @@ pub mod table;
 pub mod test_support;
 pub mod time;
 
+// ── New domain modules ────────────────────────────────────────────────────────
+pub mod agents;
+pub mod channels;
+pub mod databend_backend;
+pub mod feedback;
+pub mod kind;
+pub mod local_fs;
+pub mod logging;
+pub mod run_events;
+pub mod runs;
+pub mod sessions;
+pub mod skills;
+pub mod storage_backend;
+pub mod task_history;
+pub mod tasks;
+pub mod traces;
+pub mod usage;
+pub mod variables;
+pub mod versioned;
+
+// ── Legacy dal re-exports (kept for backward compat during migration) ─────────
 pub use dal::agent_config;
 pub use dal::agent_config::AgentConfigRecord;
 pub use dal::agent_config::AgentConfigStore;
@@ -22,7 +42,7 @@ pub use dal::channel_message::ChannelMessageRecord;
 pub use dal::channel_message::ChannelMessageRepo;
 pub use dal::config_version;
 pub use dal::config_version::ConfigVersionRecord;
-pub use dal::feedback;
+// feedback — now pub mod feedback, re-export types only
 pub use dal::feedback::FeedbackRecord;
 pub use dal::feedback::FeedbackRepo;
 pub use dal::run;
@@ -41,7 +61,7 @@ pub use dal::task::TaskDelivery;
 pub use dal::task::TaskRecord;
 pub use dal::task::TaskRepo;
 pub use dal::task::TaskSchedule;
-pub use dal::task_history;
+// task_history — now pub mod task_history, re-export types only
 pub use dal::task_history::TaskHistoryRecord;
 pub use dal::task_history::TaskHistoryRepo;
 pub use dal::trace;
@@ -52,7 +72,7 @@ pub use dal::trace::SpanRecord;
 pub use dal::trace::SpanRepo;
 pub use dal::trace::TraceRecord;
 pub use dal::trace::TraceRepo;
-pub use dal::usage;
+// usage — now pub mod usage, re-export types only
 pub use dal::usage::CostSummary;
 pub use dal::usage::UsageRecord;
 pub use dal::usage::UsageRepo;
@@ -60,6 +80,10 @@ pub use dal::usage::UsageStore;
 pub use dal::variable;
 pub use dal::variable::VariableRecord;
 pub use dal::variable::VariableRepo;
-pub use dal::versioned;
+pub use dal::versioned::delete_versioned;
+// versioned — now pub mod versioned, re-export functions only
+pub use dal::versioned::gen_id;
+pub use dal::versioned::insert_versioned;
+pub use dal::versioned::update_versioned;
 pub use databases::AgentDatabases;
 pub use pool::Pool;

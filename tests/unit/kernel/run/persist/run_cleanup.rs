@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use bendclaw::kernel::run::persist::run_cleanup::cleanup;
 use bendclaw::kernel::run::persist::run_cleanup::CleanupPolicy;
-use bendclaw::storage::backend::local_fs::LocalFsBackend;
-use bendclaw::storage::backend::run_repo::RunRepo;
+use bendclaw::storage::local_fs::LocalFsBackend;
+use bendclaw::storage::runs::RunRepo;
 use bendclaw::types::entities::Run;
 use bendclaw::types::entities::RunStatus;
 

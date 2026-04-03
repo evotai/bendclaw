@@ -8,9 +8,9 @@ use crate::app::agent::run_executor;
 use crate::app::agent::run_planner;
 use crate::app::agent::session_binding;
 use crate::app::result::formats;
-use crate::storage::backend::run_event_repo::RunEventRepo;
-use crate::storage::backend::run_repo::RunRepo;
-use crate::storage::backend::session_repo::SessionRepo;
+use crate::storage::run_events::RunEventRepo;
+use crate::storage::runs::RunRepo;
+use crate::storage::sessions::SessionRepo;
 use crate::types::Result;
 
 #[derive(clap::Args, Debug)]

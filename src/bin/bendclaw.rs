@@ -305,8 +305,8 @@ fn print_banner(config: &BendClawConfig) {
 }
 
 async fn cmd_agent(args: bendclaw::cli::agent_cmd::AgentArgs) -> anyhow::Result<()> {
-    use bendclaw::storage::backend::kind::StorageKind;
-    use bendclaw::storage::backend::local_fs::LocalFsBackend;
+    use bendclaw::storage::kind::StorageKind;
+    use bendclaw::storage::local_fs::LocalFsBackend;
 
     let storage_type = std::env::var("BENDCLAW_STORAGE_TYPE").unwrap_or_else(|_| "local".into());
     let kind = StorageKind::parse(&storage_type)?;
@@ -314,12 +314,10 @@ async fn cmd_agent(args: bendclaw::cli::agent_cmd::AgentArgs) -> anyhow::Result<
     match kind {
         StorageKind::Local => {
             let backend = Arc::new(LocalFsBackend::new(LocalFsBackend::default_root()));
-            let session_repo =
-                backend.clone() as Arc<dyn bendclaw::storage::backend::session_repo::SessionRepo>;
-            let run_repo =
-                backend.clone() as Arc<dyn bendclaw::storage::backend::run_repo::RunRepo>;
-            let run_event_repo = backend.clone()
-                as Arc<dyn bendclaw::storage::backend::run_event_repo::RunEventRepo>;
+            let session_repo = backend.clone() as Arc<dyn bendclaw::storage::sessions::SessionRepo>;
+            let run_repo = backend.clone() as Arc<dyn bendclaw::storage::runs::RunRepo>;
+            let run_event_repo =
+                backend.clone() as Arc<dyn bendclaw::storage::run_events::RunEventRepo>;
 
             bendclaw::cli::agent_cmd::execute(args, session_repo, run_repo, run_event_repo)
                 .await

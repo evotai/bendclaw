@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use bendclaw::app::agent::session_binding::bind_session;
-use bendclaw::storage::backend::local_fs::LocalFsBackend;
-use bendclaw::storage::backend::session_repo::SessionRepo;
+use bendclaw::storage::local_fs::LocalFsBackend;
+use bendclaw::storage::sessions::SessionRepo;
 
 #[tokio::test]
 async fn creates_new_session_when_no_id() {

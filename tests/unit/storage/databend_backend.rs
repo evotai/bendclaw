@@ -1,7 +1,7 @@
-use bendclaw::storage::backend::agent_repo::AgentRepo;
-use bendclaw::storage::backend::databend::DatabendBackend;
-use bendclaw::storage::backend::kind::StorageKind;
-use bendclaw::storage::backend::storage_backend::StorageBackend;
+use bendclaw::storage::agents::AgentRepo;
+use bendclaw::storage::databend_backend::DatabendBackend;
+use bendclaw::storage::kind::StorageKind;
+use bendclaw::storage::storage_backend::StorageBackend;
 
 #[test]
 fn databend_backend_kind_is_cloud() {

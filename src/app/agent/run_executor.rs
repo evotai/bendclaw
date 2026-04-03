@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use super::run_planner::RunPlan;
 use crate::app::result::event_envelope::EventEnvelope;
-use crate::storage::backend::run_event_repo::RunEventRepo;
-use crate::storage::backend::run_repo::RunRepo;
+use crate::storage::run_events::RunEventRepo;
+use crate::storage::runs::RunRepo;
 use crate::types::entities::Run;
 use crate::types::entities::RunEvent;
 use crate::types::entities::RunEventKind;

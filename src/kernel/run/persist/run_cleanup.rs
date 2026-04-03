@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::storage::backend::run_repo::RunRepo;
+use crate::storage::runs::RunRepo;
 use crate::types::Result;
 
 /// Cleanup policy — determines scope of incomplete run detection.

@@ -5,8 +5,8 @@ use crate::kernel::channels::egress::retry::send_with_retry;
 use crate::kernel::channels::egress::retry::RetryConfig;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
 use crate::kernel::channels::runtime::diagnostics;
-use crate::kernel::session::runtime::session_stream::Stream;
 use crate::observability::server_log;
+use crate::sessions::runtime::session_stream::Stream;
 
 /// Result of outbound delivery: full text + last platform message ID.
 pub struct OutboundResult {

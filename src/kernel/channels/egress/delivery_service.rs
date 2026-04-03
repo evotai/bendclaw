@@ -6,7 +6,7 @@ use crate::kernel::channels::egress::rate_limit::OutboundRateLimiter;
 use crate::kernel::channels::egress::retry::send_with_retry;
 use crate::kernel::channels::egress::retry::RetryConfig;
 use crate::kernel::channels::runtime::channel_trait::ChannelOutbound;
-use crate::kernel::session::runtime::session_stream::Stream;
+use crate::sessions::runtime::session_stream::Stream;
 use crate::types::Result;
 
 /// Unified channel delivery entry point.

@@ -1,5 +1,5 @@
 use crate::kernel::run::result::Reason;
-use crate::kernel::session::runtime::session_stream::FinishedRunOutput;
+use crate::sessions::runtime::session_stream::FinishedRunOutput;
 
 pub fn classify_task_run_output(
     finished: FinishedRunOutput,

@@ -1,4 +1,4 @@
-use crate::kernel::Message;
+use crate::sessions::Message;
 
 pub const POST_COMPACTION_TARGET: usize = 40_000;
 pub const SUMMARY_RESERVE: usize = 4_000;

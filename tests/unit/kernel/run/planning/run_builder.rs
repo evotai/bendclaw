@@ -48,7 +48,7 @@ fn test_request() -> RunRequest {
         session_id: "s1".into(),
         run_id: "r1".into(),
         turn: 0,
-        messages: vec![bendclaw::kernel::Message::user("hello")],
+        messages: vec![bendclaw::sessions::Message::user("hello")],
         system_prompt: "test".into(),
         is_dispatched: false,
     }
@@ -134,7 +134,7 @@ async fn build_run_driver_inbox_sender_is_connected() {
     // inbox_tx should be able to send without error (receiver held by engine)
     let result = driver
         .inbox_tx
-        .send(bendclaw::kernel::Message::user("test"))
+        .send(bendclaw::sessions::Message::user("test"))
         .await;
     assert!(
         result.is_ok(),

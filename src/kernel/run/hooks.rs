@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 
-use crate::kernel::Message;
+use crate::sessions::Message;
 
 // ── BeforeTurnHook ──
 

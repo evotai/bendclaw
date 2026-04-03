@@ -12,7 +12,7 @@ use crate::kernel::run::planning::RunDeps;
 use crate::kernel::run::planning::RunRequest;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::trace::TraceRecorder;
-use crate::kernel::Message;
+use crate::sessions::Message;
 use crate::types::Result as AgentBaseResult;
 
 pub struct EngineHandle {

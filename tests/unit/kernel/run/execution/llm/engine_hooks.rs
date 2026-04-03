@@ -18,7 +18,7 @@ use bendclaw::kernel::run::result::Reason;
 use bendclaw::kernel::tools::run_labels::RunLabels;
 use bendclaw::kernel::tools::ToolRuntime;
 use bendclaw::kernel::trace::TraceRecorder;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 use bendclaw::storage::dal::trace::repo::SpanRepo;
 use bendclaw::storage::dal::trace::repo::TraceRepo;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;

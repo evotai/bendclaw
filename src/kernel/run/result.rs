@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::kernel::run::checkpoint::CompactionCheckpoint;
-use crate::kernel::Message;
 use crate::llm::usage::TokenUsage;
+use crate::sessions::Message;
 
 /// A block of content in the agent's final response.
 ///

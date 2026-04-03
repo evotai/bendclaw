@@ -110,11 +110,11 @@ fn entity_task_history_has_agent_id() {
 fn four_continuity_models_are_separate_files() {
     let src = src_dir();
     assert!(
-        Path::new(&format!("{src}/kernel/session/core/session_rules.rs")).exists(),
+        Path::new(&format!("{src}/sessions/core/session_rules.rs")).exists(),
         "session_rules.rs must exist"
     );
     assert!(
-        Path::new(&format!("{src}/kernel/session/core/session_memory.rs")).exists(),
+        Path::new(&format!("{src}/sessions/core/session_memory.rs")).exists(),
         "session_memory.rs must exist"
     );
     assert!(

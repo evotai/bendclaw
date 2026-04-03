@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
 use crate::kernel::run::checkpoint::CompactionCheckpoint;
-use crate::kernel::Message;
 use crate::llm::usage::TokenUsage;
+use crate::sessions::Message;
 
 /// Outcome of a compaction pass.
 pub struct CompactionOutcome {

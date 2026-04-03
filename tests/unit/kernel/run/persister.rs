@@ -12,8 +12,8 @@ use bendclaw::kernel::run::result::ContentBlock;
 use bendclaw::kernel::run::result::Reason;
 use bendclaw::kernel::run::result::Result as AgentResult;
 use bendclaw::kernel::run::result::Usage as AgentUsage;
-use bendclaw::kernel::session::backend::sink::RunPersister;
 use bendclaw::kernel::trace::TraceRecorder;
+use bendclaw::sessions::backend::sink::RunPersister;
 use bendclaw::storage::dal::run::record::RunStatus;
 use bendclaw::storage::SpanRepo;
 use bendclaw::storage::TraceRepo;
@@ -32,8 +32,8 @@ fn make_persister(client: &FakeDatabend, writer: &PersistWriter) -> TurnPersiste
     let pool = client.pool();
     let llm: Arc<dyn bendclaw::llm::provider::LLMProvider> =
         Arc::new(MockLLMProvider::with_text("unused"));
-    let storage: Arc<dyn bendclaw::kernel::session::store::SessionStore> = Arc::new(
-        bendclaw::kernel::session::store::db::DbSessionStore::new(pool.clone()),
+    let storage: Arc<dyn bendclaw::sessions::store::SessionStore> = Arc::new(
+        bendclaw::sessions::store::db::DbSessionStore::new(pool.clone()),
     );
     let trace = TraceRecorder::new(
         Arc::new(TraceRepo::new(pool.clone())),

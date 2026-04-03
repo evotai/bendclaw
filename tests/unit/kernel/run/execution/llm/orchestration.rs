@@ -7,10 +7,10 @@ use bendclaw::kernel::run::execution::llm::assistant_turn::record_assistant_turn
 use bendclaw::kernel::run::execution::llm::engine_state::RunLoopConfig;
 use bendclaw::kernel::run::execution::llm::engine_state::RunLoopState;
 use bendclaw::kernel::run::execution::llm::response_mapper::LLMResponse;
-use bendclaw::kernel::Message;
 use bendclaw::llm::message::ToolCall;
 use bendclaw::llm::stream::StreamEvent;
 use bendclaw::llm::usage::TokenUsage;
+use bendclaw::sessions::Message;
 
 fn tool_turn() -> LLMResponse {
     let mut turn = LLMResponse::new();

@@ -6,13 +6,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::config::agent::AgentConfig;
 use bendclaw::kernel::runtime::org::OrgServices;
-use bendclaw::kernel::session::runtime::session_resources::SessionResources;
-use bendclaw::kernel::session::workspace::SandboxResolver;
-use bendclaw::kernel::session::workspace::Workspace;
-use bendclaw::kernel::session::Session;
 use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolContext;
 use bendclaw::llm::provider::LLMProvider;
+use bendclaw::sessions::runtime::session_resources::SessionResources;
+use bendclaw::sessions::workspace::SandboxResolver;
+use bendclaw::sessions::workspace::Workspace;
+use bendclaw::sessions::Session;
 use bendclaw::storage::Pool;
 use parking_lot::RwLock;
 
@@ -82,8 +82,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
         llm.clone(),
     ));
 
-    let store: Arc<dyn bendclaw::kernel::session::store::SessionStore> = Arc::new(
-        bendclaw::kernel::session::store::db::DbSessionStore::new(pool.clone()),
+    let store: Arc<dyn bendclaw::sessions::store::SessionStore> = Arc::new(
+        bendclaw::sessions::store::db::DbSessionStore::new(pool.clone()),
     );
 
     let workspace = test_workspace(workspace_dir);
@@ -131,8 +131,8 @@ pub async fn test_session(llm: Arc<dyn LLMProvider>) -> Result<Session> {
                 Arc::new(vec![]),
                 std::path::PathBuf::from("/tmp"),
             )),
-            context_provider: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
-            run_initializer: Arc::new(bendclaw::kernel::session::backend::noop::NoopBackend),
+            context_provider: Arc::new(bendclaw::sessions::backend::noop::NoopBackend),
+            run_initializer: Arc::new(bendclaw::sessions::backend::noop::NoopBackend),
             skill_executor: Arc::new(bendclaw::kernel::run::execution::skills::NoopSkillExecutor),
         },
     ))

@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use bendclaw::kernel::session::workspace::SandboxResolver;
-use bendclaw::kernel::session::workspace::Workspace;
 use bendclaw::kernel::tools::ToolContext;
+use bendclaw::sessions::workspace::SandboxResolver;
+use bendclaw::sessions::workspace::Workspace;
 use bendclaw::storage::Pool;
 
 /// Build a test Workspace for a temp directory.

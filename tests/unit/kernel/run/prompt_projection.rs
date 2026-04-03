@@ -2,7 +2,7 @@ use bendclaw::kernel::run::fmt::to_chat_messages;
 use bendclaw::kernel::run::prompt_projection::count_prompt_tokens;
 use bendclaw::kernel::run::prompt_projection::is_prompt_relevant;
 use bendclaw::kernel::run::prompt_projection::prompt_token_vec;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 
 #[test]
 fn system_is_prompt_relevant() {

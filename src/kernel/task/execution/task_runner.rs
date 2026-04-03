@@ -70,7 +70,7 @@ async fn run_task_prompt(
     task: &TaskRecord,
 ) -> (String, Option<String>, Option<String>, Option<String>) {
     let session_id = format!("task_{}", task.id);
-    let session = match crate::kernel::session::factory::acquire_cloud_session(
+    let session = match crate::sessions::factory::acquire_cloud_session(
         runtime,
         agent_id,
         &session_id,

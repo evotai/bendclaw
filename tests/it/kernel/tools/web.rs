@@ -227,7 +227,7 @@ async fn web_search_success_formats_results_and_caps_count(
         created_at: String::new(),
         updated_at: String::new(),
     }];
-    let workspace = bendclaw::kernel::session::workspace::Workspace::from_variables(
+    let workspace = bendclaw::sessions::workspace::Workspace::from_variables(
         _ws_dir.clone(),
         _ws_dir,
         vec!["PATH".into(), "HOME".into()],
@@ -235,7 +235,7 @@ async fn web_search_success_formats_results_and_caps_count(
         std::time::Duration::from_secs(5),
         std::time::Duration::from_secs(300),
         1_048_576,
-        std::sync::Arc::new(bendclaw::kernel::session::workspace::SandboxResolver),
+        std::sync::Arc::new(bendclaw::sessions::workspace::SandboxResolver),
     );
     let ctx = bendclaw::kernel::tools::ToolContext {
         user_id: "u1".into(),
@@ -457,7 +457,7 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
         created_at: String::new(),
         updated_at: String::new(),
     }];
-    let workspace = bendclaw::kernel::session::workspace::Workspace::from_variables(
+    let workspace = bendclaw::sessions::workspace::Workspace::from_variables(
         _ws_dir.clone(),
         _ws_dir,
         vec!["PATH".into(), "HOME".into()],
@@ -465,7 +465,7 @@ async fn web_search_auto_falls_back_to_ddg_on_brave_failure(
         Duration::from_secs(5),
         Duration::from_secs(300),
         1_048_576,
-        Arc::new(bendclaw::kernel::session::workspace::SandboxResolver),
+        Arc::new(bendclaw::sessions::workspace::SandboxResolver),
     );
     let ctx = bendclaw::kernel::tools::ToolContext {
         user_id: "u1".into(),
@@ -570,7 +570,7 @@ async fn web_search_returns_cached_result_on_second_call() -> Result<(), Box<dyn
         created_at: String::new(),
         updated_at: String::new(),
     }];
-    let workspace = bendclaw::kernel::session::workspace::Workspace::from_variables(
+    let workspace = bendclaw::sessions::workspace::Workspace::from_variables(
         _ws_dir.clone(),
         _ws_dir,
         vec!["PATH".into(), "HOME".into()],
@@ -578,7 +578,7 @@ async fn web_search_returns_cached_result_on_second_call() -> Result<(), Box<dyn
         Duration::from_secs(5),
         Duration::from_secs(300),
         1_048_576,
-        Arc::new(bendclaw::kernel::session::workspace::SandboxResolver),
+        Arc::new(bendclaw::sessions::workspace::SandboxResolver),
     );
     let ctx = bendclaw::kernel::tools::ToolContext {
         user_id: "u1".into(),

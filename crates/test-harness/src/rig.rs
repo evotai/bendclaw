@@ -33,7 +33,7 @@ pub struct TraceMetrics {
 /// assert_eq!(m.llm_calls, 1);
 /// ```
 pub struct TestRig {
-    session: bendclaw::kernel::session::Session,
+    session: bendclaw::sessions::Session,
     trace: Arc<TraceLlm>,
 }
 

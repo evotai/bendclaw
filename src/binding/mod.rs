@@ -5,6 +5,14 @@
 //!
 //! Pipeline position: **second stage** — consumes `request/`, feeds `planning/`.
 
+pub mod cloud_session;
+pub mod prompt_builder;
+pub mod recovery_gate;
+pub mod run_binding;
+pub mod session_binding;
+pub mod session_builder;
+pub mod workspace_binding;
+
 use async_trait::async_trait;
 
 use crate::types::Result;

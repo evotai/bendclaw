@@ -1,7 +1,7 @@
 use bendclaw::kernel::run::execution::compaction::rules::keep_budget;
 use bendclaw::kernel::run::execution::compaction::rules::plan_compaction_split;
 use bendclaw::kernel::run::execution::compaction::rules::SUMMARY_RESERVE;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 
 #[test]
 fn keep_budget_reserves_summary_space() {

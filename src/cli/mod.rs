@@ -3,6 +3,7 @@ mod args;
 pub mod control;
 pub mod input;
 pub mod output;
+pub mod pipeline;
 pub mod update;
 
 pub use args::Cli;

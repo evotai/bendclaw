@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::diagnostics;
 use crate::kernel::runtime::Runtime;
-use crate::kernel::session::runtime::session_stream::Stream;
+use crate::sessions::runtime::session_stream::Stream;
 use crate::types::Result;
 
 #[allow(clippy::large_enum_variant)]
@@ -101,10 +101,9 @@ impl Runtime {
             });
         }
 
-        let session = crate::kernel::session::factory::acquire_cloud_session(
-            self, agent_id, session_id, user_id,
-        )
-        .await?;
+        let session =
+            crate::sessions::factory::acquire_cloud_session(self, agent_id, session_id, user_id)
+                .await?;
 
         if session.is_running() {
             if session.inject_message(input) {

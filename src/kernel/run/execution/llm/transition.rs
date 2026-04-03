@@ -5,8 +5,8 @@ use super::assistant_turn::record_assistant_turn;
 use super::engine_state::RunLoopState;
 use super::response_mapper::LLMResponse;
 use crate::kernel::run::result::Reason;
-use crate::kernel::Message;
 use crate::llm::providers::common::is_context_overflow_message;
+use crate::sessions::Message;
 use crate::types::ErrorSource;
 
 /// Maximum consecutive max_tokens continuations before accepting partial output.

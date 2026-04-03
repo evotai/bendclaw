@@ -1,8 +1,8 @@
 use bendclaw::kernel::run::fmt::to_chat_messages;
 use bendclaw::kernel::Content;
 use bendclaw::kernel::ErrorSource;
-use bendclaw::kernel::Message;
 use bendclaw::kernel::Role;
+use bendclaw::sessions::Message;
 
 #[test]
 fn to_chat_messages_filters_memory_and_note() {

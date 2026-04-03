@@ -6,6 +6,7 @@ pub mod kernel;
 pub mod llm;
 pub mod observability;
 pub mod service;
+pub mod sessions;
 pub mod storage;
 pub mod tracing_fmt;
 pub mod types;

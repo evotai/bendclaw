@@ -7,9 +7,9 @@ use bendclaw::kernel::run::execution::llm::response_mapper::LLMResponse;
 use bendclaw::kernel::run::execution::llm::transition::apply_turn_result;
 use bendclaw::kernel::run::execution::llm::transition::TurnTransition;
 use bendclaw::kernel::run::Reason;
-use bendclaw::kernel::Message;
 use bendclaw::llm::stream::StreamEvent;
 use bendclaw::llm::usage::TokenUsage;
+use bendclaw::sessions::Message;
 
 fn run_loop_state() -> RunLoopState {
     RunLoopState::new(

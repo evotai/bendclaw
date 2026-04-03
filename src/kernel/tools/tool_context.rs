@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::kernel::run::event::Event;
-use crate::kernel::session::workspace::Workspace;
 use crate::kernel::writer::tool_op::ToolWriter;
+use crate::sessions::workspace::Workspace;
 
 /// Runtime controls injected into tools during execution.
 #[derive(Clone)]

@@ -3,6 +3,7 @@ mod common;
 
 mod app;
 mod architecture;
+mod binding;
 mod boundary;
 mod cli;
 mod config;
@@ -12,6 +13,7 @@ mod kernel;
 mod llm;
 mod observability;
 mod service;
+mod sessions;
 mod storage;
 mod types;
 mod version;

@@ -21,12 +21,12 @@ use crate::kernel::runtime::runtime_parts::RuntimeParts;
 use crate::kernel::runtime::runtime_parts::RuntimeStatus;
 use crate::kernel::runtime::runtime_services;
 use crate::kernel::runtime::ActivityTracker;
-use crate::kernel::session::store::lifecycle::SessionLifecycle;
-use crate::kernel::session::SessionManager;
 use crate::kernel::skills::sync::SkillIndex;
 use crate::kernel::subscriptions::SharedSubscriptionStore;
 use crate::kernel::subscriptions::SubscriptionStore;
 use crate::llm::provider::LLMProvider;
+use crate::sessions::store::lifecycle::SessionLifecycle;
+use crate::sessions::SessionManager;
 use crate::storage::pool::Pool;
 use crate::types::Result;
 

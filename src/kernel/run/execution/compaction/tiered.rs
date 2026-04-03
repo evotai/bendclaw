@@ -12,10 +12,10 @@ use super::strategy::CompactionOutcome;
 use super::strategy::CompactionStrategy;
 use super::transcript;
 use crate::kernel::run::prompt_projection;
-use crate::kernel::Message;
 use crate::llm::message::ChatMessage;
 use crate::llm::provider::LLMProvider;
 use crate::llm::usage::TokenUsage;
+use crate::sessions::Message;
 
 /// Maximum characters per chunk for staged summarization (~10K tokens).
 const CHUNK_SIZE: usize = 40_000;

@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use crate::app::agent::recovery_gate;
-use crate::app::agent::recovery_gate::CleanupPolicy;
-use crate::app::agent::run_executor;
-use crate::app::agent::run_planner;
-use crate::app::agent::session_binding;
 use crate::app::result::formats;
+use crate::binding::recovery_gate;
+use crate::binding::recovery_gate::CleanupPolicy;
+use crate::binding::session_binding;
+use crate::cli::pipeline;
 use crate::request::AgentRequest;
 use crate::request::OutputFormat;
 use crate::storage::run_events::RunEventRepo;
@@ -112,10 +111,10 @@ pub async fn execute(
     .await?;
 
     // Run planning
-    let plan = run_planner::build_run_plan(&request, &session);
+    let plan = pipeline::build_run_plan(&request, &session);
 
     // Run execution
-    let envelopes = run_executor::execute_run(&run_repo, &run_event_repo, &plan).await?;
+    let envelopes = pipeline::execute_run(&run_repo, &run_event_repo, &plan).await?;
 
     // Format output
     match request.output_format {

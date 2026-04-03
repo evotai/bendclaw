@@ -1,7 +1,7 @@
 //! Transcript building and text chunking — pure functions.
 
 use crate::kernel::run::prompt_projection::is_prompt_relevant;
-use crate::kernel::Message;
+use crate::sessions::Message;
 
 /// Build a transcript string from a slice of borrowed messages.
 ///

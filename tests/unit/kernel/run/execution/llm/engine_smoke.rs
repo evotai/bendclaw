@@ -18,7 +18,7 @@ use bendclaw::kernel::tools::tool_services::NoopSecretUsageSink;
 use bendclaw::kernel::tools::ToolContext;
 use bendclaw::kernel::tools::ToolRuntime;
 use bendclaw::kernel::trace::TraceRecorder;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 use bendclaw::storage::dal::trace::repo::SpanRepo;
 use bendclaw::storage::dal::trace::repo::TraceRepo;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;

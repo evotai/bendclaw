@@ -17,8 +17,8 @@ use crate::kernel::tools::run_labels::RunLabels;
 use crate::kernel::tools::ToolContext;
 use crate::kernel::tools::ToolRuntime;
 use crate::kernel::trace::TraceRecorder;
-use crate::kernel::Message;
 use crate::llm::provider::LLMProvider;
+use crate::sessions::Message;
 
 /// High-level run request from session layer.
 pub struct RunRequest {

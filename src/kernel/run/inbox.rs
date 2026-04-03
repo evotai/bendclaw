@@ -1,4 +1,4 @@
-use crate::kernel::Message;
+use crate::sessions::Message;
 
 pub enum InboxItem {
     Message(Message),

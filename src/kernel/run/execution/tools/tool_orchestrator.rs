@@ -12,8 +12,8 @@ use super::tool_messages;
 use super::tool_recorder::ExecutionRecorder;
 use super::tool_result::ToolCallResult;
 use super::turn_context::TurnContext;
-use crate::kernel::Message;
 use crate::llm::message::ToolCall;
+use crate::sessions::Message;
 
 pub struct ToolOrchestrator {
     executor: CallExecutor,

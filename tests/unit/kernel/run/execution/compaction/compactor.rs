@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use bendclaw::kernel::run::execution::compaction::split_chunks;
 use bendclaw::kernel::run::execution::compaction::Compactor;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use tokio_util::sync::CancellationToken;
 

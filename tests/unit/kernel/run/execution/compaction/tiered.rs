@@ -4,7 +4,7 @@ use bendclaw::kernel::run::execution::compaction::build_transcript_from;
 use bendclaw::kernel::run::execution::compaction::CompactionConfig;
 use bendclaw::kernel::run::execution::compaction::CompactionStrategy;
 use bendclaw::kernel::run::execution::compaction::TieredCompactionStrategy;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 use tokio_util::sync::CancellationToken;
 

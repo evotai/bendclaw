@@ -12,10 +12,10 @@ use crate::kernel::cluster::ClusterService;
 use crate::kernel::directive::DirectiveService;
 use crate::kernel::lease::LeaseServiceHandle;
 use crate::kernel::runtime::ActivityTracker;
-use crate::kernel::session::store::lifecycle::SessionLifecycle;
-use crate::kernel::session::SessionManager;
 use crate::kernel::skills::sync::SkillIndex;
 use crate::llm::provider::LLMProvider;
+use crate::sessions::store::lifecycle::SessionLifecycle;
+use crate::sessions::SessionManager;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeStatus {

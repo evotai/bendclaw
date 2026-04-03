@@ -1,8 +1,8 @@
 //! Prompt projection — decides which messages enter the LLM prompt
 //! and provides the authoritative token counts for history budget assessment.
 
-use crate::kernel::Message;
 use crate::llm::tokens::count_tokens;
+use crate::sessions::Message;
 
 /// Whether a message will be included in the LLM prompt.
 ///

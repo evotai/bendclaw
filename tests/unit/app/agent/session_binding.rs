@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bendclaw::app::agent::session_binding::bind_session;
+use bendclaw::binding::session_binding::bind_session;
 use bendclaw::storage::local_fs::LocalFsBackend;
 use bendclaw::storage::sessions::SessionRepo;
 

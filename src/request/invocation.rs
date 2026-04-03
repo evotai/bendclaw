@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::kernel::channels::model::context::ChannelContext;
-use crate::kernel::session::runtime::run_options::RunOptions;
+use crate::sessions::runtime::run_options::RunOptions;
 
 /// Per-invocation conversation context.
 pub enum ConversationContext {

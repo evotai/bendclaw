@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use super::engine_state::RunLoopState;
 use super::response_mapper::LLMResponse;
-use crate::kernel::session::message::MessageMetrics;
-use crate::kernel::Message;
 use crate::kernel::OpType;
 use crate::kernel::OperationMeta;
 use crate::llm::message::ToolCall;
+use crate::sessions::message::MessageMetrics;
+use crate::sessions::Message;
 
 pub fn assistant_message_from_turn(
     turn: &LLMResponse,

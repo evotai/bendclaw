@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use anyhow::Result;
-use bendclaw::kernel::session::workspace::OpenResolver;
-use bendclaw::kernel::session::workspace::SandboxResolver;
-use bendclaw::kernel::session::workspace::Workspace;
+use bendclaw::sessions::workspace::OpenResolver;
+use bendclaw::sessions::workspace::SandboxResolver;
+use bendclaw::sessions::workspace::Workspace;
 
 fn test_ws(dir: std::path::PathBuf) -> Workspace {
     Workspace::new(

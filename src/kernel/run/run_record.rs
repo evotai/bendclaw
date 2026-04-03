@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::kernel::run::persist::persist_op::PersistOp;
 use crate::kernel::run::persist::persist_op::PersistWriter;
-use crate::kernel::session::store::SessionStore;
+use crate::sessions::store::SessionStore;
 use crate::types::Result;
 
 /// Create session record (first turn) and run record. Returns the run_id.

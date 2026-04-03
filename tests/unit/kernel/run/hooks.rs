@@ -3,7 +3,7 @@ use bendclaw::kernel::run::hooks::BeforeTurnHook;
 use bendclaw::kernel::run::hooks::SteeringDecision;
 use bendclaw::kernel::run::hooks::SteeringSource;
 use bendclaw::kernel::run::hooks::TurnDecision;
-use bendclaw::kernel::Message;
+use bendclaw::sessions::Message;
 
 // ── BeforeTurnHook ──
 

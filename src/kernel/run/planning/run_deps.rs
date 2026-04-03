@@ -4,12 +4,12 @@ use crate::kernel::memory::MemoryService;
 use crate::kernel::run::execution::skills::SkillExecutor;
 use crate::kernel::run::hooks::BeforeTurnHook;
 use crate::kernel::run::hooks::SteeringSource;
-use crate::kernel::session::runtime::session_resources::SessionResources;
 use crate::kernel::tools::definition::toolset::Toolset;
+use crate::sessions::runtime::session_resources::SessionResources;
 
 /// Narrow projection of SessionResources — only what run assembly needs.
 pub struct RunDeps {
-    pub workspace: Arc<crate::kernel::session::workspace::Workspace>,
+    pub workspace: Arc<crate::sessions::workspace::Workspace>,
     pub toolset: Toolset,
     pub skill_executor: Arc<dyn SkillExecutor>,
     pub tool_writer: crate::kernel::writer::tool_op::ToolWriter,

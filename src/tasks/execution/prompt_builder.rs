@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::kernel::runtime::Runtime;
+use crate::runtime::Runtime;
 use crate::storage::dal::task::TaskDelivery;
 use crate::tasks::delivery::delivery_context::resolve_channel_delivery_context;
 use crate::tasks::delivery::delivery_context::ChannelDeliveryContext;

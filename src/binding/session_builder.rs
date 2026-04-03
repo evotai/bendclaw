@@ -29,9 +29,9 @@ type ToolWriter = BackgroundWriter<crate::writer::tool_op::ToolWriteOp>;
 // ═══════════════════════════════════════════════════════════════════
 
 use crate::agent_store::AgentStore;
-use crate::kernel::runtime::Runtime;
 use crate::planning::PromptConfig;
 use crate::planning::PromptVariable;
+use crate::runtime::Runtime;
 use crate::tools::selection::build_cloud_toolset;
 use crate::tools::selection::CloudToolsetDeps;
 use crate::tools::tool_services::DbSecretUsageSink;
@@ -200,7 +200,7 @@ pub struct CloudBuildOptions {
 //  Local session building
 // ═══════════════════════════════════════════════════════════════════
 
-use crate::kernel::runtime::session_org::LocalOrgServices;
+use crate::runtime::session_org::LocalOrgServices;
 use crate::sessions::store::json::JsonSessionStore;
 use crate::tools::selection::build_local_toolset;
 

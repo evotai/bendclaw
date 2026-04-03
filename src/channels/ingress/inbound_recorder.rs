@@ -1,7 +1,7 @@
 use crate::channels::model::account::ChannelAccount;
 use crate::channels::model::message::InboundEvent;
 use crate::channels::runtime::writer::ChannelMessageOp;
-use crate::kernel::runtime::Runtime;
+use crate::runtime::Runtime;
 use crate::storage::dal::channel_message::record::ChannelMessageRecord;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
 use crate::types::new_id;

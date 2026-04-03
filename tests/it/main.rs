@@ -2,10 +2,13 @@
 mod common;
 
 mod channels;
-mod kernel;
+mod cluster;
+mod execution;
 mod llm;
 mod mocks;
-mod service;
+mod runtime;
+mod server;
+mod sessions;
 mod skills;
 mod storage;
 mod tools;

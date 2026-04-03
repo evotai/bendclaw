@@ -1,13 +1,13 @@
 use anyhow::bail;
 use anyhow::Result;
-use bendclaw::kernel::new_id;
-use bendclaw::kernel::validate_agent_id;
-use bendclaw::kernel::Content;
-use bendclaw::kernel::ErrorSource;
-use bendclaw::kernel::Role;
-use bendclaw::kernel::ToolCall;
 use bendclaw::tools::Impact;
 use bendclaw::tools::OpType;
+use bendclaw::types::new_id;
+use bendclaw::types::validate_agent_id;
+use bendclaw::types::Content;
+use bendclaw::types::ErrorSource;
+use bendclaw::types::Role;
+use bendclaw::types::ToolCall;
 
 // ── Role ──
 

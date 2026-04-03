@@ -2,7 +2,6 @@
 mod common;
 
 mod agent_store;
-mod app;
 mod architecture;
 mod binding;
 mod boundary;
@@ -14,13 +13,14 @@ mod config_cluster;
 mod config_directive;
 mod directive;
 mod execution;
-mod kernel;
 mod lease;
 mod llm;
 mod memory;
 mod observability;
 mod planning;
-mod service;
+mod result;
+mod runtime;
+mod server;
 mod sessions;
 mod skills;
 mod storage;

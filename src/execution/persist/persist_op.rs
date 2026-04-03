@@ -388,7 +388,7 @@ async fn handle_op(op: PersistOp) {
             summary_text,
             through_run_id,
         } => {
-            let run_id = crate::kernel::new_run_id();
+            let run_id = crate::types::new_run_id();
             if let Err(e) = storage
                 .run_insert(&RunRecord {
                     id: run_id.clone(),

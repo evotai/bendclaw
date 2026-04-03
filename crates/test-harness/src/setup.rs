@@ -47,13 +47,13 @@ impl TestContext {
         &self,
         llm: Arc<dyn bendclaw::llm::provider::LLMProvider>,
     ) -> anyhow::Result<axum::Router> {
-        use bendclaw::service::state::AppState;
+        use bendclaw::server::state::AppState;
 
         let (base_url, token, warehouse) = require_api_config()?;
         let skills_dir = std::env::temp_dir().join("bendclaw-test-skills");
         std::fs::create_dir_all(&skills_dir)?;
 
-        let runtime = bendclaw::kernel::Runtime::new(
+        let runtime = bendclaw::runtime::Runtime::new(
             &base_url,
             &token,
             &warehouse,
@@ -70,7 +70,7 @@ impl TestContext {
             auth_key: String::new(),
             shutdown_token: tokio_util::sync::CancellationToken::new(),
         };
-        Ok(bendclaw::service::api_router(
+        Ok(bendclaw::server::api_router(
             state,
             "info",
             &bendclaw::config::AuthConfig::default(),

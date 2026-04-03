@@ -3,13 +3,13 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::kernel::new_id;
 use crate::storage::dal::trace::record::SpanRecord;
 use crate::storage::dal::trace::record::TraceRecord;
 use crate::storage::dal::trace::repo::SpanRepo;
 use crate::storage::dal::trace::repo::TraceRepo;
 use crate::traces::writer::TraceOp;
 use crate::traces::writer::TraceWriter;
+use crate::types::new_id;
 
 #[derive(Clone)]
 pub struct TraceRecorder {

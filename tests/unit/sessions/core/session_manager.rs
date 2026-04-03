@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bendclaw::config::agent::AgentConfig;
-use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::llm::message::ChatMessage;
 use bendclaw::llm::provider::LLMProvider;
 use bendclaw::llm::provider::LLMResponse;
 use bendclaw::llm::stream::ResponseStream;
 use bendclaw::llm::tool::ToolSchema;
+use bendclaw::runtime::org::OrgServices;
 use bendclaw::sessions::core::session_state::SessionState;
 use bendclaw::sessions::runtime::session_resources::SessionResources;
 use bendclaw::sessions::workspace::SandboxResolver;

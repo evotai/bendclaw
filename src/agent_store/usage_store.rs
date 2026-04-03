@@ -99,7 +99,7 @@ impl UsageStore {
             (event.prompt_tokens as f64 * ip + event.completion_tokens as f64 * op) / 1_000_000.0
         };
         UsageRecord {
-            id: crate::kernel::new_id(),
+            id: crate::types::new_id(),
             agent_id: event.agent_id,
             user_id: event.user_id,
             session_id: event.session_id,

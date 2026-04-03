@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::binding::session_builder::CloudBuildOptions;
 use crate::binding::session_builder::SessionBuilder;
-use crate::kernel::runtime::Runtime;
 use crate::request::invocation::*;
+use crate::runtime::Runtime;
 use crate::sessions::build::session_capabilities::SessionOwner;
 use crate::sessions::Session;
 use crate::types::Result;

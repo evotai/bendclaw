@@ -8,7 +8,6 @@ use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillOutput;
 use bendclaw::execution::tools::tool_executor::CallExecutor;
 use bendclaw::execution::tools::tool_result::ToolCallResult;
-use bendclaw::kernel::ErrorCode;
 use bendclaw::llm::message::ToolCall;
 use bendclaw::tools::definition::tool_definition::ToolDefinition;
 use bendclaw::tools::selection::tool_registry::ToolRegistry;
@@ -18,6 +17,7 @@ use bendclaw::tools::OperationClassifier;
 use bendclaw::tools::Tool;
 use bendclaw::tools::ToolContext;
 use bendclaw::tools::ToolResult;
+use bendclaw::types::ErrorCode;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 

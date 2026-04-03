@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bendclaw::config::agent::AgentConfig;
-use bendclaw::kernel::runtime::org::OrgServices;
 use bendclaw::llm::provider::LLMProvider;
+use bendclaw::runtime::org::OrgServices;
 use bendclaw::sessions::runtime::session_resources::SessionResources;
 use bendclaw::sessions::workspace::SandboxResolver;
 use bendclaw::sessions::workspace::Workspace;

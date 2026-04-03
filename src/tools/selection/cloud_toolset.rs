@@ -14,7 +14,7 @@ use crate::tools::selection::local_toolset::build_core_entries;
 use crate::tools::tool_services::SecretUsageSink;
 
 pub struct CloudToolsetDeps {
-    pub org: Arc<crate::kernel::runtime::org::OrgServices>,
+    pub org: Arc<crate::runtime::org::OrgServices>,
     pub databend_pool: Pool,
     pub channels: Arc<ChannelRegistry>,
     pub node_id: String,

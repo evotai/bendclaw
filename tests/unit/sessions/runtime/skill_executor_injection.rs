@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bendclaw::execution::skills::SkillExecutor;
 use bendclaw::execution::skills::SkillOutput;
-use bendclaw::kernel::runtime::session_org::LocalOrgServices;
+use bendclaw::runtime::session_org::LocalOrgServices;
 use bendclaw::sessions::backend::noop::NoopBackend;
 use bendclaw::sessions::build::session_capabilities::*;
 use bendclaw::tools::definition::toolset::Toolset;

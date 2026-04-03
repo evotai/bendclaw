@@ -3,8 +3,8 @@ use std::sync::Arc;
 use super::dispatch_context::DispatchContext;
 use crate::channels::model::account::ChannelAccount;
 use crate::channels::runtime::diagnostics;
-use crate::kernel::runtime::Runtime;
 use crate::observability::log::channel_log;
+use crate::runtime::Runtime;
 
 /// Handle slash commands (/new, /clear). Returns true if handled.
 pub(crate) async fn handle_slash_command(

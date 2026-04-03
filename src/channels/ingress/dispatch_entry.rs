@@ -12,8 +12,8 @@ use crate::channels::routing::debouncer::DebouncedInput;
 use crate::channels::routing::typing_keepalive::TypingKeepalive;
 use crate::channels::routing::typing_keepalive::TypingKeepaliveConfig;
 use crate::channels::runtime::diagnostics;
-use crate::kernel::runtime::Runtime;
 use crate::observability::log::channel_log;
+use crate::runtime::Runtime;
 
 /// Dispatch a debounced input through the full conversation pipeline.
 /// Called by ChatRouter after per-chat serialization and debounce.

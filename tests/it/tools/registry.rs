@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bendclaw::config::agent::AgentConfig;
-use bendclaw::kernel::runtime::org::OrgServices;
+use bendclaw::runtime::org::OrgServices;
 use bendclaw::skills::sync::SkillIndex;
 use bendclaw::tools::definition::toolset::Toolset;
 use bendclaw::tools::tool_services::NoopSecretUsageSink;

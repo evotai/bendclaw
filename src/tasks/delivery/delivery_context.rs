@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::kernel::runtime::Runtime;
+use crate::runtime::Runtime;
 use crate::storage::dal::channel_account::repo::ChannelAccountRepo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

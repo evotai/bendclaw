@@ -12,11 +12,11 @@ use crate::execution::event::Event;
 use crate::execution::result::Reason;
 use crate::execution::result::Result as AgentResult;
 use crate::execution::result::RunOutput;
-use crate::kernel::ErrorSource;
 use crate::sessions::backend::sink::RunPersister;
 use crate::sessions::core::session_state::SessionState;
 use crate::sessions::Message;
 use crate::types::ErrorCode;
+use crate::types::ErrorSource;
 use crate::types::Result;
 
 /// Backward-compatible alias. New code should use `RunOutput` directly.

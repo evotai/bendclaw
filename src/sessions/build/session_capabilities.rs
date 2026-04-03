@@ -60,7 +60,7 @@ pub struct RuntimeInfra {
 
 /// Agent-level context: org, config, prompt data, optional services.
 pub struct AgentContext {
-    pub org: Arc<dyn crate::kernel::runtime::session_org::SessionOrgServices>,
+    pub org: Arc<dyn crate::runtime::session_org::SessionOrgServices>,
     pub config: Arc<AgentConfig>,
     pub cluster_client: Option<Arc<crate::cluster::ClusterService>>,
     pub directive: Option<Arc<DirectiveService>>,

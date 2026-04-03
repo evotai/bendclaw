@@ -4,7 +4,7 @@ use std::time::Instant;
 use super::finish_execution::finish_execution;
 use super::prompt_builder::enrich_prompt_with_delivery;
 use super::task_result::classify_task_run_output;
-use crate::kernel::runtime::Runtime;
+use crate::runtime::Runtime;
 use crate::storage::dal::task::TaskRecord;
 use crate::tasks::delivery::delivery_service::deliver_result;
 use crate::tasks::diagnostics;

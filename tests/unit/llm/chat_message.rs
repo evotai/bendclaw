@@ -1,8 +1,8 @@
 use anyhow::Result;
-use bendclaw::kernel::Content;
-use bendclaw::kernel::Role;
 use bendclaw::llm::message::CacheControl;
 use bendclaw::llm::message::ChatMessage;
+use bendclaw::types::Content;
+use bendclaw::types::Role;
 
 #[test]
 fn chat_message_system() {
@@ -37,7 +37,7 @@ fn chat_message_assistant() {
 
 #[test]
 fn chat_message_assistant_with_tool_calls() {
-    let tc = bendclaw::kernel::ToolCall {
+    let tc = bendclaw::types::ToolCall {
         id: "tc1".into(),
         name: "shell".into(),
         arguments: "{}".into(),

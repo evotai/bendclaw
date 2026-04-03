@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use super::cloud_session::acquire_session;
 use crate::execution::result::RunOutput;
-use crate::kernel::runtime::Runtime;
 use crate::planning::PromptRequestMeta;
 use crate::request::invocation::*;
 use crate::request::validate;
+use crate::runtime::Runtime;
 use crate::sessions::runtime::run_options::RunOptions;
 use crate::sessions::runtime::session_stream::Stream;
 use crate::types::Result;

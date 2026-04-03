@@ -7,9 +7,9 @@ use bendclaw::cli::cmd_stop;
 use bendclaw::cli::Cli;
 use bendclaw::cli::Command;
 use bendclaw::config::BendClawConfig;
-use bendclaw::kernel::Runtime;
 use bendclaw::llm::router::LLMRouter;
-use bendclaw::service::state::AppState;
+use bendclaw::runtime::Runtime;
+use bendclaw::server::state::AppState;
 use bendclaw::tracing_fmt;
 use clap::Parser;
 use tracing::info;
@@ -171,14 +171,14 @@ async fn cmd_run(
         shutdown_token: shutdown_token.clone(),
     };
 
-    let api_router = bendclaw::service::api_router(state, &config.log.level, &config.auth);
+    let api_router = bendclaw::server::api_router(state, &config.log.level, &config.auth);
 
     let api_bind = &config.server.bind_addr;
     let api_listener = tokio::net::TcpListener::bind(api_bind).await?;
     let api_local_addr = api_listener.local_addr()?;
 
     let admin_listener = if let Some(ref admin) = config.admin {
-        let admin_state = bendclaw::service::AdminState {
+        let admin_state = bendclaw::server::AdminState {
             runtime: runtime.clone(),
             shutdown_token: shutdown_token.clone(),
         };
@@ -191,7 +191,7 @@ async fn cmd_run(
             admin_addr = %admin_local_addr,
             "server ready"
         );
-        Some((listener, bendclaw::service::admin_router(admin_state)))
+        Some((listener, bendclaw::server::admin_router(admin_state)))
     } else {
         info!(
             stage = "server",
@@ -211,7 +211,7 @@ async fn cmd_run(
             .with_graceful_shutdown(async move { admin_shutdown.cancelled().await })
     });
 
-    bendclaw::service::server::supervise_servers(shutdown_token, api_server, admin_server, async {
+    bendclaw::server::server::supervise_servers(shutdown_token, api_server, admin_server, async {
         let _ = tokio::signal::ctrl_c().await;
     })
     .await?;

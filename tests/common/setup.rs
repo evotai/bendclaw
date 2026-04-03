@@ -171,7 +171,7 @@ pub struct TestNodeOptions {
 }
 
 pub struct TestNode {
-    pub runtime: Arc<bendclaw::kernel::Runtime>,
+    pub runtime: Arc<bendclaw::runtime::Runtime>,
     pub base_url: String,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     server_handle: Option<tokio::task::JoinHandle<()>>,
@@ -210,7 +210,7 @@ pub async fn spawn_test_node(mut options: TestNodeOptions) -> anyhow::Result<Tes
         ..Default::default()
     };
 
-    let runtime = bendclaw::kernel::Runtime::new(
+    let runtime = bendclaw::runtime::Runtime::new(
         &options.api_base_url,
         &options.api_token,
         &options.warehouse,
@@ -230,12 +230,12 @@ pub async fn spawn_test_node(mut options: TestNodeOptions) -> anyhow::Result<Tes
         api_key: options.auth_key.clone(),
         cors_origins: Vec::new(),
     };
-    let state = bendclaw::service::state::AppState {
+    let state = bendclaw::server::state::AppState {
         runtime: runtime.clone(),
         auth_key: options.auth_key,
         shutdown_token: tokio_util::sync::CancellationToken::new(),
     };
-    let router = bendclaw::service::api_router(state, "info", &auth);
+    let router = bendclaw::server::api_router(state, "info", &auth);
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let server_handle = tokio::spawn(async move {
@@ -283,7 +283,7 @@ pub async fn app_with_workspace(
     db_prefix: &str,
     llm: Arc<dyn bendclaw::llm::provider::LLMProvider>,
 ) -> anyhow::Result<(axum::Router, std::path::PathBuf)> {
-    use bendclaw::service::state::AppState;
+    use bendclaw::server::state::AppState;
 
     let workspace = bendclaw::config::WorkspaceConfig {
         root_dir: std::env::temp_dir()
@@ -295,7 +295,7 @@ pub async fn app_with_workspace(
 
     let workspace_root = std::path::PathBuf::from(&workspace.root_dir);
 
-    let runtime = bendclaw::kernel::Runtime::new(
+    let runtime = bendclaw::runtime::Runtime::new(
         api_base_url,
         api_token,
         warehouse,
@@ -315,7 +315,7 @@ pub async fn app_with_workspace(
         shutdown_token: tokio_util::sync::CancellationToken::new(),
     };
     Ok((
-        bendclaw::service::api_router(state, "info", &bendclaw::config::AuthConfig::default()),
+        bendclaw::server::api_router(state, "info", &bendclaw::config::AuthConfig::default()),
         workspace_root,
     ))
 }

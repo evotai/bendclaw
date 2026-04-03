@@ -121,7 +121,7 @@ fn build_event_records(
         .enumerate()
         .filter_map(|(idx, event)| {
             Some(RunEventRecord {
-                id: crate::kernel::new_id(),
+                id: crate::types::new_id(),
                 run_id: run_id.to_string(),
                 session_id: session_id.to_string(),
                 agent_id: agent_id.to_string(),

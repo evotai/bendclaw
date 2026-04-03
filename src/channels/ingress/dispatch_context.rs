@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::channels::model::account::ChannelAccount;
 use crate::channels::model::context::ChannelContext;
 use crate::channels::runtime::channel_trait::ChannelOutbound;
-use crate::kernel::runtime::Runtime;
+use crate::runtime::Runtime;
 use crate::storage::dal::channel_message::repo::ChannelMessageRepo;
 
 pub(crate) struct DispatchContext {

@@ -13,8 +13,8 @@ use super::prompt_model::*;
 use super::prompt_renderer::build_prompt;
 use crate::agent_store::AgentStore;
 use crate::cluster::ClusterService;
-use crate::kernel::runtime::org::OrgServices;
 use crate::planning::prompt_diagnostics;
+use crate::runtime::org::OrgServices;
 use crate::tools::definition::tool_definition::ToolDefinition;
 use crate::types::Result;
 

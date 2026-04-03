@@ -46,7 +46,7 @@ impl DbSessionStore {
 
     fn event_to_record(event: UsageEvent) -> UsageRecord {
         UsageRecord {
-            id: crate::kernel::new_id(),
+            id: crate::types::new_id(),
             agent_id: event.agent_id,
             user_id: event.user_id,
             session_id: event.session_id,

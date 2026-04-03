@@ -1,8 +1,8 @@
 use bendclaw::execution::fmt::to_chat_messages;
-use bendclaw::kernel::Content;
-use bendclaw::kernel::ErrorSource;
-use bendclaw::kernel::Role;
 use bendclaw::sessions::Message;
+use bendclaw::types::Content;
+use bendclaw::types::ErrorSource;
+use bendclaw::types::Role;
 
 #[test]
 fn to_chat_messages_filters_memory_and_note() {
@@ -51,7 +51,7 @@ fn to_chat_messages_user_multimodal() {
 
 #[test]
 fn to_chat_messages_assistant_with_tool_calls() {
-    let tc = bendclaw::kernel::ToolCall {
+    let tc = bendclaw::types::ToolCall {
         id: "tc1".into(),
         name: "shell".into(),
         arguments: "{}".into(),

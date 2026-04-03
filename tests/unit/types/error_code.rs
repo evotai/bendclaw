@@ -1,6 +1,6 @@
 use anyhow::bail;
 use anyhow::Result;
-use bendclaw::kernel::ErrorCode;
+use bendclaw::types::ErrorCode;
 use bendclaw::types::OptionExt;
 use bendclaw::types::ResultExt;
 

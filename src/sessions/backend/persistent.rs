@@ -122,7 +122,7 @@ impl<S: SessionStore + 'static> SessionContextProvider for PersistentBackend<S> 
 
 impl<S: SessionStore + 'static> RunInitializer for PersistentBackend<S> {
     fn init_run(&self, input: &str, parent_run_id: Option<&str>, node_id: &str) -> Result<String> {
-        let run_id = crate::kernel::new_run_id();
+        let run_id = crate::types::new_run_id();
 
         self.persist_writer.send(PersistOp::InitRun {
             storage: self.store.clone(),

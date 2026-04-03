@@ -94,7 +94,7 @@ fn llm_does_not_depend_on_kernel() -> Result<()> {
 
 #[test]
 fn service_http_and_service_do_not_touch_storage_infra() -> Result<()> {
-    let root = repo_root().join("src/service");
+    let root = repo_root().join("src/server");
     let mut offenders = Vec::new();
     for path in rust_files_under(&root) {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -122,8 +122,8 @@ fn service_http_and_service_do_not_touch_storage_infra() -> Result<()> {
 }
 
 #[test]
-fn service_query_does_not_call_repo_write_methods() -> Result<()> {
-    let root = repo_root().join("src/service");
+fn server_query_does_not_call_repo_write_methods() -> Result<()> {
+    let root = repo_root().join("src/server");
     let write_markers = [
         ".insert(",
         ".upsert(",

@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bendclaw::kernel::run::planning::LocalPromptResolver;
-use bendclaw::kernel::run::planning::PromptRequestMeta;
-use bendclaw::kernel::run::planning::PromptResolver;
-use bendclaw::kernel::run::planning::PromptSeed;
+use bendclaw::planning::LocalPromptResolver;
+use bendclaw::planning::PromptRequestMeta;
+use bendclaw::planning::PromptResolver;
+use bendclaw::planning::PromptSeed;
 
 fn noop_meta() -> PromptRequestMeta {
     PromptRequestMeta {

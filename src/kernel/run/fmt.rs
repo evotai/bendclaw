@@ -1,5 +1,5 @@
-use super::prompt_projection::is_prompt_relevant;
 use crate::llm::message::ChatMessage;
+use crate::planning::prompt_projection::is_prompt_relevant;
 use crate::sessions::Message;
 
 /// Convert application-layer messages to LLM-compatible messages.

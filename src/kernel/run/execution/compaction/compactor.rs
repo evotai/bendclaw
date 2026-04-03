@@ -14,9 +14,9 @@ use super::strategy::CompactionConfig;
 use super::strategy::CompactionStrategy;
 use super::tiered::TieredCompactionStrategy;
 use crate::kernel::run::checkpoint::CompactionCheckpoint;
-use crate::kernel::run::prompt_projection;
 use crate::llm::provider::LLMProvider;
 use crate::llm::usage::TokenUsage;
+use crate::planning::prompt_projection;
 use crate::sessions::Message;
 
 /// Minimum interval between compaction attempts.

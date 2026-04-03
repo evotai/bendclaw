@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::kernel::run::planning::tool_view::ProgressiveToolView;
 use crate::llm::provider::LLMProvider;
+use crate::planning::tool_view::ProgressiveToolView;
 use crate::sessions::Message;
 
 /// Per-session context — pure data, no sandbox or tool resources.

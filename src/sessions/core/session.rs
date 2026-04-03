@@ -89,7 +89,7 @@ impl Session {
     pub async fn run_with_meta(
         &self,
         user_message: &str,
-        meta: crate::kernel::run::planning::PromptRequestMeta,
+        meta: crate::planning::PromptRequestMeta,
         options: RunOptions,
     ) -> Result<Stream> {
         self.ensure_idle()?;
@@ -109,7 +109,7 @@ impl Session {
 
     /// Convenience: run with options, deriving prompt meta from overlays.
     pub async fn run_with_options(&self, user_message: &str, opts: RunOptions) -> Result<Stream> {
-        let meta = crate::kernel::run::planning::PromptRequestMeta {
+        let meta = crate::planning::PromptRequestMeta {
             channel_type: None,
             channel_chat_id: None,
             system_overlay: opts.system_overlay.clone(),
@@ -148,7 +148,7 @@ impl Session {
             is_remote_dispatch,
             start,
             RunOptions::default(),
-            crate::kernel::run::planning::PromptRequestMeta::default(),
+            crate::planning::PromptRequestMeta::default(),
         )
         .await
     }

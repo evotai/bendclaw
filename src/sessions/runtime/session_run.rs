@@ -13,13 +13,13 @@ use super::session_stream::Stream;
 use crate::kernel::run::launcher;
 use crate::kernel::run::launcher::EngineHandle;
 use crate::kernel::run::persist::persister::TurnPersister;
-use crate::kernel::run::planning::RunConfig;
-use crate::kernel::run::planning::RunDeps;
-use crate::kernel::run::planning::RunRequest;
 use crate::kernel::trace::TraceRecorder;
 use crate::llm::provider::LLMProvider;
 use crate::observability::audit;
 use crate::observability::server_log;
+use crate::planning::RunConfig;
+use crate::planning::RunDeps;
+use crate::planning::RunRequest;
 use crate::sessions::core::session_state::SessionState;
 use crate::sessions::diagnostics;
 use crate::sessions::Message;
@@ -48,7 +48,7 @@ impl<'a> SessionRunCoordinator<'a> {
         is_remote_dispatch: bool,
         started_at: Instant,
         opts: RunOptions,
-        meta: crate::kernel::run::planning::PromptRequestMeta,
+        meta: crate::planning::PromptRequestMeta,
     ) -> Result<Stream> {
         self.enforce_token_limits().await?;
 

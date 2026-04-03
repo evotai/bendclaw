@@ -29,12 +29,12 @@ type ToolWriter = BackgroundWriter<crate::kernel::writer::tool_op::ToolWriteOp>;
 // ═══════════════════════════════════════════════════════════════════
 
 use crate::kernel::agent_store::AgentStore;
-use crate::kernel::run::planning::PromptConfig;
-use crate::kernel::run::planning::PromptVariable;
 use crate::kernel::runtime::Runtime;
 use crate::kernel::tools::selection::build_cloud_toolset;
 use crate::kernel::tools::selection::CloudToolsetDeps;
 use crate::kernel::tools::tool_services::DbSecretUsageSink;
+use crate::planning::PromptConfig;
+use crate::planning::PromptVariable;
 
 /// Builds a full cloud session with all services, tools, skills, memory.
 pub struct SessionBuilder {

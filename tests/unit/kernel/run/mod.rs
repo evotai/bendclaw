@@ -5,7 +5,6 @@ mod fmt;
 mod hooks;
 mod persist;
 mod persister;
-mod planning;
 mod prompt_projection;
 mod result;
 mod runtime_context;

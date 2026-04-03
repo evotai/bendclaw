@@ -11,10 +11,10 @@ use super::strategy::CompactionConfig;
 use super::strategy::CompactionOutcome;
 use super::strategy::CompactionStrategy;
 use super::transcript;
-use crate::kernel::run::prompt_projection;
 use crate::llm::message::ChatMessage;
 use crate::llm::provider::LLMProvider;
 use crate::llm::usage::TokenUsage;
+use crate::planning::prompt_projection;
 use crate::sessions::Message;
 
 /// Maximum characters per chunk for staged summarization (~10K tokens).
@@ -250,7 +250,7 @@ impl TieredCompactionStrategy {
     ) -> Option<CompactionOutcome> {
         use super::rules::plan_compaction_split;
         use crate::kernel::run::checkpoint::CompactionCheckpoint;
-        use crate::kernel::run::prompt_projection::prompt_token_vec;
+        use crate::planning::prompt_projection::prompt_token_vec;
 
         let msg_tokens = prompt_token_vec(&messages);
         let plan = plan_compaction_split(&messages, &msg_tokens, config.max_context_tokens)?;

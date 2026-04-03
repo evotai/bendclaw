@@ -56,8 +56,8 @@ fn build_assembly_with_mock(executor: Arc<dyn SkillExecutor>) -> SessionAssembly
                 tools: Arc::new(vec![]),
                 allowed_tool_names: None,
             },
-            prompt_resolver: Arc::new(bendclaw::kernel::run::planning::LocalPromptResolver::new(
-                bendclaw::kernel::run::planning::PromptSeed::default(),
+            prompt_resolver: Arc::new(bendclaw::planning::LocalPromptResolver::new(
+                bendclaw::planning::PromptSeed::default(),
                 Arc::new(vec![]),
                 std::path::PathBuf::from("/tmp"),
             )),

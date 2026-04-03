@@ -6,12 +6,12 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::kernel::run::event::Event;
-use crate::kernel::run::planning::build_run_driver;
-use crate::kernel::run::planning::RunConfig;
-use crate::kernel::run::planning::RunDeps;
-use crate::kernel::run::planning::RunRequest;
 use crate::kernel::run::result::Result as AgentResult;
 use crate::kernel::trace::TraceRecorder;
+use crate::planning::build_run_driver;
+use crate::planning::RunConfig;
+use crate::planning::RunDeps;
+use crate::planning::RunRequest;
 use crate::sessions::Message;
 use crate::types::Result as AgentBaseResult;
 

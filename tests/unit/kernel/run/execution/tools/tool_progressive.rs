@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use bendclaw::kernel::run::planning::tool_view::ExpansionStrategy;
-use bendclaw::kernel::run::planning::tool_view::ProgressiveToolView;
 use bendclaw::llm::tool::ToolSchema;
+use bendclaw::planning::tool_view::ExpansionStrategy;
+use bendclaw::planning::tool_view::ProgressiveToolView;
 
 fn test_tools() -> Arc<Vec<ToolSchema>> {
     Arc::new(vec![

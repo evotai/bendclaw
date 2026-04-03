@@ -12,6 +12,7 @@ mod config_directive;
 mod kernel;
 mod llm;
 mod observability;
+mod planning;
 mod service;
 mod sessions;
 mod storage;

@@ -7,12 +7,12 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bendclaw::kernel::run::planning::build_run_driver;
-use bendclaw::kernel::run::planning::RunConfig;
-use bendclaw::kernel::run::planning::RunDeps;
-use bendclaw::kernel::run::planning::RunRequest;
 use bendclaw::kernel::tools::definition::toolset::Toolset;
 use bendclaw::kernel::trace::TraceRecorder;
+use bendclaw::planning::build_run_driver;
+use bendclaw::planning::RunConfig;
+use bendclaw::planning::RunDeps;
+use bendclaw::planning::RunRequest;
 use bendclaw_test_harness::mocks::llm::MockLLMProvider;
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::kernel::run::persist::persist_op::PersistWriter;
-use crate::kernel::run::planning::prompt_model::PromptConfig;
+use crate::planning::prompt_model::PromptConfig;
 use crate::sessions::backend::persistent::PersistentBackend;
 use crate::sessions::store::json::JsonSessionStore;
 use crate::storage::Pool;

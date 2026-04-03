@@ -11,8 +11,8 @@ use super::super::memory::pressure::PressureLevel;
 use super::turn_context::TurnContext;
 use crate::kernel::run::event::Event;
 use crate::kernel::run::hooks::SteeringDecision;
-use crate::kernel::run::prompt_projection;
 use crate::llm::message::ToolCall;
+use crate::planning::prompt_projection;
 
 impl Engine {
     pub(in crate::kernel::run::execution) async fn dispatch_tools(

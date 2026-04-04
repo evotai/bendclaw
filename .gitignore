@@ -1,0 +1,13 @@
+/target
+.env
+*.swp
+*.swo
+.DS_Store
+prompts/
+.claude/settings.local.json
+.claude/worktrees/
+.factory/
+workspace/
+coverage/
+.idea/
+.vscode/

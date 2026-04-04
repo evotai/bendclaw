@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Create as beta prerelease'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: bendclaw
+
+jobs:
+  create_release:
+    name: Create tag and prerelease (draft)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      version: ${{ steps.next.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+      previous: ${{ steps.next.outputs.previous }}
+      name: ${{ steps.next.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+          ref: ${{ github.ref_name }}
+
+      - name: Configure git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine next version (CalVer)
+        id: next
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          YEAR="$(date -u +%Y)"
+          MONTH="$(date -u +%-m)"
+          DAY="$(date -u +%-d)"
+          BASE="${YEAR}.${MONTH}.${DAY}"
+          PREV="$(
+            gh release list --limit 100 --json tagName --jq '.[].tagName' \
+              | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+' \
+              | sort -V \
+              | tail -n 1 \
+              || true
+          )"
+          if [ -z "${PREV}" ]; then
+            PREV="$(
+              git for-each-ref --sort=-version:refname --format='%(refname:strip=2)' refs/tags \
+                | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+' \
+                | head -n 1 \
+                || true
+            )"
+          fi
+          PREV="$(printf '%s' "${PREV}" | tr -d '\r' | xargs)"
+
+          IS_BETA="${{ inputs.prerelease }}"
+
+          if [ "${IS_BETA}" = "true" ]; then
+            SUFFIX=1
+            while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${BASE}-beta.${SUFFIX}" >/dev/null 2>&1; do
+              SUFFIX=$((SUFFIX + 1))
+            done
+            NEXT_TAG="v${BASE}-beta.${SUFFIX}"
+            NEXT_VERSION="${BASE}-beta.${SUFFIX}"
+            RELEASE_NAME="bendclaw ${BASE}-beta.${SUFFIX}"
+          else
+            if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${BASE}" >/dev/null 2>&1; then
+              NEXT_TAG="v${BASE}"
+              NEXT_VERSION="${BASE}"
+            else
+              SUFFIX=2
+              while gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${BASE}.${SUFFIX}" >/dev/null 2>&1; do
+                SUFFIX=$((SUFFIX + 1))
+              done
+              NEXT_TAG="v${BASE}.${SUFFIX}"
+              NEXT_VERSION="${BASE}.${SUFFIX}"
+            fi
+            RELEASE_NAME="bendclaw ${NEXT_VERSION}"
+          fi
+
+          echo "previous=${PREV}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${NEXT_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${NEXT_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "name=${RELEASE_NAME}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Capture release metadata
+        id: meta
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Tag (annotated)
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -a "${{ steps.next.outputs.tag }}" "${{ steps.meta.outputs.sha }}" -m "${{ steps.next.outputs.tag }}"
+
+      - name: Push tag
+        if: github.ref_name == 'main'
+        shell: bash
+        run: git push origin "refs/tags/${{ steps.next.outputs.tag }}"
+
+      - name: Generate release notes
+        id: notes
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.next.outputs.tag }}"
+          PREV="${{ steps.next.outputs.previous }}"
+          SHA="${{ steps.meta.outputs.sha }}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          AUTO_NOTES_FILE="${RUNNER_TEMP}/auto-release-notes.md"
+          CHANGELOG_FILE="${RUNNER_TEMP}/git-changelog.md"
+
+          API_ARGS=(
+            "repos/${GITHUB_REPOSITORY}/releases/generate-notes"
+            -f "tag_name=${TAG}"
+            -f "target_commitish=${SHA}"
+          )
+          if [ -n "${PREV}" ]; then
+            API_ARGS+=(-f "previous_tag_name=${PREV}")
+          fi
+
+          gh api --method POST "${API_ARGS[@]}" --jq '.body // ""' > "${AUTO_NOTES_FILE}"
+
+          if [ -n "${PREV}" ]; then
+            RANGE="${PREV}..${SHA}"
+          else
+            RANGE="${SHA}"
+          fi
+
+          git log --first-parent --reverse --pretty=format:'- %s (%h)' "${RANGE}" > "${CHANGELOG_FILE}"
+
+          cat "${AUTO_NOTES_FILE}" > "${NOTES_FILE}"
+          if [ -s "${NOTES_FILE}" ]; then
+            printf '\n\n' >> "${NOTES_FILE}"
+          fi
+
+          echo "### Changelog" >> "${NOTES_FILE}"
+          if [ -s "${CHANGELOG_FILE}" ]; then
+            cat "${CHANGELOG_FILE}" >> "${NOTES_FILE}"
+            printf '\n' >> "${NOTES_FILE}"
+          else
+            echo "- Initial release" >> "${NOTES_FILE}"
+          fi
+
+          echo "file=${NOTES_FILE}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create prerelease (draft)
+        if: github.ref_name == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.next.outputs.tag }}"
+          NAME="${{ steps.next.outputs.name }}"
+
+          PRERELEASE_ARG=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            PRERELEASE_ARG="--prerelease"
+          fi
+
+          gh release create "${TAG}" \
+            --target "$(git rev-parse HEAD)" \
+            --title "${NAME}" \
+            --notes-file "${{ steps.notes.outputs.file }}" \
+            ${PRERELEASE_ARG} \
+            --draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: create_release
+    if: github.ref_name == 'main'
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+          ref: refs/tags/${{ needs.create_release.outputs.tag }}
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup show
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Set version in Cargo.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create_release.outputs.version }}"
+          IFS='.' read -r Y M D SUFFIX <<< "${VERSION}"
+          SEMVER="${Y}.$(printf '%d%02d' "${M}" "${D}").${SUFFIX:-0}"
+          sed -i.bak "s/^version = \".*\"/version = \"${SEMVER}\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
+          mkdir -p distro/{bin,configs}
+          cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} distro/bin/
+          cp configs/bendclaw.toml.example distro/configs/
+          tar -C distro -czf ${{ env.BINARY_NAME }}-${TAG}-${{ matrix.target }}.tar.gz bin configs
+
+      - name: Upload artifact to release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
+          gh release upload "${TAG}" ${{ env.BINARY_NAME }}-${TAG}-${{ matrix.target }}.tar.gz --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finalize_release:
+    name: Publish release (undraft)
+    runs-on: ubuntu-latest
+    needs: [create_release, build]
+    if: github.ref_name == 'main' && needs.build.result == 'success'
+    steps:
+      - name: Publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create_release.outputs.tag }}"
+          ARGS=(--draft=false --repo "${GITHUB_REPOSITORY}")
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          gh release edit "${TAG}" "${ARGS[@]}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,21 @@
+# BendClaw configuration.
+# Usage: bendclaw --config bendclaw.toml
+
+# Unique identifier for this bendclaw instance.
+node_id = "aos_abc12345"
+
+[server]
+bind_addr = "127.0.0.1:8787"
+
+[storage]
+databend_api_base_url = "https://api.databend.com/v1"
+databend_api_token = ""
+
+[llm]
+
+[[llm.providers]]
+name = ""
+provider = "anthropic"
+base_url = ""
+api_key = ""
+model = "claude-sonnet-4.6"

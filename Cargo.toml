@@ -40,7 +40,6 @@ path = "src/bin/bendclaw.rs"
 bend-agent.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
 dotenvy.workspace = true
@@ -50,10 +49,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
-toml.workspace = true
-tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+ulid.workspace = true
 
 [lints.clippy]
 module_inception = "allow"

@@ -68,6 +68,14 @@ impl Session {
         *self.messages.write().await = messages;
 
         let mut meta = self.meta.write().await;
+        if meta
+            .title
+            .as_ref()
+            .map(|title| title.trim().is_empty())
+            .unwrap_or(true)
+        {
+            meta.title = first_user_title(&self.messages.read().await);
+        }
         meta.turns += 1;
         meta.updated_at = Utc::now().to_rfc3339();
     }
@@ -106,4 +114,24 @@ impl Session {
     pub async fn session_id(&self) -> String {
         self.meta.read().await.session_id.clone()
     }
+}
+
+fn first_user_title(messages: &[bend_agent::Message]) -> Option<String> {
+    let text = messages
+        .iter()
+        .find(|message| message.role == bend_agent::MessageRole::User)
+        .map(bend_agent::types::extract_text)?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if text.is_empty() {
+        return None;
+    }
+
+    let mut title: String = text.chars().take(56).collect();
+    if text.chars().count() > 56 {
+        title.push_str("...");
+    }
+    Some(title)
 }

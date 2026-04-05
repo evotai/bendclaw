@@ -199,6 +199,15 @@ impl ProviderKind {
     }
 }
 
+impl std::fmt::Display for ProviderKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Anthropic => write!(f, "anthropic"),
+            Self::OpenAi => write!(f, "openai"),
+        }
+    }
+}
+
 pub fn default_model(provider: &ProviderKind) -> &'static str {
     match provider {
         ProviderKind::Anthropic => "claude-sonnet-4-20250514",

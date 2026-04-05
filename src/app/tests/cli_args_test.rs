@@ -1,4 +1,3 @@
-use bendclaw::cli::run_cli;
 use bendclaw::cli::CliArgs;
 use bendclaw::cli::CliCommand;
 use bendclaw::cli::OutputFormat;
@@ -48,6 +47,9 @@ fn parse_server_subcommand_args() -> TestResult {
         Some(CliCommand::Server(server)) => {
             assert_eq!(server.port, Some(9090));
         }
+        Some(CliCommand::Repl) => {
+            return Err(std::io::Error::other("unexpected repl subcommand").into());
+        }
         None => {
             return Err(std::io::Error::other("missing server subcommand").into());
         }
@@ -56,19 +58,19 @@ fn parse_server_subcommand_args() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-async fn run_cli_requires_mode() -> TestResult {
-    let args = CliArgs::try_parse_from(["bendclaw"])?;
-    let err = match run_cli(args).await {
-        Ok(()) => {
-            return Err(std::io::Error::other("expected missing mode error").into());
-        }
-        Err(err) => err,
-    };
+#[test]
+fn parse_repl_subcommand_args() -> TestResult {
+    let args = CliArgs::try_parse_from(["bendclaw", "--model", "gpt-4o", "repl"])?;
+    assert!(args.prompt.is_none());
+    assert_eq!(args.model.as_deref(), Some("gpt-4o"));
+    assert!(matches!(args.command, Some(CliCommand::Repl)));
+    Ok(())
+}
 
-    assert_eq!(
-        err.to_string(),
-        "cli error: missing mode: use -p/--prompt or the server subcommand"
-    );
+#[test]
+fn parse_default_repl_args() -> TestResult {
+    let args = CliArgs::try_parse_from(["bendclaw"])?;
+    assert!(args.prompt.is_none());
+    assert!(args.command.is_none());
     Ok(())
 }

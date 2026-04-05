@@ -33,6 +33,7 @@ pub struct CliArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum CliCommand {
+    Repl,
     Server(ServerArgs),
 }
 

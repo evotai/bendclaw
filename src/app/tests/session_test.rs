@@ -141,6 +141,51 @@ async fn resume_session_appends_transcript() -> TestResult {
 }
 
 #[tokio::test]
+async fn session_title_comes_from_first_user_message() -> TestResult {
+    let dir = TempDir::new()?;
+    let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;
+
+    let session = Session::create(
+        "sess-title".into(),
+        "/tmp".into(),
+        "claude-sonnet".into(),
+        storage.clone(),
+    )
+    .await?;
+
+    session
+        .apply_messages(vec![
+            bend_agent::Message {
+                role: bend_agent::MessageRole::User,
+                content: vec![bend_agent::ContentBlock::Text {
+                    text: "summarize the quarterly numbers for the infra team".into(),
+                }],
+            },
+            bend_agent::Message {
+                role: bend_agent::MessageRole::Assistant,
+                content: vec![bend_agent::ContentBlock::Text {
+                    text: "working".into(),
+                }],
+            },
+        ])
+        .await;
+
+    session.save().await?;
+
+    let loaded = Session::load("sess-title", storage.clone())
+        .await?
+        .ok_or_else(|| missing_error("missing titled session"))?;
+    let title = loaded
+        .meta()
+        .await
+        .title
+        .ok_or_else(|| missing_error("missing session title"))?;
+
+    assert_eq!(title, "summarize the quarterly numbers for the infra team");
+    Ok(())
+}
+
+#[tokio::test]
 async fn save_and_load_meta() -> TestResult {
     let dir = TempDir::new()?;
     let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;

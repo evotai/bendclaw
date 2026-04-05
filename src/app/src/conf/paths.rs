@@ -33,3 +33,7 @@ pub fn config_file_path() -> Result<PathBuf> {
 pub fn env_file_path() -> Result<PathBuf> {
     Ok(state_root_dir()?.join("bendclaw.env"))
 }
+
+pub fn history_file_path() -> Result<PathBuf> {
+    Ok(state_root_dir()?.join("bendclaw_history"))
+}

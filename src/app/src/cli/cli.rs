@@ -11,6 +11,7 @@ use crate::request::Request;
 use crate::request::RequestExecutor;
 use crate::server;
 use crate::storage::open_storage;
+use crate::tui::Tui;
 
 pub struct Cli {
     args: CliArgs,
@@ -26,10 +27,9 @@ impl Cli {
             (Some(_), Some(_)) => Err(BendclawError::Cli(
                 "prompt mode and subcommand cannot be used together".into(),
             )),
-            (None, None) => Err(BendclawError::Cli(
-                "missing mode: use -p/--prompt or the server subcommand".into(),
-            )),
+            (None, None) => self.run_repl().await,
             (Some(prompt), None) => self.run_prompt(prompt.clone()).await,
+            (None, Some(CliCommand::Repl)) => self.run_repl().await,
             (None, Some(CliCommand::Server(server_args))) => {
                 self.run_server(server_args.port).await
             }
@@ -54,6 +54,20 @@ impl Cli {
     async fn run_server(&self, port: Option<u16>) -> Result<()> {
         let config = load_config(ConfigOverrides::new(self.args.model.clone(), port))?;
         server::start(config).await
+    }
+
+    async fn run_repl(&self) -> Result<()> {
+        let config = load_config(ConfigOverrides::new(self.args.model.clone(), None))?;
+        let storage = open_storage(&config.storage)?;
+        Tui::new(
+            config,
+            storage,
+            self.args.max_turns,
+            self.args.append_system_prompt.clone(),
+            self.args.resume.clone(),
+        )
+        .run()
+        .await
     }
 }
 

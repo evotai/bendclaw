@@ -1,12 +1,12 @@
 use serde_json::json;
 
-use crate::run::model::RunEvent;
-use crate::run::model::RunEventKind;
 use crate::run::payload::AssistantBlock;
 use crate::run::payload::AssistantPayload;
 use crate::run::payload::MessagePayload;
 use crate::run::payload::RunFinishedPayload;
 use crate::run::payload::ToolResultPayload;
+use crate::storage::model::RunEvent;
+use crate::storage::model::RunEventKind;
 
 fn empty_payload() -> serde_json::Value {
     json!({})

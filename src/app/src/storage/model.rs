@@ -1,5 +1,4 @@
 use chrono::Utc;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -167,10 +166,6 @@ impl RunEvent {
             payload,
             created_at: Utc::now().to_rfc3339(),
         }
-    }
-
-    pub fn payload_as<T: DeserializeOwned>(&self) -> Option<T> {
-        crate::run::payload_as(&self.payload)
     }
 }
 

@@ -11,7 +11,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::agent::build_agent_options;
+use crate::run;
+use crate::run::RunRequest;
 use crate::server::server::AppState;
 use crate::server::stream;
 
@@ -32,9 +33,7 @@ pub(crate) async fn index() -> Html<&'static str> {
 }
 
 pub(crate) async fn new_session(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
-    if let Some(agent) = state.agent.lock().await.take() {
-        agent.close().await;
-    }
+    *state.session_id.lock().await = None;
     Json(StatusResponse {
         status: "ok".into(),
     })
@@ -59,42 +58,21 @@ fn chat_stream(
     let (tx, rx) = tokio::sync::mpsc::channel(64);
 
     tokio::spawn(async move {
-        let start = std::time::Instant::now();
+        let current_session_id = state.session_id.lock().await.clone();
+        let sink = stream::SseSink::new(tx.clone());
+        let mut request = RunRequest::new(message);
+        request.session_id = current_session_id;
 
-        let mut agent = state.agent.lock().await.take();
-
-        if agent.is_none() {
-            let opts = build_agent_options(&state.llm, None, None, Some(20), None);
-            match bend_agent::Agent::new(opts).await {
-                Ok(a) => agent = Some(a),
-                Err(e) => {
-                    let _ = tx.send(stream::error_event(e.to_string())).await;
-                    let _ = tx.send(stream::done_event()).await;
-                    return;
-                }
+        match run::run(request, state.llm.clone(), &sink, state.storage.as_ref()).await {
+            Ok(output) => {
+                *state.session_id.lock().await = Some(output.session_id);
+            }
+            Err(error) => {
+                let _ = tx.send(stream::error_event(error.to_string())).await;
             }
         }
 
-        let mut agent = match agent {
-            Some(a) => a,
-            None => return,
-        };
-
-        let (mut sdk_rx, handle) = agent.query(&message).await;
-
-        while let Some(event) = sdk_rx.recv().await {
-            let sse_data = stream::map_sdk_message(&event, &start);
-            for data in sse_data {
-                if tx.send(data).await.is_err() {
-                    break;
-                }
-            }
-        }
-
-        let _ = handle.await;
         let _ = tx.send(stream::done_event()).await;
-
-        *state.agent.lock().await = Some(agent);
     });
 
     ReceiverStream::new(rx)

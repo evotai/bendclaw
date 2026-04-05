@@ -1,4 +1,4 @@
-pub use crate::storage::model::SessionMeta;
+use crate::storage::model::SessionMeta;
 
 pub struct SessionState {
     pub meta: SessionMeta,

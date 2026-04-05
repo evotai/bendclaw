@@ -52,13 +52,15 @@ async fn run_prompt(
     request.max_turns = max_turns;
     request.append_system_prompt = append_system_prompt;
 
-    run::run(
+    let _ = run::run(
         request,
         config.active_llm(),
         sink.as_ref(),
         storage.as_ref(),
     )
-    .await
+    .await?;
+
+    Ok(())
 }
 
 async fn run_server(model: Option<String>, port: Option<u16>) -> Result<()> {

@@ -6,8 +6,6 @@ use bend_base::logx;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::run::model::RunMeta;
-use crate::run::model::RunStatus;
 use crate::run::request::RunRequest;
 use crate::run::runner::AgentRunOptions;
 use crate::run::runner::AgentRunner;
@@ -15,14 +13,22 @@ use crate::run::runner::BendAgentRunner;
 use crate::run::sink::EventSink;
 use crate::run::stream;
 use crate::session;
+use crate::storage::model::RunMeta;
+use crate::storage::model::RunStatus;
 use crate::storage::Storage;
+
+#[derive(Debug, Clone)]
+pub struct RunOutput {
+    pub session_id: String,
+    pub run_id: String,
+}
 
 pub async fn run(
     request: RunRequest,
     llm_config: LlmConfig,
     sink: &dyn EventSink,
     storage: &dyn Storage,
-) -> Result<()> {
+) -> Result<RunOutput> {
     let runner = BendAgentRunner::new();
     run_with_runner(request, llm_config, sink, storage, &runner).await
 }
@@ -33,7 +39,7 @@ pub async fn run_with_runner(
     sink: &dyn EventSink,
     storage: &dyn Storage,
     runner: &dyn AgentRunner,
-) -> Result<()> {
+) -> Result<RunOutput> {
     let started_at = Instant::now();
     let cwd = std::env::current_dir()
         .map_err(|e| BendclawError::Run(format!("failed to get cwd: {e}")))?
@@ -197,5 +203,10 @@ pub async fn run_with_runner(
         }
     }
 
-    save_result
+    save_result?;
+
+    Ok(RunOutput {
+        session_id: state.meta.session_id.clone(),
+        run_id,
+    })
 }

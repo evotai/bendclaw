@@ -12,14 +12,18 @@ use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
 use crate::server::handler;
+use crate::storage::open_storage;
+use crate::storage::Storage;
 
 pub(crate) struct AppState {
-    pub(crate) agent: Mutex<Option<bend_agent::Agent>>,
     pub(crate) llm: LlmConfig,
+    pub(crate) storage: Arc<dyn Storage>,
+    pub(crate) session_id: Mutex<Option<String>>,
 }
 
 pub async fn start(conf: Config) -> Result<()> {
     let llm = conf.active_llm();
+    let storage = open_storage(&conf.storage)?;
     let storage_backend = match conf.storage.backend {
         crate::conf::StorageBackend::Fs => "fs",
         crate::conf::StorageBackend::Cloud => "cloud",
@@ -33,8 +37,9 @@ pub async fn start(conf: Config) -> Result<()> {
     let provider = conf.llm.provider.clone();
 
     let state = Arc::new(AppState {
-        agent: Mutex::new(None),
         llm,
+        storage,
+        session_id: Mutex::new(None),
     });
 
     let app = Router::new()

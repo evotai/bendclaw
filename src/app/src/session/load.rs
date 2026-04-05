@@ -1,7 +1,7 @@
 use crate::error::Result;
-use crate::session::SessionMeta;
 use crate::session::SessionState;
 use crate::storage::model::ListTranscriptEntries;
+use crate::storage::model::SessionMeta;
 use crate::storage::Storage;
 
 pub async fn new_session(

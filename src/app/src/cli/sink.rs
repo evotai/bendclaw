@@ -4,13 +4,14 @@ use async_trait::async_trait;
 
 use crate::cli::args::OutputFormat;
 use crate::error::Result;
+use crate::run::payload_as;
 use crate::run::AssistantBlock;
 use crate::run::AssistantPayload;
 use crate::run::EventSink;
 use crate::run::MessagePayload;
-use crate::run::RunEvent;
-use crate::run::RunEventKind;
 use crate::run::ToolResultPayload;
+use crate::storage::model::RunEvent;
+use crate::storage::model::RunEventKind;
 
 pub struct TextSink;
 
@@ -70,7 +71,7 @@ impl EventSink for TextSink {
     async fn publish(&self, event: Arc<RunEvent>) -> Result<()> {
         match &event.kind {
             RunEventKind::AssistantMessage => {
-                if let Some(payload) = event.payload_as::<AssistantPayload>() {
+                if let Some(payload) = payload_as::<AssistantPayload>(&event.payload) {
                     for block in payload.content {
                         match block {
                             AssistantBlock::Text { text } => {
@@ -86,7 +87,7 @@ impl EventSink for TextSink {
                 }
             }
             RunEventKind::ToolResult => {
-                if let Some(payload) = event.payload_as::<ToolResultPayload>() {
+                if let Some(payload) = payload_as::<ToolResultPayload>(&event.payload) {
                     if payload.is_error {
                         eprintln!("[error: {}] {}", payload.tool_name, payload.content);
                     } else if !payload.content.is_empty() {
@@ -99,12 +100,12 @@ impl EventSink for TextSink {
                 }
             }
             RunEventKind::Error => {
-                if let Some(payload) = event.payload_as::<MessagePayload>() {
+                if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
                     eprintln!("error: {}", payload.message);
                 }
             }
             RunEventKind::Progress => {
-                if let Some(payload) = event.payload_as::<MessagePayload>() {
+                if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
                     eprintln!("[{}]", payload.message);
                 }
             }

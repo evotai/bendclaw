@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::error::Result;
-use crate::run::RunEvent;
+use crate::storage::model::RunEvent;
 
 #[async_trait]
 pub trait EventSink: Send + Sync {

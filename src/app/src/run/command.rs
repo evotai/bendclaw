@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::conf::bend_provider_kind;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
@@ -75,10 +74,7 @@ pub async fn run_with_runner(
 
     let query_result = runner
         .run_query(AgentRunOptions {
-            provider: bend_provider_kind(&llm_config.provider),
-            model: model.clone(),
-            api_key: llm_config.api_key.clone(),
-            base_url: llm_config.base_url.clone(),
+            llm: llm_config.clone(),
             cwd,
             messages: state.messages.clone(),
             prompt: request.prompt.clone(),

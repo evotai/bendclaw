@@ -12,16 +12,16 @@ use axum::Router;
 use futures::stream::Stream;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::json;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::CorsLayer;
 
-use crate::conf::bend_provider_kind;
+use crate::agent::build_agent_options;
 use crate::conf::Config;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
+use crate::server::stream;
 
 const INDEX_HTML: &str = include_str!("index.html");
 
@@ -105,21 +105,12 @@ fn chat_stream(
         let mut agent = state.agent.lock().await.take();
 
         if agent.is_none() {
-            let opts = bend_agent::AgentOptions {
-                provider: Some(bend_provider_kind(&state.llm.provider)),
-                model: Some(state.llm.model.clone()),
-                api_key: Some(state.llm.api_key.clone()),
-                base_url: state.llm.base_url.clone(),
-                max_turns: Some(20),
-                ..Default::default()
-            };
+            let opts = build_agent_options(&state.llm, None, Some(20));
             match bend_agent::Agent::new(opts).await {
                 Ok(a) => agent = Some(a),
                 Err(e) => {
-                    let _ = tx
-                        .send(sse_event("error", &json!({"message": e.to_string()})))
-                        .await;
-                    let _ = tx.send(sse_event("done", &json!(null))).await;
+                    let _ = tx.send(stream::error_event(e.to_string())).await;
+                    let _ = tx.send(stream::done_event()).await;
                     return;
                 }
             }
@@ -133,7 +124,7 @@ fn chat_stream(
         let (mut sdk_rx, handle) = agent.query(&message).await;
 
         while let Some(event) = sdk_rx.recv().await {
-            let sse_data = map_sdk_to_sse(&event, &start);
+            let sse_data = stream::map_sdk_message(&event, &start);
             for data in sse_data {
                 if tx.send(data).await.is_err() {
                     break;
@@ -142,91 +133,10 @@ fn chat_stream(
         }
 
         let _ = handle.await;
-        let _ = tx.send(sse_event("done", &json!(null))).await;
+        let _ = tx.send(stream::done_event()).await;
 
         *state.agent.lock().await = Some(agent);
     });
 
     ReceiverStream::new(rx)
-}
-
-fn map_sdk_to_sse(
-    event: &bend_agent::SDKMessage,
-    start: &std::time::Instant,
-) -> Vec<std::result::Result<axum::response::sse::Event, Infallible>> {
-    let mut events = Vec::new();
-
-    match event {
-        bend_agent::SDKMessage::Assistant { message, .. } => {
-            for block in &message.content {
-                match block {
-                    bend_agent::ContentBlock::Text { text } if !text.is_empty() => {
-                        events.push(sse_event("text", &json!({"text": text})));
-                    }
-                    bend_agent::ContentBlock::ToolUse { id, name, input } => {
-                        events.push(sse_event(
-                            "tool_use",
-                            &json!({"id": id, "name": name, "input": input}),
-                        ));
-                    }
-                    bend_agent::ContentBlock::Thinking { thinking, .. } if !thinking.is_empty() => {
-                        events.push(sse_event("thinking", &json!({"thinking": thinking})));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        bend_agent::SDKMessage::ToolResult {
-            tool_use_id,
-            content,
-            is_error,
-            ..
-        } => {
-            events.push(sse_event(
-                "tool_result",
-                &json!({
-                    "tool_use_id": tool_use_id,
-                    "content": content,
-                    "is_error": is_error,
-                }),
-            ));
-        }
-        bend_agent::SDKMessage::Result {
-            usage,
-            num_turns,
-            cost_usd,
-            ..
-        } => {
-            events.push(sse_event(
-                "result",
-                &json!({
-                    "num_turns": num_turns,
-                    "input_tokens": usage.input_tokens,
-                    "output_tokens": usage.output_tokens,
-                    "cost": cost_usd,
-                    "duration_ms": start.elapsed().as_millis() as u64,
-                }),
-            ));
-        }
-        bend_agent::SDKMessage::Error { message } => {
-            events.push(sse_event("error", &json!({"message": message})));
-        }
-        bend_agent::SDKMessage::PartialMessage { text } => {
-            events.push(sse_event("text", &json!({"text": text})));
-        }
-        _ => {}
-    }
-
-    events
-}
-
-fn sse_event(
-    event_type: &str,
-    data: &serde_json::Value,
-) -> std::result::Result<axum::response::sse::Event, Infallible> {
-    let payload = json!({"type": event_type, "data": data});
-    match serde_json::to_string(&payload) {
-        Ok(json) => Ok(axum::response::sse::Event::default().data(json)),
-        Err(_) => Ok(axum::response::sse::Event::default().data(String::new())),
-    }
 }

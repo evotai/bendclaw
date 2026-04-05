@@ -9,6 +9,7 @@ use super::provider::ApiType;
 use super::provider::LLMProvider;
 use super::provider::ProviderRequest;
 use super::provider::ProviderResponse;
+use super::response;
 use super::ApiError;
 use crate::types::ApiToolParam;
 use crate::types::ContentBlock;
@@ -20,6 +21,7 @@ use crate::types::ThinkingConfig;
 use crate::types::Usage;
 
 const API_VERSION: &str = "2023-06-01";
+const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 
 #[derive(Debug, Serialize)]
 struct AnthropicRequest {
@@ -53,13 +55,13 @@ impl AnthropicProvider {
     pub fn new(
         client: Client,
         api_key: String,
-        base_url: String,
+        base_url: Option<String>,
         custom_headers: HashMap<String, String>,
     ) -> Self {
         Self {
             client,
             api_key,
-            base_url,
+            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             custom_headers,
         }
     }
@@ -133,22 +135,8 @@ impl LLMProvider for AnthropicProvider {
             }
         })?;
 
-        let status = response.status().as_u16();
-        if status == 401 {
-            return Err(ApiError::AuthError("Invalid API key".to_string()));
-        }
-        if status == 429 {
-            return Err(ApiError::RateLimitError);
-        }
-        if status >= 400 {
-            let text = response.text().await.unwrap_or_default();
-            if text.contains("prompt is too long") {
-                return Err(ApiError::PromptTooLong(text));
-            }
-            return Err(ApiError::HttpError {
-                status,
-                message: text,
-            });
+        if !response.status().is_success() {
+            return Err(response::http_error(response).await);
         }
 
         parse_anthropic_stream(response).await
@@ -181,6 +169,10 @@ async fn parse_anthropic_stream(response: reqwest::Response) -> Result<ProviderR
             Ok(e) => e,
             Err(_) => continue,
         };
+
+        if let Some(error) = response::stream_error(&event) {
+            return Err(error);
+        }
 
         let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
 

@@ -7,7 +7,6 @@ use serde_json::Value;
 
 use super::anthropic::AnthropicProvider;
 use super::openai::OpenAIProvider;
-use super::provider::resolve_api_type;
 use super::provider::ApiType;
 use super::provider::LLMProvider;
 use super::provider::ProviderKind;
@@ -19,7 +18,6 @@ use crate::types::SystemBlock;
 use crate::types::ThinkingConfig;
 use crate::types::Usage;
 
-const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const DEFAULT_TIMEOUT_MS: u64 = 600_000; // 10 minutes
 
 /// Model configuration with context window and output limits.
@@ -111,6 +109,9 @@ pub enum ApiError {
     #[error("Parse error: {0}")]
     ParseError(String),
 
+    #[error("Stream error: {0}")]
+    StreamError(String),
+
     #[error("Request timeout")]
     Timeout,
 }
@@ -124,53 +125,38 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(api_key: Option<String>, base_url: Option<String>, model: Option<String>) -> Self {
-        Self::with_provider(api_key, base_url, model, None)
-    }
-
-    pub fn with_provider(
+    pub fn new(
         api_key: Option<String>,
         base_url: Option<String>,
         model: Option<String>,
-        provider: Option<ProviderKind>,
-    ) -> Self {
-        let api_key = api_key
-            .or_else(|| std::env::var("CODEANY_API_KEY").ok())
-            .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-            .unwrap_or_default();
+    ) -> Result<Self, ApiError> {
+        Self::with_provider(
+            ProviderKind::Anthropic,
+            api_key,
+            base_url,
+            model,
+            HashMap::new(),
+        )
+    }
 
-        let base_url = base_url
-            .or_else(|| std::env::var("CODEANY_BASE_URL").ok())
-            .or_else(|| std::env::var("ANTHROPIC_BASE_URL").ok())
-            .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
-
-        let model = model
-            .or_else(|| std::env::var("CODEANY_MODEL").ok())
-            .or_else(|| std::env::var("ANTHROPIC_MODEL").ok())
-            .unwrap_or_else(|| "sonnet-4-6".to_string());
-
-        let timeout_ms: u64 = std::env::var("API_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_TIMEOUT_MS);
+    pub fn with_provider(
+        provider: ProviderKind,
+        api_key: Option<String>,
+        base_url: Option<String>,
+        model: Option<String>,
+        custom_headers: HashMap<String, String>,
+    ) -> Result<Self, ApiError> {
+        let api_key = api_key.unwrap_or_default();
+        let model = model.unwrap_or_else(|| provider.default_model().to_string());
+        let timeout_ms = DEFAULT_TIMEOUT_MS;
 
         let client = Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|error| ApiError::NetworkError(error.to_string()))?;
 
-        let mut custom_headers = HashMap::new();
-        if let Ok(headers_str) = std::env::var("CODEANY_CUSTOM_HEADERS") {
-            for pair in headers_str.split(',') {
-                if let Some((key, value)) = pair.split_once(':') {
-                    custom_headers.insert(key.trim().to_string(), value.trim().to_string());
-                }
-            }
-        }
-
-        let resolved_api_type = resolve_api_type(provider.as_ref(), &model, None);
-
-        let provider: Arc<dyn LLMProvider> = match &resolved_api_type {
+        let api_type = provider.api_type();
+        let provider: Arc<dyn LLMProvider> = match api_type {
             ApiType::AnthropicMessages => Arc::new(AnthropicProvider::new(
                 client,
                 api_key,
@@ -185,11 +171,11 @@ impl ApiClient {
             )),
         };
 
-        Self {
+        Ok(Self {
             provider,
             model,
-            api_type: resolved_api_type,
-        }
+            api_type,
+        })
     }
 
     pub fn model(&self) -> &str {

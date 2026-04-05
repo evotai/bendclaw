@@ -123,19 +123,22 @@ pub struct Agent {
 impl Agent {
     /// Create a new agent with the given options.
     pub async fn new(options: AgentOptions) -> Result<Self, String> {
-        let cwd = options.cwd.unwrap_or_else(|| {
-            std::env::current_dir()
-                .unwrap()
+        let cwd = match options.cwd {
+            Some(cwd) => cwd,
+            None => std::env::current_dir()
+                .map_err(|error| error.to_string())?
                 .to_string_lossy()
-                .to_string()
-        });
-
+                .to_string(),
+        };
+        let provider = options.provider.clone().unwrap_or(ProviderKind::Anthropic);
         let api_client = ApiClient::with_provider(
-            options.api_key,
-            options.base_url,
-            options.model,
-            options.provider,
-        );
+            provider,
+            options.api_key.clone(),
+            options.base_url.clone(),
+            options.model.clone(),
+            options.custom_headers.clone(),
+        )
+        .map_err(|error| error.to_string())?;
 
         let mut registry = ToolRegistry::default_registry();
 

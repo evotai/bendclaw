@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
+use crate::agent::build_agent_options;
+use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
 
@@ -17,10 +19,7 @@ pub trait AgentRunner: Send + Sync {
 }
 
 pub struct AgentRunOptions {
-    pub provider: bend_agent::ProviderKind,
-    pub model: String,
-    pub api_key: String,
-    pub base_url: Option<String>,
+    pub llm: LlmConfig,
     pub cwd: String,
     pub messages: Vec<bend_agent::Message>,
     pub prompt: String,
@@ -52,14 +51,7 @@ impl AgentRunner for BendAgentRunner {
         &self,
         options: AgentRunOptions,
     ) -> Result<mpsc::Receiver<bend_agent::SDKMessage>> {
-        let agent_options = bend_agent::AgentOptions {
-            provider: Some(options.provider),
-            model: Some(options.model),
-            api_key: Some(options.api_key),
-            base_url: options.base_url,
-            cwd: Some(options.cwd),
-            ..Default::default()
-        };
+        let agent_options = build_agent_options(&options.llm, Some(options.cwd), None);
 
         let mut agent = bend_agent::Agent::new(agent_options)
             .await

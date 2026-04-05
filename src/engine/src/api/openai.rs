@@ -9,11 +9,14 @@ use super::provider::ApiType;
 use super::provider::LLMProvider;
 use super::provider::ProviderRequest;
 use super::provider::ProviderResponse;
+use super::response;
 use super::ApiError;
 use crate::types::ContentBlock;
 use crate::types::Message;
 use crate::types::MessageRole;
 use crate::types::Usage;
+
+const DEFAULT_BASE_URL: &str = "https://api.openai.com";
 
 // --- OpenAI request types ---
 
@@ -78,13 +81,13 @@ impl OpenAIProvider {
     pub fn new(
         client: Client,
         api_key: String,
-        base_url: String,
+        base_url: Option<String>,
         custom_headers: HashMap<String, String>,
     ) -> Self {
         Self {
             client,
             api_key,
-            base_url,
+            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             custom_headers,
         }
     }
@@ -255,19 +258,8 @@ impl LLMProvider for OpenAIProvider {
             }
         })?;
 
-        let status = response.status().as_u16();
-        if status == 401 {
-            return Err(ApiError::AuthError("Invalid API key".to_string()));
-        }
-        if status == 429 {
-            return Err(ApiError::RateLimitError);
-        }
-        if status >= 400 {
-            let text = response.text().await.unwrap_or_default();
-            return Err(ApiError::HttpError {
-                status,
-                message: text,
-            });
+        if !response.status().is_success() {
+            return Err(response::http_error(response).await);
         }
 
         parse_openai_stream(response).await
@@ -300,6 +292,10 @@ async fn parse_openai_stream(response: reqwest::Response) -> Result<ProviderResp
             Ok(v) => v,
             Err(_) => continue,
         };
+
+        if let Some(error) = response::stream_error(&chunk) {
+            return Err(error);
+        }
 
         // Parse usage if present
         if let Some(u) = chunk.get("usage") {

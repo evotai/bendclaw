@@ -206,13 +206,6 @@ pub fn default_model(provider: &ProviderKind) -> &'static str {
     }
 }
 
-pub fn bend_provider_kind(provider: &ProviderKind) -> bend_agent::ProviderKind {
-    match provider {
-        ProviderKind::Anthropic => bend_agent::ProviderKind::Anthropic,
-        ProviderKind::OpenAi => bend_agent::ProviderKind::OpenAi,
-    }
-}
-
 pub fn default_config() -> Result<Config> {
     Ok(Config::new(paths::state_root_dir()?))
 }

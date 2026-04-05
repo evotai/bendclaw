@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use ratatui::text::Line;
+
 use crate::conf::ProviderKind;
 use crate::request::RequestResult;
 use crate::storage::model::RunEvent;
@@ -27,7 +29,7 @@ pub const COMMAND_HINTS: &[CommandHint] = &[
     },
     CommandHint {
         command: "/clear",
-        summary: "clear transcript",
+        summary: "divider",
     },
     CommandHint {
         command: "/exit",
@@ -120,12 +122,7 @@ impl PopupState {
 
     pub fn select_prev(&mut self) {
         match self {
-            Self::Model { selected, .. } => {
-                if *selected > 0 {
-                    *selected = selected.saturating_sub(1);
-                }
-            }
-            Self::Session { selected, .. } => {
+            Self::Model { selected, .. } | Self::Session { selected, .. } => {
                 if *selected > 0 {
                     *selected = selected.saturating_sub(1);
                 }
@@ -135,12 +132,7 @@ impl PopupState {
 
     pub fn select_next(&mut self, len: usize) {
         match self {
-            Self::Model { selected, .. } => {
-                if len > 0 && *selected + 1 < len {
-                    *selected += 1;
-                }
-            }
-            Self::Session { selected, .. } => {
+            Self::Model { selected, .. } | Self::Session { selected, .. } => {
                 if len > 0 && *selected + 1 < len {
                     *selected += 1;
                 }
@@ -149,20 +141,17 @@ impl PopupState {
     }
 }
 
-pub enum MessageItem {
-    Log(String),
-    User(String),
-    Assistant(String),
-    ToolCall {
-        title: String,
-        lines: Vec<String>,
-    },
-    ToolResult {
-        title: String,
-        lines: Vec<String>,
-        ok: bool,
-    },
-    Error(String),
+pub struct TranscriptBlock {
+    pub lines: Vec<Line<'static>>,
+}
+
+impl TranscriptBlock {
+    pub fn new(mut lines: Vec<Line<'static>>) -> Self {
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        Self { lines }
+    }
 }
 
 pub struct TuiState {
@@ -170,13 +159,13 @@ pub struct TuiState {
     pub session_id: Option<String>,
     pub model: ModelOption,
     pub input: String,
-    pub messages: Vec<MessageItem>,
-    pub streaming_assistant: Option<String>,
     pub popup: Option<PopupState>,
     pub loading: bool,
     pub spinner_index: usize,
     pub session_started_at: Instant,
     pub request_started_at: Option<Instant>,
+    pub status_message: Option<String>,
+    pub streaming_assistant: String,
 }
 
 impl TuiState {
@@ -186,13 +175,13 @@ impl TuiState {
             session_id,
             model,
             input: String::new(),
-            messages: Vec::new(),
-            streaming_assistant: None,
             popup: None,
             loading: false,
             spinner_index: 0,
             session_started_at: Instant::now(),
             request_started_at: None,
+            status_message: None,
+            streaming_assistant: String::new(),
         }
     }
 }

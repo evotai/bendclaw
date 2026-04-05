@@ -10,6 +10,10 @@ use crossterm::event::KeyModifiers;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 use ratatui::backend::CrosstermBackend;
+use ratatui::text::Text;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 use ratatui::Terminal;
 use ratatui::TerminalOptions;
 use ratatui::Viewport;
@@ -35,10 +39,10 @@ use crate::storage::model::SessionMeta;
 use crate::storage::Storage;
 use crate::tui::sink::TuiSink;
 use crate::tui::state::matching_command_hints;
-use crate::tui::state::MessageItem;
 use crate::tui::state::ModelOption;
 use crate::tui::state::PopupState;
 use crate::tui::state::SessionScope;
+use crate::tui::state::TranscriptBlock;
 use crate::tui::state::TuiEvent;
 use crate::tui::state::TuiState;
 use crate::tui::view;
@@ -87,6 +91,8 @@ impl Tui {
 
         let mut viewport_height = view::desired_inline_height(&state);
         let mut terminal = enter_terminal(viewport_height)?;
+        flush_block(&mut terminal, view::welcome_block(&state))?;
+
         let result = loop {
             let desired_height = view::desired_inline_height(&state);
             if desired_height != viewport_height {
@@ -94,12 +100,13 @@ impl Tui {
                 viewport_height = desired_height;
             }
 
-            if let Err(error) = terminal.draw(|frame| view::render(frame, &state)) {
-                break Err(BendclawError::Cli(format!("failed to draw tui: {error}")));
-            }
+            terminal
+                .draw(|frame| view::render(frame, &state))
+                .map_err(|e| BendclawError::Cli(format!("failed to draw tui: {e}")))?;
 
             while let Ok(event) = rx.try_recv() {
-                self.handle_tui_event(&mut state, event);
+                let blocks = self.handle_tui_event(&mut state, event);
+                flush_blocks(&mut terminal, blocks)?;
             }
 
             if crossterm::event::poll(Duration::from_millis(80))
@@ -111,8 +118,12 @@ impl Tui {
                     .handle_terminal_event(&mut state, event, tx.clone(), &mut running_task)
                     .await
                 {
-                    Ok(true) => break Ok(()),
-                    Ok(false) => {}
+                    Ok(action) => {
+                        flush_blocks(&mut terminal, action.blocks)?;
+                        if action.exit {
+                            break Ok(());
+                        }
+                    }
                     Err(error) => break Err(error),
                 }
             }
@@ -137,11 +148,11 @@ impl Tui {
         event: Event,
         tx: mpsc::UnboundedSender<TuiEvent>,
         running_task: &mut Option<JoinHandle<()>>,
-    ) -> Result<bool> {
+    ) -> Result<TerminalAction> {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                    return Ok(true);
+                    return Ok(TerminalAction::exit());
                 }
 
                 if state.popup.is_some() {
@@ -150,9 +161,7 @@ impl Tui {
 
                 match key.code {
                     KeyCode::Enter => {
-                        if self.submit_input(state, tx, running_task).await? {
-                            return Ok(true);
-                        }
+                        return self.submit_input(state, tx, running_task).await;
                     }
                     KeyCode::Backspace => {
                         state.input.pop();
@@ -169,10 +178,12 @@ impl Tui {
                             }
                             state.loading = false;
                             state.request_started_at = None;
-                            state.streaming_assistant = None;
-                            state
-                                .messages
-                                .push(MessageItem::Log(format!("[{}] Stopped", time_now())));
+                            state.streaming_assistant.clear();
+                            state.status_message = Some("Stopped".into());
+                            return Ok(TerminalAction::with_block(view::log_block(format!(
+                                "[{}] stopped",
+                                time_now()
+                            ))));
                         }
                     }
                     KeyCode::Char(ch) => {
@@ -184,13 +195,14 @@ impl Tui {
             Event::Paste(text) => {
                 state.input.push_str(&text);
             }
+            Event::Resize(_, _) => {}
             _ => {}
         }
 
-        Ok(false)
+        Ok(TerminalAction::none())
     }
 
-    fn handle_popup_key(&self, state: &mut TuiState, code: KeyCode) -> Result<bool> {
+    fn handle_popup_key(&self, state: &mut TuiState, code: KeyCode) -> Result<TerminalAction> {
         match code {
             KeyCode::Esc => {
                 state.popup = None;
@@ -246,11 +258,12 @@ impl Tui {
                         if let Some(index) = filtered.get(selected) {
                             if let Some(model) = options.get(*index) {
                                 state.model = model.clone();
-                                state.messages.push(MessageItem::Log(format!(
-                                    "[{}] Model -> {}",
+                                state.status_message = Some(format!("Model {}", model.label()));
+                                return Ok(TerminalAction::with_block(view::log_block(format!(
+                                    "[{}] model -> {}",
                                     time_now(),
                                     model.label()
-                                )));
+                                ))));
                             }
                         }
                     }
@@ -266,12 +279,13 @@ impl Tui {
                             if let Some(session) = options.get(*index) {
                                 state.session_id = Some(session.session_id.clone());
                                 state.session_started_at = Instant::now();
-                                state.messages.clear();
-                                state.messages.push(MessageItem::Log(format!(
-                                    "[{}] Resumed {}",
+                                state.status_message =
+                                    Some(format!("Resumed {}", short_id(&session.session_id)));
+                                return Ok(TerminalAction::with_block(view::log_block(format!(
+                                    "[{}] resumed {}",
                                     time_now(),
-                                    session.session_id
-                                )));
+                                    summarize_session_title(session)
+                                ))));
                             }
                         }
                     }
@@ -280,7 +294,7 @@ impl Tui {
             }
             _ => {}
         }
-        Ok(false)
+        Ok(TerminalAction::none())
     }
 
     async fn submit_input(
@@ -288,10 +302,10 @@ impl Tui {
         state: &mut TuiState,
         tx: mpsc::UnboundedSender<TuiEvent>,
         running_task: &mut Option<JoinHandle<()>>,
-    ) -> Result<bool> {
+    ) -> Result<TerminalAction> {
         let input = state.input.trim().to_string();
         if input.is_empty() || state.loading {
-            return Ok(false);
+            return Ok(TerminalAction::none());
         }
 
         state.input.clear();
@@ -300,13 +314,13 @@ impl Tui {
             return self.handle_command(state, &input).await;
         }
 
-        state.messages.push(MessageItem::User(input.clone()));
         state.loading = true;
         state.spinner_index = 0;
         state.request_started_at = Some(Instant::now());
-        state.streaming_assistant = None;
+        state.status_message = Some("Streaming...".into());
+        state.streaming_assistant.clear();
 
-        let mut request = Request::new(input);
+        let mut request = Request::new(input.clone());
         request.session_id = state.session_id.clone();
         request.max_turns = self.max_turns;
         request.append_system_prompt = self.append_system_prompt.clone();
@@ -322,28 +336,27 @@ impl Tui {
             let _ = tx.send(TuiEvent::RequestFinished(result));
         }));
 
-        Ok(false)
+        Ok(TerminalAction::with_block(view::user_block(&input)))
     }
 
-    async fn handle_command(&self, state: &mut TuiState, input: &str) -> Result<bool> {
+    async fn handle_command(&self, state: &mut TuiState, input: &str) -> Result<TerminalAction> {
         match input {
             "/help" => {
-                state.messages.push(MessageItem::Log(format!(
-                    "[{}] Commands: /new /resume /model /clear /exit",
-                    time_now()
+                return Ok(TerminalAction::with_block(view::log_block(
+                    "Commands: /new /sessions /model /clear /exit",
                 )));
             }
             "/new" => {
                 state.loading = false;
                 state.request_started_at = None;
-                state.streaming_assistant = None;
+                state.streaming_assistant.clear();
                 state.session_id = None;
                 state.session_started_at = Instant::now();
-                state.messages.clear();
-                state.messages.push(MessageItem::Log(format!(
-                    "[{}] Initialized new session",
+                state.status_message = Some("New session".into());
+                return Ok(TerminalAction::with_block(view::log_block(format!(
+                    "[{}] initialized new session",
                     time_now()
-                )));
+                ))));
             }
             "/resume" | "/sessions" => {
                 let sessions = self
@@ -351,56 +364,57 @@ impl Tui {
                     .list_sessions(ListSessions { limit: 20 })
                     .await?;
                 if sessions.is_empty() {
-                    state
-                        .messages
-                        .push(MessageItem::Error("no session available".into()));
-                } else {
-                    state.popup = Some(PopupState::Session {
-                        options: sessions,
-                        selected: 0,
-                        filter: String::new(),
-                        scope: SessionScope::CurrentFolder,
-                    });
+                    return Ok(TerminalAction::with_block(view::error_block(
+                        "no session available",
+                    )));
                 }
+
+                state.popup = Some(PopupState::Session {
+                    options: sessions,
+                    selected: 0,
+                    filter: String::new(),
+                    scope: SessionScope::CurrentFolder,
+                });
             }
             "/model" => {
                 let options = self.model_options();
                 if options.is_empty() {
-                    state
-                        .messages
-                        .push(MessageItem::Error("no configured model available".into()));
-                } else {
-                    let selected = options
-                        .iter()
-                        .position(|option| {
-                            option.provider == state.model.provider
-                                && option.model == state.model.model
-                        })
-                        .unwrap_or(0);
-                    state.popup = Some(PopupState::Model {
-                        options,
-                        selected,
-                        filter: String::new(),
-                    });
+                    return Ok(TerminalAction::with_block(view::error_block(
+                        "no configured model available",
+                    )));
                 }
+
+                let selected = options
+                    .iter()
+                    .position(|option| {
+                        option.provider == state.model.provider && option.model == state.model.model
+                    })
+                    .unwrap_or(0);
+
+                state.popup = Some(PopupState::Model {
+                    options,
+                    selected,
+                    filter: String::new(),
+                });
             }
             "/clear" => {
-                state.messages.clear();
+                return Ok(TerminalAction::with_block(view::divider_block()));
             }
             "/exit" | "/quit" => {
-                return Ok(true);
+                return Ok(TerminalAction::exit());
             }
             _ => {
-                state
-                    .messages
-                    .push(MessageItem::Error(format!("unknown command: {input}")));
+                return Ok(TerminalAction::with_block(view::error_block(format!(
+                    "unknown command: {input}"
+                ))));
             }
         }
 
-        Ok(false)
+        Ok(TerminalAction::none())
     }
 
-    fn handle_tui_event(&self, state: &mut TuiState, event: TuiEvent) {
+    fn handle_tui_event(&self, state: &mut TuiState, event: TuiEvent) -> Vec<TranscriptBlock> {
+        let mut blocks = Vec::new();
         match event {
             TuiEvent::RunEvent(event) => {
                 state.session_id = Some(event.session_id.clone());
@@ -411,25 +425,21 @@ impl Tui {
                         if state.request_started_at.is_none() {
                             state.request_started_at = Some(Instant::now());
                         }
-                        state.messages.push(MessageItem::Log(format!(
-                            "[{}] Run {}",
-                            time_now(),
-                            short_id(&event.run_id)
-                        )));
+                        state.status_message = Some(format!("Run {}", short_id(&event.run_id)));
                     }
                     RunEventKind::AssistantMessage => {
                         if let Some(payload) = payload_as::<AssistantPayload>(&event.payload) {
                             for block in payload.content {
                                 match block {
                                     AssistantBlock::Text { text } => {
-                                        state.streaming_assistant = None;
+                                        state.streaming_assistant.clear();
                                         if !text.trim().is_empty() {
-                                            state.messages.push(MessageItem::Assistant(text));
+                                            blocks.push(view::assistant_block(&text));
                                         }
                                     }
                                     AssistantBlock::ToolUse { name, input, .. } => {
                                         let (title, lines) = tool_call_message(&name, &input);
-                                        state.messages.push(MessageItem::ToolCall { title, lines });
+                                        blocks.push(view::tool_call_block(&title, &lines));
                                     }
                                     AssistantBlock::Thinking { .. } => {}
                                 }
@@ -438,28 +448,18 @@ impl Tui {
                     }
                     RunEventKind::ToolResult => {
                         if let Some(payload) = payload_as::<ToolResultPayload>(&event.payload) {
-                            state.messages.push(MessageItem::ToolResult {
-                                title: if payload.is_error {
-                                    format!("{} failed", payload.tool_name)
-                                } else {
-                                    format!("{} completed", payload.tool_name)
-                                },
-                                lines: vec![if payload.content.trim().is_empty() {
-                                    if payload.is_error {
-                                        "Result: tool returned an error".into()
-                                    } else {
-                                        "Result: completed".into()
-                                    }
-                                } else {
-                                    format!("Result: {}", summarize_text(&payload.content, 160))
-                                }],
-                                ok: !payload.is_error,
-                            });
+                            blocks.push(view::tool_result_block(
+                                &tool_result_title(&payload),
+                                &[tool_result_line(&payload)],
+                                !payload.is_error,
+                            ));
                         }
                     }
                     RunEventKind::Status | RunEventKind::Progress | RunEventKind::System => {
                         if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
-                            state.messages.push(MessageItem::Log(payload.message));
+                            if !payload.message.trim().is_empty() {
+                                state.status_message = Some(payload.message);
+                            }
                         }
                     }
                     RunEventKind::CompactBoundary => {
@@ -468,7 +468,7 @@ impl Tui {
                             .get("summary")
                             .and_then(|value| value.as_str())
                         {
-                            state.messages.push(MessageItem::Log(format!(
+                            blocks.push(view::log_block(format!(
                                 "Compacted: {}",
                                 summarize_text(summary, 120)
                             )));
@@ -477,19 +477,22 @@ impl Tui {
                     RunEventKind::Error => {
                         state.loading = false;
                         state.request_started_at = None;
-                        state.streaming_assistant = None;
+                        state.streaming_assistant.clear();
                         if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
-                            state.messages.push(MessageItem::Error(payload.message));
+                            state.status_message = Some("Error".into());
+                            blocks.push(view::error_block(payload.message));
                         }
                     }
                     RunEventKind::RunFinished => {
                         state.loading = false;
                         state.request_started_at = None;
-                        state.streaming_assistant = None;
+                        state.streaming_assistant.clear();
                         if let Some(payload) = payload_as::<RequestFinishedPayload>(&event.payload)
                         {
-                            state.messages.push(MessageItem::Log(format!(
-                                "[{}] Completed in {} ms",
+                            state.status_message =
+                                Some(format!("Completed in {} ms", payload.duration_ms));
+                            blocks.push(view::log_block(format!(
+                                "[{}] completed in {} ms",
                                 time_now(),
                                 payload.duration_ms
                             )));
@@ -497,27 +500,46 @@ impl Tui {
                     }
                     RunEventKind::PartialMessage => {
                         if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
-                            let current = state.streaming_assistant.get_or_insert_with(String::new);
-                            current.push_str(&payload.message);
+                            state.streaming_assistant.push_str(&payload.message);
+                            state.status_message = Some("Streaming...".into());
                         }
                     }
-                    RunEventKind::TaskNotification | RunEventKind::RateLimit => {}
+                    RunEventKind::TaskNotification => {
+                        if let Some(message) = event
+                            .payload
+                            .get("message")
+                            .and_then(|value| value.as_str())
+                        {
+                            state.status_message = Some(message.to_string());
+                        }
+                    }
+                    RunEventKind::RateLimit => {
+                        if let Some(message) = event
+                            .payload
+                            .get("message")
+                            .and_then(|value| value.as_str())
+                        {
+                            blocks.push(view::error_block(message.to_string()));
+                        }
+                    }
                 }
             }
             TuiEvent::RequestFinished(result) => {
                 state.loading = false;
                 state.request_started_at = None;
-                state.streaming_assistant = None;
+                state.streaming_assistant.clear();
                 match result {
                     Ok(result) => {
                         state.session_id = Some(result.session_id);
                     }
                     Err(error) => {
-                        state.messages.push(MessageItem::Error(error.to_string()));
+                        state.status_message = Some("Error".into());
+                        blocks.push(view::error_block(error.to_string()));
                     }
                 }
             }
         }
+        blocks
     }
 
     fn active_llm(&self, model: &ModelOption) -> LlmConfig {
@@ -551,6 +573,34 @@ impl Tui {
     }
 }
 
+struct TerminalAction {
+    exit: bool,
+    blocks: Vec<TranscriptBlock>,
+}
+
+impl TerminalAction {
+    fn none() -> Self {
+        Self {
+            exit: false,
+            blocks: Vec::new(),
+        }
+    }
+
+    fn exit() -> Self {
+        Self {
+            exit: true,
+            blocks: Vec::new(),
+        }
+    }
+
+    fn with_block(block: TranscriptBlock) -> Self {
+        Self {
+            exit: false,
+            blocks: vec![block],
+        }
+    }
+}
+
 fn enter_terminal(height: u16) -> Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
     enable_raw_mode().map_err(|e| BendclawError::Cli(format!("failed to enable raw mode: {e}")))?;
     create_terminal(height)
@@ -574,6 +624,46 @@ fn leave_terminal(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) ->
     terminal
         .show_cursor()
         .map_err(|e| BendclawError::Cli(format!("failed to show cursor: {e}")))
+}
+
+fn flush_blocks(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    blocks: Vec<TranscriptBlock>,
+) -> Result<()> {
+    for block in blocks {
+        flush_block(terminal, block)?;
+    }
+    Ok(())
+}
+
+fn flush_block(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    block: TranscriptBlock,
+) -> Result<()> {
+    if block.lines.is_empty() {
+        return Ok(());
+    }
+
+    let width = terminal
+        .size()
+        .map_err(|e| BendclawError::Cli(format!("failed to read terminal size: {e}")))?
+        .width
+        .max(1) as usize;
+    let height = block
+        .lines
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(width))
+        .sum::<usize>()
+        .max(1) as u16;
+    let text = Text::from(block.lines);
+    terminal
+        .insert_before(height, move |buf| {
+            Paragraph::new(text.clone())
+                .wrap(Wrap { trim: false })
+                .render(buf.area, buf);
+        })
+        .map_err(|e| BendclawError::Cli(format!("failed to write transcript: {e}")))?;
+    Ok(())
 }
 
 fn summarize_json(value: &serde_json::Value) -> String {
@@ -621,7 +711,27 @@ fn tool_call_message(name: &str, input: &serde_json::Value) -> (String, Vec<Stri
         return ("Read 1 file".into(), vec![summarize_json(input)]);
     }
 
-    (format!("{} call", name), vec![summarize_json(input)])
+    (format!("{name} call"), vec![summarize_json(input)])
+}
+
+fn tool_result_title(payload: &ToolResultPayload) -> String {
+    if payload.is_error {
+        format!("{} failed", payload.tool_name)
+    } else {
+        format!("{} completed", payload.tool_name)
+    }
+}
+
+fn tool_result_line(payload: &ToolResultPayload) -> String {
+    if payload.content.trim().is_empty() {
+        if payload.is_error {
+            "Result: tool returned an error".into()
+        } else {
+            "Result: completed".into()
+        }
+    } else {
+        format!("Result: {}", summarize_text(&payload.content, 160))
+    }
 }
 
 fn filtered_model_indices(options: &[ModelOption], filter: &str) -> Vec<usize> {
@@ -659,7 +769,7 @@ fn filtered_session_indices(
                 || session
                     .title
                     .as_ref()
-                    .map(|title: &String| title.to_lowercase().contains(&filter))
+                    .map(|title| title.to_lowercase().contains(&filter))
                     .unwrap_or(false)
         })
         .map(|(index, _)| index)
@@ -694,12 +804,7 @@ fn clamp_popup_selection(state: &mut TuiState) {
     }
 
     match state.popup.as_mut() {
-        Some(PopupState::Model { selected, .. }) => {
-            if *selected >= len {
-                *selected = len - 1;
-            }
-        }
-        Some(PopupState::Session { selected, .. }) => {
+        Some(PopupState::Model { selected, .. }) | Some(PopupState::Session { selected, .. }) => {
             if *selected >= len {
                 *selected = len - 1;
             }
@@ -709,7 +814,15 @@ fn clamp_popup_selection(state: &mut TuiState) {
 }
 
 fn short_id(value: &str) -> String {
-    value.chars().take(12).collect()
+    value.chars().take(8).collect()
+}
+
+fn summarize_session_title(session: &SessionMeta) -> String {
+    session
+        .title
+        .clone()
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or_else(|| short_id(&session.session_id))
 }
 
 fn time_now() -> String {

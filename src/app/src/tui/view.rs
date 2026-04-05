@@ -27,93 +27,205 @@ use ratatui::Frame;
 use unicode_width::UnicodeWidthStr;
 
 use crate::tui::state::matching_command_hints;
-use crate::tui::state::MessageItem;
 use crate::tui::state::PopupState;
 use crate::tui::state::SessionScope;
+use crate::tui::state::TranscriptBlock;
 use crate::tui::state::TuiState;
 
+const PREVIEW_HEIGHT: u16 = 8;
+
 pub fn render(frame: &mut Frame, state: &TuiState) {
-    let popup_height = popup_height(state);
+    let mut constraints = Vec::new();
+    let popup = popup_height(state);
+    if popup > 0 {
+        constraints.push(Constraint::Length(popup));
+    }
+    let preview = preview_height(state);
+    if preview > 0 {
+        constraints.push(Constraint::Length(preview));
+    }
+    constraints.push(Constraint::Length(1));
+    constraints.push(Constraint::Length(1));
+    constraints.push(Constraint::Length(1));
+
     let areas = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(popup_height),
-            Constraint::Length(1),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ])
+        .constraints(constraints)
         .split(frame.area());
 
-    render_messages(frame, areas[0], state);
-
-    if popup_height > 0 {
+    let mut index = 0;
+    if popup > 0 {
         if let Some(popup) = &state.popup {
-            render_popup(frame, areas[1], popup, state);
+            render_popup(frame, areas[index], popup, state);
         }
+        index += 1;
+    }
+    if preview > 0 {
+        render_preview(frame, areas[index], state);
+        index += 1;
     }
 
-    render_status(frame, areas[2], state);
-    render_input(frame, areas[3], state);
-    render_footer(frame, areas[4], state);
+    render_status(frame, areas[index], state);
+    render_input(frame, areas[index + 1], state);
+    render_footer(frame, areas[index + 2], state);
 }
 
 pub fn desired_inline_height(state: &TuiState) -> u16 {
-    let base = if state.messages.is_empty() { 16 } else { 12 };
-    let popup = popup_height(state);
-    base + popup
+    3 + popup_height(state) + preview_height(state)
+}
+
+pub fn welcome_block(state: &TuiState) -> TranscriptBlock {
+    TranscriptBlock::new(vec![
+        Line::from(Span::styled(
+            "Bendclaw",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("Model: {}", state.model.label()),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "Type a prompt or / for commands",
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(Span::styled(
+            "Tab or → complete  ·  Esc stop  ·  Ctrl+C quit",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
+}
+
+pub fn user_block(text: &str) -> TranscriptBlock {
+    TranscriptBlock::new(vec![Line::from(vec![
+        Span::styled("> ", Style::default().fg(Color::Yellow)),
+        Span::styled(text.to_string(), Style::default().fg(Color::White)),
+    ])])
+}
+
+pub fn assistant_block(text: &str) -> TranscriptBlock {
+    TranscriptBlock::new(render_markdown(text))
+}
+
+pub fn log_block(text: impl Into<String>) -> TranscriptBlock {
+    TranscriptBlock::new(vec![Line::from(Span::styled(
+        text.into(),
+        Style::default().fg(Color::Gray),
+    ))])
+}
+
+pub fn divider_block() -> TranscriptBlock {
+    TranscriptBlock::new(vec![Line::from(Span::styled(
+        "─".repeat(48),
+        Style::default().fg(Color::DarkGray),
+    ))])
+}
+
+pub fn error_block(text: impl Into<String>) -> TranscriptBlock {
+    TranscriptBlock::new(vec![Line::from(Span::styled(
+        text.into(),
+        Style::default().fg(Color::Red),
+    ))])
+}
+
+pub fn tool_call_block(title: &str, lines: &[String]) -> TranscriptBlock {
+    let mut rendered = vec![tool_title_line(title, false, false)];
+    rendered.extend(
+        lines
+            .iter()
+            .map(|line| tool_detail_line(line, Style::default().fg(Color::Gray))),
+    );
+    TranscriptBlock::new(rendered)
+}
+
+pub fn tool_result_block(title: &str, lines: &[String], ok: bool) -> TranscriptBlock {
+    let mut rendered = vec![tool_title_line(title, true, ok)];
+    rendered.extend(lines.iter().map(|line| {
+        tool_detail_line(
+            line,
+            if ok {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Red)
+            },
+        )
+    }));
+    TranscriptBlock::new(rendered)
 }
 
 fn popup_height(state: &TuiState) -> u16 {
     match state.popup {
-        Some(PopupState::Model { .. }) => 14,
-        Some(PopupState::Session { .. }) => 16,
+        Some(PopupState::Model { .. }) => 12,
+        Some(PopupState::Session { .. }) => 14,
         None => 0,
     }
 }
 
-fn render_messages(frame: &mut Frame, area: Rect, state: &TuiState) {
-    if state.messages.is_empty() {
-        render_welcome(frame, area, state);
-        return;
-    }
-
-    let lines = build_message_lines(state);
-    let scroll = lines.len().saturating_sub(area.height as usize) as u16;
-    let paragraph = Paragraph::new(Text::from(lines))
-        .scroll((scroll, 0))
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
-
-fn render_status(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let (text, alignment, color) = if state.loading {
-        (
-            format!(
-                "{} Streaming...  {}   (Press ESC to stop)",
-                spinner_frame(state.spinner_index),
-                request_elapsed(state)
-            ),
-            Alignment::Left,
-            Color::Yellow,
-        )
+fn preview_height(state: &TuiState) -> u16 {
+    if state.streaming_assistant.trim().is_empty() {
+        0
     } else {
-        (state.model.label(), Alignment::Right, Color::DarkGray)
-    };
-
-    let paragraph = Paragraph::new(text)
-        .alignment(alignment)
-        .style(Style::default().fg(color));
-    frame.render_widget(paragraph, area);
+        PREVIEW_HEIGHT
+    }
 }
 
-fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
+fn render_preview(frame: &mut Frame, area: Rect, state: &TuiState) {
     let block = Block::default()
-        .borders(Borders::TOP | Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::Gray));
+        .title(" Assistant ")
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(Color::DarkGray));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let mut lines = render_markdown(&state.streaming_assistant);
+    let max = inner.height as usize;
+    if lines.len() > max {
+        lines = lines.split_off(lines.len() - max);
+    }
+
+    let paragraph = Paragraph::new(Text::from(lines))
+        .wrap(Wrap { trim: false })
+        .scroll((0, 0));
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_status(frame: &mut Frame, area: Rect, state: &TuiState) {
+    let parts = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(1), Constraint::Length(32)])
+        .split(area);
+
+    let left = if state.loading {
+        format!(
+            "{} {}  {}",
+            spinner_frame(state.spinner_index),
+            state
+                .status_message
+                .clone()
+                .unwrap_or_else(|| "Streaming...".into()),
+            request_elapsed(state)
+        )
+    } else {
+        String::new()
+    };
+
+    let right = state.model.label();
+    frame.render_widget(
+        Paragraph::new(left).style(Style::default().fg(if state.loading {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        })),
+        parts[0],
+    );
+    frame.render_widget(
+        Paragraph::new(right)
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(Color::DarkGray)),
+        parts[1],
+    );
+}
+
+fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
     let mut spans = vec![Span::styled("> ", Style::default().fg(Color::Yellow))];
     if state.input.is_empty() {
         spans.push(Span::styled(
@@ -126,23 +238,35 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
     if let Some(suffix) = command_completion_suffix(&state.input) {
         spans.push(Span::styled(suffix, Style::default().fg(Color::DarkGray)));
     }
-    let input = Paragraph::new(Line::from(spans));
-    frame.render_widget(input, inner);
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
     let cursor_offset =
-        input_display_width(&state.input).min(inner.width.saturating_sub(1) as usize) as u16;
-    frame.set_cursor_position((inner.x + 2 + cursor_offset, inner.y));
+        input_display_width(&state.input).min(area.width.saturating_sub(3) as usize) as u16;
+    frame.set_cursor_position((area.x + 2 + cursor_offset, area.y));
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let elapsed = format_elapsed(state.session_started_at.elapsed().as_secs());
-    let cwd = display_path(&state.cwd);
-    let footer_text = if state.popup.is_none() && state.input.starts_with('/') {
-        format!("{}   {}", command_hint_text(&state.input), cwd)
+    let parts = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(1), Constraint::Length(48)])
+        .split(area);
+
+    let left = if state.popup.is_none() && state.input.starts_with('/') {
+        command_hint_text(&state.input)
     } else {
-        format!("[⏱ {elapsed}]  ? for help   {cwd}")
+        session_text(state)
     };
-    let footer = Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(footer, area);
+
+    frame.render_widget(
+        Paragraph::new(left).style(Style::default().fg(Color::DarkGray)),
+        parts[0],
+    );
+    frame.render_widget(
+        Paragraph::new(display_path(&state.cwd))
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(Color::DarkGray)),
+        parts[1],
+    );
 }
 
 fn render_popup(frame: &mut Frame, area: Rect, popup: &PopupState, state: &TuiState) {
@@ -169,7 +293,7 @@ fn render_model_popup(
     filter: &str,
 ) {
     let block = Block::default()
-        .title(" Select Model For This Session ")
+        .title(" Model ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Gray));
     let inner = block.inner(area);
@@ -187,37 +311,42 @@ fn render_model_popup(
     render_filter_line(frame, parts[0], "Filter models...", filter);
 
     let filtered = filtered_model_entries(options, filter);
-    let mut rows = Vec::new();
-    for (index, option) in filtered.iter().enumerate() {
-        let style = if index == selected {
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
+    let rows = filtered
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let style = if index == selected {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            let marker = if index == selected { "●" } else { " " };
+            Row::new(vec![
+                Cell::from(Span::styled(marker, Style::default().fg(Color::Yellow))),
+                Cell::from(Span::styled(option.model.clone(), style)),
+                Cell::from(Span::styled(
+                    format!("({})", option.provider),
+                    Style::default().fg(Color::Cyan),
+                )),
+            ])
+        })
+        .collect::<Vec<_>>();
 
-        let marker = if index == selected { "●" } else { " " };
-        rows.push(Row::new(vec![
-            Cell::from(Span::styled(marker, Style::default().fg(Color::Yellow))),
-            Cell::from(Span::styled(option.model.clone(), style)),
-            Cell::from(Span::styled(
-                format!("({})", option.provider),
-                Style::default().fg(Color::Cyan),
-            )),
-        ]));
-    }
-
-    let table = Table::new(rows, [
-        Constraint::Length(2),
-        Constraint::Min(20),
-        Constraint::Length(18),
-    ]);
-    frame.render_widget(table, parts[1]);
-
-    let footer = Paragraph::new("↑↓ navigate · Enter select · Esc cancel")
-        .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(footer, parts[2]);
+    frame.render_widget(
+        Table::new(rows, [
+            Constraint::Length(2),
+            Constraint::Min(20),
+            Constraint::Length(18),
+        ]),
+        parts[1],
+    );
+    frame.render_widget(
+        Paragraph::new("↑↓ navigate · Enter select · Esc cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        parts[2],
+    );
 }
 
 fn render_session_popup(
@@ -247,7 +376,6 @@ fn render_session_popup(
         .split(inner);
 
     let tabs = Line::from(vec![
-        Span::raw(""),
         Span::styled(
             if scope == SessionScope::CurrentFolder {
                 "◉ Current Folder"
@@ -274,10 +402,10 @@ fn render_session_popup(
             }),
         ),
     ]);
-    let tabs_widget = Paragraph::new(tabs).alignment(ratatui::layout::Alignment::Right);
-    frame.render_widget(tabs_widget, parts[0]);
+    frame.render_widget(Paragraph::new(tabs).alignment(Alignment::Right), parts[0]);
     render_filter_line(frame, parts[1], "Type to filter sessions...", filter);
 
+    let filtered = filtered_session_entries(options, filter, cwd, scope);
     let header = Row::new(vec![
         Cell::from("Modified"),
         Cell::from("Turns"),
@@ -285,50 +413,55 @@ fn render_session_popup(
         Cell::from("Title"),
     ])
     .style(Style::default().fg(Color::DarkGray));
-    let filtered = filtered_session_entries(options, filter, cwd, scope);
-    let mut rows = Vec::new();
-    for (index, session) in filtered.iter().enumerate() {
-        let title = summarize_title(
-            &session
-                .title
-                .clone()
-                .unwrap_or_else(|| "Untitled session".into()),
-        );
-        let style = if index == selected {
-            Style::default()
-                .fg(Color::White)
-                .bg(Color::Rgb(50, 50, 50))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Gray)
-        };
-        rows.push(
+
+    let rows = filtered
+        .iter()
+        .enumerate()
+        .map(|(index, session)| {
+            let title = summarize_title(
+                &session
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "Untitled session".into()),
+            );
+            let style = if index == selected {
+                Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Rgb(50, 50, 50))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
             Row::new(vec![
                 Cell::from(relative_time(&session.updated_at)),
                 Cell::from(session.turns.to_string()),
                 Cell::from(session.model.clone()),
                 Cell::from(title),
             ])
-            .style(style),
-        );
-    }
+            .style(style)
+        })
+        .collect::<Vec<_>>();
 
-    let table = Table::new(rows, [
-        Constraint::Length(12),
-        Constraint::Length(8),
-        Constraint::Length(20),
-        Constraint::Min(20),
-    ])
-    .header(header)
-    .column_spacing(1);
-    frame.render_widget(table, parts[2]);
-
-    let footer = Paragraph::new(format!(
-        "↑↓ navigate · Enter select · ←→ scope · Esc close   {} sessions",
-        filtered.len()
-    ))
-    .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(footer, parts[3]);
+    frame.render_widget(
+        Table::new(rows, [
+            Constraint::Length(12),
+            Constraint::Length(8),
+            Constraint::Length(20),
+            Constraint::Min(20),
+        ])
+        .header(header)
+        .column_spacing(1),
+        parts[2],
+    );
+    frame.render_widget(
+        Paragraph::new(format!(
+            "↑↓ navigate · Enter select · ←→ scope · Esc close   {} sessions",
+            filtered.len()
+        ))
+        .style(Style::default().fg(Color::DarkGray)),
+        parts[3],
+    );
 }
 
 fn render_filter_line(frame: &mut Frame, area: Rect, placeholder: &str, filter: &str) {
@@ -342,69 +475,14 @@ fn render_filter_line(frame: &mut Frame, area: Rect, placeholder: &str, filter: 
     } else {
         Style::default().fg(Color::White)
     };
-    let paragraph = Paragraph::new(Line::from(vec![
-        Span::styled("█", Style::default().fg(Color::White)),
-        Span::raw(" "),
-        Span::styled(text.to_string(), style),
-    ]));
-    frame.render_widget(paragraph, area);
-}
-
-fn build_message_lines(state: &TuiState) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    for item in &state.messages {
-        match item {
-            MessageItem::Log(text) => {
-                lines.push(Line::from(Span::styled(
-                    text.clone(),
-                    Style::default().fg(Color::Gray),
-                )));
-            }
-            MessageItem::User(text) => {
-                lines.push(Line::from(Span::styled(
-                    text.clone(),
-                    Style::default().fg(Color::White),
-                )));
-            }
-            MessageItem::Assistant(text) => {
-                lines.extend(render_markdown(text));
-            }
-            MessageItem::ToolCall {
-                title,
-                lines: detail,
-            } => {
-                lines.push(tool_title_line(title, false, false));
-                lines.extend(
-                    detail
-                        .iter()
-                        .map(|line| tool_detail_line(line, Color::Gray)),
-                );
-            }
-            MessageItem::ToolResult {
-                title,
-                lines: detail,
-                ok,
-            } => {
-                lines.push(tool_title_line(title, true, *ok));
-                lines.extend(detail.iter().map(|line| {
-                    tool_detail_line(line, if *ok { Color::Green } else { Color::Red })
-                }));
-            }
-            MessageItem::Error(text) => {
-                lines.push(Line::from(Span::styled(
-                    text.clone(),
-                    Style::default().fg(Color::Red),
-                )));
-            }
-        }
-        lines.push(Line::default());
-    }
-
-    if let Some(text) = &state.streaming_assistant {
-        lines.extend(render_markdown(text));
-    }
-
-    lines
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("█", Style::default().fg(Color::White)),
+            Span::raw(" "),
+            Span::styled(text.to_string(), style),
+        ])),
+        area,
+    );
 }
 
 fn filtered_model_entries(
@@ -448,176 +526,6 @@ fn filtered_session_entries(
         })
         .cloned()
         .collect()
-}
-
-fn format_elapsed(seconds: u64) -> String {
-    if seconds < 60 {
-        format!("{seconds}s")
-    } else {
-        format!("{}m {}s", seconds / 60, seconds % 60)
-    }
-}
-
-fn relative_time(value: &str) -> String {
-    match chrono::DateTime::parse_from_rfc3339(value) {
-        Ok(datetime) => {
-            let duration =
-                chrono::Utc::now().signed_duration_since(datetime.with_timezone(&chrono::Utc));
-            if duration.num_minutes() <= 0 {
-                "just now".into()
-            } else if duration.num_hours() <= 0 {
-                format!("{}m ago", duration.num_minutes())
-            } else if duration.num_days() <= 0 {
-                format!("{}h ago", duration.num_hours())
-            } else {
-                format!("{}d ago", duration.num_days())
-            }
-        }
-        Err(_) => value.into(),
-    }
-}
-
-fn summarize_title(value: &str) -> String {
-    let mut title: String = value.chars().take(48).collect();
-    if value.chars().count() > 48 {
-        title.push_str("...");
-    }
-    title
-}
-
-fn display_path(path: &str) -> String {
-    match std::env::var("HOME") {
-        Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
-        _ => path.to_string(),
-    }
-}
-
-fn render_welcome(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),
-            Constraint::Length(12),
-            Constraint::Min(1),
-        ])
-        .split(area);
-    let center = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(6), Constraint::Length(6)])
-        .split(vertical[1]);
-
-    let logo = Paragraph::new(Text::from(vec![
-        Line::from("██████╗ ███████╗███╗   ██╗██████╗  ██████╗██╗      █████╗ ██╗    ██╗"),
-        Line::from("██╔══██╗██╔════╝████╗  ██║██╔══██╗██╔════╝██║     ██╔══██╗██║    ██║"),
-        Line::from("██████╔╝█████╗  ██╔██╗ ██║██║  ██║██║     ██║     ███████║██║ █╗ ██║"),
-        Line::from("██╔══██╗██╔══╝  ██║╚██╗██║██║  ██║██║     ██║     ██╔══██║██║███╗██║"),
-        Line::from("██████╔╝███████╗██║ ╚████║██████╔╝╚██████╗███████╗██║  ██║╚███╔███╔╝"),
-        Line::from("╚═════╝ ╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ "),
-    ]))
-    .alignment(Alignment::Center)
-    .style(Style::default().fg(Color::White));
-
-    let meta = Paragraph::new(Text::from(vec![
-        Line::from(Span::styled(
-            env!("CARGO_PKG_VERSION"),
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "TIP: Use /sessions to resume a conversation",
-            Style::default().fg(Color::Gray),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Tab or → to complete commands  ·  Esc to stop  ·  Ctrl+C to quit",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            format!("Model: {}", state.model.label()),
-            Style::default().fg(Color::DarkGray),
-        )),
-    ]))
-    .alignment(Alignment::Center);
-
-    frame.render_widget(logo, center[0]);
-    frame.render_widget(meta, center[1]);
-}
-
-fn input_display_width(value: &str) -> usize {
-    UnicodeWidthStr::width(value)
-}
-
-fn spinner_frame(index: usize) -> &'static str {
-    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    FRAMES[index % FRAMES.len()]
-}
-
-fn request_elapsed(state: &TuiState) -> String {
-    match state.request_started_at {
-        Some(started_at) => format_elapsed(started_at.elapsed().as_secs()),
-        None => "0s".into(),
-    }
-}
-
-fn tool_title_line(title: &str, is_result: bool, ok: bool) -> Line<'static> {
-    let (badge, rest) = split_tool_title(title);
-    let (fg, bg) = if is_result {
-        if ok {
-            (Color::Black, Color::Rgb(133, 220, 140))
-        } else {
-            (Color::White, Color::Rgb(157, 57, 57))
-        }
-    } else {
-        (Color::Black, Color::Rgb(245, 197, 66))
-    };
-
-    let mut spans = vec![Span::styled(
-        format!("[{}]", badge),
-        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-    )];
-    if !rest.is_empty() {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(rest, Style::default().fg(Color::Gray)));
-    }
-    Line::from(spans)
-}
-
-fn tool_detail_line(text: &str, color: Color) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(text.to_string(), Style::default().fg(color)),
-    ])
-}
-
-fn command_completion_suffix(input: &str) -> Option<String> {
-    let hint = matching_command_hints(input).first().copied()?;
-    if hint.command == input {
-        return None;
-    }
-    hint.command
-        .strip_prefix(input)
-        .map(|suffix| suffix.to_string())
-}
-
-fn command_hint_text(input: &str) -> String {
-    let matches = matching_command_hints(input);
-    if matches.is_empty() {
-        return "no matching command".into();
-    }
-
-    matches
-        .into_iter()
-        .take(3)
-        .map(|hint| format!("{} {}", hint.command, hint.summary))
-        .collect::<Vec<_>>()
-        .join("   ")
-}
-
-fn split_tool_title(title: &str) -> (String, String) {
-    let mut parts = title.split_whitespace();
-    let badge = parts.next().unwrap_or("TOOL").to_uppercase();
-    let rest = parts.collect::<Vec<_>>().join(" ");
-    (badge, rest)
 }
 
 fn render_markdown(text: &str) -> Vec<Line<'static>> {
@@ -726,6 +634,43 @@ fn render_markdown(text: &str) -> Vec<Line<'static>> {
     lines
 }
 
+fn tool_title_line(title: &str, is_result: bool, ok: bool) -> Line<'static> {
+    let (badge, rest) = split_tool_title(title);
+    let (fg, bg) = if is_result {
+        if ok {
+            (Color::Black, Color::Rgb(133, 220, 140))
+        } else {
+            (Color::White, Color::Rgb(157, 57, 57))
+        }
+    } else {
+        (Color::Black, Color::Rgb(245, 197, 66))
+    };
+
+    let mut spans = vec![Span::styled(
+        format!("[{}]", badge),
+        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+    )];
+    if !rest.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(rest, Style::default().fg(Color::Gray)));
+    }
+    Line::from(spans)
+}
+
+fn tool_detail_line(text: &str, style: Style) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(text.to_string(), style),
+    ])
+}
+
+fn split_tool_title(title: &str) -> (String, String) {
+    let mut parts = title.split_whitespace();
+    let badge = parts.next().unwrap_or("TOOL").to_uppercase();
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    (badge, rest)
+}
+
 fn heading_style(level: Option<HeadingLevel>) -> Style {
     match level {
         Some(HeadingLevel::H1) => Style::default()
@@ -745,4 +690,97 @@ fn push_line(lines: &mut Vec<Line<'static>>, current: &mut Vec<Span<'static>>) {
     if !current.is_empty() {
         lines.push(Line::from(std::mem::take(current)));
     }
+}
+
+fn spinner_frame(index: usize) -> &'static str {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    FRAMES[index % FRAMES.len()]
+}
+
+fn request_elapsed(state: &TuiState) -> String {
+    match state.request_started_at {
+        Some(started_at) => format_elapsed(started_at.elapsed().as_secs()),
+        None => "0s".into(),
+    }
+}
+
+fn format_elapsed(seconds: u64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else {
+        format!("{}m {}s", seconds / 60, seconds % 60)
+    }
+}
+
+fn session_text(state: &TuiState) -> String {
+    match &state.session_id {
+        Some(session_id) => format!("session {}", short_id(session_id)),
+        None => "new session".into(),
+    }
+}
+
+fn short_id(value: &str) -> String {
+    value.chars().take(8).collect()
+}
+
+fn input_display_width(value: &str) -> usize {
+    UnicodeWidthStr::width(value)
+}
+
+fn command_completion_suffix(input: &str) -> Option<String> {
+    let hint = matching_command_hints(input).first().copied()?;
+    if hint.command == input {
+        return None;
+    }
+    hint.command
+        .strip_prefix(input)
+        .map(|suffix| suffix.to_string())
+}
+
+fn command_hint_text(input: &str) -> String {
+    let matches = matching_command_hints(input);
+    if matches.is_empty() {
+        return "no matching command".into();
+    }
+
+    matches
+        .into_iter()
+        .take(3)
+        .map(|hint| format!("{} {}", hint.command, hint.summary))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn display_path(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+        _ => path.to_string(),
+    }
+}
+
+fn relative_time(value: &str) -> String {
+    match chrono::DateTime::parse_from_rfc3339(value) {
+        Ok(datetime) => {
+            let duration =
+                chrono::Utc::now().signed_duration_since(datetime.with_timezone(&chrono::Utc));
+            if duration.num_minutes() <= 0 {
+                "just now".into()
+            } else if duration.num_hours() <= 0 {
+                format!("{}m ago", duration.num_minutes())
+            } else if duration.num_days() <= 0 {
+                format!("{}h ago", duration.num_hours())
+            } else {
+                format!("{}d ago", duration.num_days())
+            }
+        }
+        Err(_) => value.into(),
+    }
+}
+
+fn summarize_title(value: &str) -> String {
+    let mut title: String = value.chars().take(48).collect();
+    if value.chars().count() > 48 {
+        title.push_str("...");
+    }
+    title
 }

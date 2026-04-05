@@ -162,6 +162,7 @@ impl Tui {
                             }
                             state.loading = false;
                             state.request_started_at = None;
+                            state.streaming_assistant = None;
                             state
                                 .messages
                                 .push(MessageItem::Log(format!("[{}] Stopped", time_now())));
@@ -296,6 +297,7 @@ impl Tui {
         state.loading = true;
         state.spinner_index = 0;
         state.request_started_at = Some(Instant::now());
+        state.streaming_assistant = None;
 
         let mut request = Request::new(input);
         request.session_id = state.session_id.clone();
@@ -327,6 +329,7 @@ impl Tui {
             "/new" => {
                 state.loading = false;
                 state.request_started_at = None;
+                state.streaming_assistant = None;
                 state.session_id = None;
                 state.session_started_at = Instant::now();
                 state.messages.clear();
@@ -412,6 +415,7 @@ impl Tui {
                             for block in payload.content {
                                 match block {
                                     AssistantBlock::Text { text } => {
+                                        state.streaming_assistant = None;
                                         if !text.trim().is_empty() {
                                             state.messages.push(MessageItem::Assistant(text));
                                         }
@@ -466,6 +470,7 @@ impl Tui {
                     RunEventKind::Error => {
                         state.loading = false;
                         state.request_started_at = None;
+                        state.streaming_assistant = None;
                         if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
                             state.messages.push(MessageItem::Error(payload.message));
                         }
@@ -473,6 +478,7 @@ impl Tui {
                     RunEventKind::RunFinished => {
                         state.loading = false;
                         state.request_started_at = None;
+                        state.streaming_assistant = None;
                         if let Some(payload) = payload_as::<RequestFinishedPayload>(&event.payload)
                         {
                             state.messages.push(MessageItem::Log(format!(
@@ -482,14 +488,19 @@ impl Tui {
                             )));
                         }
                     }
-                    RunEventKind::PartialMessage
-                    | RunEventKind::TaskNotification
-                    | RunEventKind::RateLimit => {}
+                    RunEventKind::PartialMessage => {
+                        if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
+                            let current = state.streaming_assistant.get_or_insert_with(String::new);
+                            current.push_str(&payload.message);
+                        }
+                    }
+                    RunEventKind::TaskNotification | RunEventKind::RateLimit => {}
                 }
             }
             TuiEvent::RequestFinished(result) => {
                 state.loading = false;
                 state.request_started_at = None;
+                state.streaming_assistant = None;
                 match result {
                     Ok(result) => {
                         state.session_id = Some(result.session_id);

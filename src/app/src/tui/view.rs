@@ -1,3 +1,10 @@
+use pulldown_cmark::CodeBlockKind;
+use pulldown_cmark::Event;
+use pulldown_cmark::HeadingLevel;
+use pulldown_cmark::Options;
+use pulldown_cmark::Parser;
+use pulldown_cmark::Tag;
+use pulldown_cmark::TagEnd;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -119,10 +126,11 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &TuiState) {
     let elapsed = format_elapsed(state.session_started_at.elapsed().as_secs());
+    let cwd = display_path(&state.cwd);
     let footer_text = if state.popup.is_none() && state.input.starts_with('/') {
-        command_hint_text(&state.input)
+        format!("{}   {}", command_hint_text(&state.input), cwd)
     } else {
-        format!("[⏱ {elapsed}]  ? for help")
+        format!("[⏱ {elapsed}]  ? for help   {cwd}")
     };
     let footer = Paragraph::new(footer_text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(footer, area);
@@ -350,17 +358,17 @@ fn build_message_lines(state: &TuiState, max_lines: usize) -> Vec<Line<'static>>
                 )));
             }
             MessageItem::Assistant(text) => {
-                lines.push(Line::from(Span::raw(text.clone())));
+                lines.extend(render_markdown(text));
             }
             MessageItem::ToolCall {
                 title,
                 lines: detail,
             } => {
-                lines.push(tool_title_line(title, false));
+                lines.push(tool_title_line(title, false, false));
                 lines.extend(
                     detail
                         .iter()
-                        .map(|line| tool_detail_line(line, false, false)),
+                        .map(|line| tool_detail_line(line, Color::Gray)),
                 );
             }
             MessageItem::ToolResult {
@@ -368,8 +376,10 @@ fn build_message_lines(state: &TuiState, max_lines: usize) -> Vec<Line<'static>>
                 lines: detail,
                 ok,
             } => {
-                lines.push(tool_title_line(title, true));
-                lines.extend(detail.iter().map(|line| tool_detail_line(line, true, *ok)));
+                lines.push(tool_title_line(title, true, *ok));
+                lines.extend(detail.iter().map(|line| {
+                    tool_detail_line(line, if *ok { Color::Green } else { Color::Red })
+                }));
             }
             MessageItem::Error(text) => {
                 lines.push(Line::from(Span::styled(
@@ -379,6 +389,10 @@ fn build_message_lines(state: &TuiState, max_lines: usize) -> Vec<Line<'static>>
             }
         }
         lines.push(Line::default());
+    }
+
+    if let Some(text) = &state.streaming_assistant {
+        lines.extend(render_markdown(text));
     }
 
     if lines.len() > max_lines {
@@ -476,6 +490,13 @@ fn summarize_title(value: &str) -> String {
     title
 }
 
+fn display_path(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+        _ => path.to_string(),
+    }
+}
+
 fn render_welcome(frame: &mut Frame, area: Rect, state: &TuiState) {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -543,34 +564,34 @@ fn request_elapsed(state: &TuiState) -> String {
     }
 }
 
-fn tool_title_line(title: &str, is_result: bool) -> Line<'static> {
+fn tool_title_line(title: &str, is_result: bool, ok: bool) -> Line<'static> {
+    let (badge, rest) = split_tool_title(title);
     let (fg, bg) = if is_result {
-        (Color::White, Color::Rgb(60, 78, 104))
+        if ok {
+            (Color::Black, Color::Rgb(133, 220, 140))
+        } else {
+            (Color::White, Color::Rgb(157, 57, 57))
+        }
     } else {
         (Color::Black, Color::Rgb(245, 197, 66))
     };
 
-    Line::from(Span::styled(
-        format!(" {} ", title),
+    let mut spans = vec![Span::styled(
+        format!("[{}]", badge),
         Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-    ))
+    )];
+    if !rest.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(rest, Style::default().fg(Color::Gray)));
+    }
+    Line::from(spans)
 }
 
-fn tool_detail_line(text: &str, is_result: bool, ok: bool) -> Line<'static> {
-    let (fg, bg) = if is_result {
-        if ok {
-            (Color::Rgb(195, 255, 204), Color::Rgb(24, 56, 37))
-        } else {
-            (Color::Rgb(255, 210, 210), Color::Rgb(84, 28, 28))
-        }
-    } else {
-        (Color::Rgb(230, 230, 230), Color::Rgb(48, 48, 48))
-    };
-
-    Line::from(Span::styled(
-        format!("  {}  ", text),
-        Style::default().fg(fg).bg(bg),
-    ))
+fn tool_detail_line(text: &str, color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(text.to_string(), Style::default().fg(color)),
+    ])
 }
 
 fn command_completion_suffix(input: &str) -> Option<String> {
@@ -595,4 +616,138 @@ fn command_hint_text(input: &str) -> String {
         .map(|hint| format!("{} {}", hint.command, hint.summary))
         .collect::<Vec<_>>()
         .join("   ")
+}
+
+fn split_tool_title(title: &str) -> (String, String) {
+    let mut parts = title.split_whitespace();
+    let badge = parts.next().unwrap_or("TOOL").to_uppercase();
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    (badge, rest)
+}
+
+fn render_markdown(text: &str) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut current = Vec::new();
+    let mut heading: Option<HeadingLevel> = None;
+    let mut list_stack: Vec<Option<u64>> = Vec::new();
+    let mut inline_style = Style::default().fg(Color::White);
+    let mut in_code_block = false;
+
+    for event in Parser::new_ext(text, Options::all()) {
+        match event {
+            Event::Start(Tag::Paragraph) => {}
+            Event::End(TagEnd::Paragraph) => push_line(&mut lines, &mut current),
+            Event::Start(Tag::Heading { level, .. }) => {
+                push_line(&mut lines, &mut current);
+                heading = Some(level);
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                push_line(&mut lines, &mut current);
+                lines.push(Line::default());
+                heading = None;
+            }
+            Event::Start(Tag::List(start)) => {
+                list_stack.push(start);
+            }
+            Event::End(TagEnd::List(_)) => {
+                list_stack.pop();
+                lines.push(Line::default());
+            }
+            Event::Start(Tag::Item) => {
+                push_line(&mut lines, &mut current);
+                let prefix = match list_stack.last_mut() {
+                    Some(Some(index)) => {
+                        let value = *index;
+                        *index += 1;
+                        format!("{value}. ")
+                    }
+                    _ => "• ".into(),
+                };
+                current.push(Span::styled(prefix, Style::default().fg(Color::Yellow)));
+            }
+            Event::End(TagEnd::Item) => push_line(&mut lines, &mut current),
+            Event::Start(Tag::CodeBlock(kind)) => {
+                push_line(&mut lines, &mut current);
+                in_code_block = true;
+                if let CodeBlockKind::Fenced(lang) = kind {
+                    lines.push(Line::from(Span::styled(
+                        format!("```{lang}"),
+                        Style::default().fg(Color::Cyan),
+                    )));
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                in_code_block = false;
+                lines.push(Line::from(Span::styled(
+                    "```",
+                    Style::default().fg(Color::Cyan),
+                )));
+            }
+            Event::Start(Tag::Strong) => {
+                inline_style = inline_style.add_modifier(Modifier::BOLD);
+            }
+            Event::End(TagEnd::Strong) => {
+                inline_style = Style::default().fg(Color::White);
+            }
+            Event::Start(Tag::Emphasis) => {
+                inline_style = inline_style.add_modifier(Modifier::ITALIC);
+            }
+            Event::End(TagEnd::Emphasis) => {
+                inline_style = Style::default().fg(Color::White);
+            }
+            Event::Code(code) => current.push(Span::styled(
+                code.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .bg(Color::Rgb(48, 48, 48)),
+            )),
+            Event::Text(value) => {
+                if in_code_block {
+                    for line in value.lines() {
+                        lines.push(Line::from(Span::styled(
+                            line.to_string(),
+                            Style::default()
+                                .fg(Color::Rgb(210, 240, 255))
+                                .bg(Color::Rgb(42, 42, 42)),
+                        )));
+                    }
+                } else {
+                    current.push(Span::styled(
+                        value.to_string(),
+                        heading_style(heading).patch(inline_style),
+                    ));
+                }
+            }
+            Event::SoftBreak => push_line(&mut lines, &mut current),
+            Event::HardBreak => {
+                push_line(&mut lines, &mut current);
+                lines.push(Line::default());
+            }
+            _ => {}
+        }
+    }
+
+    push_line(&mut lines, &mut current);
+    lines
+}
+
+fn heading_style(level: Option<HeadingLevel>) -> Style {
+    match level {
+        Some(HeadingLevel::H1) => Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        Some(HeadingLevel::H2) => Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD),
+        Some(HeadingLevel::H3) => Style::default()
+            .fg(Color::LightBlue)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(Color::White),
+    }
+}
+
+fn push_line(lines: &mut Vec<Line<'static>>, current: &mut Vec<Span<'static>>) {
+    if !current.is_empty() {
+        lines.push(Line::from(std::mem::take(current)));
+    }
 }

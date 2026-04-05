@@ -64,7 +64,7 @@ async fn spawn_server(status_line: &str, body: String) -> Result<TestServer, Box
 
         let response = format!(
             "HTTP/1.1 {status_line}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.as_bytes().len()
+            body.len()
         );
         let _ = stream.write_all(response.as_bytes()).await;
     });

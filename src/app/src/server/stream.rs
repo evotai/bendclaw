@@ -6,15 +6,15 @@ use serde_json::json;
 
 use crate::error::BendclawError;
 use crate::error::Result;
+use crate::request::payload_as;
+use crate::request::AssistantBlock;
+use crate::request::AssistantPayload;
+use crate::request::EventSink;
+use crate::request::MessagePayload;
+use crate::request::RequestFinishedPayload;
+use crate::request::ToolResultPayload;
 use crate::storage::model::RunEvent;
 use crate::storage::model::RunEventKind;
-use crate::turn::payload_as;
-use crate::turn::AssistantBlock;
-use crate::turn::AssistantPayload;
-use crate::turn::EventSink;
-use crate::turn::MessagePayload;
-use crate::turn::RunFinishedPayload;
-use crate::turn::ToolResultPayload;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
 
@@ -87,7 +87,7 @@ pub fn map_run_event(run_event: &RunEvent) -> Vec<SseEvent> {
             }
         }
         RunEventKind::RunFinished => {
-            if let Some(payload) = payload_as::<RunFinishedPayload>(&run_event.payload) {
+            if let Some(payload) = payload_as::<RequestFinishedPayload>(&run_event.payload) {
                 let input_tokens = payload
                     .usage
                     .get("input_tokens")

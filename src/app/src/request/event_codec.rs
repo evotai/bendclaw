@@ -1,12 +1,12 @@
 use serde_json::json;
 
+use crate::request::AssistantBlock;
+use crate::request::AssistantPayload;
+use crate::request::MessagePayload;
+use crate::request::RequestFinishedPayload;
+use crate::request::ToolResultPayload;
 use crate::storage::model::RunEvent;
 use crate::storage::model::RunEventKind;
-use crate::turn::AssistantBlock;
-use crate::turn::AssistantPayload;
-use crate::turn::MessagePayload;
-use crate::turn::RunFinishedPayload;
-use crate::turn::ToolResultPayload;
 
 fn empty_payload() -> serde_json::Value {
     json!({})
@@ -55,12 +55,12 @@ fn extract_content_blocks(message: &bend_agent::Message) -> Vec<AssistantBlock> 
 }
 
 pub fn map_sdk_message(
-    msg: &bend_agent::SDKMessage,
+    message: &bend_agent::SDKMessage,
     run_id: &str,
     session_id: &str,
     turn: u32,
 ) -> RunEvent {
-    let (kind, payload) = match msg {
+    let (kind, payload) = match message {
         bend_agent::SDKMessage::System { message } => (
             RunEventKind::System,
             to_message_payload(MessagePayload {
@@ -100,7 +100,7 @@ pub fn map_sdk_message(
             messages,
         } => (
             RunEventKind::RunFinished,
-            to_payload(RunFinishedPayload {
+            to_payload(RequestFinishedPayload {
                 text: text.clone(),
                 usage: to_payload(usage),
                 num_turns: *num_turns,
@@ -169,7 +169,7 @@ pub fn map_sdk_message(
     )
 }
 
-pub fn run_started_event(run_id: &str, session_id: &str) -> RunEvent {
+pub fn request_started_event(run_id: &str, session_id: &str) -> RunEvent {
     RunEvent::new(
         run_id.to_string(),
         session_id.to_string(),

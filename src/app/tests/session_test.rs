@@ -1,8 +1,5 @@
 use bendclaw::conf::StorageConfig;
-use bendclaw::session::load_session;
-use bendclaw::session::new_session;
-use bendclaw::session::save_transcript;
-use bendclaw::session::update_transcript;
+use bendclaw::session::Session;
 use bendclaw::storage::model::ListSessions;
 use bendclaw::storage::model::ListTranscriptEntries;
 use bendclaw::storage::model::SessionMeta;
@@ -21,17 +18,19 @@ async fn new_session_creates_meta_and_empty_transcript() -> TestResult {
     let dir = TempDir::new()?;
     let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;
 
-    let state = new_session(
+    let session = Session::create(
         "sess-100".into(),
         "/tmp".into(),
         "claude-sonnet".into(),
-        storage.as_ref(),
+        storage.clone(),
     )
     .await?;
 
-    assert_eq!(state.meta.session_id, "sess-100");
-    assert_eq!(state.meta.turns, 0);
-    assert!(state.messages.is_empty());
+    let meta = session.meta().await;
+    let messages = session.messages().await;
+    assert_eq!(meta.session_id, "sess-100");
+    assert_eq!(meta.turns, 0);
+    assert!(messages.is_empty());
     assert!(dir
         .path()
         .join("sessions")
@@ -46,8 +45,8 @@ async fn load_session_returns_none_for_missing() -> TestResult {
     let dir = TempDir::new()?;
     let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;
 
-    let state = load_session("nonexistent", storage.as_ref()).await?;
-    assert!(state.is_none());
+    let session = Session::load("nonexistent", storage.clone()).await?;
+    assert!(session.is_none());
     Ok(())
 }
 
@@ -56,34 +55,36 @@ async fn round_trip_session_with_transcript() -> TestResult {
     let dir = TempDir::new()?;
     let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;
 
-    let mut state = new_session(
+    let session = Session::create(
         "sess-200".into(),
         "/tmp".into(),
         "claude-sonnet".into(),
-        storage.as_ref(),
+        storage.clone(),
     )
     .await?;
 
-    update_transcript(&mut state, vec![
-        bend_agent::Message {
-            role: bend_agent::MessageRole::User,
-            content: vec![bend_agent::ContentBlock::Text {
-                text: "hello".into(),
-            }],
-        },
-        bend_agent::Message {
-            role: bend_agent::MessageRole::Assistant,
-            content: vec![bend_agent::ContentBlock::Text { text: "hi".into() }],
-        },
-    ]);
+    session
+        .apply_messages(vec![
+            bend_agent::Message {
+                role: bend_agent::MessageRole::User,
+                content: vec![bend_agent::ContentBlock::Text {
+                    text: "hello".into(),
+                }],
+            },
+            bend_agent::Message {
+                role: bend_agent::MessageRole::Assistant,
+                content: vec![bend_agent::ContentBlock::Text { text: "hi".into() }],
+            },
+        ])
+        .await;
 
-    save_transcript(&state, storage.as_ref()).await?;
+    session.save().await?;
 
-    let loaded = load_session("sess-200", storage.as_ref())
+    let loaded = Session::load("sess-200", storage.clone())
         .await?
         .ok_or_else(|| missing_error("missing loaded session"))?;
-    assert_eq!(loaded.meta.turns, 1);
-    assert_eq!(loaded.messages.len(), 2);
+    assert_eq!(loaded.meta().await.turns, 1);
+    assert_eq!(loaded.messages().await.len(), 2);
     Ok(())
 }
 
@@ -92,27 +93,29 @@ async fn resume_session_appends_transcript() -> TestResult {
     let dir = TempDir::new()?;
     let storage = open_storage(&StorageConfig::fs(dir.path().to_path_buf()))?;
 
-    let mut state = new_session(
+    let session = Session::create(
         "sess-300".into(),
         "/tmp".into(),
         "claude-sonnet".into(),
-        storage.as_ref(),
+        storage.clone(),
     )
     .await?;
 
-    update_transcript(&mut state, vec![bend_agent::Message {
-        role: bend_agent::MessageRole::User,
-        content: vec![bend_agent::ContentBlock::Text {
-            text: "first".into(),
-        }],
-    }]);
-    save_transcript(&state, storage.as_ref()).await?;
+    session
+        .apply_messages(vec![bend_agent::Message {
+            role: bend_agent::MessageRole::User,
+            content: vec![bend_agent::ContentBlock::Text {
+                text: "first".into(),
+            }],
+        }])
+        .await;
+    session.save().await?;
 
-    let mut resumed = load_session("sess-300", storage.as_ref())
+    let resumed = Session::load("sess-300", storage.clone())
         .await?
         .ok_or_else(|| missing_error("missing resumed session"))?;
 
-    let mut extended = resumed.messages.clone();
+    let mut extended = resumed.messages().await;
     extended.push(bend_agent::Message {
         role: bend_agent::MessageRole::User,
         content: vec![bend_agent::ContentBlock::Text {
@@ -126,14 +129,14 @@ async fn resume_session_appends_transcript() -> TestResult {
         }],
     });
 
-    update_transcript(&mut resumed, extended);
-    save_transcript(&resumed, storage.as_ref()).await?;
+    resumed.apply_messages(extended).await;
+    resumed.save().await?;
 
-    let final_state = load_session("sess-300", storage.as_ref())
+    let final_state = Session::load("sess-300", storage.clone())
         .await?
         .ok_or_else(|| missing_error("missing final state"))?;
-    assert_eq!(final_state.messages.len(), 3);
-    assert_eq!(final_state.meta.turns, 2);
+    assert_eq!(final_state.messages().await.len(), 3);
+    assert_eq!(final_state.meta().await.turns, 2);
     Ok(())
 }
 

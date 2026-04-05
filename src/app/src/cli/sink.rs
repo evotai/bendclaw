@@ -4,23 +4,23 @@ use async_trait::async_trait;
 
 use crate::cli::args::OutputFormat;
 use crate::error::Result;
+use crate::request::payload_as;
+use crate::request::AssistantBlock;
+use crate::request::AssistantPayload;
+use crate::request::EventSink;
+use crate::request::MessagePayload;
+use crate::request::ToolResultPayload;
 use crate::storage::model::RunEvent;
 use crate::storage::model::RunEventKind;
-use crate::turn::payload_as;
-use crate::turn::AssistantBlock;
-use crate::turn::AssistantPayload;
-use crate::turn::EventSink;
-use crate::turn::MessagePayload;
-use crate::turn::ToolResultPayload;
 
 pub struct TextSink;
 
 pub struct StreamJsonSink;
 
-pub fn create_sink(format: &OutputFormat) -> Box<dyn EventSink> {
+pub fn create_sink(format: &OutputFormat) -> Arc<dyn EventSink> {
     match format {
-        OutputFormat::Text => Box::new(TextSink),
-        OutputFormat::StreamJson => Box::new(StreamJsonSink),
+        OutputFormat::Text => Arc::new(TextSink),
+        OutputFormat::StreamJson => Arc::new(StreamJsonSink),
     }
 }
 

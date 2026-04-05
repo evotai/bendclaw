@@ -5,6 +5,7 @@ use bendclaw::conf::LlmConfig;
 use bendclaw::conf::ProviderKind;
 use bendclaw::conf::StorageConfig;
 use bendclaw::error::Result;
+use bendclaw::request::*;
 use bendclaw::storage::model::ListRunEvents;
 use bendclaw::storage::model::ListTranscriptEntries;
 use bendclaw::storage::model::RunEvent;
@@ -12,9 +13,7 @@ use bendclaw::storage::model::RunEventKind;
 use bendclaw::storage::model::RunMeta;
 use bendclaw::storage::model::RunStatus;
 use bendclaw::storage::open_storage;
-use bendclaw::turn::*;
 use tempfile::TempDir;
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
@@ -41,50 +40,6 @@ fn test_llm_config() -> LlmConfig {
 
 fn missing_error(message: &str) -> std::io::Error {
     std::io::Error::other(message.to_string())
-}
-
-struct MockRunner {
-    messages_to_send: Vec<bend_agent::SDKMessage>,
-    final_messages: Vec<bend_agent::Message>,
-    closed: Mutex<bool>,
-}
-
-impl MockRunner {
-    fn new(
-        messages_to_send: Vec<bend_agent::SDKMessage>,
-        final_messages: Vec<bend_agent::Message>,
-    ) -> Self {
-        Self {
-            messages_to_send,
-            final_messages,
-            closed: Mutex::new(false),
-        }
-    }
-}
-
-#[async_trait]
-impl AgentRunner for MockRunner {
-    async fn run_query(
-        &self,
-        _options: AgentRunOptions,
-    ) -> Result<mpsc::Receiver<bend_agent::SDKMessage>> {
-        let (tx, rx) = mpsc::channel(100);
-        let messages = self.messages_to_send.clone();
-        tokio::spawn(async move {
-            for message in messages {
-                let _ = tx.send(message).await;
-            }
-        });
-        Ok(rx)
-    }
-
-    async fn take_messages(&self) -> Vec<bend_agent::Message> {
-        self.final_messages.clone()
-    }
-
-    async fn close(&self) {
-        *self.closed.lock().await = true;
-    }
 }
 
 struct CollectSink {
@@ -115,7 +70,7 @@ impl EventSink for CollectSink {
 async fn full_pipeline_creates_session_and_run() -> TestResult {
     let root = TempDir::new()?;
     let storage = open_storage(&fs_store(&root))?;
-    let sink = CollectSink::new();
+    let sink = Arc::new(CollectSink::new());
 
     let final_messages = vec![
         bend_agent::Message {
@@ -155,10 +110,18 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
         },
     ];
 
-    let runner = MockRunner::new(sdk_messages, final_messages);
-    let request = TurnRequest::new("hello".into());
+    let runner = RequestRunner::scripted(sdk_messages, final_messages);
+    let request = Request::new("hello".into());
 
-    submit_turn_with_runner(request, test_llm_config(), &sink, storage.as_ref(), &runner).await?;
+    RequestExecutor::new(
+        request,
+        test_llm_config(),
+        sink.clone(),
+        storage.clone(),
+        runner,
+    )
+    .execute()
+    .await?;
 
     let events = sink.events().await;
     assert!(events.len() >= 4);
@@ -206,16 +169,24 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
 async fn pipeline_marks_failed_when_no_result() -> TestResult {
     let root = TempDir::new()?;
     let storage = open_storage(&fs_store(&root))?;
-    let sink = CollectSink::new();
+    let sink = Arc::new(CollectSink::new());
 
     let sdk_messages = vec![bend_agent::SDKMessage::Error {
         message: "api failed".into(),
     }];
 
-    let runner = MockRunner::new(sdk_messages, vec![]);
-    let request = TurnRequest::new("hello".into());
+    let runner = RequestRunner::scripted(sdk_messages, vec![]);
+    let request = Request::new("hello".into());
 
-    submit_turn_with_runner(request, test_llm_config(), &sink, storage.as_ref(), &runner).await?;
+    RequestExecutor::new(
+        request,
+        test_llm_config(),
+        sink.clone(),
+        storage.clone(),
+        runner,
+    )
+    .execute()
+    .await?;
 
     let events = sink.events().await;
     let run_id = &events[0].run_id;
@@ -266,16 +237,17 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let runner1 = MockRunner::new(first_sdk, first_messages.clone());
-    let sink1 = CollectSink::new();
+    let runner1 = RequestRunner::scripted(first_sdk, first_messages.clone());
+    let sink1 = Arc::new(CollectSink::new());
 
-    submit_turn_with_runner(
-        TurnRequest::new("hello".into()),
+    RequestExecutor::new(
+        Request::new("hello".into()),
         test_llm_config(),
-        &sink1,
-        storage.as_ref(),
-        &runner1,
+        sink1.clone(),
+        storage.clone(),
+        runner1,
     )
+    .execute()
     .await?;
 
     let session_id = sink1
@@ -324,18 +296,19 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let runner2 = MockRunner::new(second_sdk, second_messages.clone());
-    let sink2 = CollectSink::new();
-    let mut request = TurnRequest::new("continue".into());
+    let runner2 = RequestRunner::scripted(second_sdk, second_messages.clone());
+    let sink2 = Arc::new(CollectSink::new());
+    let mut request = Request::new("continue".into());
     request.session_id = Some(session_id.clone());
 
-    submit_turn_with_runner(
+    RequestExecutor::new(
         request,
         test_llm_config(),
-        &sink2,
-        storage.as_ref(),
-        &runner2,
+        sink2.clone(),
+        storage.clone(),
+        runner2,
     )
+    .execute()
     .await?;
 
     let transcript = storage
@@ -452,8 +425,8 @@ fn map_all_sdk_message_variants() {
 }
 
 #[test]
-fn run_started_event_has_correct_kind() {
-    let event = run_started_event("run-001", "sess-001");
+fn request_started_event_has_correct_kind() {
+    let event = request_started_event("run-001", "sess-001");
     assert!(matches!(event.kind, RunEventKind::RunStarted));
     assert_eq!(event.turn, 0);
 }

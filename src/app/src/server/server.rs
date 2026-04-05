@@ -1,24 +1,144 @@
 use std::sync::Arc;
 
+use axum::extract::State;
+use axum::response::Html;
+use axum::response::IntoResponse;
+use axum::response::Sse;
 use axum::routing::get;
 use axum::routing::post;
+use axum::Json;
 use axum::Router;
 use bend_base::logx;
-use tokio::sync::Mutex;
+use serde::Deserialize;
+use serde::Serialize;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 use crate::conf::Config;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::server::handler;
+use crate::request::Request;
+use crate::request::RequestExecutor;
+use crate::server::stream;
 use crate::storage::open_storage;
 use crate::storage::Storage;
 
-pub(crate) struct AppState {
-    pub(crate) llm: LlmConfig,
-    pub(crate) storage: Arc<dyn Storage>,
-    pub(crate) session_id: Mutex<Option<String>>,
+const INDEX_HTML: &str = include_str!("static/index.html");
+
+#[derive(Deserialize)]
+struct ChatRequest {
+    message: String,
+}
+
+#[derive(Serialize)]
+struct StatusResponse {
+    status: String,
+}
+
+pub struct Server {
+    llm: LlmConfig,
+    storage: Arc<dyn Storage>,
+    session_id: RwLock<Option<String>>,
+}
+
+impl Server {
+    pub fn new(llm: LlmConfig, storage: Arc<dyn Storage>) -> Arc<Self> {
+        Arc::new(Self {
+            llm,
+            storage,
+            session_id: RwLock::new(None),
+        })
+    }
+
+    pub async fn start(self: Arc<Self>, host: String, port: u16) -> Result<()> {
+        let addr = format!("{host}:{port}");
+        logx!(info, "server", "listening", addr = %addr,);
+
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .map_err(|e| BendclawError::Run(format!("failed to bind {addr}: {e}")))?;
+
+        axum::serve(listener, self.router())
+            .await
+            .map_err(|e| BendclawError::Run(format!("server error: {e}")))?;
+
+        Ok(())
+    }
+
+    fn router(self: Arc<Self>) -> Router {
+        Router::new()
+            .route(
+                "/",
+                get(|State(server): State<Arc<Server>>| async move { server.index().await }),
+            )
+            .route(
+                "/api/new",
+                post(|State(server): State<Arc<Server>>| async move { server.new_session().await }),
+            )
+            .route(
+                "/api/chat",
+                post(
+                    |State(server): State<Arc<Server>>, Json(req): Json<ChatRequest>| async move {
+                        server.chat(req).await
+                    },
+                ),
+            )
+            .layer(CorsLayer::permissive())
+            .with_state(self)
+    }
+
+    async fn index(&self) -> Html<&'static str> {
+        Html(INDEX_HTML)
+    }
+
+    async fn new_session(&self) -> Json<StatusResponse> {
+        *self.session_id.write().await = None;
+        Json(StatusResponse {
+            status: "ok".into(),
+        })
+    }
+
+    async fn chat(self: Arc<Self>, req: ChatRequest) -> impl IntoResponse {
+        let stream = self.chat_stream(req.message);
+        Sse::new(stream).keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(std::time::Duration::from_secs(15))
+                .text("ping"),
+        )
+    }
+
+    fn chat_stream(
+        self: Arc<Self>,
+        message: String,
+    ) -> impl futures::stream::Stream<
+        Item = std::result::Result<axum::response::sse::Event, std::convert::Infallible>,
+    > {
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+
+        tokio::spawn(async move {
+            let current_session_id = self.session_id.read().await.clone();
+            let sink = Arc::new(stream::SseSink::new(tx.clone()));
+            let mut request = Request::new(message);
+            request.session_id = current_session_id;
+
+            match RequestExecutor::open(request, self.llm.clone(), sink, self.storage.clone())
+                .execute()
+                .await
+            {
+                Ok(result) => {
+                    *self.session_id.write().await = Some(result.session_id);
+                }
+                Err(error) => {
+                    let _ = tx.send(stream::error_event(error.to_string())).await;
+                }
+            }
+
+            let _ = tx.send(stream::done_event()).await;
+        });
+
+        tokio_stream::wrappers::ReceiverStream::new(rx)
+    }
 }
 
 pub async fn start(conf: Config) -> Result<()> {
@@ -36,18 +156,7 @@ pub async fn start(conf: Config) -> Result<()> {
     let base_url = llm.base_url.clone().unwrap_or_default();
     let provider = conf.llm.provider.clone();
 
-    let state = Arc::new(AppState {
-        llm,
-        storage,
-        session_id: Mutex::new(None),
-    });
-
-    let app = Router::new()
-        .route("/", get(handler::index))
-        .route("/api/new", post(handler::new_session))
-        .route("/api/chat", post(handler::chat))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+    let server = Server::new(llm, storage);
 
     let addr = format!("{}:{}", conf.server.host, conf.server.port);
     logx!(
@@ -61,15 +170,8 @@ pub async fn start(conf: Config) -> Result<()> {
         storage_backend = storage_backend,
         storage_target = %storage_target,
     );
-    logx!(info, "server", "listening", addr = %addr,);
 
-    let listener = tokio::net::TcpListener::bind(&addr)
+    server
+        .start(conf.server.host.clone(), conf.server.port)
         .await
-        .map_err(|e| BendclawError::Run(format!("failed to bind {addr}: {e}")))?;
-
-    axum::serve(listener, app)
-        .await
-        .map_err(|e| BendclawError::Run(format!("server error: {e}")))?;
-
-    Ok(())
 }

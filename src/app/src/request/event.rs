@@ -17,7 +17,7 @@ pub struct ToolResultPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunFinishedPayload {
+pub struct RequestFinishedPayload {
     pub text: String,
     pub usage: Value,
     pub num_turns: u32,

@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 pub struct ToolInputSchema {
     #[serde(rename = "type")]
     pub schema_type: String,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(default)]
     pub properties: HashMap<String, Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required: Vec<String>,

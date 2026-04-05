@@ -152,25 +152,22 @@ pub fn tool_result_block(title: &str, lines: &[String], ok: bool) -> TranscriptB
     TranscriptBlock::new(rendered)
 }
 
-pub fn summary_block(title: &str, lines: &[String]) -> TranscriptBlock {
-    let mut rendered = vec![Line::from(vec![
-        Span::styled(
-            "[RUN]",
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Rgb(116, 192, 252))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(title.to_string(), Style::default().fg(Color::Gray)),
-    ])];
-    rendered.extend(lines.iter().map(|line| {
-        Line::from(vec![
-            Span::styled("  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(line.to_string(), Style::default().fg(Color::Gray)),
-        ])
-    }));
-    TranscriptBlock::new(rendered)
+pub fn summary_block(title: &str, detail: &str) -> TranscriptBlock {
+    let mut spans = vec![Span::styled(
+        format!("[{title}]"),
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(116, 192, 252))
+            .add_modifier(Modifier::BOLD),
+    )];
+    if !detail.trim().is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            detail.to_string(),
+            Style::default().fg(Color::Gray),
+        ));
+    }
+    TranscriptBlock::new(vec![Line::from(spans)])
 }
 
 fn popup_height(state: &TuiState) -> u16 {
@@ -267,26 +264,15 @@ fn render_input(frame: &mut Frame, area: Rect, state: &TuiState) {
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &TuiState) {
-    let parts = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(1), Constraint::Length(48)])
-        .split(area);
-
-    let left = if state.popup.is_none() && state.input.starts_with('/') {
+    let text = if state.popup.is_none() && state.input.starts_with('/') {
         command_hint_text(&state.input)
     } else {
-        session_text(state)
+        display_path(&state.cwd)
     };
 
     frame.render_widget(
-        Paragraph::new(left).style(Style::default().fg(Color::DarkGray)),
-        parts[0],
-    );
-    frame.render_widget(
-        Paragraph::new(display_path(&state.cwd))
-            .alignment(Alignment::Right)
-            .style(Style::default().fg(Color::DarkGray)),
-        parts[1],
+        Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
+        area,
     );
 }
 
@@ -637,7 +623,7 @@ fn render_markdown(text: &str) -> Vec<Line<'static>> {
                     }
                 } else {
                     current.push(Span::styled(
-                        value.to_string(),
+                        normalize_cjk_spacing(&value),
                         heading_style(heading).patch(inline_style),
                     ));
                 }
@@ -733,17 +719,6 @@ fn format_elapsed(seconds: u64) -> String {
     }
 }
 
-fn session_text(state: &TuiState) -> String {
-    match &state.session_id {
-        Some(session_id) => format!("session {}", short_id(session_id)),
-        None => "new session".into(),
-    }
-}
-
-fn short_id(value: &str) -> String {
-    value.chars().take(8).collect()
-}
-
 fn input_display_width(value: &str) -> usize {
     UnicodeWidthStr::width(value)
 }
@@ -804,4 +779,37 @@ fn summarize_title(value: &str) -> String {
         title.push_str("...");
     }
     title
+}
+
+fn normalize_cjk_spacing(value: &str) -> String {
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut normalized = String::with_capacity(value.len());
+
+    for (index, ch) in chars.iter().enumerate() {
+        if *ch == ' ' {
+            let prev = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+            let next = chars.get(index + 1).copied();
+            if prev.zip(next).is_some_and(|(left, right)| {
+                is_cjk_display_char(left) && is_cjk_display_char(right)
+            }) {
+                continue;
+            }
+        }
+
+        normalized.push(*ch);
+    }
+
+    normalized
+}
+
+fn is_cjk_display_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{3000}'..='\u{303F}'
+            | '\u{3040}'..='\u{30FF}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{AC00}'..='\u{D7AF}'
+            | '\u{FF00}'..='\u{FFEF}'
+    )
 }

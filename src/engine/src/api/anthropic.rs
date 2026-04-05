@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use async_trait::async_trait;
 use bend_base::logx;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
+use parking_lot::Mutex;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
@@ -210,6 +210,7 @@ impl LLMProvider for AnthropicProvider {
         }
 
         let (writer, stream) = ResponseStream::channel(128);
+        writer.set_request_started_at(started_at);
         let model_for_task = model.clone();
 
         tokio::spawn(async move {
@@ -244,7 +245,7 @@ async fn stream_anthropic_response(
         move |chunk| match chunk {
             Ok(bytes) => {
                 writer.record_chunk(bytes.len());
-                raw_body.lock().unwrap().extend_from_slice(bytes.as_ref());
+                raw_body.lock().extend_from_slice(bytes.as_ref());
                 Ok(bytes)
             }
             Err(error) => Err(error),
@@ -455,7 +456,7 @@ fn fallback_from_raw_body<F>(
 where
     F: FnOnce(&str) -> Result<ProviderResponse, ApiError>,
 {
-    let body = String::from_utf8_lossy(&raw_body.lock().unwrap()).to_string();
+    let body = String::from_utf8_lossy(&raw_body.lock()).to_string();
     if body.trim().is_empty() {
         return Ok(None);
     }

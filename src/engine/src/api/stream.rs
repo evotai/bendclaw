@@ -1,8 +1,8 @@
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Instant;
 
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
@@ -46,7 +46,8 @@ pub enum StreamEvent {
 
 #[derive(Debug, Default)]
 struct StreamMetricsInner {
-    started_at: Option<Instant>,
+    request_started_at: Option<Instant>,
+    first_chunk_at: Option<Instant>,
     ttfb_ms: Option<u64>,
     ttft_ms: Option<u64>,
     chunk_count: u32,
@@ -55,17 +56,19 @@ struct StreamMetricsInner {
 }
 
 impl StreamMetricsInner {
-    fn start_if_needed(&mut self) {
-        if self.started_at.is_none() {
-            self.started_at = Some(Instant::now());
+    fn set_request_started_at(&mut self, started_at: Instant) {
+        if self.request_started_at.is_none() {
+            self.request_started_at = Some(started_at);
         }
     }
 
     fn record_chunk(&mut self, len: usize) {
-        self.start_if_needed();
+        let chunk_started_at = self.first_chunk_at.get_or_insert_with(Instant::now);
         if self.ttfb_ms.is_none() {
-            if let Some(started_at) = self.started_at {
+            if let Some(started_at) = self.request_started_at {
                 self.ttfb_ms = Some(started_at.elapsed().as_millis() as u64);
+            } else {
+                self.ttfb_ms = Some(chunk_started_at.elapsed().as_millis() as u64);
             }
         }
         self.chunk_count += 1;
@@ -73,17 +76,17 @@ impl StreamMetricsInner {
     }
 
     fn record_token(&mut self) {
-        self.start_if_needed();
         if self.ttft_ms.is_none() {
-            if let Some(started_at) = self.started_at {
+            if let Some(started_at) = self.request_started_at {
                 self.ttft_ms = Some(started_at.elapsed().as_millis() as u64);
+            } else if let Some(first_chunk_at) = self.first_chunk_at {
+                self.ttft_ms = Some(first_chunk_at.elapsed().as_millis() as u64);
             }
         }
     }
 
     fn finish(&mut self) {
-        self.start_if_needed();
-        if let Some(started_at) = self.started_at {
+        if let Some(started_at) = self.first_chunk_at.or(self.request_started_at) {
             self.stream_duration_ms = started_at.elapsed().as_millis() as u64;
         }
     }
@@ -133,7 +136,7 @@ impl ResponseStream {
     }
 
     pub fn metrics(&self) -> StreamMetrics {
-        self.metrics.lock().unwrap().snapshot()
+        self.metrics.lock().snapshot()
     }
 }
 
@@ -155,8 +158,12 @@ pub struct StreamWriter {
 }
 
 impl StreamWriter {
+    pub fn set_request_started_at(&self, started_at: Instant) {
+        self.metrics.lock().set_request_started_at(started_at);
+    }
+
     pub fn record_chunk(&self, len: usize) {
-        self.metrics.lock().unwrap().record_chunk(len);
+        self.metrics.lock().record_chunk(len);
     }
 
     fn record_token_if_needed(&self, event: &StreamEvent) {
@@ -164,12 +171,12 @@ impl StreamWriter {
             event,
             StreamEvent::ContentDelta(_) | StreamEvent::ThinkingDelta(_)
         ) {
-            self.metrics.lock().unwrap().record_token();
+            self.metrics.lock().record_token();
         }
     }
 
     pub fn finish_metrics(&self) {
-        self.metrics.lock().unwrap().finish();
+        self.metrics.lock().finish();
     }
 
     pub async fn send(&self, event: StreamEvent) {

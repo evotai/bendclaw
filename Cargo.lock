@@ -187,6 +187,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "glob",
+ "parking_lot",
  "pin-project-lite",
  "regex",
  "reqwest",

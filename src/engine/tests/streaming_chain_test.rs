@@ -26,6 +26,7 @@ struct ResponseSpec {
     status_line: &'static str,
     content_type: &'static str,
     body: String,
+    delay_ms: u64,
 }
 
 async fn spawn_sequence_server(responses: Vec<ResponseSpec>) -> Result<String, Box<dyn Error>> {
@@ -66,6 +67,9 @@ async fn spawn_sequence_server(responses: Vec<ResponseSpec>) -> Result<String, B
                 response.body.len(),
                 response.body
             );
+            if response.delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(response.delay_ms)).await;
+            }
             let _ = stream.write_all(response_text.as_bytes()).await;
         }
     });
@@ -175,6 +179,7 @@ async fn streamed_text_query_emits_partial_then_final_messages() -> TestResult {
         status_line: "200 OK",
         content_type: "text/event-stream",
         body: openai_text_stream(&["pon", "g"]),
+        delay_ms: 0,
     }])
     .await?;
 
@@ -258,11 +263,13 @@ async fn streamed_tool_loop_accumulates_summary_across_turns() -> TestResult {
             status_line: "200 OK",
             content_type: "text/event-stream",
             body: anthropic_tool_use_stream(),
+            delay_ms: 0,
         },
         ResponseSpec {
             status_line: "200 OK",
             content_type: "text/event-stream",
             body: anthropic_text_stream(&["tool says ", "pong"], 3, 2),
+            delay_ms: 0,
         },
     ])
     .await?;
@@ -348,6 +355,45 @@ async fn streamed_tool_loop_accumulates_summary_across_turns() -> TestResult {
         .ok_or_else(|| std::io::Error::other("missing final assistant index"))?;
 
     assert!(tool_result_index < final_assistant_index);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn streamed_summary_reports_non_zero_ttfb_and_ttft_after_upstream_delay() -> TestResult {
+    let base_url = spawn_sequence_server(vec![ResponseSpec {
+        status_line: "200 OK",
+        content_type: "text/event-stream",
+        body: openai_text_stream(&["pong"]),
+        delay_ms: 35,
+    }])
+    .await?;
+
+    let temp_dir = tempfile::tempdir()?;
+    let mut agent = Agent::new(AgentOptions {
+        provider: Some(ProviderKind::OpenAi),
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        model: Some("gpt-4o".to_string()),
+        cwd: Some(temp_dir.path().to_string_lossy().to_string()),
+        allowed_tools: Some(vec![]),
+        ..Default::default()
+    })
+    .await?;
+
+    let messages = collect_query_messages(&mut agent, "ping").await;
+    agent.close().await;
+
+    let summary = messages
+        .iter()
+        .find_map(|message| match message {
+            SDKMessage::Result { summary, .. } => Some(summary.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| std::io::Error::other("missing result summary"))?;
+
+    assert!(summary.stream.first_ttfb_ms.unwrap_or_default() >= 20);
+    assert!(summary.stream.first_ttft_ms.unwrap_or_default() >= 20);
 
     Ok(())
 }

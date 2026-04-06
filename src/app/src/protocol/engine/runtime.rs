@@ -215,6 +215,25 @@ async fn forward_events(
                 },
                 error: error.clone(),
             }),
+            bend_engine::AgentEvent::ContextCompactionStart {
+                message_count,
+                estimated_tokens,
+            } => Some(ProtocolEvent::ContextCompactionStart {
+                message_count: *message_count,
+                estimated_tokens: *estimated_tokens,
+            }),
+            bend_engine::AgentEvent::ContextCompactionEnd { stats } => {
+                Some(ProtocolEvent::ContextCompactionEnd {
+                    level: stats.level,
+                    before_message_count: stats.before_message_count,
+                    after_message_count: stats.after_message_count,
+                    before_estimated_tokens: stats.before_estimated_tokens,
+                    after_estimated_tokens: stats.after_estimated_tokens,
+                    tool_outputs_truncated: stats.tool_outputs_truncated,
+                    turns_summarized: stats.turns_summarized,
+                    messages_dropped: stats.messages_dropped,
+                })
+            }
         };
 
         if let Some(pe) = protocol_event {

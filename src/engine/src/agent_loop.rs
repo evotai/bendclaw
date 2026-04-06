@@ -337,13 +337,27 @@ async fn run_loop(
             turn_number += 1;
 
             // Compact context if configured (tiered: tool outputs → summarize → drop)
+            let strategy: &dyn CompactionStrategy = config
+                .compaction_strategy
+                .as_deref()
+                .unwrap_or(&DefaultCompaction);
             if let Some(ref ctx_config) = config.context_config {
-                let strategy: &dyn CompactionStrategy = config
-                    .compaction_strategy
-                    .as_deref()
-                    .unwrap_or(&DefaultCompaction);
-                context.messages =
-                    strategy.compact(std::mem::take(&mut context.messages), ctx_config);
+                let original_count = context.messages.len();
+                let original_tokens = context::total_tokens(&context.messages);
+
+                tx.send(AgentEvent::ContextCompactionStart {
+                    message_count: original_count,
+                    estimated_tokens: original_tokens,
+                })
+                .ok();
+
+                let result = strategy.compact(std::mem::take(&mut context.messages), ctx_config);
+                context.messages = result.messages;
+
+                tx.send(AgentEvent::ContextCompactionEnd {
+                    stats: result.stats,
+                })
+                .ok();
             }
 
             // Stream assistant response

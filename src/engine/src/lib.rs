@@ -15,6 +15,8 @@ pub mod openapi;
 pub use agent::Agent;
 pub use agent_loop::agent_loop;
 pub use agent_loop::agent_loop_continue;
+pub use context::CompactionResult;
+pub use context::CompactionStats;
 pub use context::CompactionStrategy;
 pub use context::DefaultCompaction;
 pub use retry::RetryConfig;

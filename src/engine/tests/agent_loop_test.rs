@@ -81,6 +81,8 @@ async fn test_simple_text_response() {
             AgentEvent::InputRejected { .. } => "InputRejected",
             AgentEvent::LlmCallStart { .. } => "LlmCallStart",
             AgentEvent::LlmCallEnd { .. } => "LlmCallEnd",
+            AgentEvent::ContextCompactionStart { .. } => "CompactionStart",
+            AgentEvent::ContextCompactionEnd { .. } => "CompactionEnd",
         })
         .collect();
 
@@ -178,6 +180,8 @@ async fn test_tool_call_and_response() {
             AgentEvent::InputRejected { .. } => "InputRejected",
             AgentEvent::LlmCallStart { .. } => "LlmCallStart",
             AgentEvent::LlmCallEnd { .. } => "LlmCallEnd",
+            AgentEvent::ContextCompactionStart { .. } => "CompactionStart",
+            AgentEvent::ContextCompactionEnd { .. } => "CompactionEnd",
         })
         .collect();
 
@@ -1813,15 +1817,13 @@ async fn test_default_compaction_matches_compact_messages() {
     let result_direct = compact_messages(messages.clone(), &config);
     let result_trait = DefaultCompaction.compact(messages, &config);
 
-    // Compare lengths and structure, not deep equality — Level 3 compaction
-    // inserts marker messages with now_ms() timestamps that differ between calls.
-    assert_eq!(result_direct.len(), result_trait.len());
+    assert_eq!(result_direct.messages.len(), result_trait.messages.len());
     assert!(
-        result_direct.len() < 100,
+        result_direct.messages.len() < 100,
         "compaction should have reduced messages"
     );
     assert!(
-        result_direct.len() >= 2,
+        result_direct.messages.len() >= 2,
         "should keep at least keep_first messages"
     );
 }
@@ -1829,10 +1831,10 @@ async fn test_default_compaction_matches_compact_messages() {
 #[tokio::test]
 async fn test_custom_compaction_strategy_is_called() {
     use bendengine::context::ContextConfig;
+    use bendengine::CompactionResult;
+    use bendengine::CompactionStats;
     use bendengine::CompactionStrategy;
 
-    /// A custom strategy that prepends a marker message, then delegates
-    /// to the default compaction.
     struct MarkerCompaction;
 
     impl CompactionStrategy for MarkerCompaction {
@@ -1840,13 +1842,15 @@ async fn test_custom_compaction_strategy_is_called() {
             &self,
             messages: Vec<AgentMessage>,
             _config: &ContextConfig,
-        ) -> Vec<AgentMessage> {
+        ) -> CompactionResult {
             let mut result = vec![AgentMessage::Llm(Message::user("[compacted]"))];
-            // Keep only the last message to prove we ran
             if let Some(last) = messages.last() {
                 result.push(last.clone());
             }
-            result
+            CompactionResult {
+                messages: result,
+                stats: CompactionStats::default(),
+            }
         }
     }
 
@@ -1976,4 +1980,196 @@ async fn test_none_compaction_strategy_uses_default() {
         !new_messages.is_empty(),
         "Agent should have produced messages"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Context compaction event tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_compaction_events_emitted_when_context_exceeds_budget() {
+    use bendengine::context::ContextConfig;
+
+    let provider = MockProvider::text("Got it.");
+
+    let mut prior_messages = Vec::new();
+    for i in 0..20 {
+        prior_messages.push(AgentMessage::Llm(Message::user(format!(
+            "msg {} {}",
+            i,
+            "x".repeat(500)
+        ))));
+        prior_messages.push(AgentMessage::Llm(Message::Assistant {
+            content: vec![Content::Text {
+                text: format!("reply {} {}", i, "y".repeat(500)),
+            }],
+            stop_reason: StopReason::Stop,
+            model: "mock".into(),
+            provider: "mock".into(),
+            usage: Usage::default(),
+            timestamp: 0,
+            error_message: None,
+        }));
+    }
+
+    let config = AgentLoopConfig {
+        provider: std::sync::Arc::new(provider),
+        model: "test".into(),
+        api_key: "test".into(),
+        thinking_level: ThinkingLevel::Off,
+        max_tokens: None,
+        temperature: None,
+        model_config: None,
+        convert_to_llm: None,
+        transform_context: None,
+        get_steering_messages: None,
+        get_follow_up_messages: None,
+        context_config: Some(ContextConfig {
+            max_context_tokens: 500,
+            system_prompt_tokens: 0,
+            keep_recent: 4,
+            keep_first: 2,
+            tool_output_max_lines: 20,
+        }),
+        compaction_strategy: None,
+        execution_limits: None,
+        cache_config: CacheConfig::default(),
+        tool_execution: ToolExecutionStrategy::default(),
+        retry_config: bendengine::RetryConfig::none(),
+        before_turn: None,
+        after_turn: None,
+        on_error: None,
+        input_filters: vec![],
+    };
+
+    let prompt = AgentMessage::Llm(Message::user("hello"));
+    let mut context = AgentContext {
+        system_prompt: String::new(),
+        messages: prior_messages,
+        tools: vec![],
+    };
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+
+    agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
+    let events = collect_events(rx);
+
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ContextCompactionStart {
+                message_count,
+                estimated_tokens,
+            } => Some((*message_count, *estimated_tokens)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(starts.len(), 1);
+    assert!(starts[0].0 > 20);
+    assert!(starts[0].1 > 500);
+
+    let ends: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ContextCompactionEnd { stats } => Some(stats.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1);
+    let stats = &ends[0];
+    assert!(stats.level > 0);
+    assert!(stats.after_message_count < stats.before_message_count);
+    assert!(stats.after_estimated_tokens < stats.before_estimated_tokens);
+}
+
+#[tokio::test]
+async fn test_compaction_events_level_zero_when_within_budget() {
+    use bendengine::context::ContextConfig;
+
+    let provider = MockProvider::text("ok");
+
+    let config = AgentLoopConfig {
+        provider: std::sync::Arc::new(provider),
+        model: "test".into(),
+        api_key: "test".into(),
+        thinking_level: ThinkingLevel::Off,
+        max_tokens: None,
+        temperature: None,
+        model_config: None,
+        convert_to_llm: None,
+        transform_context: None,
+        get_steering_messages: None,
+        get_follow_up_messages: None,
+        context_config: Some(ContextConfig {
+            max_context_tokens: 1_000_000,
+            system_prompt_tokens: 0,
+            keep_recent: 10,
+            keep_first: 2,
+            tool_output_max_lines: 50,
+        }),
+        compaction_strategy: None,
+        execution_limits: None,
+        cache_config: CacheConfig::default(),
+        tool_execution: ToolExecutionStrategy::default(),
+        retry_config: bendengine::RetryConfig::none(),
+        before_turn: None,
+        after_turn: None,
+        on_error: None,
+        input_filters: vec![],
+    };
+
+    let prompt = AgentMessage::Llm(Message::user("hi"));
+    let mut context = AgentContext {
+        system_prompt: String::new(),
+        messages: vec![],
+        tools: vec![],
+    };
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+
+    agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
+    let events = collect_events(rx);
+
+    let ends: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ContextCompactionEnd { stats } => Some(stats.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1);
+    assert_eq!(ends[0].level, 0);
+    assert_eq!(ends[0].before_message_count, ends[0].after_message_count);
+}
+
+#[tokio::test]
+async fn test_compaction_not_emitted_without_context_config() {
+    let provider = MockProvider::text("ok");
+    let config = make_config(provider);
+
+    let prompt = AgentMessage::Llm(Message::user("hi"));
+    let mut context = AgentContext {
+        system_prompt: String::new(),
+        messages: vec![],
+        tools: vec![],
+    };
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let cancel = CancellationToken::new();
+
+    agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
+    let events = collect_events(rx);
+
+    let compaction_events = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::ContextCompactionStart { .. } | AgentEvent::ContextCompactionEnd { .. }
+            )
+        })
+        .count();
+    assert_eq!(compaction_events, 0);
 }

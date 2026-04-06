@@ -447,6 +447,13 @@ pub enum AgentEvent {
         usage: Usage,
         error: Option<String>,
     },
+    ContextCompactionStart {
+        message_count: usize,
+        estimated_tokens: usize,
+    },
+    ContextCompactionEnd {
+        stats: crate::context::CompactionStats,
+    },
 }
 
 // ---------------------------------------------------------------------------

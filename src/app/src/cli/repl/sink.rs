@@ -128,6 +128,8 @@ impl EventSink for ReplSink {
                 }
                 RunEventPayload::LlmCallStarted { .. } => {}
                 RunEventPayload::LlmCallCompleted { .. } => {}
+                RunEventPayload::ContextCompactionStarted { .. } => {}
+                RunEventPayload::ContextCompactionCompleted { .. } => {}
             }
         };
 
@@ -273,6 +275,43 @@ impl EventSink for ReplSink {
                         "{GRAY}  {} input · {} output tokens{RESET}",
                         usage.input, usage.output,
                     ));
+                }
+                terminal_writeln("");
+            }
+            RunEventPayload::ContextCompactionStarted {
+                message_count,
+                estimated_tokens,
+            } => {
+                finish_assistant_stream(&mut state);
+                let title =
+                    format!("compact · {message_count} messages · ~{estimated_tokens} tokens");
+                super::render::print_badge_line(&title, false, false);
+            }
+            RunEventPayload::ContextCompactionCompleted {
+                level,
+                after_message_count,
+                after_estimated_tokens,
+                tool_outputs_truncated,
+                turns_summarized,
+                messages_dropped,
+                ..
+            } => {
+                if *level > 0 {
+                    let title = "compact completed".to_string();
+                    super::render::print_badge_line(&title, true, true);
+                    terminal_writeln(&format!(
+                        "{GRAY}  level {level} · {after_message_count} messages · ~{after_estimated_tokens} tokens{RESET}",
+                    ));
+                    if *tool_outputs_truncated > 0 || *turns_summarized > 0 || *messages_dropped > 0
+                    {
+                        terminal_writeln(&format!(
+                            "{GRAY}  truncated: {tool_outputs_truncated} · summarized: {turns_summarized} · dropped: {messages_dropped}{RESET}",
+                        ));
+                    }
+                } else {
+                    let title = "compact completed".to_string();
+                    super::render::print_badge_line(&title, true, true);
+                    terminal_writeln(&format!("{GRAY}  no compaction needed{RESET}",));
                 }
                 terminal_writeln("");
             }

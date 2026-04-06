@@ -80,6 +80,20 @@ pub enum RunEventPayload {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    ContextCompactionStarted {
+        message_count: usize,
+        estimated_tokens: usize,
+    },
+    ContextCompactionCompleted {
+        level: u8,
+        before_message_count: usize,
+        after_message_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        tool_outputs_truncated: usize,
+        turns_summarized: usize,
+        messages_dropped: usize,
+    },
     RunFinished {
         text: String,
         usage: UsageSummary,
@@ -104,6 +118,8 @@ impl RunEventPayload {
             Self::ToolFinished { .. } => "tool_finished",
             Self::LlmCallStarted { .. } => "llm_call_started",
             Self::LlmCallCompleted { .. } => "llm_call_completed",
+            Self::ContextCompactionStarted { .. } => "context_compaction_started",
+            Self::ContextCompactionCompleted { .. } => "context_compaction_completed",
             Self::RunFinished { .. } => "run_finished",
             Self::Error { .. } => "error",
         }
@@ -298,6 +314,20 @@ pub enum ProtocolEvent {
     InputRejected {
         reason: String,
     },
+    ContextCompactionStart {
+        message_count: usize,
+        estimated_tokens: usize,
+    },
+    ContextCompactionEnd {
+        level: u8,
+        before_message_count: usize,
+        after_message_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        tool_outputs_truncated: usize,
+        turns_summarized: usize,
+        messages_dropped: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +497,32 @@ impl<'a> RunEventContext<'a> {
                 turn: *turn,
                 usage: usage.clone(),
                 error: error.clone(),
+            },
+            ProtocolEvent::ContextCompactionStart {
+                message_count,
+                estimated_tokens,
+            } => RunEventPayload::ContextCompactionStarted {
+                message_count: *message_count,
+                estimated_tokens: *estimated_tokens,
+            },
+            ProtocolEvent::ContextCompactionEnd {
+                level,
+                before_message_count,
+                after_message_count,
+                before_estimated_tokens,
+                after_estimated_tokens,
+                tool_outputs_truncated,
+                turns_summarized,
+                messages_dropped,
+            } => RunEventPayload::ContextCompactionCompleted {
+                level: *level,
+                before_message_count: *before_message_count,
+                after_message_count: *after_message_count,
+                before_estimated_tokens: *before_estimated_tokens,
+                after_estimated_tokens: *after_estimated_tokens,
+                tool_outputs_truncated: *tool_outputs_truncated,
+                turns_summarized: *turns_summarized,
+                messages_dropped: *messages_dropped,
             },
         };
 

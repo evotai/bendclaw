@@ -193,31 +193,32 @@ impl ContextConfig {
 // Compaction strategy
 // ---------------------------------------------------------------------------
 
-/// Strategy for compacting messages when context exceeds budget.
-///
-/// Implement this to customize what happens during compaction:
-/// - Index discarded content into a memory store before removal
-/// - Apply custom preservation rules (e.g., always keep decisions)
-/// - Emit metadata about what was compressed
-///
-/// See the [Custom Compaction](https://yologdev.github.io/yoagent/concepts/agent-loop.html#custom-compaction)
-/// docs for examples.
-pub trait CompactionStrategy: Send + Sync {
-    /// Compact messages to fit within the token budget defined by `config`.
-    ///
-    /// Called before each LLM turn when `context_config` is set.
-    fn compact(&self, messages: Vec<AgentMessage>, config: &ContextConfig) -> Vec<AgentMessage>;
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CompactionStats {
+    pub level: u8,
+    pub before_message_count: usize,
+    pub after_message_count: usize,
+    pub before_estimated_tokens: usize,
+    pub after_estimated_tokens: usize,
+    pub tool_outputs_truncated: usize,
+    pub turns_summarized: usize,
+    pub messages_dropped: usize,
 }
 
-/// Default 3-level compaction: truncate tool outputs → summarize turns → drop middle.
-///
-/// This is used automatically when no custom `CompactionStrategy` is set.
-/// You can also compose it inside a custom strategy — run your logic first,
-/// then delegate to `compact_messages()` for the actual reduction.
+#[derive(Debug, Clone)]
+pub struct CompactionResult {
+    pub messages: Vec<AgentMessage>,
+    pub stats: CompactionStats,
+}
+
+pub trait CompactionStrategy: Send + Sync {
+    fn compact(&self, messages: Vec<AgentMessage>, config: &ContextConfig) -> CompactionResult;
+}
+
 pub struct DefaultCompaction;
 
 impl CompactionStrategy for DefaultCompaction {
-    fn compact(&self, messages: Vec<AgentMessage>, config: &ContextConfig) -> Vec<AgentMessage> {
+    fn compact(&self, messages: Vec<AgentMessage>, config: &ContextConfig) -> CompactionResult {
         compact_messages(messages, config)
     }
 }
@@ -233,30 +234,59 @@ impl CompactionStrategy for DefaultCompaction {
 /// - Level 3: Drop old messages (keep first + recent only)
 ///
 /// Each level is tried in order. Returns as soon as messages fit.
-pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> Vec<AgentMessage> {
+pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> CompactionResult {
     let budget = config
         .max_context_tokens
         .saturating_sub(config.system_prompt_tokens);
 
-    // Already fits?
-    if total_tokens(&messages) <= budget {
-        return messages;
+    let before_message_count = messages.len();
+    let before_estimated_tokens = total_tokens(&messages);
+
+    let make_result = |msgs: Vec<AgentMessage>, level: u8, stats: CompactionStats| {
+        let after_message_count = msgs.len();
+        let after_estimated_tokens = total_tokens(&msgs);
+        CompactionResult {
+            messages: msgs,
+            stats: CompactionStats {
+                level,
+                before_message_count,
+                after_message_count,
+                before_estimated_tokens,
+                after_estimated_tokens,
+                ..stats
+            },
+        }
+    };
+
+    if before_estimated_tokens <= budget {
+        return make_result(messages, 0, CompactionStats::default());
     }
 
-    // Level 1: Truncate tool outputs
-    let compacted = level1_truncate_tool_outputs(&messages, config.tool_output_max_lines);
+    let (compacted, tool_outputs_truncated) =
+        level1_truncate_tool_outputs(&messages, config.tool_output_max_lines);
     if total_tokens(&compacted) <= budget {
-        return compacted;
+        return make_result(compacted, 1, CompactionStats {
+            tool_outputs_truncated,
+            ..Default::default()
+        });
     }
 
-    // Level 2: Summarize old turns (keep recent N full, summarize the rest)
-    let compacted = level2_summarize_old_turns(&compacted, config.keep_recent);
+    let (compacted, turns_summarized) = level2_summarize_old_turns(&compacted, config.keep_recent);
     if total_tokens(&compacted) <= budget {
-        return compacted;
+        return make_result(compacted, 2, CompactionStats {
+            tool_outputs_truncated,
+            turns_summarized,
+            ..Default::default()
+        });
     }
 
-    // Level 3: Drop middle messages (keep first + recent)
-    level3_drop_middle(&compacted, config, budget)
+    let (compacted, messages_dropped) = level3_drop_middle(&compacted, config, budget);
+    make_result(compacted, 3, CompactionStats {
+        tool_outputs_truncated,
+        turns_summarized,
+        messages_dropped,
+        ..Default::default()
+    })
 }
 
 /// Level 1: Truncate long tool outputs to head + tail.
@@ -264,8 +294,12 @@ pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> 
 /// This is the cheapest compaction — preserves conversation structure,
 /// just removes verbose tool output middles. In practice this saves
 /// 50-70% of context in coding sessions.
-fn level1_truncate_tool_outputs(messages: &[AgentMessage], max_lines: usize) -> Vec<AgentMessage> {
-    messages
+fn level1_truncate_tool_outputs(
+    messages: &[AgentMessage],
+    max_lines: usize,
+) -> (Vec<AgentMessage>, usize) {
+    let mut truncated_count = 0;
+    let result = messages
         .iter()
         .map(|msg| match msg {
             AgentMessage::Llm(Message::ToolResult {
@@ -275,16 +309,23 @@ fn level1_truncate_tool_outputs(messages: &[AgentMessage], max_lines: usize) -> 
                 is_error,
                 timestamp,
             }) => {
+                let mut was_truncated = false;
                 let truncated_content: Vec<Content> = content
                     .iter()
                     .map(|c| match c {
-                        Content::Text { text } => Content::Text {
-                            text: truncate_text_head_tail(text, max_lines),
-                        },
+                        Content::Text { text } => {
+                            let result = truncate_text_head_tail(text, max_lines);
+                            if result.len() < text.len() {
+                                was_truncated = true;
+                            }
+                            Content::Text { text: result }
+                        }
                         other => other.clone(),
                     })
                     .collect();
-
+                if was_truncated {
+                    truncated_count += 1;
+                }
                 AgentMessage::Llm(Message::ToolResult {
                     tool_call_id: tool_call_id.clone(),
                     tool_name: tool_name.clone(),
@@ -295,7 +336,8 @@ fn level1_truncate_tool_outputs(messages: &[AgentMessage], max_lines: usize) -> 
             }
             other => other.clone(),
         })
-        .collect()
+        .collect();
+    (result, truncated_count)
 }
 
 /// Truncate text keeping first N/2 and last N/2 lines.
@@ -320,27 +362,30 @@ fn truncate_text_head_tail(text: &str, max_lines: usize) -> String {
 /// Keeps the last `keep_recent` messages in full detail.
 /// For older messages: assistant messages with tool calls get replaced
 /// with a short summary, and their tool results get dropped.
-fn level2_summarize_old_turns(messages: &[AgentMessage], keep_recent: usize) -> Vec<AgentMessage> {
+fn level2_summarize_old_turns(
+    messages: &[AgentMessage],
+    keep_recent: usize,
+) -> (Vec<AgentMessage>, usize) {
     let len = messages.len();
     if len <= keep_recent {
-        return messages.to_vec();
+        return (messages.to_vec(), 0);
     }
 
     let boundary = len - keep_recent;
     let mut result = Vec::new();
+    let mut turns_summarized = 0;
 
     let mut i = 0;
     while i < boundary {
         let msg = &messages[i];
         match msg {
             AgentMessage::Llm(Message::Assistant { content, .. }) => {
-                // Summarize: extract text content, skip tool call details
                 let text_parts: Vec<&str> = content
                     .iter()
                     .filter_map(|c| match c {
                         Content::Text { text } => {
                             if text.len() > 200 {
-                                None // Too long, will be replaced
+                                None
                             } else {
                                 Some(text.as_str())
                             }
@@ -368,8 +413,8 @@ fn level2_summarize_old_turns(messages: &[AgentMessage], keep_recent: usize) -> 
                     }],
                     timestamp: now_ms(),
                 }));
+                turns_summarized += 1;
 
-                // Skip following tool results that belong to this turn
                 i += 1;
                 while i < boundary {
                     if let AgentMessage::Llm(Message::ToolResult { .. }) = &messages[i] {
@@ -381,21 +426,18 @@ fn level2_summarize_old_turns(messages: &[AgentMessage], keep_recent: usize) -> 
                 continue;
             }
             AgentMessage::Llm(Message::ToolResult { .. }) => {
-                // Skip orphaned tool results in old section
                 i += 1;
                 continue;
             }
             other => {
-                // Keep user messages as-is (they provide intent)
                 result.push(other.clone());
             }
         }
         i += 1;
     }
 
-    // Append recent messages in full
     result.extend_from_slice(&messages[boundary..]);
-    result
+    (result, turns_summarized)
 }
 
 /// Level 3: Drop middle messages, keeping first + recent.
@@ -403,14 +445,15 @@ fn level3_drop_middle(
     messages: &[AgentMessage],
     config: &ContextConfig,
     budget: usize,
-) -> Vec<AgentMessage> {
+) -> (Vec<AgentMessage>, usize) {
     let len = messages.len();
     let first_end = config.keep_first.min(len);
     let recent_start = len.saturating_sub(config.keep_recent);
 
     if first_end >= recent_start {
-        // Can't split — just keep as many recent as fit
-        return keep_within_budget(messages, budget);
+        let result = keep_within_budget(messages, budget);
+        let dropped = len.saturating_sub(result.len());
+        return (result, dropped);
     }
 
     let first_msgs = &messages[..first_end];
@@ -431,12 +474,13 @@ fn level3_drop_middle(
     result.push(marker);
     result.extend_from_slice(recent_msgs);
 
-    // If still too big, progressively drop from recent
     if total_tokens(&result) > budget {
-        return keep_within_budget(&result, budget);
+        let result = keep_within_budget(&result, budget);
+        let dropped = len.saturating_sub(result.len());
+        return (result, dropped);
     }
 
-    result
+    (result, removed)
 }
 
 /// Keep as many recent messages as fit within budget.
@@ -606,7 +650,7 @@ mod tests {
         ];
 
         let compacted = level1_truncate_tool_outputs(&messages, 20);
-        let tool_msg = &compacted[1];
+        let tool_msg = &compacted.0[1];
         if let AgentMessage::Llm(Message::ToolResult { content, .. }) = tool_msg {
             if let Content::Text { text } = &content[0] {
                 assert!(text.contains("truncated"));
@@ -629,7 +673,7 @@ mod tests {
         ];
         let config = ContextConfig::default();
         let result = compact_messages(messages.clone(), &config);
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.messages.len(), 2);
     }
 
     #[test]
@@ -652,8 +696,8 @@ mod tests {
         };
 
         let result = compact_messages(messages, &config);
-        assert!(result.len() < 100);
-        assert!(result.len() >= 2);
+        assert!(result.messages.len() < 100);
+        assert!(result.messages.len() >= 2);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use crate::request::RequestOptions;
 
 enum AgentState {
     Live {
-        handle: Option<EngineHandle>,
+        handle: Box<Option<EngineHandle>>,
     },
     Scripted {
         events: Vec<ProtocolEvent>,
@@ -27,7 +27,9 @@ pub struct RequestAgent {
 impl Default for RequestAgent {
     fn default() -> Self {
         Self {
-            state: RwLock::new(AgentState::Live { handle: None }),
+            state: RwLock::new(AgentState::Live {
+                handle: Box::new(None),
+            }),
         }
     }
 }
@@ -68,7 +70,7 @@ impl RequestAgent {
                     options.prompt.clone(),
                 )
                 .await?;
-                *handle = Some(engine_handle);
+                **handle = Some(engine_handle);
                 Ok(rx)
             }
             AgentState::Scripted { events, .. } => {

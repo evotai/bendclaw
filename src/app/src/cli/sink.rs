@@ -49,10 +49,10 @@ impl EventSink for TextSink {
                     eprintln!("[done: {tool_name}] {}", truncate(content, 120));
                 }
             }
-            RunEventPayload::AssistantDelta { delta, .. } => {
-                if let Some(delta) = delta {
-                    print!("{delta}");
-                }
+            RunEventPayload::AssistantDelta {
+                delta: Some(delta), ..
+            } => {
+                print!("{delta}");
             }
             RunEventPayload::Error { message } => {
                 eprintln!("error: {message}");

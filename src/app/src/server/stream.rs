@@ -101,11 +101,11 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
         RunEventPayload::Error { message } => {
             events.push(json!({ "type": "error", "data": { "message": message } }));
         }
-        RunEventPayload::AssistantDelta { delta, .. } => {
-            if let Some(delta) = delta {
-                if !delta.is_empty() {
-                    events.push(json!({ "type": "text", "data": { "text": delta } }));
-                }
+        RunEventPayload::AssistantDelta {
+            delta: Some(delta), ..
+        } => {
+            if !delta.is_empty() {
+                events.push(json!({ "type": "text", "data": { "text": delta } }));
             }
         }
         _ => {}

@@ -113,6 +113,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
             system_prompt,
             messages,
             tools,
+            ..
         } => {
             events.push(json!({
                 "type": "llm_call_started",
@@ -124,7 +125,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                 }
             }));
         }
-        RunEventPayload::LlmCallCompleted { usage, error } => {
+        RunEventPayload::LlmCallCompleted { usage, error, .. } => {
             events.push(json!({
                 "type": "llm_call_completed",
                 "data": {

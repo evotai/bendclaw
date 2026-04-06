@@ -243,23 +243,39 @@ impl EventSink for ReplSink {
                 }
             }
             RunEventPayload::LlmCallStarted {
+                turn,
                 model,
                 messages,
                 tools,
+                message_bytes,
                 ..
             } => {
                 finish_assistant_stream(&mut state);
                 state.llm_call_count += 1;
-                let title = format!("LLM call · {model}");
+                let title = format!("LLM call · {model} · turn {turn}");
                 super::render::print_badge_line(&title, false, false);
                 terminal_writeln(&format!(
-                    "{GRAY}  {} messages · {} tools{RESET}",
+                    "{GRAY}  {} messages · {} tools · {} bytes{RESET}",
                     messages.len(),
                     tools.len(),
+                    message_bytes,
                 ));
                 terminal_writeln("");
             }
-            RunEventPayload::LlmCallCompleted { .. } => {}
+            RunEventPayload::LlmCallCompleted { usage, error, .. } => {
+                let title = "LLM completed".to_string();
+                let ok = error.is_none();
+                super::render::print_badge_line(&title, true, ok);
+                if let Some(err) = error {
+                    terminal_writeln(&format!("{RED}  {err}{RESET}"));
+                } else {
+                    terminal_writeln(&format!(
+                        "{GRAY}  {} input · {} output tokens{RESET}",
+                        usage.input, usage.output,
+                    ));
+                }
+                terminal_writeln("");
+            }
         }
 
         Ok(())

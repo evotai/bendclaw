@@ -67,12 +67,15 @@ pub enum RunEventPayload {
         is_error: bool,
     },
     LlmCallStarted {
+        turn: usize,
         model: String,
         system_prompt: String,
         messages: Vec<serde_json::Value>,
         tools: Vec<serde_json::Value>,
+        message_bytes: usize,
     },
     LlmCallCompleted {
+        turn: usize,
         usage: UsageSummary,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
@@ -441,18 +444,27 @@ impl<'a> RunEventContext<'a> {
                 message: reason.clone(),
             },
             ProtocolEvent::LlmCallStart {
+                turn,
                 model,
                 system_prompt,
                 messages,
                 tools,
                 ..
-            } => RunEventPayload::LlmCallStarted {
-                model: model.clone(),
-                system_prompt: system_prompt.clone(),
-                messages: messages.clone(),
-                tools: tools.clone(),
-            },
-            ProtocolEvent::LlmCallEnd { usage, error, .. } => RunEventPayload::LlmCallCompleted {
+            } => {
+                let message_bytes: usize = messages.iter().map(|m| m.to_string().len()).sum();
+                RunEventPayload::LlmCallStarted {
+                    turn: *turn,
+                    model: model.clone(),
+                    system_prompt: system_prompt.clone(),
+                    messages: messages.clone(),
+                    tools: tools.clone(),
+                    message_bytes,
+                }
+            }
+            ProtocolEvent::LlmCallEnd {
+                turn, usage, error, ..
+            } => RunEventPayload::LlmCallCompleted {
+                turn: *turn,
                 usage: usage.clone(),
                 error: error.clone(),
             },

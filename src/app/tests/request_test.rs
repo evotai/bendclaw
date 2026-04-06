@@ -324,6 +324,13 @@ async fn pipeline_resume_session() -> TestResult {
         .await?;
     assert_eq!(transcript.len(), 4);
 
+    // Verify roles: the first turn's assistant response must be preserved
+    let roles: Vec<_> = transcript.iter().map(|e| e.message.role.clone()).collect();
+    assert_eq!(roles[0], bend_agent::MessageRole::User);
+    assert_eq!(roles[1], bend_agent::MessageRole::Assistant);
+    assert_eq!(roles[2], bend_agent::MessageRole::User);
+    assert_eq!(roles[3], bend_agent::MessageRole::Assistant);
+
     Ok(())
 }
 

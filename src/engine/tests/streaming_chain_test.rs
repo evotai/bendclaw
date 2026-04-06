@@ -131,7 +131,8 @@ async fn collect_query_messages(agent: &mut Agent, prompt: &str) -> Vec<SDKMessa
         messages.push(message);
     }
 
-    handle.await.unwrap();
+    let final_messages = handle.await.unwrap();
+    agent.messages = final_messages;
     messages
 }
 
@@ -395,5 +396,148 @@ async fn streamed_summary_reports_non_zero_ttfb_and_ttft_after_upstream_delay() 
     assert!(summary.stream.first_ttfb_ms.unwrap_or_default() >= 20);
     assert!(summary.stream.first_ttft_ms.unwrap_or_default() >= 20);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn query_handle_returns_complete_conversation_history() -> TestResult {
+    let base_url = spawn_sequence_server(vec![
+        ResponseSpec {
+            status_line: "200 OK",
+            content_type: "text/event-stream",
+            body: anthropic_tool_use_stream(),
+            delay_ms: 0,
+        },
+        ResponseSpec {
+            status_line: "200 OK",
+            content_type: "text/event-stream",
+            body: anthropic_text_stream(&["done"], 3, 1),
+            delay_ms: 0,
+        },
+    ])
+    .await?;
+
+    let temp_dir = tempfile::tempdir()?;
+    let mut agent = Agent::new(AgentOptions {
+        provider: Some(ProviderKind::Anthropic),
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        model: Some("claude-sonnet-4-6-20250514".to_string()),
+        cwd: Some(temp_dir.path().to_string_lossy().to_string()),
+        allowed_tools: Some(vec!["EchoTool".to_string()]),
+        custom_tools: vec![Arc::new(EchoTool)],
+        ..Default::default()
+    })
+    .await?;
+
+    let (mut rx, handle) = agent.query("use the tool").await;
+    while rx.recv().await.is_some() {}
+    let final_messages = handle.await?;
+    agent.close().await;
+
+    // Should have: User, Assistant(tool_use), User(tool_result), Assistant(text)
+    assert_eq!(
+        final_messages.len(),
+        4,
+        "expected 4 messages, got {}",
+        final_messages.len()
+    );
+    assert_eq!(final_messages[0].role, MessageRole::User);
+    assert_eq!(final_messages[1].role, MessageRole::Assistant);
+    assert_eq!(final_messages[2].role, MessageRole::User);
+    assert_eq!(final_messages[3].role, MessageRole::Assistant);
+
+    // First assistant has tool_use
+    assert!(final_messages[1]
+        .content
+        .iter()
+        .any(|b| matches!(b, ContentBlock::ToolUse { .. })));
+
+    // Second user has tool_result
+    assert!(final_messages[2]
+        .content
+        .iter()
+        .any(|b| matches!(b, ContentBlock::ToolResult { .. })));
+
+    // Final assistant has text
+    assert_eq!(assistant_text(&final_messages[3]), "done");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn multi_turn_query_preserves_conversation_history() -> TestResult {
+    let base_url = spawn_sequence_server(vec![
+        // Turn 1: tool use then text response
+        ResponseSpec {
+            status_line: "200 OK",
+            content_type: "text/event-stream",
+            body: anthropic_tool_use_stream(),
+            delay_ms: 0,
+        },
+        ResponseSpec {
+            status_line: "200 OK",
+            content_type: "text/event-stream",
+            body: anthropic_text_stream(&["first answer"], 3, 2),
+            delay_ms: 0,
+        },
+        // Turn 2: text-only response
+        ResponseSpec {
+            status_line: "200 OK",
+            content_type: "text/event-stream",
+            body: anthropic_text_stream(&["second answer"], 5, 2),
+            delay_ms: 0,
+        },
+    ])
+    .await?;
+
+    let temp_dir = tempfile::tempdir()?;
+    let mut agent = Agent::new(AgentOptions {
+        provider: Some(ProviderKind::Anthropic),
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        model: Some("claude-sonnet-4-6-20250514".to_string()),
+        cwd: Some(temp_dir.path().to_string_lossy().to_string()),
+        allowed_tools: Some(vec!["EchoTool".to_string()]),
+        custom_tools: vec![Arc::new(EchoTool)],
+        ..Default::default()
+    })
+    .await?;
+
+    // Turn 1
+    let _ = collect_query_messages(&mut agent, "first question").await;
+
+    // After turn 1, agent.messages should have 4 entries
+    assert_eq!(
+        agent.messages.len(),
+        4,
+        "turn 1: expected 4 messages, got {}",
+        agent.messages.len()
+    );
+
+    // Turn 2
+    let _ = collect_query_messages(&mut agent, "second question").await;
+
+    // After turn 2: 4 (turn 1) + User + Assistant = 6
+    assert_eq!(
+        agent.messages.len(),
+        6,
+        "turn 2: expected 6 messages, got {}",
+        agent.messages.len()
+    );
+
+    // Verify roles alternate correctly — no consecutive User messages
+    let roles: Vec<_> = agent.messages.iter().map(|m| &m.role).collect();
+    assert_eq!(*roles[0], MessageRole::User);
+    assert_eq!(*roles[1], MessageRole::Assistant);
+    assert_eq!(*roles[2], MessageRole::User); // tool result
+    assert_eq!(*roles[3], MessageRole::Assistant); // "first answer"
+    assert_eq!(*roles[4], MessageRole::User); // "second question"
+    assert_eq!(*roles[5], MessageRole::Assistant); // "second answer"
+
+    // Verify final text
+    assert_eq!(assistant_text(&agent.messages[5]), "second answer");
+
+    agent.close().await;
     Ok(())
 }

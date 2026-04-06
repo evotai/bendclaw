@@ -10,7 +10,6 @@ use std::sync::Mutex;
 use std::sync::RwLock;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use bend_agent::types::extract_text;
@@ -733,6 +732,7 @@ impl Repl {
 #[derive(Default)]
 struct SinkState {
     assistant_open: bool,
+    assistant_prefixed: bool,
     streamed_assistant: bool,
     pending_tools: HashMap<String, ToolCallDisplay>,
     spinner: Option<Spinner>,
@@ -759,6 +759,7 @@ impl EventSink for ReplSink {
         match &event.kind {
             RunEventKind::RunStarted => {
                 state.assistant_open = false;
+                state.assistant_prefixed = false;
                 state.streamed_assistant = false;
                 state.spinner = Some(Spinner::start("Thinking..."));
             }
@@ -771,9 +772,10 @@ impl EventSink for ReplSink {
                                 if state.streamed_assistant {
                                     terminal_writeln("");
                                 } else if !text.trim().is_empty() {
-                                    terminal_writeln(&text);
+                                    terminal_prefixed_writeln(&text);
                                 }
                                 state.assistant_open = false;
+                                state.assistant_prefixed = false;
                                 state.streamed_assistant = false;
                             }
                             AssistantBlock::ToolUse { id, name, input } => {
@@ -800,6 +802,10 @@ impl EventSink for ReplSink {
             RunEventKind::PartialMessage => {
                 stop_spinner(&mut state);
                 if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
+                    if !state.assistant_prefixed {
+                        terminal_message_prefix();
+                        state.assistant_prefixed = true;
+                    }
                     terminal_write(&payload.message);
                     state.assistant_open = true;
                     state.streamed_assistant = true;
@@ -821,13 +827,7 @@ impl EventSink for ReplSink {
                     update_spinner(&mut state, &payload.message);
                 }
             }
-            RunEventKind::System => {
-                stop_spinner(&mut state);
-                if let Some(payload) = payload_as::<MessagePayload>(&event.payload) {
-                    finish_assistant_line(&mut state);
-                    terminal_writeln(&format!("{DIM}[system] {}{RESET}", payload.message));
-                }
-            }
+            RunEventKind::System => {}
             RunEventKind::TaskNotification => {
                 if let Some(message) = event
                     .payload
@@ -881,6 +881,7 @@ fn finish_assistant_line(state: &mut SinkState) {
         terminal_writeln("");
     }
     state.assistant_open = false;
+    state.assistant_prefixed = false;
     state.streamed_assistant = false;
 }
 
@@ -910,7 +911,6 @@ impl Spinner {
         let message = Arc::new(Mutex::new(initial_message.to_string()));
         let running_flag = running.clone();
         let message_ref = message.clone();
-        let started_at = Instant::now();
 
         let handle = std::thread::spawn(move || {
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -920,12 +920,10 @@ impl Spinner {
                     .lock()
                     .map(|value| value.clone())
                     .unwrap_or_else(|_| "Working...".into());
-                let elapsed = human_duration(started_at.elapsed().as_millis() as u64);
                 print!(
-                    "{CLEAR_LINE}{DIM}{} {}  {}{RESET}",
+                    "{CLEAR_LINE}{DIM}{} {}{RESET}",
                     frames[index % frames.len()],
-                    label,
-                    elapsed
+                    label
                 );
                 let _ = std::io::stdout().flush();
                 std::thread::sleep(Duration::from_millis(80));
@@ -983,8 +981,8 @@ fn print_transcript_messages(messages: &[bend_agent::Message]) {
             bend_agent::MessageRole::Assistant => {
                 let text = extract_text(message);
                 if !text.trim().is_empty() {
-                    println!("{}", text.trim());
-                    println!();
+                    terminal_prefixed_writeln(text.trim());
+                    terminal_writeln("");
                 }
                 for block in &message.content {
                     match block {
@@ -1181,6 +1179,15 @@ fn terminal_write(text: &str) {
 fn terminal_writeln(text: &str) {
     terminal_write(text);
     terminal_write("\r\n");
+}
+
+fn terminal_message_prefix() {
+    terminal_write(&format!("{DIM}•{RESET} "));
+}
+
+fn terminal_prefixed_writeln(text: &str) {
+    terminal_message_prefix();
+    terminal_writeln(text);
 }
 
 fn truncate(s: &str, max: usize) -> String {

@@ -55,7 +55,7 @@ enum RunnerState {
 
 struct AgentState {
     agent: Option<bend_agent::Agent>,
-    handle: Option<tokio::task::JoinHandle<()>>,
+    handle: Option<tokio::task::JoinHandle<Vec<bend_agent::Message>>>,
 }
 
 pub struct RequestRunner {
@@ -141,18 +141,13 @@ impl RequestRunner {
         };
 
         if let Some(handle) = handle {
-            let _ = handle.await;
+            match handle.await {
+                Ok(messages) if !messages.is_empty() => return messages,
+                _ => {}
+            }
         }
 
-        let state = self.state.read().await;
-        match &*state {
-            RunnerState::Agent(state) => state
-                .agent
-                .as_ref()
-                .map(|value| value.get_messages().to_vec())
-                .unwrap_or_default(),
-            RunnerState::Scripted { .. } => Vec::new(),
-        }
+        Vec::new()
     }
 
     pub async fn close(&self) {

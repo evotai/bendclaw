@@ -210,7 +210,10 @@ impl Agent {
     pub async fn query(
         &mut self,
         prompt: &str,
-    ) -> (mpsc::Receiver<SDKMessage>, tokio::task::JoinHandle<()>) {
+    ) -> (
+        mpsc::Receiver<SDKMessage>,
+        tokio::task::JoinHandle<Vec<Message>>,
+    ) {
         let (tx, rx) = mpsc::channel(100);
 
         // Add user message
@@ -232,7 +235,7 @@ impl Agent {
         let can_use_tool = self.can_use_tool.clone();
 
         let handle = tokio::spawn(async move {
-            let result: Result<Vec<Message>, String> = super::r#loop::run_loop(
+            match super::r#loop::run_loop(
                 api_client,
                 messages,
                 registry,
@@ -247,14 +250,17 @@ impl Agent {
                 can_use_tool.as_ref(),
                 tx.clone(),
             )
-            .await;
-
-            if let Err(e) = result {
-                let _ = tx
-                    .send(SDKMessage::Error {
-                        message: e.to_string(),
-                    })
-                    .await;
+            .await
+            {
+                Ok(final_messages) => final_messages,
+                Err(e) => {
+                    let _ = tx
+                        .send(SDKMessage::Error {
+                            message: e.to_string(),
+                        })
+                        .await;
+                    Vec::new()
+                }
             }
         });
 

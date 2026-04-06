@@ -5,14 +5,8 @@ use bendclaw::conf::LlmConfig;
 use bendclaw::conf::ProviderKind;
 use bendclaw::conf::StorageConfig;
 use bendclaw::error::Result;
+use bendclaw::protocol::*;
 use bendclaw::request::*;
-use bendclaw::storage::model::ListRunEvents;
-use bendclaw::storage::model::ListTranscriptEntries;
-use bendclaw::storage::model::RunEvent;
-use bendclaw::storage::model::RunEventKind;
-use bendclaw::storage::model::RunMeta;
-use bendclaw::storage::model::RunStatus;
-use bendclaw::storage::model::TranscriptKind;
 use bendclaw::storage::open_storage;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
@@ -43,16 +37,21 @@ fn missing_error(message: &str) -> std::io::Error {
     std::io::Error::other(message.to_string())
 }
 
-fn make_assistant_message(text: &str) -> bend_engine::AgentMessage {
-    bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
-        content: vec![bend_engine::Content::Text { text: text.into() }],
-        stop_reason: bend_engine::StopReason::Stop,
-        model: "claude".into(),
-        provider: "anthropic".into(),
-        usage: bend_engine::Usage::default(),
-        timestamp: 0,
-        error_message: None,
-    })
+fn make_assistant_transcript(text: &str) -> TranscriptItem {
+    TranscriptItem::Assistant {
+        text: text.into(),
+        thinking: None,
+        tool_calls: vec![],
+    }
+}
+fn make_assistant_completed_event(text: &str) -> ProtocolEvent {
+    ProtocolEvent::AssistantCompleted {
+        content: vec![AssistantBlock::Text { text: text.into() }],
+        usage: Some(UsageSummary {
+            input: 10,
+            output: 5,
+        }),
+    }
 }
 
 struct CollectSink {
@@ -85,23 +84,27 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
     let storage = open_storage(&fs_store(&root))?;
     let sink = Arc::new(CollectSink::new());
 
-    let final_messages = vec![
-        bend_engine::AgentMessage::Llm(bend_engine::Message::user("hello")),
-        make_assistant_message("hi there"),
+    let final_transcripts = vec![
+        TranscriptItem::User {
+            text: "hello".into(),
+        },
+        make_assistant_transcript("hi there"),
     ];
 
-    let assistant_msg = final_messages[1].clone();
     let agent_events = vec![
-        bend_engine::AgentEvent::TurnStart,
-        bend_engine::AgentEvent::MessageEnd {
-            message: assistant_msg,
-        },
-        bend_engine::AgentEvent::AgentEnd {
-            messages: final_messages.clone(),
+        ProtocolEvent::TurnStart,
+        make_assistant_completed_event("hi there"),
+        ProtocolEvent::AgentEnd {
+            transcripts: final_transcripts.clone(),
+            usage: UsageSummary {
+                input: 10,
+                output: 5,
+            },
+            transcript_count: 2,
         },
     ];
 
-    let agent = RequestAgent::scripted(agent_events, final_messages);
+    let agent = RequestAgent::scripted(agent_events, final_transcripts);
     let request = Request::new("hello".into());
 
     RequestExecutor::new(
@@ -117,11 +120,11 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
     let events = sink.events().await;
     assert!(events.len() >= 4);
 
-    let kinds: Vec<_> = events.iter().map(|event| &event.kind).collect();
-    assert!(matches!(kinds[0], RunEventKind::RunStarted));
-    assert!(matches!(kinds[1], RunEventKind::TurnStarted));
-    assert!(matches!(kinds[2], RunEventKind::AssistantCompleted));
-    assert!(matches!(kinds[3], RunEventKind::RunFinished));
+    let kinds: Vec<_> = events.iter().map(|event| event.kind_str()).collect();
+    assert_eq!(kinds[0], "run_started");
+    assert_eq!(kinds[1], "turn_started");
+    assert_eq!(kinds[2], "assistant_completed");
+    assert_eq!(kinds[3], "run_finished");
 
     let session_id = &events[0].session_id;
     let run_id = &events[0].run_id;
@@ -162,8 +165,7 @@ async fn pipeline_marks_failed_when_no_result() -> TestResult {
     let storage = open_storage(&fs_store(&root))?;
     let sink = Arc::new(CollectSink::new());
 
-    // No AgentEnd → got_agent_end stays false → run marked Failed
-    let agent_events = vec![bend_engine::AgentEvent::InputRejected {
+    let agent_events = vec![ProtocolEvent::InputRejected {
         reason: "api failed".into(),
     }];
 
@@ -201,22 +203,27 @@ async fn pipeline_resume_session() -> TestResult {
     let root = TempDir::new()?;
     let storage = open_storage(&fs_store(&root))?;
 
-    let first_messages = vec![
-        bend_engine::AgentMessage::Llm(bend_engine::Message::user("hello")),
-        make_assistant_message("hi"),
+    let first_transcripts = vec![
+        TranscriptItem::User {
+            text: "hello".into(),
+        },
+        make_assistant_transcript("hi"),
     ];
 
     let first_events = vec![
-        bend_engine::AgentEvent::TurnStart,
-        bend_engine::AgentEvent::MessageEnd {
-            message: first_messages[1].clone(),
-        },
-        bend_engine::AgentEvent::AgentEnd {
-            messages: first_messages.clone(),
+        ProtocolEvent::TurnStart,
+        make_assistant_completed_event("hi"),
+        ProtocolEvent::AgentEnd {
+            transcripts: first_transcripts.clone(),
+            usage: UsageSummary {
+                input: 10,
+                output: 5,
+            },
+            transcript_count: 2,
         },
     ];
 
-    let agent1 = RequestAgent::scripted(first_events, first_messages.clone());
+    let agent1 = RequestAgent::scripted(first_events, first_transcripts);
     let sink1 = Arc::new(CollectSink::new());
 
     RequestExecutor::new(
@@ -237,24 +244,31 @@ async fn pipeline_resume_session() -> TestResult {
         .session_id
         .clone();
 
-    let second_messages = vec![
-        bend_engine::AgentMessage::Llm(bend_engine::Message::user("hello")),
-        make_assistant_message("hi"),
-        bend_engine::AgentMessage::Llm(bend_engine::Message::user("continue")),
-        make_assistant_message("ok"),
+    let second_transcripts = vec![
+        TranscriptItem::User {
+            text: "hello".into(),
+        },
+        make_assistant_transcript("hi"),
+        TranscriptItem::User {
+            text: "continue".into(),
+        },
+        make_assistant_transcript("ok"),
     ];
 
     let second_events = vec![
-        bend_engine::AgentEvent::TurnStart,
-        bend_engine::AgentEvent::MessageEnd {
-            message: second_messages[3].clone(),
-        },
-        bend_engine::AgentEvent::AgentEnd {
-            messages: second_messages.clone(),
+        ProtocolEvent::TurnStart,
+        make_assistant_completed_event("ok"),
+        ProtocolEvent::AgentEnd {
+            transcripts: second_transcripts.clone(),
+            usage: UsageSummary {
+                input: 20,
+                output: 10,
+            },
+            transcript_count: 4,
         },
     ];
 
-    let agent2 = RequestAgent::scripted(second_events, second_messages.clone());
+    let agent2 = RequestAgent::scripted(second_events, second_transcripts);
     let sink2 = Arc::new(CollectSink::new());
     let mut request = Request::new("continue".into());
     request.session_id = Some(session_id.clone());
@@ -291,6 +305,6 @@ async fn pipeline_resume_session() -> TestResult {
 #[test]
 fn request_started_event_has_correct_kind() {
     let event = RunEventContext::new("run-001", "sess-001", 0).started();
-    assert!(matches!(event.kind, RunEventKind::RunStarted));
+    assert_eq!(event.kind_str(), "run_started");
     assert_eq!(event.turn, 0);
 }

@@ -6,9 +6,8 @@ use std::sync::OnceLock;
 pub use crate::cli::format::format_tool_input;
 pub use crate::cli::format::summarize_inline;
 pub use crate::cli::format::truncate;
-use crate::request::RequestFinishedPayload;
-use crate::request::ToolResultPayload;
-use crate::storage::model::TranscriptItem;
+use crate::protocol::TranscriptItem;
+use crate::protocol::UsageSummary;
 
 pub const RESET: &str = "\x1b[0m";
 pub const BOLD: &str = "\x1b[1m";
@@ -88,21 +87,12 @@ pub fn human_duration(duration_ms: u64) -> String {
     }
 }
 
-pub fn build_run_summary(payload: &RequestFinishedPayload) -> String {
-    let total_tokens = payload
-        .usage
-        .get("input")
-        .and_then(|v| v.as_u64())
-        .unwrap_or_default()
-        + payload
-            .usage
-            .get("output")
-            .and_then(|v| v.as_u64())
-            .unwrap_or_default();
+pub fn build_run_summary(usage: &UsageSummary, turn_count: u32, duration_ms: u64) -> String {
+    let total_tokens = usage.input + usage.output;
 
     [
-        format!("run {}", human_duration(payload.duration_ms)),
-        format!("turns {}", payload.turn_count),
+        format!("run {}", human_duration(duration_ms)),
+        format!("turns {}", turn_count),
         format!("tokens {}", total_tokens),
     ]
     .join("  ·  ")
@@ -166,13 +156,22 @@ pub fn print_tool_call(name: &str, input: &serde_json::Value) {
     terminal_writeln("");
 }
 
-pub fn print_tool_result(payload: &ToolResultPayload, tool_call: Option<&ToolCallSummary>) {
-    let title = tool_result_title(payload);
-    let line = tool_result_line(payload, tool_call);
-    print_badge_line(&title, true, !payload.is_error);
+pub fn print_tool_result(
+    tool_name: &str,
+    content: &str,
+    is_error: bool,
+    tool_call: Option<&ToolCallSummary>,
+) {
+    let title = if is_error {
+        format!("{tool_name} failed")
+    } else {
+        format!("{tool_name} completed")
+    };
+    let line = tool_result_line(tool_name, content, is_error, tool_call);
+    print_badge_line(&title, true, !is_error);
     terminal_writeln(&format!(
         "{}  {}{}",
-        if payload.is_error { RED } else { GREEN },
+        if is_error { RED } else { GREEN },
         line,
         RESET
     ));
@@ -217,33 +216,27 @@ pub fn tool_call_message(name: &str, input: &serde_json::Value) -> (String, Vec<
     (format!("{name} call"), vec![format_tool_input(input)])
 }
 
-pub fn tool_result_title(payload: &ToolResultPayload) -> String {
-    if payload.is_error {
-        format!("{} failed", payload.tool_name)
-    } else {
-        format!("{} completed", payload.tool_name)
-    }
-}
-
 pub fn tool_result_line(
-    payload: &ToolResultPayload,
+    _tool_name: &str,
+    content: &str,
+    is_error: bool,
     tool_call: Option<&ToolCallSummary>,
 ) -> String {
-    if !payload.is_error {
+    if !is_error {
         if let Some(tc) = tool_call {
             if tc.name.to_lowercase().contains("read") {
                 return format!("Result: {}", tc.summary);
             }
         }
     }
-    if payload.content.trim().is_empty() {
-        if payload.is_error {
+    if content.trim().is_empty() {
+        if is_error {
             "Result: tool returned an error".into()
         } else {
             "Result: completed".into()
         }
     } else {
-        format!("Result: {}", summarize_inline(&payload.content, 160))
+        format!("Result: {}", summarize_inline(content, 160))
     }
 }
 

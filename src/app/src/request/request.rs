@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use crate::conf::LlmConfig;
 use crate::error::Result;
-use crate::storage::model::RunEvent;
-use crate::storage::model::TranscriptItem;
+use crate::protocol::RunEvent;
+use crate::protocol::TranscriptItem;
 
 #[derive(Debug, Clone)]
 pub struct Request {

@@ -1,21 +1,10 @@
 mod agent;
-mod events;
 mod execute;
-pub(crate) mod payload;
 mod request;
-mod transcript;
 
 pub use agent::RequestAgent;
-pub use events::RunEventContext;
 pub use execute::RequestExecutor;
-pub use payload::payload_as;
-pub use payload::AssistantBlock;
-pub use payload::AssistantPayload;
-pub use payload::RequestFinishedPayload;
-pub use payload::ToolResultPayload;
 pub use request::EventSink;
 pub use request::Request;
 pub use request::RequestOptions;
 pub use request::RequestResult;
-pub use transcript::from_agent_messages;
-pub use transcript::into_agent_messages;

@@ -4,10 +4,10 @@ use chrono::Utc;
 use tokio::sync::RwLock;
 
 use crate::error::Result;
-use crate::storage::model::ListTranscriptEntries;
-use crate::storage::model::SessionMeta;
-use crate::storage::model::TranscriptEntry;
-use crate::storage::model::TranscriptItem;
+use crate::protocol::ListTranscriptEntries;
+use crate::protocol::SessionMeta;
+use crate::protocol::TranscriptEntry;
+use crate::protocol::TranscriptItem;
 use crate::storage::Storage;
 
 pub struct Session {

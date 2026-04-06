@@ -1,18 +1,18 @@
 use async_trait::async_trait;
 
 use crate::error::Result;
-use crate::storage::model::ListRunEvents;
-use crate::storage::model::ListRuns;
-use crate::storage::model::ListSessions;
-use crate::storage::model::ListTraceEvents;
-use crate::storage::model::ListTraces;
-use crate::storage::model::ListTranscriptEntries;
-use crate::storage::model::RunEvent;
-use crate::storage::model::RunMeta;
-use crate::storage::model::SessionMeta;
-use crate::storage::model::TraceEvent;
-use crate::storage::model::TraceMeta;
-use crate::storage::model::TranscriptEntry;
+use crate::protocol::ListRunEvents;
+use crate::protocol::ListRuns;
+use crate::protocol::ListSessions;
+use crate::protocol::ListTraceEvents;
+use crate::protocol::ListTraces;
+use crate::protocol::ListTranscriptEntries;
+use crate::protocol::RunEvent;
+use crate::protocol::RunMeta;
+use crate::protocol::SessionMeta;
+use crate::protocol::TraceEvent;
+use crate::protocol::TraceMeta;
+use crate::protocol::TranscriptEntry;
 
 #[async_trait]
 pub trait Storage: Send + Sync {

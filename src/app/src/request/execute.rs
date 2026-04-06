@@ -6,16 +6,17 @@ use bend_base::logx;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::request::from_agent_messages;
+use crate::protocol::ProtocolEvent;
+use crate::protocol::RunEventContext;
+use crate::protocol::RunMeta;
+use crate::protocol::RunStatus;
+use crate::protocol::TranscriptItem;
 use crate::request::EventSink;
 use crate::request::Request;
 use crate::request::RequestAgent;
 use crate::request::RequestOptions;
 use crate::request::RequestResult;
-use crate::request::RunEventContext;
 use crate::session::Session;
-use crate::storage::model::RunMeta;
-use crate::storage::model::RunStatus;
 use crate::storage::Storage;
 
 pub struct RequestExecutor {
@@ -126,22 +127,43 @@ impl RequestExecutor {
         let mut got_assistant_response = false;
         let mut stream_error = None;
 
-        while let Some(agent_event) = rx.recv().await {
-            if matches!(agent_event, bend_engine::AgentEvent::TurnStart) {
+        while let Some(protocol_event) = rx.recv().await {
+            if matches!(protocol_event, ProtocolEvent::TurnStart) {
                 turn += 1;
             }
 
-            if let bend_engine::AgentEvent::AgentEnd { ref messages } = agent_event {
+            if let ProtocolEvent::AgentEnd {
+                ref transcripts,
+                ref usage,
+                transcript_count,
+            } = protocol_event
+            {
                 got_agent_end = true;
-                got_assistant_response = messages.iter().any(|message| {
-                    matches!(
-                        message,
-                        bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant { .. })
-                    )
-                });
+                got_assistant_response = transcripts
+                    .iter()
+                    .any(|t| matches!(t, TranscriptItem::Assistant { .. }));
+
+                let last_text = transcripts
+                    .iter()
+                    .rev()
+                    .find_map(|t| {
+                        if let TranscriptItem::Assistant { text, .. } = t {
+                            if !text.is_empty() {
+                                return Some(text.clone());
+                            }
+                        }
+                        None
+                    })
+                    .unwrap_or_default();
 
                 let finished_event = RunEventContext::new(&run_id, &session_meta.session_id, turn)
-                    .finished(messages, started_at.elapsed().as_millis() as u64);
+                    .finished(
+                        last_text,
+                        usage.clone(),
+                        turn,
+                        started_at.elapsed().as_millis() as u64,
+                        transcript_count,
+                    );
                 if let Err(error) = self.sink.publish(Arc::new(finished_event.clone())).await {
                     stream_error = Some(error);
                 }
@@ -150,7 +172,7 @@ impl RequestExecutor {
             }
 
             let event_context = RunEventContext::new(&run_id, &session_meta.session_id, turn);
-            if let Some(event) = event_context.map(&agent_event) {
+            if let Some(event) = event_context.map(&protocol_event) {
                 if let Err(error) = self.sink.publish(Arc::new(event.clone())).await {
                     stream_error = Some(error);
                     break;
@@ -159,11 +181,9 @@ impl RequestExecutor {
             }
         }
 
-        let final_messages = self.agent.take_messages().await;
-        if !final_messages.is_empty() {
-            session
-                .apply_transcript(from_agent_messages(&final_messages))
-                .await;
+        let final_transcripts = self.agent.take_transcripts().await;
+        if !final_transcripts.is_empty() {
+            session.apply_transcript(final_transcripts).await;
         }
 
         let save_result = session.save().await;

@@ -15,14 +15,10 @@ use super::render::DIM;
 use super::render::RED;
 use super::render::RESET;
 use crate::error::Result;
-use crate::request::payload_as;
-use crate::request::AssistantBlock;
-use crate::request::AssistantPayload;
+use crate::protocol::AssistantBlock;
+use crate::protocol::RunEvent;
+use crate::protocol::RunEventPayload;
 use crate::request::EventSink;
-use crate::request::RequestFinishedPayload;
-use crate::request::ToolResultPayload;
-use crate::storage::model::RunEvent;
-use crate::storage::model::RunEventKind;
 
 // ---------------------------------------------------------------------------
 // State
@@ -84,76 +80,80 @@ impl EventSink for ReplSink {
             .lock()
             .map_err(|_| crate::error::BendclawError::Cli("sink state lock poisoned".into()))?;
 
-        match &event.kind {
-            RunEventKind::RunStarted => {
+        match &event.payload {
+            RunEventPayload::RunStarted {} => {
                 state.assistant_open = false;
                 state.assistant_prefixed = false;
                 state.streamed_assistant = false;
                 state.pending_tools.clear();
             }
-            RunEventKind::TurnStarted => {}
-            RunEventKind::AssistantCompleted => {
-                if let Some(payload) = payload_as::<AssistantPayload>(&event.payload) {
-                    for block in payload.content {
-                        match block {
-                            AssistantBlock::Text { text } => {
-                                if state.streamed_assistant {
-                                    terminal_writeln("");
-                                } else if !text.trim().is_empty() {
-                                    terminal_prefixed_writeln(&text);
-                                }
-                                state.assistant_open = false;
-                                state.assistant_prefixed = false;
-                                state.streamed_assistant = false;
+            RunEventPayload::TurnStarted {} => {}
+            RunEventPayload::AssistantCompleted { content, .. } => {
+                for block in content {
+                    match block {
+                        AssistantBlock::Text { text } => {
+                            if state.streamed_assistant {
+                                terminal_writeln("");
+                            } else if !text.trim().is_empty() {
+                                terminal_prefixed_writeln(text);
                             }
-                            AssistantBlock::ToolCall { id, name, input } => {
-                                finish_assistant_line(&mut state);
-                                state.pending_tools.insert(id, ToolCallDisplay {
-                                    name: name.clone(),
-                                    summary: format_tool_input(&input),
-                                });
-                                super::render::print_tool_call(&name, &input);
-                            }
-                            AssistantBlock::Thinking { .. } => {}
+                            state.assistant_open = false;
+                            state.assistant_prefixed = false;
+                            state.streamed_assistant = false;
                         }
+                        AssistantBlock::ToolCall { id, name, input } => {
+                            finish_assistant_line(&mut state);
+                            state.pending_tools.insert(id.clone(), ToolCallDisplay {
+                                name: name.clone(),
+                                summary: format_tool_input(input),
+                            });
+                            super::render::print_tool_call(name, input);
+                        }
+                        AssistantBlock::Thinking { .. } => {}
                     }
                 }
             }
-            RunEventKind::ToolFinished => {
-                if let Some(payload) = payload_as::<ToolResultPayload>(&event.payload) {
-                    finish_assistant_line(&mut state);
-                    let tool_call = state.pending_tools.remove(&payload.tool_call_id).map(|tc| {
-                        ToolCallSummary {
+            RunEventPayload::ToolFinished {
+                tool_call_id,
+                tool_name,
+                content,
+                is_error,
+            } => {
+                finish_assistant_line(&mut state);
+                let tool_call =
+                    state
+                        .pending_tools
+                        .remove(tool_call_id)
+                        .map(|tc| ToolCallSummary {
                             name: tc.name,
                             summary: tc.summary,
-                        }
-                    });
-                    print_tool_result(&payload, tool_call.as_ref());
-                }
+                        });
+                print_tool_result(tool_name, content, *is_error, tool_call.as_ref());
             }
-            RunEventKind::AssistantDelta => {
-                if let Some(delta) = event.payload.get("delta").and_then(|v| v.as_str()) {
+            RunEventPayload::AssistantDelta { delta, .. } => {
+                if let Some(delta) = delta {
                     terminal_assistant_delta(!state.assistant_prefixed, delta);
                     state.assistant_prefixed = true;
                     state.assistant_open = true;
                     state.streamed_assistant = true;
                 }
             }
-            RunEventKind::ToolStarted => {}
-            RunEventKind::ToolProgress => {}
-            RunEventKind::Error => {
-                if let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) {
-                    finish_assistant_line(&mut state);
-                    terminal_writeln(&format!("{RED}error:{RESET} {message}"));
-                }
+            RunEventPayload::ToolStarted { .. } => {}
+            RunEventPayload::ToolProgress { .. } => {}
+            RunEventPayload::Error { message } => {
+                finish_assistant_line(&mut state);
+                terminal_writeln(&format!("{RED}error:{RESET} {message}"));
             }
-            RunEventKind::RunFinished => {
-                if let Some(payload) = payload_as::<RequestFinishedPayload>(&event.payload) {
-                    finish_assistant_line(&mut state);
-                    let summary = build_run_summary(&payload);
-                    if !summary.is_empty() {
-                        terminal_writeln(&format!("{DIM}{summary}{RESET}"));
-                    }
+            RunEventPayload::RunFinished {
+                usage,
+                turn_count,
+                duration_ms,
+                ..
+            } => {
+                finish_assistant_line(&mut state);
+                let summary = build_run_summary(usage, *turn_count, *duration_ms);
+                if !summary.is_empty() {
+                    terminal_writeln(&format!("{DIM}{summary}{RESET}"));
                 }
             }
         }

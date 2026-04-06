@@ -1,4 +1,4 @@
 mod server;
-mod stream;
+pub mod stream;
 
 pub use server::*;

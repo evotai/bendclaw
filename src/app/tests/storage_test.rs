@@ -1,10 +1,5 @@
 use bendclaw::conf::StorageConfig;
-use bendclaw::storage::model::ListRunEvents;
-use bendclaw::storage::model::RunEvent;
-use bendclaw::storage::model::RunEventKind;
-use bendclaw::storage::model::RunMeta;
-use bendclaw::storage::model::RunStatus;
-use bendclaw::storage::model::SessionMeta;
+use bendclaw::protocol::*;
 use bendclaw::storage::open_storage;
 use tempfile::TempDir;
 
@@ -34,8 +29,7 @@ async fn open_storage_returns_working_backend() -> TestResult {
         "run-backend".into(),
         "sess-backend".into(),
         0,
-        RunEventKind::RunStarted,
-        serde_json::json!({}),
+        RunEventPayload::RunStarted {},
     );
     storage.put_run_events(vec![event]).await?;
 
@@ -80,15 +74,18 @@ async fn append_and_load_events() -> TestResult {
         "run-001".into(),
         "sess-001".into(),
         0,
-        RunEventKind::RunStarted,
-        serde_json::json!({}),
+        RunEventPayload::RunStarted {},
     );
     let second = RunEvent::new(
         "run-001".into(),
         "sess-001".into(),
         1,
-        RunEventKind::AssistantCompleted,
-        serde_json::json!({"message": "hello"}),
+        RunEventPayload::AssistantCompleted {
+            content: vec![AssistantBlock::Text {
+                text: "hello".into(),
+            }],
+            usage: None,
+        },
     );
 
     storage.put_run_events(vec![first, second]).await?;

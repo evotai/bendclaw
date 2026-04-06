@@ -2,6 +2,7 @@ pub mod cli;
 pub mod conf;
 pub mod error;
 mod ids;
+pub mod protocol;
 pub mod request;
 pub mod server;
 pub mod session;

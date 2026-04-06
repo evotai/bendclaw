@@ -6,13 +6,9 @@ use super::format::format_tool_input;
 use super::format::truncate;
 use crate::cli::args::OutputFormat;
 use crate::error::Result;
-use crate::request::payload_as;
-use crate::request::AssistantBlock;
-use crate::request::AssistantPayload;
+use crate::protocol::RunEvent;
+use crate::protocol::RunEventPayload;
 use crate::request::EventSink;
-use crate::request::ToolResultPayload;
-use crate::storage::model::RunEvent;
-use crate::storage::model::RunEventKind;
 
 pub struct TextSink;
 
@@ -28,50 +24,43 @@ pub fn create_sink(format: &OutputFormat) -> Arc<dyn EventSink> {
 #[async_trait]
 impl EventSink for TextSink {
     async fn publish(&self, event: Arc<RunEvent>) -> Result<()> {
-        match &event.kind {
-            RunEventKind::AssistantCompleted => {
-                if let Some(payload) = payload_as::<AssistantPayload>(&event.payload) {
-                    for block in payload.content {
-                        match block {
-                            AssistantBlock::Text { .. } => {}
-                            AssistantBlock::ToolCall { name, input, .. } => {
-                                let detail = format_tool_input(&input);
-                                eprintln!("[call: {name}] {detail}");
-                            }
-                            AssistantBlock::Thinking { .. } => {}
+        match &event.payload {
+            RunEventPayload::AssistantCompleted { content, .. } => {
+                for block in content {
+                    match block {
+                        crate::protocol::AssistantBlock::Text { .. } => {}
+                        crate::protocol::AssistantBlock::ToolCall { name, input, .. } => {
+                            let detail = format_tool_input(input);
+                            eprintln!("[call: {name}] {detail}");
                         }
+                        crate::protocol::AssistantBlock::Thinking { .. } => {}
                     }
                 }
             }
-            RunEventKind::ToolFinished => {
-                if let Some(payload) = payload_as::<ToolResultPayload>(&event.payload) {
-                    if payload.is_error {
-                        eprintln!("[error: {}] {}", payload.tool_name, payload.content);
-                    } else if !payload.content.is_empty() {
-                        eprintln!(
-                            "[done: {}] {}",
-                            payload.tool_name,
-                            truncate(&payload.content, 120)
-                        );
-                    }
+            RunEventPayload::ToolFinished {
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => {
+                if *is_error {
+                    eprintln!("[error: {tool_name}] {content}");
+                } else if !content.is_empty() {
+                    eprintln!("[done: {tool_name}] {}", truncate(content, 120));
                 }
             }
-            RunEventKind::AssistantDelta => {
-                if let Some(delta) = event.payload.get("delta").and_then(|v| v.as_str()) {
+            RunEventPayload::AssistantDelta { delta, .. } => {
+                if let Some(delta) = delta {
                     print!("{delta}");
                 }
             }
-            RunEventKind::Error => {
-                if let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) {
-                    eprintln!("error: {message}");
-                }
+            RunEventPayload::Error { message } => {
+                eprintln!("error: {message}");
             }
-            RunEventKind::ToolProgress => {
-                if let Some(text) = event.payload.get("text").and_then(|v| v.as_str()) {
-                    eprintln!("[{text}]");
-                }
+            RunEventPayload::ToolProgress { text, .. } => {
+                eprintln!("[{text}]");
             }
-            RunEventKind::RunFinished => {
+            RunEventPayload::RunFinished { .. } => {
                 println!();
             }
             _ => {}

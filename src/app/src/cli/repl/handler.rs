@@ -34,11 +34,11 @@ use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::error::BendclawError;
 use crate::error::Result;
+use crate::protocol::ListSessions;
+use crate::protocol::SessionMeta;
 use crate::request::Request;
 use crate::request::RequestExecutor;
 use crate::session::Session;
-use crate::storage::model::ListSessions;
-use crate::storage::model::SessionMeta;
 use crate::storage::Storage;
 
 // ---------------------------------------------------------------------------

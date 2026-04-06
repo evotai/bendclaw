@@ -6,14 +6,10 @@ use serde_json::json;
 
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::request::payload_as;
-use crate::request::AssistantBlock;
-use crate::request::AssistantPayload;
+use crate::protocol::AssistantBlock;
+use crate::protocol::RunEvent;
+use crate::protocol::RunEventPayload;
 use crate::request::EventSink;
-use crate::request::RequestFinishedPayload;
-use crate::request::ToolResultPayload;
-use crate::storage::model::RunEvent;
-use crate::storage::model::RunEventKind;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
 
@@ -48,73 +44,67 @@ pub fn error_event(message: impl Into<String>) -> SseEvent {
     event("error", &json!({ "message": message.into() }))
 }
 
-pub fn map_run_event(run_event: &RunEvent) -> Vec<SseEvent> {
+/// Map a RunEvent to a list of SSE JSON payloads (stable, testable).
+/// Each returned Value has shape: { "type": "...", "data": {...} }
+pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
     let mut events = Vec::new();
 
-    match &run_event.kind {
-        RunEventKind::AssistantCompleted => {
-            if let Some(payload) = payload_as::<AssistantPayload>(&run_event.payload) {
-                for block in payload.content {
-                    match block {
-                        AssistantBlock::Text { .. } => {}
-                        AssistantBlock::ToolCall { id, name, input } => {
-                            events.push(event(
-                                "tool_call",
-                                &json!({ "id": id, "name": name, "input": input }),
-                            ));
-                        }
-                        AssistantBlock::Thinking { text } if !text.is_empty() => {
-                            events.push(event("thinking", &json!({ "thinking": text })));
-                        }
-                        _ => {}
+    match &run_event.payload {
+        RunEventPayload::AssistantCompleted { content, .. } => {
+            for block in content {
+                match block {
+                    AssistantBlock::Text { .. } => {}
+                    AssistantBlock::ToolCall { id, name, input } => {
+                        events.push(json!({
+                            "type": "tool_call",
+                            "data": { "id": id, "name": name, "input": input }
+                        }));
                     }
+                    AssistantBlock::Thinking { text } if !text.is_empty() => {
+                        events.push(json!({ "type": "thinking", "data": { "thinking": text } }));
+                    }
+                    _ => {}
                 }
             }
         }
-        RunEventKind::ToolFinished => {
-            if let Some(payload) = payload_as::<ToolResultPayload>(&run_event.payload) {
-                events.push(event(
-                    "tool_result",
-                    &json!({
-                        "tool_call_id": payload.tool_call_id,
-                        "content": payload.content,
-                        "is_error": payload.is_error,
-                    }),
-                ));
-            }
+        RunEventPayload::ToolFinished {
+            tool_call_id,
+            content,
+            is_error,
+            ..
+        } => {
+            events.push(json!({
+                "type": "tool_result",
+                "data": {
+                    "tool_call_id": tool_call_id,
+                    "content": content,
+                    "is_error": is_error,
+                }
+            }));
         }
-        RunEventKind::RunFinished => {
-            if let Some(payload) = payload_as::<RequestFinishedPayload>(&run_event.payload) {
-                let input_tokens = payload
-                    .usage
-                    .get("input")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or_default();
-                let output_tokens = payload
-                    .usage
-                    .get("output")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or_default();
-                events.push(event(
-                    "result",
-                    &json!({
-                        "turn_count": payload.turn_count,
-                        "input_tokens": input_tokens,
-                        "output_tokens": output_tokens,
-                        "duration_ms": payload.duration_ms,
-                    }),
-                ));
-            }
+        RunEventPayload::RunFinished {
+            turn_count,
+            usage,
+            duration_ms,
+            ..
+        } => {
+            events.push(json!({
+                "type": "result",
+                "data": {
+                    "turn_count": turn_count,
+                    "input_tokens": usage.input,
+                    "output_tokens": usage.output,
+                    "duration_ms": duration_ms,
+                }
+            }));
         }
-        RunEventKind::Error => {
-            if let Some(message) = run_event.payload.get("message").and_then(|v| v.as_str()) {
-                events.push(error_event(message));
-            }
+        RunEventPayload::Error { message } => {
+            events.push(json!({ "type": "error", "data": { "message": message } }));
         }
-        RunEventKind::AssistantDelta => {
-            if let Some(delta) = run_event.payload.get("delta").and_then(|v| v.as_str()) {
+        RunEventPayload::AssistantDelta { delta, .. } => {
+            if let Some(delta) = delta {
                 if !delta.is_empty() {
-                    events.push(event("text", &json!({ "text": delta })));
+                    events.push(json!({ "type": "text", "data": { "text": delta } }));
                 }
             }
         }
@@ -122,6 +112,16 @@ pub fn map_run_event(run_event: &RunEvent) -> Vec<SseEvent> {
     }
 
     events
+}
+
+pub fn map_run_event(run_event: &RunEvent) -> Vec<SseEvent> {
+    map_run_event_json(run_event)
+        .iter()
+        .map(|payload| match serde_json::to_string(payload) {
+            Ok(json) => Ok(axum::response::sse::Event::default().data(json)),
+            Err(_) => Ok(axum::response::sse::Event::default().data(String::new())),
+        })
+        .collect()
 }
 
 fn event(event_type: &str, data: &serde_json::Value) -> SseEvent {

@@ -1,0 +1,242 @@
+use tokio::sync::mpsc;
+
+use super::transcript::assistant_blocks_from_content;
+use super::transcript::extract_content_text;
+use super::transcript::from_agent_messages;
+use super::transcript::into_agent_messages;
+use super::transcript::total_usage;
+use crate::conf::ProviderKind;
+use crate::error::Result;
+use crate::protocol::model::run::ProtocolEvent;
+use crate::protocol::model::run::UsageSummary;
+use crate::protocol::model::transcript::TranscriptItem;
+
+/// Options for starting the engine, constructed from app-layer config.
+pub struct EngineOptions {
+    pub provider: ProviderKind,
+    pub model: String,
+    pub api_key: String,
+    pub base_url: Option<String>,
+    pub cwd: String,
+    pub append_system_prompt: Option<String>,
+    pub max_turns: Option<u32>,
+}
+
+/// Handle to a running engine instance.
+/// Provides access to final transcripts and abort capability.
+pub struct EngineHandle {
+    agent: Option<bend_engine::Agent>,
+}
+
+impl EngineHandle {
+    /// Wait for the engine to finish, then extract final transcripts.
+    /// Calls agent.finish().await first to ensure the agent loop is fully done.
+    pub async fn take_transcripts(&mut self) -> Vec<TranscriptItem> {
+        if let Some(agent) = self.agent.as_mut() {
+            agent.finish().await;
+            let messages = agent.messages().to_vec();
+            return from_agent_messages(&messages);
+        }
+        Vec::new()
+    }
+
+    /// Abort the engine run.
+    pub fn abort(&self) {
+        if let Some(agent) = self.agent.as_ref() {
+            agent.abort();
+        }
+    }
+}
+
+/// Start the engine and return a ProtocolEvent receiver + handle.
+///
+/// Internally builds a `bend_engine::Agent`, starts it with the given prompt,
+/// and spawns a forwarder task that converts `AgentEvent` → `ProtocolEvent`.
+pub async fn start_engine(
+    options: &EngineOptions,
+    prior_transcripts: &[TranscriptItem],
+    prompt: String,
+) -> Result<(mpsc::UnboundedReceiver<ProtocolEvent>, EngineHandle)> {
+    let prior_messages = into_agent_messages(prior_transcripts);
+    let mut agent = build_agent(options, prior_messages);
+    let engine_rx = agent.prompt(prompt).await;
+
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    // Forwarder task: AgentEvent → ProtocolEvent
+    tokio::spawn(async move {
+        forward_events(engine_rx, tx).await;
+    });
+
+    let handle = EngineHandle { agent: Some(agent) };
+    Ok((rx, handle))
+}
+
+async fn forward_events(
+    mut engine_rx: mpsc::UnboundedReceiver<bend_engine::AgentEvent>,
+    tx: mpsc::UnboundedSender<ProtocolEvent>,
+) {
+    while let Some(event) = engine_rx.recv().await {
+        let protocol_event = match &event {
+            bend_engine::AgentEvent::AgentStart => Some(ProtocolEvent::AgentStart),
+            bend_engine::AgentEvent::AgentEnd { messages } => {
+                let transcripts = from_agent_messages(messages);
+                let usage = total_usage(messages);
+                let transcript_count = messages.len();
+                Some(ProtocolEvent::AgentEnd {
+                    transcripts,
+                    usage,
+                    transcript_count,
+                })
+            }
+            bend_engine::AgentEvent::TurnStart => Some(ProtocolEvent::TurnStart),
+            bend_engine::AgentEvent::TurnEnd { .. } => Some(ProtocolEvent::TurnEnd),
+            bend_engine::AgentEvent::MessageStart { .. } => None,
+            bend_engine::AgentEvent::MessageUpdate {
+                delta: bend_engine::StreamDelta::Text { delta },
+                ..
+            } => Some(ProtocolEvent::AssistantDelta {
+                delta: Some(delta.clone()),
+                thinking_delta: None,
+            }),
+            bend_engine::AgentEvent::MessageUpdate {
+                delta: bend_engine::StreamDelta::Thinking { delta },
+                ..
+            } => Some(ProtocolEvent::AssistantDelta {
+                delta: None,
+                thinking_delta: Some(delta.clone()),
+            }),
+            bend_engine::AgentEvent::MessageUpdate {
+                delta: bend_engine::StreamDelta::ToolCallDelta { .. },
+                ..
+            } => None,
+            bend_engine::AgentEvent::MessageEnd { message } => {
+                if let bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
+                    content,
+                    usage,
+                    ..
+                }) = message
+                {
+                    let blocks = assistant_blocks_from_content(content);
+                    let usage_summary = UsageSummary {
+                        input: usage.input,
+                        output: usage.output,
+                    };
+                    Some(ProtocolEvent::AssistantCompleted {
+                        content: blocks,
+                        usage: Some(usage_summary),
+                    })
+                } else {
+                    None
+                }
+            }
+            bend_engine::AgentEvent::ToolExecutionStart {
+                tool_call_id,
+                tool_name,
+                args,
+            } => Some(ProtocolEvent::ToolStart {
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                args: args.clone(),
+            }),
+            bend_engine::AgentEvent::ToolExecutionUpdate {
+                tool_call_id,
+                tool_name,
+                partial_result,
+            } => {
+                let text = extract_content_text(&partial_result.content);
+                Some(ProtocolEvent::ToolProgress {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    text,
+                })
+            }
+            bend_engine::AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                tool_name,
+                result,
+                is_error,
+            } => {
+                let content = extract_content_text(&result.content);
+                Some(ProtocolEvent::ToolEnd {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    content,
+                    is_error: *is_error,
+                })
+            }
+            bend_engine::AgentEvent::ProgressMessage {
+                tool_call_id,
+                tool_name,
+                text,
+            } => Some(ProtocolEvent::ToolProgress {
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                text: text.clone(),
+            }),
+            bend_engine::AgentEvent::InputRejected { reason } => {
+                Some(ProtocolEvent::InputRejected {
+                    reason: reason.clone(),
+                })
+            }
+        };
+
+        if let Some(pe) = protocol_event {
+            if tx.send(pe).is_err() {
+                break;
+            }
+        }
+    }
+}
+
+fn build_agent(
+    options: &EngineOptions,
+    prior_messages: Vec<bend_engine::AgentMessage>,
+) -> bend_engine::Agent {
+    use bend_engine::provider::AnthropicProvider;
+    use bend_engine::provider::ModelConfig;
+    use bend_engine::provider::OpenAiCompatProvider;
+
+    let mut model_config = match options.provider {
+        ProviderKind::Anthropic => ModelConfig::anthropic(&options.model, &options.model),
+        ProviderKind::OpenAi => ModelConfig::openai(&options.model, &options.model),
+    };
+    if let Some(base_url) = &options.base_url {
+        model_config.base_url = base_url.clone();
+    }
+
+    let mut system_prompt = format!(
+        "You are a helpful assistant. Working directory: {}",
+        options.cwd
+    );
+    if let Some(extra) = &options.append_system_prompt {
+        system_prompt.push('\n');
+        system_prompt.push_str(extra);
+    }
+
+    let mut agent = match options.provider {
+        ProviderKind::Anthropic => bend_engine::Agent::new(AnthropicProvider)
+            .with_model(&options.model)
+            .with_api_key(&options.api_key)
+            .with_model_config(model_config)
+            .with_system_prompt(system_prompt)
+            .with_tools(bend_engine::tools::default_tools())
+            .with_messages(prior_messages),
+        ProviderKind::OpenAi => bend_engine::Agent::new(OpenAiCompatProvider)
+            .with_model(&options.model)
+            .with_api_key(&options.api_key)
+            .with_model_config(model_config)
+            .with_system_prompt(system_prompt)
+            .with_tools(bend_engine::tools::default_tools())
+            .with_messages(prior_messages),
+    };
+
+    if let Some(max_turns) = options.max_turns {
+        agent = agent.with_execution_limits(bend_engine::context::ExecutionLimits {
+            max_turns: max_turns as usize,
+            ..Default::default()
+        });
+    }
+
+    agent
+}

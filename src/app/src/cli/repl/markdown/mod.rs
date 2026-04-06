@@ -102,13 +102,20 @@ impl MarkdownStream {
 
     /// Push a token (partial text) from the LLM stream.
     pub fn push(&mut self, token: &str) -> io::Result<()> {
-        // Print the "•" prefix before the first content
+        self.line_buffer.push_str(token);
+
+        // Skip leading empty lines before writing the "•" prefix
         if !self.started {
+            self.line_buffer = self
+                .line_buffer
+                .trim_start_matches(['\n', '\r'])
+                .to_string();
+            if self.line_buffer.is_empty() {
+                return Ok(());
+            }
             self.started = true;
             self.renderer.write_raw("\x1b[2m•\x1b[0m ")?;
         }
-
-        self.line_buffer.push_str(token);
 
         while let Some(pos) = self.line_buffer.find('\n') {
             let line = self.line_buffer[..pos].to_string();

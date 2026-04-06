@@ -4,11 +4,10 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 
+use super::markdown::MarkdownStream;
 use super::render::build_run_summary;
 use super::render::format_tool_input;
 use super::render::print_tool_result;
-use super::render::terminal_assistant_delta;
-use super::render::terminal_prefixed_writeln;
 use super::render::terminal_writeln;
 use super::render::ToolCallSummary;
 use super::render::DIM;
@@ -28,9 +27,9 @@ use crate::request::EventSink;
 #[derive(Default)]
 pub struct SinkState {
     pub assistant_open: bool,
-    pub assistant_prefixed: bool,
     pub streamed_assistant: bool,
     pub pending_tools: HashMap<String, ToolCallDisplay>,
+    pub markdown_stream: Option<MarkdownStream>,
 }
 
 pub struct ToolCallDisplay {
@@ -42,12 +41,14 @@ pub struct ToolCallDisplay {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub fn finish_assistant_line(state: &mut SinkState) {
+pub fn finish_assistant_stream(state: &mut SinkState) {
+    if let Some(stream) = state.markdown_stream.take() {
+        let _ = stream.finish();
+    }
     if state.assistant_open {
         terminal_writeln("");
     }
     state.assistant_open = false;
-    state.assistant_prefixed = false;
     state.streamed_assistant = false;
 }
 
@@ -132,9 +133,7 @@ impl EventSink for ReplSink {
 
         match &event.payload {
             RunEventPayload::RunStarted {} => {
-                state.assistant_open = false;
-                state.assistant_prefixed = false;
-                state.streamed_assistant = false;
+                finish_assistant_stream(&mut state);
                 state.pending_tools.clear();
             }
             RunEventPayload::TurnStarted {} => {}
@@ -143,21 +142,25 @@ impl EventSink for ReplSink {
                     match block {
                         AssistantBlock::Text { text } => {
                             if state.streamed_assistant {
-                                terminal_writeln("");
+                                // Stream already rendered the content; just close it
+                                finish_assistant_stream(&mut state);
                             } else if !text.trim().is_empty() {
-                                terminal_prefixed_writeln(text);
+                                // Non-streamed: render the full text through markdown
+                                let mut stream = MarkdownStream::new(self.spinner.clone());
+                                let _ = stream.push(text);
+                                let _ = stream.push("\n");
+                                let _ = stream.finish();
+                                terminal_writeln("");
                             }
                             state.assistant_open = false;
-                            state.assistant_prefixed = false;
                             state.streamed_assistant = false;
                         }
                         AssistantBlock::ToolCall { id, name, input } => {
-                            finish_assistant_line(&mut state);
+                            finish_assistant_stream(&mut state);
                             state.pending_tools.insert(id.clone(), ToolCallDisplay {
                                 name: name.clone(),
                                 summary: format_tool_input(input),
                             });
-                            super::render::print_tool_call(name, input);
                         }
                         AssistantBlock::Thinking { .. } => {}
                     }
@@ -169,7 +172,7 @@ impl EventSink for ReplSink {
                 content,
                 is_error,
             } => {
-                finish_assistant_line(&mut state);
+                finish_assistant_stream(&mut state);
                 let tool_call =
                     state
                         .pending_tools
@@ -182,16 +185,35 @@ impl EventSink for ReplSink {
             }
             RunEventPayload::AssistantDelta { delta, .. } => {
                 if let Some(delta) = delta {
-                    terminal_assistant_delta(!state.assistant_prefixed, delta);
-                    state.assistant_prefixed = true;
+                    // Lazily create the markdown stream on first delta
+                    if state.markdown_stream.is_none() {
+                        state.markdown_stream = Some(MarkdownStream::new(self.spinner.clone()));
+                    }
+                    if let Some(ref mut stream) = state.markdown_stream {
+                        let _ = stream.push(delta);
+                    }
                     state.assistant_open = true;
                     state.streamed_assistant = true;
                 }
             }
-            RunEventPayload::ToolStarted { .. } => {}
+            RunEventPayload::ToolStarted {
+                tool_call_id,
+                tool_name,
+                args,
+            } => {
+                finish_assistant_stream(&mut state);
+                state
+                    .pending_tools
+                    .entry(tool_call_id.clone())
+                    .or_insert_with(|| ToolCallDisplay {
+                        name: tool_name.clone(),
+                        summary: format_tool_input(args),
+                    });
+                super::render::print_tool_call(tool_name, args);
+            }
             RunEventPayload::ToolProgress { .. } => {}
             RunEventPayload::Error { message } => {
-                finish_assistant_line(&mut state);
+                finish_assistant_stream(&mut state);
                 terminal_writeln(&format!("{RED}error:{RESET} {message}"));
             }
             RunEventPayload::RunFinished {
@@ -200,7 +222,7 @@ impl EventSink for ReplSink {
                 duration_ms,
                 ..
             } => {
-                finish_assistant_line(&mut state);
+                finish_assistant_stream(&mut state);
                 let summary = build_run_summary(usage, *turn_count, *duration_ms);
                 if !summary.is_empty() {
                     terminal_writeln(&format!("{DIM}{summary}{RESET}"));

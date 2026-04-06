@@ -59,16 +59,6 @@ pub fn terminal_writeln(text: &str) {
     terminal_write("\r\n");
 }
 
-pub fn terminal_assistant_delta(prefix_needed: bool, text: &str) {
-    let normalized = normalize_terminal_newlines(text);
-    let output = if prefix_needed {
-        format!("{DIM}•{RESET} {normalized}")
-    } else {
-        normalized
-    };
-    write_terminal(&output);
-}
-
 pub fn terminal_prefixed_writeln(text: &str) {
     let normalized = normalize_terminal_newlines(text);
     let output = format!("{DIM}•{RESET} {normalized}\r\n");

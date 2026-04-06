@@ -18,8 +18,14 @@ pub struct CliArgs {
     #[arg(long, default_value_t = OutputFormat::Text)]
     pub output_format: OutputFormat,
 
-    #[arg(long)]
-    pub max_turns: Option<u32>,
+    #[arg(long, default_value_t = 512)]
+    pub max_turns: u32,
+
+    #[arg(long, default_value_t = 100_000_000)]
+    pub max_tokens: u64,
+
+    #[arg(long, value_name = "SECS", default_value_t = 3600)]
+    pub max_duration: u64,
 
     #[arg(long)]
     pub append_system_prompt: Option<String>,

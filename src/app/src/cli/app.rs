@@ -8,8 +8,8 @@ use crate::conf::load_config;
 use crate::conf::ConfigOverrides;
 use crate::error::BendclawError;
 use crate::error::Result;
+use crate::request::ExecutionLimits;
 use crate::request::Request;
-use crate::request::RequestExecutor;
 use crate::server;
 use crate::storage::open_storage;
 
@@ -36,18 +36,31 @@ impl Cli {
         }
     }
 
+    fn build_limits(&self) -> ExecutionLimits {
+        ExecutionLimits {
+            max_turns: self.args.max_turns,
+            max_total_tokens: self.args.max_tokens,
+            max_duration_secs: self.args.max_duration,
+        }
+    }
+
+    fn build_request(&self, prompt: String) -> Request {
+        let mut request = Request::new(prompt).with_limits(self.build_limits());
+        if let Some(id) = &self.args.resume {
+            request = request.with_session(id.clone());
+        }
+        if let Some(sp) = &self.args.append_system_prompt {
+            request = request.with_system_prompt(sp.clone());
+        }
+        request
+    }
+
     async fn run_prompt(&self, prompt: String) -> Result<()> {
         let config = load_config(ConfigOverrides::new(self.args.model.clone(), None))?;
         let storage = open_storage(&config.storage)?;
         let sink = create_sink(&self.args.output_format);
-        let mut request = Request::new(prompt);
-        request.session_id = self.args.resume.clone();
-        request.max_turns = self.args.max_turns;
-        request.append_system_prompt = self.args.append_system_prompt.clone();
-
-        let _ = RequestExecutor::open(request, config.active_llm(), sink, storage)
-            .execute()
-            .await?;
+        let request = self.build_request(prompt);
+        let _ = request.execute(config.active_llm(), sink, storage).await?;
         Ok(())
     }
 
@@ -62,7 +75,7 @@ impl Cli {
         Repl::new(
             config,
             storage,
-            self.args.max_turns,
+            self.build_limits(),
             self.args.append_system_prompt.clone(),
             self.args.resume.clone(),
         )?

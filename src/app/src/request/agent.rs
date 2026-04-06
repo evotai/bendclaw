@@ -62,7 +62,7 @@ impl RequestAgent {
                     base_url: options.llm.base_url.clone(),
                     cwd: options.cwd.clone(),
                     append_system_prompt: options.append_system_prompt.clone(),
-                    max_turns: options.max_turns,
+                    limits: options.limits.clone(),
                 };
                 let (rx, engine_handle) = crate::protocol::engine::start_engine(
                     &engine_options,

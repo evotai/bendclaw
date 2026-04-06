@@ -1,6 +1,7 @@
 mod commands;
 mod completion;
 mod handler;
+pub mod markdown;
 mod render;
 mod selector;
 mod sink;

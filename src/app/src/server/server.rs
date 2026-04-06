@@ -19,7 +19,6 @@ use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
 use crate::request::Request;
-use crate::request::RequestExecutor;
 use crate::server::stream;
 use crate::storage::open_storage;
 use crate::storage::Storage;
@@ -120,10 +119,12 @@ impl Server {
             let current_session_id = self.session_id.read().await.clone();
             let sink = Arc::new(stream::SseSink::new(tx.clone()));
             let mut request = Request::new(message);
-            request.session_id = current_session_id;
+            if let Some(id) = current_session_id {
+                request = request.with_session(id);
+            }
 
-            match RequestExecutor::open(request, self.llm.clone(), sink, self.storage.clone())
-                .execute()
+            match request
+                .execute(self.llm.clone(), sink, self.storage.clone())
                 .await
             {
                 Ok(result) => {

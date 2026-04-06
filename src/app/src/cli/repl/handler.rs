@@ -36,8 +36,8 @@ use crate::error::BendclawError;
 use crate::error::Result;
 use crate::protocol::ListSessions;
 use crate::protocol::SessionMeta;
+use crate::request::ExecutionLimits;
 use crate::request::Request;
-use crate::request::RequestExecutor;
 use crate::session::Session;
 use crate::storage::Storage;
 
@@ -48,7 +48,7 @@ use crate::storage::Storage;
 pub struct Repl {
     config: Config,
     storage: Arc<dyn Storage>,
-    max_turns: Option<u32>,
+    limits: ExecutionLimits,
     append_system_prompt: Option<String>,
     session_id: Option<String>,
     cwd: String,
@@ -59,7 +59,7 @@ impl Repl {
     pub fn new(
         config: Config,
         storage: Arc<dyn Storage>,
-        max_turns: Option<u32>,
+        limits: ExecutionLimits,
         append_system_prompt: Option<String>,
         session_id: Option<String>,
     ) -> Result<Self> {
@@ -71,7 +71,7 @@ impl Repl {
         Ok(Self {
             config,
             storage,
-            max_turns,
+            limits,
             append_system_prompt,
             session_id,
             cwd,
@@ -137,7 +137,7 @@ impl Repl {
         }
 
         self.save_history(&mut rl);
-        println!("\n{DIM}  bye{RESET}\n");
+        self.print_resume_hint_on_exit();
         Ok(())
     }
 
@@ -182,23 +182,26 @@ impl Repl {
     }
 
     async fn run_prompt(&mut self, input: &str) -> Result<bool> {
-        let mut request = Request::new(input.to_string());
-        request.session_id = self.session_id.clone();
-        request.max_turns = self.max_turns;
-        request.append_system_prompt = self.append_system_prompt.clone();
+        let mut request = Request::new(input).with_limits(self.limits.clone());
+        if let Some(id) = &self.session_id {
+            request = request.with_session(id.clone());
+        }
+        if let Some(sp) = &self.append_system_prompt {
+            request = request.with_system_prompt(sp.clone());
+        }
 
         let spinner_state = Arc::new(std::sync::Mutex::new(super::spinner::SpinnerState::new()));
         let sink = Arc::new(ReplSink::new(spinner_state.clone()));
         let agent = crate::request::RequestAgent::new();
-        let executor = RequestExecutor::new(
-            request,
-            self.config.active_llm(),
-            sink,
-            self.storage.clone(),
-            agent.clone(),
-        );
+        let llm = self.config.active_llm();
+        let storage = self.storage.clone();
+        let agent_clone = agent.clone();
 
-        let mut run_task = tokio::spawn(async move { executor.execute().await });
+        let mut run_task = tokio::spawn(async move {
+            request
+                .execute_with_agent(llm, sink, storage, agent_clone)
+                .await
+        });
         let control = wait_for_run_control(&mut run_task, &spinner_state)?;
         let outcome = match control {
             Some(action) => {
@@ -320,6 +323,17 @@ impl Repl {
             );
         }
         Ok(())
+    }
+
+    fn print_resume_hint_on_exit(&self) {
+        if let Some(session_id) = &self.session_id {
+            let exe = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "bendclaw".to_string());
+            let rule = "─".repeat(80);
+            println!("\n{DIM}{rule}{RESET}");
+            println!("{DIM}Resume this session with:{RESET}\n  {exe} --resume {session_id}\n");
+        }
     }
 
     async fn print_status(&self) -> Result<()> {

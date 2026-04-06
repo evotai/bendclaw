@@ -19,7 +19,7 @@ pub struct EngineOptions {
     pub base_url: Option<String>,
     pub cwd: String,
     pub append_system_prompt: Option<String>,
-    pub max_turns: Option<u32>,
+    pub limits: crate::request::ExecutionLimits,
 }
 
 /// Handle to a running engine instance.
@@ -231,12 +231,12 @@ fn build_agent(
             .with_messages(prior_messages),
     };
 
-    if let Some(max_turns) = options.max_turns {
-        agent = agent.with_execution_limits(bend_engine::context::ExecutionLimits {
-            max_turns: max_turns as usize,
-            ..Default::default()
-        });
-    }
+    let limits = bend_engine::context::ExecutionLimits {
+        max_turns: options.limits.max_turns as usize,
+        max_total_tokens: options.limits.max_total_tokens as usize,
+        max_duration: std::time::Duration::from_secs(options.limits.max_duration_secs),
+    };
+    agent = agent.with_execution_limits(limits);
 
     agent
 }

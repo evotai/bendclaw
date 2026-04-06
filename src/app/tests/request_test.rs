@@ -105,17 +105,11 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
     ];
 
     let agent = RequestAgent::scripted(agent_events, final_transcripts);
-    let request = Request::new("hello".into());
+    let request = Request::new("hello");
 
-    RequestExecutor::new(
-        request,
-        test_llm_config(),
-        sink.clone(),
-        storage.clone(),
-        agent,
-    )
-    .execute()
-    .await?;
+    request
+        .execute_with_agent(test_llm_config(), sink.clone(), storage.clone(), agent)
+        .await?;
 
     let events = sink.events().await;
     assert!(events.len() >= 4);
@@ -170,17 +164,11 @@ async fn pipeline_marks_failed_when_no_result() -> TestResult {
     }];
 
     let agent = RequestAgent::scripted(agent_events, vec![]);
-    let request = Request::new("hello".into());
+    let request = Request::new("hello");
 
-    RequestExecutor::new(
-        request,
-        test_llm_config(),
-        sink.clone(),
-        storage.clone(),
-        agent,
-    )
-    .execute()
-    .await?;
+    request
+        .execute_with_agent(test_llm_config(), sink.clone(), storage.clone(), agent)
+        .await?;
 
     let events = sink.events().await;
     let run_id = &events[0].run_id;
@@ -226,15 +214,9 @@ async fn pipeline_resume_session() -> TestResult {
     let agent1 = RequestAgent::scripted(first_events, first_transcripts);
     let sink1 = Arc::new(CollectSink::new());
 
-    RequestExecutor::new(
-        Request::new("hello".into()),
-        test_llm_config(),
-        sink1.clone(),
-        storage.clone(),
-        agent1,
-    )
-    .execute()
-    .await?;
+    Request::new("hello")
+        .execute_with_agent(test_llm_config(), sink1.clone(), storage.clone(), agent1)
+        .await?;
 
     let session_id = sink1
         .events()
@@ -270,18 +252,11 @@ async fn pipeline_resume_session() -> TestResult {
 
     let agent2 = RequestAgent::scripted(second_events, second_transcripts);
     let sink2 = Arc::new(CollectSink::new());
-    let mut request = Request::new("continue".into());
-    request.session_id = Some(session_id.clone());
+    let request = Request::new("continue").with_session(session_id.clone());
 
-    RequestExecutor::new(
-        request,
-        test_llm_config(),
-        sink2.clone(),
-        storage.clone(),
-        agent2,
-    )
-    .execute()
-    .await?;
+    request
+        .execute_with_agent(test_llm_config(), sink2.clone(), storage.clone(), agent2)
+        .await?;
 
     let transcript = storage
         .list_transcript_entries(ListTranscriptEntries {

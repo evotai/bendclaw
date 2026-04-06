@@ -28,7 +28,7 @@ fn parse_prompt_mode_args() -> TestResult {
     assert!(args.verbose);
     assert_eq!(args.resume.as_deref(), Some("session-1"));
     assert!(matches!(args.output_format, OutputFormat::StreamJson));
-    assert_eq!(args.max_turns, Some(3));
+    assert_eq!(args.max_turns, 3);
     assert_eq!(args.append_system_prompt.as_deref(), Some("be concise"));
     assert_eq!(args.model.as_deref(), Some("claude-sonnet-4-20250514"));
     assert!(args.command.is_none());

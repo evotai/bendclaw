@@ -33,23 +33,3 @@ wiremock = "0.6"
 
 [lints.clippy]
 module_inception = "allow"
-
-[[example]]
-name = "basic"
-path = "examples/basic.rs"
-
-[[example]]
-name = "callbacks"
-path = "examples/callbacks.rs"
-
-[[example]]
-name = "cli"
-path = "examples/cli.rs"
-
-[[example]]
-name = "persistence"
-path = "examples/persistence.rs"
-
-[[example]]
-name = "sub_agent"
-path = "examples/sub_agent.rs"

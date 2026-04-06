@@ -15,11 +15,11 @@ use super::render::GRAY;
 use super::render::RED;
 use super::render::RESET;
 use super::spinner::SpinnerState;
+use crate::cli::app::EventSink;
 use crate::error::Result;
 use crate::protocol::AssistantBlock;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
-use crate::request::EventSink;
 
 // ---------------------------------------------------------------------------
 // State

@@ -14,11 +14,12 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
+use crate::agent::AppAgent;
+use crate::cli::app::run_prompt;
 use crate::conf::Config;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::request::Request;
 use crate::server::stream;
 use crate::storage::open_storage;
 use crate::storage::Storage;
@@ -118,14 +119,20 @@ impl Server {
         tokio::spawn(async move {
             let current_session_id = self.session_id.read().await.clone();
             let sink = Arc::new(stream::SseSink::new(tx.clone()));
-            let mut request = Request::new(message);
-            if let Some(id) = current_session_id {
-                request = request.with_session(id);
-            }
 
-            match request
-                .execute(self.llm.clone(), sink, self.storage.clone())
-                .await
+            let cwd = std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let agent = Arc::new(AppAgent::new(self.llm.clone(), cwd));
+
+            match run_prompt(
+                agent,
+                message,
+                current_session_id,
+                sink,
+                self.storage.clone(),
+            )
+            .await
             {
                 Ok(result) => {
                     *self.session_id.write().await = Some(result.session_id);

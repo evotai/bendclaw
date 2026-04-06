@@ -4,11 +4,11 @@ use async_trait::async_trait;
 
 use super::format::format_tool_input;
 use super::format::truncate;
+use crate::cli::app::EventSink;
 use crate::cli::args::OutputFormat;
 use crate::error::Result;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
-use crate::request::EventSink;
 
 pub struct TextSink;
 

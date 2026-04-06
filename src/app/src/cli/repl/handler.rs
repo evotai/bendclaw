@@ -29,6 +29,8 @@ use super::selector::PromptExit;
 use super::selector::RunControl;
 use super::selector::SelectorOption;
 use super::sink::ReplSink;
+use crate::agent::AppAgent;
+use crate::agent::ExecutionLimits;
 use crate::conf::paths;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
@@ -36,8 +38,6 @@ use crate::error::BendclawError;
 use crate::error::Result;
 use crate::protocol::ListSessions;
 use crate::protocol::SessionMeta;
-use crate::request::ExecutionLimits;
-use crate::request::Request;
 use crate::session::Session;
 use crate::storage::Storage;
 
@@ -49,7 +49,7 @@ pub struct Repl {
     config: Config,
     storage: Arc<dyn Storage>,
     limits: ExecutionLimits,
-    append_system_prompt: Option<String>,
+    system_prompt: String,
     session_id: Option<String>,
     cwd: String,
     completion_state: CompletionStateRef,
@@ -68,15 +68,30 @@ impl Repl {
             .to_string_lossy()
             .to_string();
 
+        let system_prompt = Self::resolve_system_prompt(&cwd, append_system_prompt.as_deref());
+
         Ok(Self {
             config,
             storage,
             limits,
-            append_system_prompt,
+            system_prompt,
             session_id,
             cwd,
             completion_state: Arc::new(RwLock::new(CompletionState::default())),
         })
+    }
+
+    fn resolve_system_prompt(cwd: &str, append: Option<&str>) -> String {
+        let mut prompt = format!("You are a helpful assistant. Working directory: {cwd}");
+        if let Some(ctx) = crate::cli::context::load_project_context(cwd) {
+            prompt.push_str("\n\n# Project Instructions\n\n");
+            prompt.push_str(&ctx);
+        }
+        if let Some(extra) = append {
+            prompt.push('\n');
+            prompt.push_str(extra);
+        }
+        prompt
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -182,25 +197,21 @@ impl Repl {
     }
 
     async fn run_prompt(&mut self, input: &str) -> Result<bool> {
-        let mut request = Request::new(input).with_limits(self.limits.clone());
-        if let Some(id) = &self.session_id {
-            request = request.with_session(id.clone());
-        }
-        if let Some(sp) = &self.append_system_prompt {
-            request = request.with_system_prompt(sp.clone());
-        }
+        let agent = Arc::new(
+            AppAgent::new(self.config.active_llm(), &self.cwd)
+                .with_system_prompt(&self.system_prompt)
+                .with_limits(self.limits.clone()),
+        );
 
         let spinner_state = Arc::new(std::sync::Mutex::new(super::spinner::SpinnerState::new()));
         let sink = Arc::new(ReplSink::new(spinner_state.clone()));
-        let agent = crate::request::RequestAgent::new();
-        let llm = self.config.active_llm();
+        let session_id = self.session_id.clone();
         let storage = self.storage.clone();
         let agent_clone = agent.clone();
+        let prompt = input.to_string();
 
         let mut run_task = tokio::spawn(async move {
-            request
-                .execute_with_agent(llm, sink, storage, agent_clone)
-                .await
+            crate::cli::app::run_prompt(agent_clone, prompt, session_id, sink, storage).await
         });
         let control = wait_for_run_control(&mut run_task, &spinner_state)?;
         let outcome = match control {

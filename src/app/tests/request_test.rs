@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bendclaw::conf::LlmConfig;
-use bendclaw::conf::ProviderKind;
+use bendclaw::agent::AppAgent;
+use bendclaw::cli::app::run_prompt;
+use bendclaw::cli::app::EventSink;
 use bendclaw::conf::StorageConfig;
 use bendclaw::error::Result;
 use bendclaw::protocol::*;
-use bendclaw::request::*;
 use bendclaw::storage::open_storage;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
@@ -22,15 +22,6 @@ fn is_uuid_v7(value: &str) -> bool {
 
 fn fs_store(root: &TempDir) -> StorageConfig {
     StorageConfig::fs(root.path().to_path_buf())
-}
-
-fn test_llm_config() -> LlmConfig {
-    LlmConfig {
-        provider: ProviderKind::Anthropic,
-        api_key: "test-key".into(),
-        base_url: None,
-        model: "claude-sonnet-4-20250514".into(),
-    }
 }
 
 fn missing_error(message: &str) -> std::io::Error {
@@ -104,12 +95,9 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
         },
     ];
 
-    let agent = RequestAgent::scripted(agent_events, final_transcripts);
-    let request = Request::new("hello");
+    let agent = AppAgent::scripted(agent_events, final_transcripts);
 
-    request
-        .execute_with_agent(test_llm_config(), sink.clone(), storage.clone(), agent)
-        .await?;
+    run_prompt(agent, "hello".into(), None, sink.clone(), storage.clone()).await?;
 
     let events = sink.events().await;
     assert!(events.len() >= 4);
@@ -163,12 +151,9 @@ async fn pipeline_marks_failed_when_no_result() -> TestResult {
         reason: "api failed".into(),
     }];
 
-    let agent = RequestAgent::scripted(agent_events, vec![]);
-    let request = Request::new("hello");
+    let agent = AppAgent::scripted(agent_events, vec![]);
 
-    request
-        .execute_with_agent(test_llm_config(), sink.clone(), storage.clone(), agent)
-        .await?;
+    run_prompt(agent, "hello".into(), None, sink.clone(), storage.clone()).await?;
 
     let events = sink.events().await;
     let run_id = &events[0].run_id;
@@ -211,12 +196,10 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let agent1 = RequestAgent::scripted(first_events, first_transcripts);
+    let agent1 = AppAgent::scripted(first_events, first_transcripts);
     let sink1 = Arc::new(CollectSink::new());
 
-    Request::new("hello")
-        .execute_with_agent(test_llm_config(), sink1.clone(), storage.clone(), agent1)
-        .await?;
+    run_prompt(agent1, "hello".into(), None, sink1.clone(), storage.clone()).await?;
 
     let session_id = sink1
         .events()
@@ -250,13 +233,17 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let agent2 = RequestAgent::scripted(second_events, second_transcripts);
+    let agent2 = AppAgent::scripted(second_events, second_transcripts);
     let sink2 = Arc::new(CollectSink::new());
-    let request = Request::new("continue").with_session(session_id.clone());
 
-    request
-        .execute_with_agent(test_llm_config(), sink2.clone(), storage.clone(), agent2)
-        .await?;
+    run_prompt(
+        agent2,
+        "continue".into(),
+        Some(session_id.clone()),
+        sink2.clone(),
+        storage.clone(),
+    )
+    .await?;
 
     let transcript = storage
         .list_transcript_entries(ListTranscriptEntries {

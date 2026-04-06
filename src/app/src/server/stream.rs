@@ -4,12 +4,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 
+use crate::cli::app::EventSink;
 use crate::error::BendclawError;
 use crate::error::Result;
 use crate::protocol::AssistantBlock;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
-use crate::request::EventSink;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
 

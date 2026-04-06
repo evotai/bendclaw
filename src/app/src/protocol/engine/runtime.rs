@@ -11,15 +11,13 @@ use crate::protocol::model::run::ProtocolEvent;
 use crate::protocol::model::run::UsageSummary;
 use crate::protocol::model::transcript::TranscriptItem;
 
-/// Options for starting the engine, constructed from app-layer config.
 pub struct EngineOptions {
     pub provider: ProviderKind,
     pub model: String,
     pub api_key: String,
     pub base_url: Option<String>,
-    pub cwd: String,
-    pub append_system_prompt: Option<String>,
-    pub limits: crate::request::ExecutionLimits,
+    pub system_prompt: String,
+    pub limits: crate::agent::ExecutionLimits,
 }
 
 /// Handle to a running engine instance.
@@ -243,30 +241,9 @@ fn build_agent(
         model_config.base_url = base_url.clone();
     }
 
-    let mut system_prompt = format!(
-        "You are a helpful assistant. Working directory: {}",
-        options.cwd
-    );
-    if let Some(extra) = &options.append_system_prompt {
-        system_prompt.push('\n');
-        system_prompt.push_str(extra);
-    }
-
-    let mut agent = match options.provider {
-        ProviderKind::Anthropic => bend_engine::Agent::new(AnthropicProvider)
-            .with_model(&options.model)
-            .with_api_key(&options.api_key)
-            .with_model_config(model_config)
-            .with_system_prompt(system_prompt)
-            .with_tools(bend_engine::tools::default_tools())
-            .with_messages(prior_messages),
-        ProviderKind::OpenAi => bend_engine::Agent::new(OpenAiCompatProvider)
-            .with_model(&options.model)
-            .with_api_key(&options.api_key)
-            .with_model_config(model_config)
-            .with_system_prompt(system_prompt)
-            .with_tools(bend_engine::tools::default_tools())
-            .with_messages(prior_messages),
+    let provider_agent = match options.provider {
+        ProviderKind::Anthropic => bend_engine::Agent::new(AnthropicProvider),
+        ProviderKind::OpenAi => bend_engine::Agent::new(OpenAiCompatProvider),
     };
 
     let limits = bend_engine::context::ExecutionLimits {
@@ -274,7 +251,13 @@ fn build_agent(
         max_total_tokens: options.limits.max_total_tokens as usize,
         max_duration: std::time::Duration::from_secs(options.limits.max_duration_secs),
     };
-    agent = agent.with_execution_limits(limits);
 
-    agent
+    provider_agent
+        .with_model(&options.model)
+        .with_api_key(&options.api_key)
+        .with_model_config(model_config)
+        .with_system_prompt(&options.system_prompt)
+        .with_tools(bend_engine::tools::default_tools())
+        .with_messages(prior_messages)
+        .with_execution_limits(limits)
 }

@@ -7,11 +7,9 @@ use async_trait::async_trait;
 use super::render::build_run_summary;
 use super::render::format_tool_input;
 use super::render::print_tool_result;
-use super::render::terminal_message_prefix;
+use super::render::terminal_assistant_delta;
 use super::render::terminal_prefixed_writeln;
-use super::render::terminal_write;
 use super::render::terminal_writeln;
-use super::render::Spinner;
 use super::render::ToolCallSummary;
 use super::render::DIM;
 use super::render::RED;
@@ -36,7 +34,6 @@ pub struct SinkState {
     pub assistant_prefixed: bool,
     pub streamed_assistant: bool,
     pub pending_tools: HashMap<String, ToolCallDisplay>,
-    pub spinner: Option<Spinner>,
 }
 
 pub struct ToolCallDisplay {
@@ -57,27 +54,26 @@ pub fn finish_assistant_line(state: &mut SinkState) {
     state.streamed_assistant = false;
 }
 
-pub fn stop_spinner(state: &mut SinkState) {
-    if let Some(mut spinner) = state.spinner.take() {
-        spinner.stop();
-    }
-}
-
-pub fn update_spinner(state: &mut SinkState, message: &str) {
-    if let Some(spinner) = state.spinner.as_mut() {
-        spinner.update(message);
-    } else {
-        state.spinner = Some(Spinner::start(message));
-    }
-}
-
 // ---------------------------------------------------------------------------
 // ReplSink
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
 pub struct ReplSink {
     state: Mutex<SinkState>,
+}
+
+impl ReplSink {
+    pub fn new() -> Self {
+        Self {
+            state: Mutex::new(SinkState::default()),
+        }
+    }
+}
+
+impl Default for ReplSink {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]
@@ -93,15 +89,10 @@ impl EventSink for ReplSink {
                 state.assistant_open = false;
                 state.assistant_prefixed = false;
                 state.streamed_assistant = false;
-                state.spinner = Some(Spinner::start("Thinking..."));
+                state.pending_tools.clear();
             }
-            RunEventKind::TurnStarted => {
-                if state.spinner.is_none() {
-                    state.spinner = Some(Spinner::start("Thinking..."));
-                }
-            }
+            RunEventKind::TurnStarted => {}
             RunEventKind::AssistantCompleted => {
-                stop_spinner(&mut state);
                 if let Some(payload) = payload_as::<AssistantPayload>(&event.payload) {
                     for block in payload.content {
                         match block {
@@ -129,7 +120,6 @@ impl EventSink for ReplSink {
                 }
             }
             RunEventKind::ToolFinished => {
-                stop_spinner(&mut state);
                 if let Some(payload) = payload_as::<ToolResultPayload>(&event.payload) {
                     finish_assistant_line(&mut state);
                     let tool_call = state.pending_tools.remove(&payload.tool_call_id).map(|tc| {
@@ -142,36 +132,22 @@ impl EventSink for ReplSink {
                 }
             }
             RunEventKind::AssistantDelta => {
-                stop_spinner(&mut state);
                 if let Some(delta) = event.payload.get("delta").and_then(|v| v.as_str()) {
-                    if !state.assistant_prefixed {
-                        terminal_message_prefix();
-                        state.assistant_prefixed = true;
-                    }
-                    terminal_write(delta);
+                    terminal_assistant_delta(!state.assistant_prefixed, delta);
+                    state.assistant_prefixed = true;
                     state.assistant_open = true;
                     state.streamed_assistant = true;
                 }
             }
-            RunEventKind::ToolStarted => {
-                if let Some(name) = event.payload.get("tool_name").and_then(|v| v.as_str()) {
-                    update_spinner(&mut state, &format!("Running {name}..."));
-                }
-            }
-            RunEventKind::ToolProgress => {
-                if let Some(text) = event.payload.get("text").and_then(|v| v.as_str()) {
-                    update_spinner(&mut state, text);
-                }
-            }
+            RunEventKind::ToolStarted => {}
+            RunEventKind::ToolProgress => {}
             RunEventKind::Error => {
-                stop_spinner(&mut state);
                 if let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) {
                     finish_assistant_line(&mut state);
                     terminal_writeln(&format!("{RED}error:{RESET} {message}"));
                 }
             }
             RunEventKind::RunFinished => {
-                stop_spinner(&mut state);
                 if let Some(payload) = payload_as::<RequestFinishedPayload>(&event.payload) {
                     finish_assistant_line(&mut state);
                     let summary = build_run_summary(&payload);

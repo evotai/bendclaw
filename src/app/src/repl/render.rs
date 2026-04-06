@@ -1,14 +1,7 @@
+use std::io::Stdout;
 use std::io::Write;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread::JoinHandle;
-use std::time::Duration;
-
-use crossterm::cursor::Hide;
-use crossterm::cursor::Show;
-use crossterm::execute;
+use std::sync::OnceLock;
 
 use crate::request::RequestFinishedPayload;
 use crate::request::ToolResultPayload;
@@ -26,77 +19,25 @@ pub const GRAY: &str = "\x1b[90m";
 pub const BG_TOOL: &str = "\x1b[48;2;245;197;66m";
 pub const BG_OK: &str = "\x1b[48;2;133;220;140m";
 pub const BG_ERR: &str = "\x1b[48;2;157;57;57m";
-pub const CLEAR_LINE: &str = "\r\x1b[2K\r";
 
-// ---------------------------------------------------------------------------
-// Spinner
-// ---------------------------------------------------------------------------
+static TERMINAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-pub struct Spinner {
-    running: Arc<AtomicBool>,
-    message: Arc<Mutex<String>>,
-    handle: Option<JoinHandle<()>>,
+fn with_terminal<T>(render: impl FnOnce(&mut Stdout) -> T) -> T {
+    let _guard = TERMINAL_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut stdout = std::io::stdout();
+    let result = render(&mut stdout);
+    let _ = stdout.flush();
+    result
 }
 
-impl Spinner {
-    pub fn start(initial_message: &str) -> Self {
-        let running = Arc::new(AtomicBool::new(true));
-        let message = Arc::new(Mutex::new(initial_message.to_string()));
-        let running_flag = running.clone();
-        let message_ref = message.clone();
-
-        // Hide cursor immediately before spawning the thread
-        let _ = execute!(std::io::stdout(), Hide);
-
-        let handle = std::thread::spawn(move || {
-            let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            let mut index = 0usize;
-            while running_flag.load(Ordering::Relaxed) {
-                let label = message_ref
-                    .lock()
-                    .map(|v| v.clone())
-                    .unwrap_or_else(|_| "Working...".into());
-                // Render immediately on first frame, then sleep
-                print!(
-                    "{CLEAR_LINE}{DIM}{} {}  (Press ESC to stop){RESET}",
-                    frames[index % frames.len()],
-                    label
-                );
-                let _ = std::io::stdout().flush();
-                std::thread::sleep(Duration::from_millis(80));
-                index = index.wrapping_add(1);
-            }
-            print!("{CLEAR_LINE}");
-            let _ = std::io::stdout().flush();
-        });
-
-        Self {
-            running,
-            message,
-            handle: Some(handle),
-        }
-    }
-
-    pub fn update(&mut self, message: &str) {
-        if let Ok(mut current) = self.message.lock() {
-            *current = message.to_string();
-        }
-    }
-
-    pub fn stop(&mut self) {
-        self.running.store(false, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-        // Restore cursor after spinner stops
-        let _ = execute!(std::io::stdout(), Show);
-    }
-}
-
-impl Drop for Spinner {
-    fn drop(&mut self) {
-        self.stop();
-    }
+fn write_terminal(text: &str) {
+    let normalized = normalize_terminal_newlines(text);
+    with_terminal(|stdout| {
+        let _ = write!(stdout, "{normalized}");
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -108,9 +49,7 @@ pub fn normalize_terminal_newlines(text: &str) -> String {
 }
 
 pub fn terminal_write(text: &str) {
-    let normalized = normalize_terminal_newlines(text);
-    print!("{normalized}");
-    let _ = std::io::stdout().flush();
+    write_terminal(text);
 }
 
 pub fn terminal_writeln(text: &str) {
@@ -118,13 +57,20 @@ pub fn terminal_writeln(text: &str) {
     terminal_write("\r\n");
 }
 
-pub fn terminal_message_prefix() {
-    terminal_write(&format!("{DIM}•{RESET} "));
+pub fn terminal_assistant_delta(prefix_needed: bool, text: &str) {
+    let normalized = normalize_terminal_newlines(text);
+    let output = if prefix_needed {
+        format!("{DIM}•{RESET} {normalized}")
+    } else {
+        normalized
+    };
+    write_terminal(&output);
 }
 
 pub fn terminal_prefixed_writeln(text: &str) {
-    terminal_message_prefix();
-    terminal_writeln(text);
+    let normalized = normalize_terminal_newlines(text);
+    let output = format!("{DIM}•{RESET} {normalized}\r\n");
+    write_terminal(&output);
 }
 
 // ---------------------------------------------------------------------------

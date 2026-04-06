@@ -343,14 +343,14 @@ pub fn wait_for_run_control(
         if run_task.is_finished() {
             return Ok(None);
         }
-        if !poll(Duration::from_millis(50))? {
+        if !poll(Duration::from_millis(80))? {
             continue;
         }
         match read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Esc => return Ok(Some(RunControl::Cancel)),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(Some(RunControl::Exit))
+                    return Ok(Some(RunControl::Exit));
                 }
                 _ => {}
             },

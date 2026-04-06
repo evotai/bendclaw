@@ -45,3 +45,27 @@ pub fn format_tool_input(input: &serde_json::Value) -> String {
     }
     summarize_inline(&input.to_string(), 100)
 }
+
+/// Format all tool input fields as separate lines for display.
+pub fn format_tool_input_lines(input: &serde_json::Value) -> Vec<String> {
+    if let Some(obj) = input.as_object() {
+        if obj.is_empty() {
+            return vec![];
+        }
+        return obj
+            .iter()
+            .map(|(k, v)| {
+                let val = match v {
+                    serde_json::Value::String(s) => summarize_inline(s, 120),
+                    serde_json::Value::Array(arr) => {
+                        let parts: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                        summarize_inline(&parts.join(", "), 120)
+                    }
+                    other => summarize_inline(&other.to_string(), 120),
+                };
+                format!("{k}: {val}")
+            })
+            .collect();
+    }
+    vec![summarize_inline(&input.to_string(), 120)]
+}

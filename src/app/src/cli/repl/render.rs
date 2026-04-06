@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 
 pub use crate::cli::format::format_tool_input;
+pub use crate::cli::format::format_tool_input_lines;
 pub use crate::cli::format::summarize_inline;
 pub use crate::cli::format::truncate;
 use crate::protocol::TranscriptItem;
@@ -190,20 +191,8 @@ pub fn print_badge_line(title: &str, is_result: bool, ok: bool) {
 }
 
 pub fn tool_call_message(name: &str, input: &serde_json::Value) -> (String, Vec<String>) {
-    let lowercase = name.to_lowercase();
-    if lowercase.contains("grep") {
-        return ("Grep 1 search".into(), vec![format!(
-            "\"{}\"",
-            format_tool_input(input)
-        )]);
-    }
-    if lowercase.contains("glob") {
-        return ("Glob 1 pattern".into(), vec![format_tool_input(input)]);
-    }
-    if lowercase.contains("read") {
-        return ("Read 1 file".into(), vec![format_tool_input(input)]);
-    }
-    (format!("{name} call"), vec![format_tool_input(input)])
+    let lines = format_tool_input_lines(input);
+    (format!("{name} call"), lines)
 }
 
 pub fn tool_result_line(

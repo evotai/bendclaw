@@ -1,3 +1,5 @@
+mod commands;
+mod completion;
 mod handler;
 mod render;
 mod selector;

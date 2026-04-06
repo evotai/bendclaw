@@ -1,3 +1,4 @@
+use super::payload::extract_content_text;
 use crate::storage::model::ToolCallRecord;
 use crate::storage::model::TranscriptItem;
 
@@ -140,18 +141,4 @@ impl From<&TranscriptItem> for bend_engine::AgentMessage {
             ),
         }
     }
-}
-
-fn extract_content_text(content: &[bend_engine::Content]) -> String {
-    content
-        .iter()
-        .filter_map(|block| {
-            if let bend_engine::Content::Text { text } = block {
-                Some(text.as_str())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }

@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::format::format_tool_input;
+use super::format::truncate;
 use crate::cli::args::OutputFormat;
 use crate::error::Result;
 use crate::request::payload_as;
@@ -21,48 +23,6 @@ pub fn create_sink(format: &OutputFormat) -> Arc<dyn EventSink> {
         OutputFormat::Text => Arc::new(TextSink),
         OutputFormat::StreamJson => Arc::new(StreamJsonSink),
     }
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max])
-    }
-}
-
-const SUMMARY_KEYS: &[&str] = &[
-    "file_path",
-    "path",
-    "command",
-    "pattern",
-    "patterns",
-    "query",
-    "url",
-    "name",
-    "directory",
-    "glob",
-    "regex",
-];
-
-fn format_tool_input(input: &serde_json::Value) -> String {
-    if let Some(obj) = input.as_object() {
-        for &key in SUMMARY_KEYS {
-            if let Some(val) = obj.get(key) {
-                if let Some(s) = val.as_str() {
-                    return truncate(s, 100);
-                }
-                if let Some(arr) = val.as_array() {
-                    let parts: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
-                    if !parts.is_empty() {
-                        return truncate(&parts.join(", "), 100);
-                    }
-                }
-            }
-        }
-    }
-    let s = input.to_string();
-    truncate(&s, 100)
 }
 
 #[async_trait]

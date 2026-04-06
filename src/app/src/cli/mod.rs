@@ -1,7 +1,9 @@
+mod app;
 mod args;
-mod cli;
+pub(crate) mod format;
+pub mod repl;
 mod sink;
 
+pub use app::*;
 pub use args::*;
-pub use cli::*;
 pub use sink::*;

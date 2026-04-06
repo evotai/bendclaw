@@ -84,18 +84,15 @@ impl RequestExecutor {
         let started_event = RunEventContext::new(&run_id, &session_meta.session_id, 0).started();
         let mut run_events = vec![started_event.clone()];
         if let Err(error) = self.sink.publish(Arc::new(started_event)).await {
-            run_meta.finish(RunStatus::Failed);
-            let _ = self.storage.put_run(run_meta).await;
-            logx!(
-                error,
-                "run",
-                "failed",
-                run_id = %run_id,
-                session_id = %session_meta.session_id,
-                error = %error,
-                elapsed_ms = started_at.elapsed().as_millis() as u64,
-            );
-            return Err(error);
+            return self
+                .fail_run(
+                    &mut run_meta,
+                    &run_id,
+                    &session_meta.session_id,
+                    &started_at,
+                    error,
+                )
+                .await;
         }
 
         let mut rx = match self
@@ -112,18 +109,15 @@ impl RequestExecutor {
         {
             Ok(rx) => rx,
             Err(error) => {
-                run_meta.finish(RunStatus::Failed);
-                let _ = self.storage.put_run(run_meta).await;
-                logx!(
-                    error,
-                    "run",
-                    "failed",
-                    run_id = %run_id,
-                    session_id = %session_meta.session_id,
-                    error = %error,
-                    elapsed_ms = started_at.elapsed().as_millis() as u64,
-                );
-                return Err(error);
+                return self
+                    .fail_run(
+                        &mut run_meta,
+                        &run_id,
+                        &session_meta.session_id,
+                        &started_at,
+                        error,
+                    )
+                    .await;
             }
         };
 
@@ -255,5 +249,27 @@ impl RequestExecutor {
                 .await
             }
         }
+    }
+
+    async fn fail_run(
+        &self,
+        run_meta: &mut RunMeta,
+        run_id: &str,
+        session_id: &str,
+        started_at: &Instant,
+        error: BendclawError,
+    ) -> Result<RequestResult> {
+        run_meta.finish(RunStatus::Failed);
+        let _ = self.storage.put_run(run_meta.clone()).await;
+        logx!(
+            error,
+            "run",
+            "failed",
+            run_id = %run_id,
+            session_id = %session_id,
+            error = %error,
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+        );
+        Err(error)
     }
 }

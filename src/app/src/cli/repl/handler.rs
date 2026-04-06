@@ -1,19 +1,18 @@
-use std::borrow::Cow;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use rustyline::completion::Completer;
-use rustyline::completion::Pair;
 use rustyline::error::ReadlineError;
-use rustyline::highlight::Highlighter;
-use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
-use rustyline::validate::Validator;
 use rustyline::Editor;
 
+use super::commands::command_help;
+use super::commands::command_short_description;
+use super::commands::KNOWN_COMMANDS;
+use super::completion::CompletionState;
+use super::completion::CompletionStateRef;
+use super::completion::ReplHelper;
 use super::render::print_transcript_messages;
 use super::render::truncate;
 use super::render::BOLD;
@@ -41,31 +40,6 @@ use crate::session::Session;
 use crate::storage::model::ListSessions;
 use crate::storage::model::SessionMeta;
 use crate::storage::Storage;
-
-const KNOWN_COMMANDS: &[&str] = &[
-    "/help",
-    "/status",
-    "/config",
-    "/history",
-    "/sessions",
-    "/resume",
-    "/new",
-    "/clear",
-    "/clear!",
-    "/model",
-    "/provider",
-    "/version",
-    "/quit",
-    "/exit",
-];
-
-type CompletionStateRef = Arc<RwLock<CompletionState>>;
-
-#[derive(Default)]
-struct CompletionState {
-    models: Vec<String>,
-    session_ids: Vec<String>,
-}
 
 // ---------------------------------------------------------------------------
 // Repl
@@ -701,244 +675,6 @@ impl Repl {
 }
 
 // ---------------------------------------------------------------------------
-// ReplHelper (readline completion, hints, highlighting)
-// ---------------------------------------------------------------------------
-
-pub struct ReplHelper {
-    state: CompletionStateRef,
-}
-
-impl ReplHelper {
-    fn new(state: CompletionStateRef) -> Self {
-        Self { state }
-    }
-}
-
-impl Completer for ReplHelper {
-    type Candidate = Pair;
-
-    fn complete(
-        &self,
-        line: &str,
-        pos: usize,
-        _ctx: &rustyline::Context<'_>,
-    ) -> rustyline::Result<(usize, Vec<Pair>)> {
-        let prefix = &line[..pos];
-
-        if prefix.starts_with('/') && !prefix.contains(' ') {
-            let matches: Vec<Pair> = KNOWN_COMMANDS
-                .iter()
-                .filter(|cmd| cmd.starts_with(prefix))
-                .map(|cmd| {
-                    let cmd_name = &cmd[1..];
-                    let desc = command_short_description(cmd_name).unwrap_or("");
-                    if desc.is_empty() {
-                        Pair {
-                            display: cmd.to_string(),
-                            replacement: cmd.to_string(),
-                        }
-                    } else {
-                        Pair {
-                            display: format!("{cmd:<12} {desc}"),
-                            replacement: cmd.to_string(),
-                        }
-                    }
-                })
-                .collect();
-            return Ok((0, matches));
-        }
-
-        if prefix.starts_with('/') {
-            if let Some(space_pos) = prefix.find(' ') {
-                let cmd = &prefix[..space_pos];
-                let arg_part = &prefix[space_pos + 1..];
-                if !arg_part.contains(' ') {
-                    let state = self.state.read().map_err(|_| {
-                        ReadlineError::Io(std::io::Error::other("completion state lock poisoned"))
-                    })?;
-                    let candidates = command_arg_completions(cmd, arg_part, &state);
-                    if !candidates.is_empty() {
-                        let pairs = candidates
-                            .into_iter()
-                            .map(|candidate| Pair {
-                                display: candidate.clone(),
-                                replacement: candidate,
-                            })
-                            .collect();
-                        return Ok((space_pos + 1, pairs));
-                    }
-                }
-            }
-        }
-
-        let word_start = prefix.rfind(char::is_whitespace).map_or(0, |i| i + 1);
-        let word = &prefix[word_start..];
-        if word.is_empty() {
-            return Ok((pos, Vec::new()));
-        }
-
-        let matches = complete_file_path(word)
-            .into_iter()
-            .map(|value| Pair {
-                display: value.clone(),
-                replacement: value,
-            })
-            .collect();
-        Ok((word_start, matches))
-    }
-}
-
-impl Hinter for ReplHelper {
-    type Hint = String;
-
-    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
-        if pos != line.len() || !line.starts_with('/') {
-            return None;
-        }
-        let typed = &line[1..];
-        if typed.is_empty() || typed.contains(' ') {
-            return None;
-        }
-        for cmd in KNOWN_COMMANDS {
-            let cmd_name = &cmd[1..];
-            if cmd_name.starts_with(typed) && cmd_name != typed {
-                let rest = &cmd_name[typed.len()..];
-                if let Some(desc) = command_short_description(cmd_name) {
-                    return Some(format!("{rest} - {desc}"));
-                }
-                return Some(rest.to_string());
-            }
-        }
-        for cmd in KNOWN_COMMANDS {
-            let cmd_name = &cmd[1..];
-            if cmd_name == typed {
-                if let Some(desc) = command_short_description(cmd_name) {
-                    return Some(format!(" - {desc}"));
-                }
-            }
-        }
-        None
-    }
-}
-
-impl Highlighter for ReplHelper {
-    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        Cow::Owned(format!("{DIM}{hint}{RESET}"))
-    }
-}
-
-impl Validator for ReplHelper {}
-impl rustyline::Helper for ReplHelper {}
-
-// ---------------------------------------------------------------------------
-// Command metadata
-// ---------------------------------------------------------------------------
-
-fn command_short_description(cmd: &str) -> Option<&'static str> {
-    match cmd {
-        "help" => Some("show help"),
-        "status" => Some("show current session status"),
-        "config" => Some("show provider/model config"),
-        "history" => Some("print current transcript"),
-        "sessions" => Some("choose a recent session"),
-        "resume" => Some("resume a session"),
-        "new" => Some("start a new session"),
-        "clear" => Some("clear conversation"),
-        "clear!" => Some("clear without confirmation"),
-        "model" => Some("show or change model"),
-        "provider" => Some("show or change provider"),
-        "version" => Some("show build info"),
-        "quit" | "exit" => Some("exit bendclaw"),
-        _ => None,
-    }
-}
-
-fn command_help(cmd: &str) -> Option<&'static str> {
-    match cmd {
-        "help" => Some(
-            "/help [command] - Show help information\n\nUsage:\n  /help\n  /help model\n  /help resume",
-        ),
-        "status" => Some(
-            "/status - Show current provider, model, session, cwd, and session metadata.",
-        ),
-        "config" => Some(
-            "/config - Show the active provider/model and the configured provider defaults.",
-        ),
-        "history" => Some(
-            "/history - Print the current session transcript from storage.",
-        ),
-        "sessions" => Some(
-            "/sessions [all] - List recent sessions and let you choose one.\n\nDefault scope is current folder when matches exist. Use `/sessions all` to show everything.",
-        ),
-        "resume" => Some(
-            "/resume [session-id] - Resume a previous session.\n\nWithout an argument it opens the session selector. Prefixes are accepted when unambiguous.",
-        ),
-        "new" => Some(
-            "/new - Start a fresh session without deleting stored history.",
-        ),
-        "clear" => Some(
-            "/clear - Start a fresh session after confirmation when the current transcript is non-trivial.\n\nSee also: /clear!",
-        ),
-        "clear!" => Some(
-            "/clear! - Force a fresh session without confirmation.",
-        ),
-        "model" => Some(
-            "/model [name] - Show or change the active model for the current provider.\n\nWithout an argument it opens the model selector.",
-        ),
-        "provider" => Some(
-            "/provider [anthropic|openai] - Show or change the active provider.",
-        ),
-        "version" => Some(
-            "/version - Show build version, git sha, branch, and build timestamp.",
-        ),
-        "quit" | "exit" => Some(
-            "/quit - Exit Bendclaw.\n\nAliases: /quit, /exit",
-        ),
-        _ => None,
-    }
-}
-
-fn help_command_completions(partial_lower: &str) -> Vec<String> {
-    KNOWN_COMMANDS
-        .iter()
-        .map(|c| c.trim_start_matches('/'))
-        .filter(|name| *name != "exit")
-        .filter(|name| name.to_lowercase().starts_with(partial_lower))
-        .map(|name| name.to_string())
-        .collect()
-}
-
-fn command_arg_completions(cmd: &str, arg_part: &str, state: &CompletionState) -> Vec<String> {
-    let partial = arg_part.to_lowercase();
-    match cmd {
-        "/help" => help_command_completions(&partial),
-        "/provider" => ["anthropic", "openai"]
-            .into_iter()
-            .filter(|name| name.starts_with(&partial))
-            .map(|name| name.to_string())
-            .collect(),
-        "/model" => state
-            .models
-            .iter()
-            .filter(|model| model.to_lowercase().starts_with(&partial))
-            .cloned()
-            .collect(),
-        "/resume" => state
-            .session_ids
-            .iter()
-            .filter(|session_id| session_id.starts_with(arg_part))
-            .cloned()
-            .collect(),
-        "/sessions" => ["all"]
-            .into_iter()
-            .filter(|value| value.starts_with(&partial))
-            .map(|value| value.to_string())
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Multiline input
 // ---------------------------------------------------------------------------
 
@@ -982,70 +718,6 @@ pub fn collect_multiline_rl(
     }
 
     buf
-}
-
-// ---------------------------------------------------------------------------
-// File-path completion
-// ---------------------------------------------------------------------------
-
-pub fn complete_file_path(partial: &str) -> Vec<String> {
-    let path = Path::new(partial);
-
-    let (dir, file_prefix) =
-        if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
-            (partial.to_string(), String::new())
-        } else if let Some(parent) = path.parent() {
-            let parent_str = if parent.as_os_str().is_empty() {
-                ".".to_string()
-            } else {
-                parent.to_string_lossy().to_string()
-            };
-            let file_prefix = path
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (parent_str, file_prefix)
-        } else {
-            (".".to_string(), partial.to_string())
-        };
-
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
-    };
-
-    let dir_prefix = if dir == "." && !partial.contains('/') {
-        String::new()
-    } else if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
-        partial.to_string()
-    } else {
-        let parent = path.parent().unwrap_or(Path::new(""));
-        if parent.as_os_str().is_empty() {
-            String::new()
-        } else {
-            format!("{}/", parent.display())
-        }
-    };
-
-    let mut matches = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with(&file_prefix) {
-            continue;
-        }
-        let is_dir = entry
-            .file_type()
-            .map(|value| value.is_dir())
-            .unwrap_or(false);
-        let candidate = if is_dir {
-            format!("{}{}/", dir_prefix, name)
-        } else {
-            format!("{}{}", dir_prefix, name)
-        };
-        matches.push(candidate);
-    }
-    matches.sort();
-    matches
 }
 
 // ---------------------------------------------------------------------------

@@ -123,6 +123,8 @@ impl EventSink for ReplSink {
                     spinner.clear_if_rendered();
                     spinner.deactivate();
                 }
+                RunEventPayload::LlmCallStarted { .. } => {}
+                RunEventPayload::LlmCallCompleted { .. } => {}
             }
         };
 
@@ -228,6 +230,20 @@ impl EventSink for ReplSink {
                     terminal_writeln(&format!("{DIM}{summary}{RESET}"));
                 }
             }
+            RunEventPayload::LlmCallStarted {
+                model,
+                messages,
+                tools,
+                ..
+            } => {
+                finish_assistant_stream(&mut state);
+                terminal_writeln(&format!(
+                    "{DIM}  LLM call · {model} · {} messages · {} tools{RESET}",
+                    messages.len(),
+                    tools.len(),
+                ));
+            }
+            RunEventPayload::LlmCallCompleted { .. } => {}
         }
 
         Ok(())

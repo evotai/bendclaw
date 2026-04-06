@@ -4,6 +4,8 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::provider::ToolDefinition;
+
 // ---------------------------------------------------------------------------
 // Content types
 // ---------------------------------------------------------------------------
@@ -434,6 +436,30 @@ pub enum AgentEvent {
     InputRejected {
         reason: String,
     },
+    LlmCallStart {
+        turn: usize,
+        attempt: usize,
+        request: LlmCallRequest,
+    },
+    LlmCallEnd {
+        turn: usize,
+        attempt: usize,
+        usage: Usage,
+        error: Option<String>,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// LLM call request snapshot
+// ---------------------------------------------------------------------------
+
+/// Canonical snapshot of the input sent to the LLM provider for a single call.
+#[derive(Debug, Clone)]
+pub struct LlmCallRequest {
+    pub model: String,
+    pub system_prompt: String,
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolDefinition>,
 }
 
 #[derive(Debug, Clone)]

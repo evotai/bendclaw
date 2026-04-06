@@ -179,6 +179,44 @@ async fn forward_events(
                     reason: reason.clone(),
                 })
             }
+            bend_engine::AgentEvent::LlmCallStart {
+                turn,
+                attempt,
+                request,
+            } => {
+                let messages: Vec<serde_json::Value> = request
+                    .messages
+                    .iter()
+                    .map(|m| serde_json::to_value(m).unwrap_or_default())
+                    .collect();
+                let tools: Vec<serde_json::Value> = request
+                    .tools
+                    .iter()
+                    .map(|t| serde_json::to_value(t).unwrap_or_default())
+                    .collect();
+                Some(ProtocolEvent::LlmCallStart {
+                    turn: *turn,
+                    attempt: *attempt,
+                    model: request.model.clone(),
+                    system_prompt: request.system_prompt.clone(),
+                    messages,
+                    tools,
+                })
+            }
+            bend_engine::AgentEvent::LlmCallEnd {
+                turn,
+                attempt,
+                usage,
+                error,
+            } => Some(ProtocolEvent::LlmCallEnd {
+                turn: *turn,
+                attempt: *attempt,
+                usage: UsageSummary {
+                    input: usage.input,
+                    output: usage.output,
+                },
+                error: error.clone(),
+            }),
         };
 
         if let Some(pe) = protocol_event {

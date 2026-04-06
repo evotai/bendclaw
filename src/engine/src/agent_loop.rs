@@ -347,7 +347,7 @@ async fn run_loop(
             }
 
             // Stream assistant response
-            let message = stream_assistant_response(context, config, tx, cancel).await;
+            let message = stream_assistant_response(context, config, tx, cancel, turn_number).await;
 
             let agent_msg: AgentMessage = message.clone().into();
             context.messages.push(agent_msg.clone());
@@ -487,6 +487,7 @@ async fn stream_assistant_response(
     config: &AgentLoopConfig,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
+    turn: usize,
 ) -> Message {
     // Apply context transform
     let messages = if let Some(transform) = &config.transform_context {
@@ -529,6 +530,19 @@ async fn stream_assistant_response(
             model_config: config.model_config.clone(),
             cache_config: config.cache_config.clone(),
         };
+
+        // Emit LlmCallStart before each provider attempt
+        tx.send(AgentEvent::LlmCallStart {
+            turn,
+            attempt,
+            request: LlmCallRequest {
+                model: config.model.clone(),
+                system_prompt: context.system_prompt.clone(),
+                messages: llm_messages.clone(),
+                tools: tool_defs.clone(),
+            },
+        })
+        .ok();
 
         let (stream_tx, mut stream_rx) = mpsc::unbounded_channel();
         let provider_cancel = cancel.clone();
@@ -626,6 +640,14 @@ async fn stream_assistant_response(
             Err(e) if e.is_retryable() && attempt < retry.max_retries && !cancel.is_cancelled() => {
                 // Abort forwarder to prevent forwarding events from failed attempt
                 forward_handle.abort();
+                // Emit LlmCallEnd for the failed attempt
+                tx.send(AgentEvent::LlmCallEnd {
+                    turn,
+                    attempt,
+                    usage: Usage::default(),
+                    error: Some(e.to_string()),
+                })
+                .ok();
                 attempt += 1;
                 let delay = e
                     .retry_after()
@@ -643,9 +665,29 @@ async fn stream_assistant_response(
     };
 
     match result {
-        Ok(msg) => msg,
+        Ok(ref msg) => {
+            let usage = match msg {
+                Message::Assistant { usage, .. } => usage.clone(),
+                _ => Usage::default(),
+            };
+            tx.send(AgentEvent::LlmCallEnd {
+                turn,
+                attempt,
+                usage,
+                error: None,
+            })
+            .ok();
+            msg.clone()
+        }
         Err(e) => {
             warn!("Provider error: {}", e);
+            tx.send(AgentEvent::LlmCallEnd {
+                turn,
+                attempt,
+                usage: Usage::default(),
+                error: Some(e.to_string()),
+            })
+            .ok();
             Message::Assistant {
                 content: vec![Content::Text {
                     text: String::new(),

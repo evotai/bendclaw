@@ -66,6 +66,17 @@ pub enum RunEventPayload {
         content: String,
         is_error: bool,
     },
+    LlmCallStarted {
+        model: String,
+        system_prompt: String,
+        messages: Vec<serde_json::Value>,
+        tools: Vec<serde_json::Value>,
+    },
+    LlmCallCompleted {
+        usage: UsageSummary,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
     RunFinished {
         text: String,
         usage: UsageSummary,
@@ -88,6 +99,8 @@ impl RunEventPayload {
             Self::ToolStarted { .. } => "tool_started",
             Self::ToolProgress { .. } => "tool_progress",
             Self::ToolFinished { .. } => "tool_finished",
+            Self::LlmCallStarted { .. } => "llm_call_started",
+            Self::LlmCallCompleted { .. } => "llm_call_completed",
             Self::RunFinished { .. } => "run_finished",
             Self::Error { .. } => "error",
         }
@@ -265,6 +278,20 @@ pub enum ProtocolEvent {
         content: String,
         is_error: bool,
     },
+    LlmCallStart {
+        turn: usize,
+        attempt: usize,
+        model: String,
+        system_prompt: String,
+        messages: Vec<serde_json::Value>,
+        tools: Vec<serde_json::Value>,
+    },
+    LlmCallEnd {
+        turn: usize,
+        attempt: usize,
+        usage: UsageSummary,
+        error: Option<String>,
+    },
     InputRejected {
         reason: String,
     },
@@ -412,6 +439,22 @@ impl<'a> RunEventContext<'a> {
             },
             ProtocolEvent::InputRejected { reason } => RunEventPayload::Error {
                 message: reason.clone(),
+            },
+            ProtocolEvent::LlmCallStart {
+                model,
+                system_prompt,
+                messages,
+                tools,
+                ..
+            } => RunEventPayload::LlmCallStarted {
+                model: model.clone(),
+                system_prompt: system_prompt.clone(),
+                messages: messages.clone(),
+                tools: tools.clone(),
+            },
+            ProtocolEvent::LlmCallEnd { usage, error, .. } => RunEventPayload::LlmCallCompleted {
+                usage: usage.clone(),
+                error: error.clone(),
             },
         };
 

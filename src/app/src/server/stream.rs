@@ -108,6 +108,32 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                 events.push(json!({ "type": "text", "data": { "text": delta } }));
             }
         }
+        RunEventPayload::LlmCallStarted {
+            model,
+            system_prompt,
+            messages,
+            tools,
+        } => {
+            events.push(json!({
+                "type": "llm_call_started",
+                "data": {
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "messages": messages,
+                    "tools": tools,
+                }
+            }));
+        }
+        RunEventPayload::LlmCallCompleted { usage, error } => {
+            events.push(json!({
+                "type": "llm_call_completed",
+                "data": {
+                    "input_tokens": usage.input,
+                    "output_tokens": usage.output,
+                    "error": error,
+                }
+            }));
+        }
         _ => {}
     }
 

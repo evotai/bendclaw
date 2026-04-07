@@ -37,3 +37,7 @@ pub fn env_file_path() -> Result<PathBuf> {
 pub fn history_file_path() -> Result<PathBuf> {
     Ok(state_root_dir()?.join("bendclaw_history"))
 }
+
+pub fn logs_dir() -> Result<PathBuf> {
+    Ok(state_root_dir()?.join("logs"))
+}

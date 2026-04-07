@@ -76,12 +76,12 @@ BENDCLAW_LLM_PROVIDER=anthropic
 # Anthropic
 BENDCLAW_ANTHROPIC_API_KEY=sk-ant-...
 BENDCLAW_ANTHROPIC_MODEL=claude-opus-4-6
-BENDCLAW_ANTHROPIC_BASE_URL=https://api.anthropic.com
+BENDCLAW_ANTHROPIC_BASE_URL=https://your-proxy.example.com/claude
 
 # OpenAI
 BENDCLAW_OPENAI_API_KEY=sk-...
 BENDCLAW_OPENAI_MODEL=gpt-5.4
-BENDCLAW_OPENAI_BASE_URL=https://api.openai.com/v1
+BENDCLAW_OPENAI_BASE_URL=https://your-proxy.example.com/openai/v1
 ```
 
 Only the active provider's keys are required. Set `BENDCLAW_LLM_PROVIDER` to switch between them.

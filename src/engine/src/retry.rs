@@ -8,7 +8,7 @@ use crate::provider::ProviderError;
 
 /// Configuration for automatic retry of transient provider errors.
 ///
-/// Defaults: 3 retries, 1s initial delay, 2x backoff, 30s max delay.
+/// Defaults: 10 retries, 1s initial delay, 2x backoff, 30s max delay.
 /// Use `RetryConfig::none()` to disable retries entirely.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -25,7 +25,7 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            max_retries: 3,
+            max_retries: 10,
             initial_delay_ms: 1000,
             backoff_multiplier: 2.0,
             max_delay_ms: 30_000,

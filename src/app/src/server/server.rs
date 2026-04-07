@@ -9,6 +9,7 @@ use axum::routing::post;
 use axum::Json;
 use axum::Router;
 use bend_base::logx;
+use bend_base::prompt::SystemPrompt;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -143,7 +144,11 @@ pub async fn start(conf: Config) -> Result<()> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
-    let agent = AppAgent::new(&conf, &cwd)?;
+    let system_prompt = SystemPrompt::new(&cwd)
+        .with_env()
+        .with_project_context()
+        .build();
+    let agent = AppAgent::new(&conf, &cwd)?.with_system_prompt(system_prompt);
 
     let storage_backend = match conf.storage.backend {
         crate::conf::StorageBackend::Fs => "fs",

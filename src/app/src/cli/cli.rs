@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use bend_base::prompt::SystemPrompt;
+
 use super::format::format_tool_input;
 use super::format::truncate;
 use crate::agent::AppAgent;
@@ -15,6 +17,18 @@ use crate::error::Result;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
 use crate::server;
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+pub async fn run_cli(args: CliArgs) -> Result<()> {
+    Cli::new(args).run().await
+}
+
+// ---------------------------------------------------------------------------
+// Cli
+// ---------------------------------------------------------------------------
 
 pub struct Cli {
     args: CliArgs,
@@ -39,21 +53,19 @@ impl Cli {
         }
     }
 
-    fn build_limits(&self) -> ExecutionLimits {
-        ExecutionLimits {
-            max_turns: self.args.max_turns,
-            max_total_tokens: self.args.max_tokens,
-            max_duration_secs: self.args.max_duration,
-        }
-    }
+    // -- subcommand dispatch ------------------------------------------------
 
     async fn run_prompt(&self, prompt: String) -> Result<()> {
         let config = Config::load()?.with_model(self.args.model.clone());
         let cwd = current_dir()?;
-        let agent = AppAgent::new(&config, &cwd)?.with_limits(self.build_limits());
-        if let Some(sp) = &self.args.append_system_prompt {
-            agent.append_system_prompt(sp);
+        let mut builder = SystemPrompt::new(&cwd).with_env().with_project_context();
+        if let Some(extra) = self.args.append_system_prompt.as_deref() {
+            builder = builder.with_append(extra);
         }
+        let system_prompt = builder.build();
+        let agent = AppAgent::new(&config, &cwd)?
+            .with_system_prompt(system_prompt)
+            .with_limits(self.build_limits());
         let request = TurnRequest::text(prompt).session_id(self.args.resume.clone());
         let mut stream = agent.run(request).await?;
         while let Some(event) = stream.next().await {
@@ -72,19 +84,31 @@ impl Cli {
 
     async fn run_repl(&self) -> Result<()> {
         let config = Config::load()?.with_model(self.args.model.clone());
+        let cwd = current_dir()?;
+        let mut builder = SystemPrompt::new(&cwd).with_env().with_project_context();
+        if let Some(extra) = self.args.append_system_prompt.as_deref() {
+            builder = builder.with_append(extra);
+        }
+        let system_prompt = builder.build();
         Repl::new(
             config,
             self.build_limits(),
-            self.args.append_system_prompt.clone(),
+            system_prompt,
             self.args.resume.clone(),
         )?
         .run()
         .await
     }
-}
 
-pub async fn run_cli(args: CliArgs) -> Result<()> {
-    Cli::new(args).run().await
+    // -- helpers ------------------------------------------------------------
+
+    fn build_limits(&self) -> ExecutionLimits {
+        ExecutionLimits {
+            max_turns: self.args.max_turns,
+            max_total_tokens: self.args.max_tokens,
+            max_duration_secs: self.args.max_duration,
+        }
+    }
 }
 
 fn current_dir() -> Result<String> {

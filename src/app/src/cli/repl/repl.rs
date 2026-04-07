@@ -55,7 +55,7 @@ impl Repl {
     pub fn new(
         config: Config,
         limits: ExecutionLimits,
-        append_system_prompt: Option<String>,
+        system_prompt: String,
         session_id: Option<String>,
     ) -> Result<Self> {
         let cwd = std::env::current_dir()
@@ -63,7 +63,6 @@ impl Repl {
             .to_string_lossy()
             .to_string();
 
-        let system_prompt = Self::resolve_system_prompt(&cwd, append_system_prompt.as_deref());
         let agent = AppAgent::new(&config, &cwd)?
             .with_system_prompt(system_prompt)
             .with_limits(limits);
@@ -75,19 +74,6 @@ impl Repl {
             cwd,
             completion_state: Arc::new(RwLock::new(CompletionState::default())),
         })
-    }
-
-    fn resolve_system_prompt(cwd: &str, append: Option<&str>) -> String {
-        let mut prompt = format!("You are a helpful assistant. Working directory: {cwd}");
-        if let Some(ctx) = crate::cli::context::load_project_context(cwd) {
-            prompt.push_str("\n\n# Project Instructions\n\n");
-            prompt.push_str(&ctx);
-        }
-        if let Some(extra) = append {
-            prompt.push('\n');
-            prompt.push_str(extra);
-        }
-        prompt
     }
 
     pub async fn run(&mut self) -> Result<()> {

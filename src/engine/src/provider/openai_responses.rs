@@ -177,7 +177,7 @@ impl StreamProvider for OpenAiResponsesProvider {
 
         // Finalize tool calls
         for (_, buf) in tool_call_buffers {
-            let args = serde_json::from_str(&buf.arguments)
+            let args = super::json_repair::try_repair_json(&buf.arguments)
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             content.push(Content::ToolCall {
                 id: buf.id,

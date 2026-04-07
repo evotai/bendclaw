@@ -92,6 +92,6 @@ dev-env:
 	@echo ""
 
 run: dev-env
-	cargo run -p bendclaw -- server
+	cargo run -p bendclaw -- repl
 
 ci: check test

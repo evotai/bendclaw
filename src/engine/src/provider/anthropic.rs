@@ -193,11 +193,12 @@ impl StreamProvider for AnthropicProvider {
                                                 .and_then(|v| v.as_str())
                                                 .map(|s| s.to_string())
                                             {
-                                                if let Ok(parsed) = serde_json::from_str(&partial) {
-                                                    *arguments = parsed;
-                                                } else {
-                                                    warn!("Failed to parse tool call JSON: {}", partial);
-                                                    *arguments = serde_json::Value::Object(Default::default());
+                                                match super::json_repair::try_repair_json(&partial) {
+                                                    Ok(parsed) => *arguments = parsed,
+                                                    Err(e) => {
+                                                        warn!("Failed to parse tool call JSON: {} ({})", partial, e);
+                                                        *arguments = serde_json::Value::Object(Default::default());
+                                                    }
                                                 }
                                             }
                                         }

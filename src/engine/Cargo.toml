@@ -18,6 +18,7 @@ tracing = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 reqwest-eventsource = "0.6"
 futures = "0.3"
+jsonrepair = "0.1"
 rand = "0.8"
 base64 = "0.22"
 openapiv3 = { version = "2", optional = true }

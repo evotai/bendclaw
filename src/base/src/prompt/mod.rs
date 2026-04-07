@@ -1,3 +1,3 @@
-mod prompt;
+mod builder;
 
-pub use prompt::SystemPrompt;
+pub use builder::SystemPrompt;

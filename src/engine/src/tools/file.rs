@@ -103,6 +103,21 @@ impl AgentTool for ReadFileTool {
         })
     }
 
+    fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
+        let path = params["path"].as_str()?;
+        let offset = params["offset"].as_u64();
+        let limit = params["limit"].as_u64();
+        match (offset, limit) {
+            (Some(off), Some(lim)) => {
+                let end = off.saturating_add(lim).saturating_sub(1);
+                Some(format!("sed -n '{},{}p' {}", off, end, path))
+            }
+            (Some(off), None) => Some(format!("sed -n '{},$p' {}", off, path)),
+            (None, Some(lim)) => Some(format!("head -n {} {}", lim, path)),
+            (None, None) => Some(format!("cat -n {}", path)),
+        }
+    }
+
     async fn execute(
         &self,
         params: serde_json::Value,
@@ -253,6 +268,11 @@ impl AgentTool for WriteFileTool {
             },
             "required": ["path", "content"]
         })
+    }
+
+    fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
+        let path = params["path"].as_str()?;
+        Some(format!("cat > {}", path))
     }
 
     async fn execute(

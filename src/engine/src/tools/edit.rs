@@ -71,6 +71,11 @@ impl AgentTool for EditFileTool {
         })
     }
 
+    fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
+        let path = params["path"].as_str()?;
+        Some(format!("sed -i 's/.../.../g' {}", path))
+    }
+
     async fn execute(
         &self,
         params: serde_json::Value,

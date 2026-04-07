@@ -11,9 +11,9 @@ fn main() -> anyhow::Result<()> {
             Ok(filter) => filter,
             Err(_) => {
                 if args.verbose {
-                    "info".into()
+                    "info,bendengine=error".into()
                 } else {
-                    "warn".into()
+                    "warn,bendengine=error".into()
                 }
             }
         };

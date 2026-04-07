@@ -12,8 +12,11 @@ use super::render::RESET;
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Spinner glyphs matching Claude Code: forward + reverse = 10 frames.
-const GLYPHS: &[&str] = &["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
+/// Spinner glyphs — gentle pulsing dot to indicate activity.
+const GLYPHS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// Terminal tab title prefix — soft three-state activity dots.
+const TITLE_GLYPHS: &[&str] = &["·", "•", "·"];
 
 /// Obscure database-flavored verbs for the spinner.
 const VERBS: &[&str] = &[
@@ -121,7 +124,7 @@ impl SpinnerState {
         self.phase = SpinnerPhase::Hidden;
         // Reset terminal tab title
         with_terminal(|stdout| {
-            let _ = write!(stdout, "\x1b]0;Bendclaw\x07");
+            let _ = write!(stdout, "\x1b]0;BendClaw\x07");
         });
     }
 
@@ -153,6 +156,7 @@ impl SpinnerState {
         }
 
         let glyph = GLYPHS[self.frame % GLYPHS.len()];
+        let title_glyph = TITLE_GLYPHS[self.frame % TITLE_GLYPHS.len()];
         self.frame += 1;
 
         let message = self.message_text();
@@ -194,8 +198,8 @@ impl SpinnerState {
                 stdout,
                 "\r{glyph_color}{glyph}{RESET} {rendered_msg} {DIM}({status}) · esc to interrupt{RESET}\x1b[K"
             );
-            // Set terminal tab title to show spinner glyph
-            let _ = write!(stdout, "\x1b]0;{glyph} Bendclaw\x07");
+            // Set terminal tab title to show activity state.
+            let _ = write!(stdout, "\x1b]0;{title_glyph} BendClaw\x07");
         });
         self.rendered = true;
     }

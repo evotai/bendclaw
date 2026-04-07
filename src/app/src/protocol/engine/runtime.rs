@@ -248,7 +248,7 @@ async fn forward_events(
                 context_window: *context_window,
             }),
             bend_engine::AgentEvent::ContextCompactionEnd { stats, messages } => {
-                let compacted_transcripts = from_agent_messages(&messages);
+                let compacted_transcripts = from_agent_messages(messages);
                 Some(ProtocolEvent::ContextCompactionEnd {
                     level: stats.level,
                     before_message_count: stats.before_message_count,

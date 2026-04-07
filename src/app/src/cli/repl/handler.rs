@@ -31,25 +31,21 @@ use super::selector::SelectorOption;
 use super::sink::ReplSink;
 use crate::agent::AppAgent;
 use crate::agent::ExecutionLimits;
+use crate::agent::TurnRequest;
 use crate::conf::paths;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::protocol::ListSessions;
 use crate::protocol::SessionMeta;
-use crate::session::Session;
-use crate::storage::Storage;
 
 // ---------------------------------------------------------------------------
 // Repl
 // ---------------------------------------------------------------------------
 
 pub struct Repl {
+    agent: Arc<AppAgent>,
     config: Config,
-    storage: Arc<dyn Storage>,
-    limits: ExecutionLimits,
-    system_prompt: String,
     session_id: Option<String>,
     cwd: String,
     completion_state: CompletionStateRef,
@@ -58,7 +54,6 @@ pub struct Repl {
 impl Repl {
     pub fn new(
         config: Config,
-        storage: Arc<dyn Storage>,
         limits: ExecutionLimits,
         append_system_prompt: Option<String>,
         session_id: Option<String>,
@@ -69,12 +64,15 @@ impl Repl {
             .to_string();
 
         let system_prompt = Self::resolve_system_prompt(&cwd, append_system_prompt.as_deref());
+        let agent = Arc::new(
+            AppAgent::new(&config, &cwd)?
+                .with_system_prompt(system_prompt)
+                .with_limits(limits),
+        );
 
         Ok(Self {
+            agent,
             config,
-            storage,
-            limits,
-            system_prompt,
             session_id,
             cwd,
             completion_state: Arc::new(RwLock::new(CompletionState::default())),
@@ -197,52 +195,42 @@ impl Repl {
     }
 
     async fn run_prompt(&mut self, input: &str) -> Result<bool> {
-        let agent = Arc::new(
-            AppAgent::new(self.config.active_llm(), &self.cwd)
-                .with_system_prompt(&self.system_prompt)
-                .with_limits(self.limits.clone()),
-        );
-
-        // Create/open session before spawning so we always have the session_id,
-        // even if the run is cancelled via ESC.
-        let model = agent.llm().model.clone();
-        let session = crate::cli::app::open_session(
-            self.session_id.as_deref(),
-            &self.storage,
-            &self.cwd,
-            &model,
-        )
-        .await?;
-        let session_id = session.meta().await.session_id.clone();
-
+        let request = TurnRequest::text(input).session_id(self.session_id.clone());
+        let agent = self.agent.clone();
         let spinner_state = Arc::new(std::sync::Mutex::new(super::spinner::SpinnerState::new()));
         let sink = Arc::new(ReplSink::new(spinner_state.clone()));
-        let storage = self.storage.clone();
-        let agent_clone = agent.clone();
-        let prompt = input.to_string();
 
         let mut run_task = tokio::spawn(async move {
-            crate::cli::app::run_prompt(agent_clone, prompt, session, sink, storage).await
+            let mut stream = agent.run(request).await?;
+            let session_id = stream.session_id.clone();
+            while let Some(event) = stream.next().await {
+                sink.render(&event);
+            }
+            Ok::<_, BendclawError>(session_id)
         });
         let control = wait_for_run_control(&mut run_task, &spinner_state)?;
         let outcome = match control {
             Some(action) => {
-                agent.close().await;
+                self.agent.abort();
                 run_task.abort();
                 let _ = run_task.await;
                 PromptExit::Cancelled(action == RunControl::Exit)
             }
             None => {
-                let result = run_task
+                let session_id = run_task
                     .await
                     .map_err(|e| BendclawError::Cli(format!("request task failed: {e}")))??;
-                PromptExit::Finished(result, false)
+                PromptExit::Finished(session_id, false)
             }
         };
 
-        // Always update session_id — the session was created before the spawn,
-        // so even on cancel the transcript saved so far is associated with it.
-        self.session_id = Some(session_id);
+        // Always update session_id
+        match &outcome {
+            PromptExit::Finished(sid, _) => self.session_id = Some(sid.clone()),
+            PromptExit::Cancelled(_) => {
+                // session_id may have been set before abort; keep existing
+            }
+        }
 
         match outcome {
             PromptExit::Finished(_result, exit_requested) => Ok(exit_requested),
@@ -254,9 +242,10 @@ impl Repl {
     }
 
     async fn resume_session(&mut self, session_id: &str, print_transcript: bool) -> Result<()> {
-        let session = Session::load(session_id, self.storage.clone())
-            .await?
-            .ok_or_else(|| BendclawError::Session(format!("session not found: {session_id}")))?;
+        let session =
+            self.agent.load_session(session_id).await?.ok_or_else(|| {
+                BendclawError::Session(format!("session not found: {session_id}"))
+            })?;
         let meta = session.meta().await;
         let messages = session.transcript().await;
         let provider = self.config.llm.provider.clone();
@@ -296,7 +285,7 @@ impl Repl {
             return Ok(true);
         };
 
-        let session = match Session::load(session_id, self.storage.clone()).await? {
+        let session = match self.agent.load_session(session_id).await? {
             Some(session) => session,
             None => return Ok(true),
         };
@@ -335,10 +324,7 @@ impl Repl {
     }
 
     async fn print_resume_hint(&self) -> Result<()> {
-        let sessions = self
-            .storage
-            .list_sessions(ListSessions { limit: 20 })
-            .await?;
+        let sessions = self.agent.list_sessions(20).await?;
         if let Some(session) = sessions.into_iter().find(|session| session.cwd == self.cwd) {
             println!(
                 "{DIM}  previous session found. Use {YELLOW}/resume {}{RESET}{DIM} to continue.{RESET}\n",
@@ -427,9 +413,10 @@ impl Repl {
             return Ok(());
         };
 
-        let session = Session::load(session_id, self.storage.clone())
-            .await?
-            .ok_or_else(|| BendclawError::Session(format!("session not found: {session_id}")))?;
+        let session =
+            self.agent.load_session(session_id).await?.ok_or_else(|| {
+                BendclawError::Session(format!("session not found: {session_id}"))
+            })?;
         let messages = session.transcript().await;
 
         if messages.is_empty() {
@@ -494,10 +481,7 @@ impl Repl {
     }
 
     async fn list_selectable_sessions(&self, include_all: bool) -> Result<Vec<SessionMeta>> {
-        let sessions = self
-            .storage
-            .list_sessions(ListSessions { limit: 20 })
-            .await?;
+        let sessions = self.agent.list_sessions(20).await?;
         let filtered = if include_all {
             sessions
         } else {
@@ -596,6 +580,7 @@ impl Repl {
 
         let provider = self.config.llm.provider.clone();
         self.config.provider_config_mut(&provider).model = value.to_string();
+        self.agent.set_llm(self.config.active_llm());
         println!(
             "{DIM}  model -> {value}  ·  provider {}{RESET}\n",
             self.config.llm.provider
@@ -616,6 +601,7 @@ impl Repl {
 
         let provider = ProviderKind::from_str_loose(value)?;
         self.config.llm.provider = provider;
+        self.agent.set_llm(self.config.active_llm());
         println!(
             "{DIM}  provider -> {}  ·  model {}{RESET}\n",
             self.config.llm.provider,
@@ -630,10 +616,7 @@ impl Repl {
             return Err(BendclawError::Cli("missing session id".into()));
         }
 
-        let sessions = self
-            .storage
-            .list_sessions(ListSessions { limit: 100 })
-            .await?;
+        let sessions = self.agent.list_sessions(100).await?;
         let matches: Vec<_> = sessions
             .into_iter()
             .filter(|session| session.session_id == value || session.session_id.starts_with(value))
@@ -654,15 +637,12 @@ impl Repl {
         let Some(session_id) = &self.session_id else {
             return Ok(None);
         };
-        self.storage.get_session(session_id).await
+        self.agent.get_session(session_id).await
     }
 
     async fn refresh_completion_state(&self) -> Result<()> {
         let models = available_models(&self.config);
-        let sessions = self
-            .storage
-            .list_sessions(ListSessions { limit: 20 })
-            .await?;
+        let sessions = self.agent.list_sessions(20).await?;
         let session_ids = sessions
             .into_iter()
             .map(|session| session.session_id)

@@ -17,6 +17,7 @@ chrono.workspace = true
 clap.workspace = true
 crossterm = "0.28"
 futures.workspace = true
+parking_lot.workspace = true
 ratatui = "0.29"
 rustyline = "15"
 similar = { workspace = true }

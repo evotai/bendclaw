@@ -66,7 +66,7 @@ pub enum RunControl {
 }
 
 pub enum PromptExit {
-    Finished(crate::cli::app::PromptResult, bool),
+    Finished(String, bool), // session_id, exit_requested
     Cancelled(bool),
 }
 
@@ -336,7 +336,7 @@ impl Drop for SelectorTerminal {
 // ---------------------------------------------------------------------------
 
 pub fn wait_for_run_control(
-    run_task: &mut tokio::task::JoinHandle<Result<crate::cli::app::PromptResult>>,
+    run_task: &mut tokio::task::JoinHandle<Result<String>>,
     spinner: &std::sync::Mutex<super::spinner::SpinnerState>,
 ) -> Result<Option<RunControl>> {
     let _guard = RawModeGuard::enter()?;

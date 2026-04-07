@@ -15,15 +15,11 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 use crate::agent::AppAgent;
-use crate::cli::app::open_session;
-use crate::cli::app::run_prompt;
+use crate::agent::TurnRequest;
 use crate::conf::Config;
-use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
 use crate::server::stream;
-use crate::storage::open_storage;
-use crate::storage::Storage;
 
 const INDEX_HTML: &str = include_str!("static/index.html");
 
@@ -38,16 +34,14 @@ struct StatusResponse {
 }
 
 pub struct Server {
-    llm: LlmConfig,
-    storage: Arc<dyn Storage>,
+    agent: Arc<AppAgent>,
     session_id: RwLock<Option<String>>,
 }
 
 impl Server {
-    pub fn new(llm: LlmConfig, storage: Arc<dyn Storage>) -> Arc<Self> {
+    pub fn new(agent: Arc<AppAgent>) -> Arc<Self> {
         Arc::new(Self {
-            llm,
-            storage,
+            agent,
             session_id: RwLock::new(None),
         })
     }
@@ -118,39 +112,22 @@ impl Server {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            let current_session_id = self.session_id.read().await.clone();
-            let sink = Arc::new(stream::SseSink::new(tx.clone()));
+            let session_id = self.session_id.read().await.clone();
+            let request = TurnRequest::text(message).session_id(session_id);
 
-            let cwd = std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let agent = Arc::new(AppAgent::new(self.llm.clone(), &cwd));
-            let model = agent.llm().model.clone();
-
-            let session = match open_session(
-                current_session_id.as_deref(),
-                &self.storage,
-                &cwd,
-                &model,
-            )
-            .await
-            {
-                Ok(s) => s,
-                Err(error) => {
-                    let _ = tx.send(stream::error_event(error.to_string())).await;
-                    let _ = tx.send(stream::done_event()).await;
-                    return;
-                }
-            };
-            let session_id = session.meta().await.session_id.clone();
-
-            match run_prompt(agent, message, session, sink, self.storage.clone()).await {
-                Ok(result) => {
-                    *self.session_id.write().await = Some(result.session_id);
+            match self.agent.run(request).await {
+                Ok(mut turn_stream) => {
+                    let sid = turn_stream.session_id.clone();
+                    while let Some(event) = turn_stream.next().await {
+                        for sse in stream::map_run_event(&event) {
+                            if tx.send(sse).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    *self.session_id.write().await = Some(sid);
                 }
                 Err(error) => {
-                    // Session was already created; preserve its id even on error
-                    *self.session_id.write().await = Some(session_id);
                     let _ = tx.send(stream::error_event(error.to_string())).await;
                 }
             }
@@ -163,8 +140,11 @@ impl Server {
 }
 
 pub async fn start(conf: Config) -> Result<()> {
-    let llm = conf.active_llm();
-    let storage = open_storage(&conf.storage)?;
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let agent = Arc::new(AppAgent::new(&conf, &cwd)?);
+
     let storage_backend = match conf.storage.backend {
         crate::conf::StorageBackend::Fs => "fs",
         crate::conf::StorageBackend::Cloud => "cloud",
@@ -173,11 +153,12 @@ pub async fn start(conf: Config) -> Result<()> {
         crate::conf::StorageBackend::Fs => conf.storage.fs.root_dir.display().to_string(),
         crate::conf::StorageBackend::Cloud => conf.storage.cloud.endpoint.clone(),
     };
+    let llm = conf.active_llm();
     let model = llm.model.clone();
     let base_url = llm.base_url.clone().unwrap_or_default();
     let provider = conf.llm.provider.clone();
 
-    let server = Server::new(llm, storage);
+    let server = Server::new(agent);
 
     let addr = format!("{}:{}", conf.server.host, conf.server.port);
     logx!(

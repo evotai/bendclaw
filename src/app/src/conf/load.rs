@@ -5,8 +5,6 @@ use std::path::Path;
 use crate::conf::default_config;
 use crate::conf::paths;
 use crate::conf::Config;
-use crate::conf::ConfigOverrides;
-use crate::conf::LlmConfig;
 use crate::conf::ProviderKind;
 use crate::conf::StorageBackend;
 use crate::error::BendclawError;
@@ -283,33 +281,7 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     Ok(())
 }
 
-fn apply_overrides(config: &mut Config, overrides: &ConfigOverrides) {
-    if let Some(model) = overrides.model.clone() {
-        config
-            .provider_config_mut(&config.llm.provider.clone())
-            .model = model;
-    }
-    if let Some(port) = overrides.port {
-        config.server.port = port;
-    }
-}
-
-pub fn resolve_llm_config(
-    vars: &HashMap<String, String>,
-    cli_model: Option<&str>,
-) -> Result<LlmConfig> {
-    let mut config = default_config()?;
-    apply_env(&mut config, vars)?;
-    if let Some(model) = cli_model {
-        config
-            .provider_config_mut(&config.llm.provider.clone())
-            .model = model.to_string();
-    }
-    config.validate()?;
-    Ok(config.active_llm())
-}
-
-pub fn load_config(overrides: ConfigOverrides) -> Result<Config> {
+pub(super) fn load_config_inner() -> Result<Config> {
     let mut config = default_config()?;
 
     let file_source = load_file_source(&paths::config_file_path()?)?;
@@ -321,7 +293,6 @@ pub fn load_config(overrides: ConfigOverrides) -> Result<Config> {
     let process_vars = load_process_env();
     apply_env(&mut config, &process_vars)?;
 
-    apply_overrides(&mut config, &overrides);
     config.validate()?;
 
     Ok(config)

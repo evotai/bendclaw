@@ -53,6 +53,23 @@ impl Config {
         }
     }
 
+    pub fn load() -> Result<Self> {
+        super::load::load_config_inner()
+    }
+
+    pub fn with_model(mut self, model: Option<String>) -> Self {
+        if let Some(m) = model {
+            let provider = self.llm.provider.clone();
+            self.provider_config_mut(&provider).model = m;
+        }
+        self
+    }
+
+    pub fn with_port(mut self, port: u16) -> Self {
+        self.server.port = port;
+        self
+    }
+
     pub fn validate(&self) -> Result<()> {
         let llm = self.active_llm();
         if llm.api_key.is_empty() {
@@ -76,18 +93,6 @@ impl Config {
         }
 
         Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ConfigOverrides {
-    pub model: Option<String>,
-    pub port: Option<u16>,
-}
-
-impl ConfigOverrides {
-    pub fn new(model: Option<String>, port: Option<u16>) -> Self {
-        Self { model, port }
     }
 }
 

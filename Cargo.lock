@@ -213,6 +213,7 @@ dependencies = [
  "crossterm",
  "futures",
  "insta",
+ "parking_lot",
  "ratatui",
  "rustyline",
  "serde",

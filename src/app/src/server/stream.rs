@@ -1,40 +1,12 @@
 use std::convert::Infallible;
-use std::sync::Arc;
 
-use async_trait::async_trait;
 use serde_json::json;
 
-use crate::cli::app::EventSink;
-use crate::error::BendclawError;
-use crate::error::Result;
 use crate::protocol::AssistantBlock;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
-
-pub(crate) struct SseSink {
-    tx: tokio::sync::mpsc::Sender<SseEvent>,
-}
-
-impl SseSink {
-    pub(crate) fn new(tx: tokio::sync::mpsc::Sender<SseEvent>) -> Self {
-        Self { tx }
-    }
-}
-
-#[async_trait]
-impl EventSink for SseSink {
-    async fn publish(&self, event: Arc<RunEvent>) -> Result<()> {
-        for item in map_run_event(event.as_ref()) {
-            self.tx
-                .send(item)
-                .await
-                .map_err(|e| BendclawError::Run(format!("failed to publish server event: {e}")))?;
-        }
-        Ok(())
-    }
-}
 
 pub fn done_event() -> SseEvent {
     event("done", &json!(null))

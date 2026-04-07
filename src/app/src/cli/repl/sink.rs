@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use async_trait::async_trait;
-
 use super::markdown::MarkdownStream;
 use super::render::build_run_summary;
 use super::render::format_tool_input;
@@ -15,8 +13,6 @@ use super::render::GRAY;
 use super::render::RED;
 use super::render::RESET;
 use super::spinner::SpinnerState;
-use crate::cli::app::EventSink;
-use crate::error::Result;
 use crate::protocol::AssistantBlock;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
@@ -86,15 +82,13 @@ impl Default for ReplSink {
     }
 }
 
-#[async_trait]
-impl EventSink for ReplSink {
-    async fn publish(&self, event: Arc<RunEvent>) -> Result<()> {
+impl ReplSink {
+    pub fn render(&self, event: &RunEvent) {
         // Lock spinner, update state and clear line before any output
         {
-            let mut spinner = self
-                .spinner
-                .lock()
-                .map_err(|_| crate::error::BendclawError::Cli("spinner lock poisoned".into()))?;
+            let Ok(mut spinner) = self.spinner.lock() else {
+                return;
+            };
 
             match &event.payload {
                 RunEventPayload::RunStarted {} => {
@@ -144,10 +138,9 @@ impl EventSink for ReplSink {
             }
         };
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| crate::error::BendclawError::Cli("sink state lock poisoned".into()))?;
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
 
         match &event.payload {
             RunEventPayload::RunStarted {} => {
@@ -213,7 +206,7 @@ impl EventSink for ReplSink {
                         };
                         super::render::print_badge_line(&title, true, true);
                         terminal_writeln(&diff_text);
-                        return Ok(());
+                        return;
                     }
                 }
 
@@ -345,7 +338,5 @@ impl EventSink for ReplSink {
                 terminal_writeln("");
             }
         }
-
-        Ok(())
     }
 }

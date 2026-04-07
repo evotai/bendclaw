@@ -1,16 +1,9 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use bendclaw::agent::AppAgent;
-use bendclaw::cli::app::open_session;
-use bendclaw::cli::app::run_prompt;
-use bendclaw::cli::app::EventSink;
+use bendclaw::agent::TurnRequest;
 use bendclaw::conf::StorageConfig;
-use bendclaw::error::Result;
 use bendclaw::protocol::*;
 use bendclaw::storage::open_storage;
 use tempfile::TempDir;
-use tokio::sync::Mutex;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -48,35 +41,18 @@ fn make_assistant_completed_event(text: &str) -> ProtocolEvent {
     }
 }
 
-struct CollectSink {
-    events: Mutex<Vec<Arc<RunEvent>>>,
-}
-
-impl CollectSink {
-    fn new() -> Self {
-        Self {
-            events: Mutex::new(Vec::new()),
-        }
+async fn collect_events(stream: &mut bendclaw::agent::TurnStream) -> Vec<RunEvent> {
+    let mut events = Vec::new();
+    while let Some(event) = stream.next().await {
+        events.push(event);
     }
-
-    async fn events(&self) -> Vec<Arc<RunEvent>> {
-        self.events.lock().await.clone()
-    }
-}
-
-#[async_trait]
-impl EventSink for CollectSink {
-    async fn publish(&self, event: Arc<RunEvent>) -> Result<()> {
-        self.events.lock().await.push(event);
-        Ok(())
-    }
+    events
 }
 
 #[tokio::test]
 async fn full_pipeline_creates_session_and_run() -> TestResult {
     let root = TempDir::new()?;
     let storage = open_storage(&fs_store(&root))?;
-    let sink = Arc::new(CollectSink::new());
 
     let final_transcripts = vec![
         TranscriptItem::User {
@@ -98,19 +74,13 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
         },
     ];
 
-    let agent = AppAgent::scripted(agent_events, final_transcripts);
+    let agent = AppAgent::scripted(agent_events, final_transcripts, storage.clone());
 
-    let session = open_session(None, &storage, "/tmp", "").await?;
-    run_prompt(
-        agent,
-        "hello".into(),
-        session,
-        sink.clone(),
-        storage.clone(),
-    )
-    .await?;
+    let mut stream = agent.run(TurnRequest::text("hello")).await?;
+    let session_id = stream.session_id.clone();
+    let run_id = stream.run_id.clone();
+    let events = collect_events(&mut stream).await;
 
-    let events = sink.events().await;
     assert!(events.len() >= 4);
 
     let kinds: Vec<_> = events.iter().map(|event| event.kind_str()).collect();
@@ -119,18 +89,15 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
     assert_eq!(kinds[2], "assistant_completed");
     assert_eq!(kinds[3], "run_finished");
 
-    let session_id = &events[0].session_id;
-    let run_id = &events[0].run_id;
-
-    assert!(is_uuid_v7(session_id));
-    assert!(is_uuid_v7(run_id));
+    assert!(is_uuid_v7(&session_id));
+    assert!(is_uuid_v7(&run_id));
     assert!(is_uuid_v7(&events[0].event_id));
 
     let session_meta = storage
-        .get_session(session_id)
+        .get_session(&session_id)
         .await?
         .ok_or_else(|| missing_error("missing session meta"))?;
-    assert_eq!(session_meta.session_id, *session_id);
+    assert_eq!(session_meta.session_id, session_id);
 
     let transcript = storage
         .list_transcript_entries(ListTranscriptEntries {
@@ -156,31 +123,22 @@ async fn full_pipeline_creates_session_and_run() -> TestResult {
 async fn pipeline_marks_failed_when_no_result() -> TestResult {
     let root = TempDir::new()?;
     let storage = open_storage(&fs_store(&root))?;
-    let sink = Arc::new(CollectSink::new());
 
     let agent_events = vec![ProtocolEvent::InputRejected {
         reason: "api failed".into(),
     }];
 
-    let agent = AppAgent::scripted(agent_events, vec![]);
+    let agent = AppAgent::scripted(agent_events, vec![], storage.clone());
 
-    let session = open_session(None, &storage, "/tmp", "").await?;
-    run_prompt(
-        agent,
-        "hello".into(),
-        session,
-        sink.clone(),
-        storage.clone(),
-    )
-    .await?;
+    let mut stream = agent.run(TurnRequest::text("hello")).await?;
+    let session_id = stream.session_id.clone();
+    let run_id = stream.run_id.clone();
+    let _events = collect_events(&mut stream).await;
 
-    let events = sink.events().await;
-    let run_id = &events[0].run_id;
-    let session_id = &events[0].session_id;
     let meta_path = root
         .path()
         .join("sessions")
-        .join(session_id)
+        .join(&session_id)
         .join("runs")
         .join(format!("{run_id}.json"));
     let content = std::fs::read_to_string(meta_path)?;
@@ -215,26 +173,11 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let agent1 = AppAgent::scripted(first_events, first_transcripts);
-    let sink1 = Arc::new(CollectSink::new());
+    let agent1 = AppAgent::scripted(first_events, first_transcripts, storage.clone());
 
-    let session1 = open_session(None, &storage, "/tmp", "").await?;
-    run_prompt(
-        agent1,
-        "hello".into(),
-        session1,
-        sink1.clone(),
-        storage.clone(),
-    )
-    .await?;
-
-    let session_id = sink1
-        .events()
-        .await
-        .first()
-        .ok_or_else(|| missing_error("missing first event"))?
-        .session_id
-        .clone();
+    let mut stream1 = agent1.run(TurnRequest::text("hello")).await?;
+    let session_id = stream1.session_id.clone();
+    let _events1 = collect_events(&mut stream1).await;
 
     let second_transcripts = vec![
         TranscriptItem::User {
@@ -260,18 +203,12 @@ async fn pipeline_resume_session() -> TestResult {
         },
     ];
 
-    let agent2 = AppAgent::scripted(second_events, second_transcripts);
-    let sink2 = Arc::new(CollectSink::new());
+    let agent2 = AppAgent::scripted(second_events, second_transcripts, storage.clone());
 
-    let session2 = open_session(Some(&session_id), &storage, "/tmp", "").await?;
-    run_prompt(
-        agent2,
-        "continue".into(),
-        session2,
-        sink2.clone(),
-        storage.clone(),
-    )
-    .await?;
+    let mut stream2 = agent2
+        .run(TurnRequest::text("continue").session_id(Some(session_id.clone())))
+        .await?;
+    let _events2 = collect_events(&mut stream2).await;
 
     let transcript = storage
         .list_transcript_entries(ListTranscriptEntries {

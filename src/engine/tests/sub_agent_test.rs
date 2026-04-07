@@ -28,6 +28,7 @@ fn make_config(provider: MockProvider) -> AgentLoopConfig {
         compaction_strategy: None,
         execution_limits: None,
         cache_config: CacheConfig::default(),
+        user_agent: None,
         tool_execution: ToolExecutionStrategy::default(),
         retry_config: bendengine::RetryConfig::default(),
         before_turn: None,

@@ -315,6 +315,11 @@ fn build_agent(
         .with_api_key(&options.api_key)
         .with_model_config(model_config)
         .with_system_prompt(&options.system_prompt)
+        .with_user_agent(format!(
+            "bendclaw/{} ({})",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+        ))
         .with_skills(skills)
         .with_tools(bend_engine::tools::default_tools())
         .with_messages(prior_messages)

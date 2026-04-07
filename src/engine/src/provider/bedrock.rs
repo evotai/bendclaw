@@ -49,7 +49,13 @@ impl StreamProvider for BedrockProvider {
             ));
         }
 
-        let client = reqwest::Client::new();
+        let client = match &config.user_agent {
+            Some(ua) => reqwest::Client::builder()
+                .user_agent(ua)
+                .build()
+                .map_err(|e| ProviderError::Other(e.to_string()))?,
+            None => reqwest::Client::new(),
+        };
         let mut request = client.post(&url).header("content-type", "application/json");
 
         // Add AWS auth headers. In a real implementation, this would use SigV4.
@@ -404,6 +410,7 @@ mod tests {
             temperature: None,
             model_config: None,
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_bedrock_body(&config);

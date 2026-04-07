@@ -42,7 +42,13 @@ impl StreamProvider for OpenAiCompatProvider {
         let body = build_request_body(&config, model_config, &compat);
         debug!("OpenAI compat request: model={} url={}", config.model, url);
 
-        let client = reqwest::Client::new();
+        let client = match &config.user_agent {
+            Some(ua) => reqwest::Client::builder()
+                .user_agent(ua)
+                .build()
+                .map_err(|e| ProviderError::Other(e.to_string()))?,
+            None => reqwest::Client::new(),
+        };
         let mut request = client
             .post(&url)
             .header("content-type", "application/json")
@@ -511,6 +517,7 @@ mod tests {
             temperature: None,
             model_config: Some(model_config.clone()),
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_request_body(&config, &model_config, &OpenAiCompat::openai());
@@ -542,6 +549,7 @@ mod tests {
             temperature: Some(0.5),
             model_config: Some(model_config.clone()),
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_request_body(&config, &model_config, &compat);
@@ -638,6 +646,7 @@ mod tests {
             temperature: None,
             model_config: Some(model_config.clone()),
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_request_body(&config, &model_config, &compat);
@@ -677,6 +686,7 @@ mod tests {
             temperature: None,
             model_config: Some(model_config.clone()),
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_request_body(&config, &model_config, &compat);

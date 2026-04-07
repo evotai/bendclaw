@@ -37,7 +37,13 @@ impl StreamProvider for GoogleProvider {
         let body = build_request_body(&config);
         debug!("Google GenAI request: model={}", config.model);
 
-        let client = reqwest::Client::new();
+        let client = match &config.user_agent {
+            Some(ua) => reqwest::Client::builder()
+                .user_agent(ua)
+                .build()
+                .map_err(|e| ProviderError::Other(e.to_string()))?,
+            None => reqwest::Client::new(),
+        };
         let mut request = client.post(&url).header("content-type", "application/json");
 
         for (k, v) in &model_config.headers {
@@ -374,6 +380,7 @@ mod tests {
             temperature: Some(0.7),
             model_config: None,
             cache_config: CacheConfig::default(),
+            user_agent: None,
         };
 
         let body = build_request_body(&config);

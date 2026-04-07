@@ -45,6 +45,9 @@ pub struct StreamConfig {
     pub model_config: Option<ModelConfig>,
     /// Prompt caching configuration. Default: enabled with auto strategy.
     pub cache_config: CacheConfig,
+    /// Custom User-Agent header for HTTP requests.
+    /// When set, providers use this instead of the default reqwest UA.
+    pub user_agent: Option<String>,
 }
 
 /// Tool definition sent to the LLM (schema only, no execute fn)

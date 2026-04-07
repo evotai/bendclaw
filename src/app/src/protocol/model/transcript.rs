@@ -30,6 +30,7 @@ pub enum TranscriptItem {
         thinking: Option<String>,
         #[serde(default)]
         tool_calls: Vec<ToolCallRecord>,
+        stop_reason: String,
     },
     ToolResult {
         tool_call_id: String,

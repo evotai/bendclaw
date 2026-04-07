@@ -35,7 +35,11 @@ pub fn transcript_from_agent_message(message: &bend_engine::AgentMessage) -> Tra
             let text = extract_content_text(content);
             TranscriptItem::User { text }
         }
-        bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant { content, .. }) => {
+        bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
+            content,
+            stop_reason,
+            ..
+        }) => {
             let mut text = String::new();
             let mut thinking = None;
             let mut tool_calls = Vec::new();
@@ -72,6 +76,7 @@ pub fn transcript_from_agent_message(message: &bend_engine::AgentMessage) -> Tra
                 text,
                 thinking,
                 tool_calls,
+                stop_reason: stop_reason.to_string(),
             }
         }
         bend_engine::AgentMessage::Llm(bend_engine::Message::ToolResult {
@@ -106,6 +111,7 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> bend_engine::Agen
             text,
             thinking,
             tool_calls,
+            stop_reason,
         } => {
             let mut content = Vec::new();
 
@@ -128,7 +134,7 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> bend_engine::Agen
 
             bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
                 content,
-                stop_reason: bend_engine::StopReason::Stop,
+                stop_reason: parse_stop_reason(stop_reason),
                 model: String::new(),
                 provider: String::new(),
                 usage: bend_engine::Usage::default(),
@@ -219,4 +225,55 @@ pub fn extract_last_assistant_text(messages: &[bend_engine::AgentMessage]) -> St
             None
         })
         .unwrap_or_default()
+}
+
+/// Parse a stop_reason string back into the engine StopReason enum.
+fn parse_stop_reason(s: &str) -> bend_engine::StopReason {
+    match s {
+        "stop" => bend_engine::StopReason::Stop,
+        "length" => bend_engine::StopReason::Length,
+        "toolUse" => bend_engine::StopReason::ToolUse,
+        "error" => bend_engine::StopReason::Error,
+        "aborted" => bend_engine::StopReason::Aborted,
+        _ => bend_engine::StopReason::Stop,
+    }
+}
+
+/// Build a TranscriptItem::Assistant from AssistantBlock content and stop_reason.
+/// Used by the app event loop to incrementally build transcripts from ProtocolEvents.
+pub fn transcript_from_assistant_completed(
+    content: &[AssistantBlock],
+    stop_reason: &str,
+) -> TranscriptItem {
+    let mut text = String::new();
+    let mut thinking = None;
+    let mut tool_calls = Vec::new();
+
+    for block in content {
+        match block {
+            AssistantBlock::Text { text: t } => {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(t);
+            }
+            AssistantBlock::Thinking { text: t } => {
+                thinking = Some(t.clone());
+            }
+            AssistantBlock::ToolCall { id, name, input } => {
+                tool_calls.push(ToolCallRecord {
+                    id: id.clone(),
+                    name: name.clone(),
+                    input: input.clone(),
+                });
+            }
+        }
+    }
+
+    TranscriptItem::Assistant {
+        text,
+        thinking,
+        tool_calls,
+        stop_reason: stop_reason.to_string(),
+    }
 }

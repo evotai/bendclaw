@@ -111,15 +111,22 @@ fn run_event_round_trip_assistant_completed() {
                 input: 100,
                 output: 50,
             }),
+            stop_reason: "toolUse".into(),
         },
     );
     let json = serde_json::to_string(&event).unwrap();
     let deserialized: RunEvent = serde_json::from_str(&json).unwrap();
 
-    if let RunEventPayload::AssistantCompleted { content, usage } = &deserialized.payload {
+    if let RunEventPayload::AssistantCompleted {
+        content,
+        usage,
+        stop_reason,
+    } = &deserialized.payload
+    {
         assert_eq!(content.len(), 2);
         assert!(usage.is_some());
         assert_eq!(usage.as_ref().unwrap().input, 100);
+        assert_eq!(stop_reason, "toolUse");
     } else {
         panic!("wrong variant");
     }
@@ -244,6 +251,7 @@ fn run_event_context_maps_all_protocol_events() {
     let e = ctx.map(&ProtocolEvent::AssistantCompleted {
         content: vec![],
         usage: None,
+        stop_reason: "stop".into(),
     });
     assert_eq!(e.unwrap().kind_str(), "assistant_completed");
 
@@ -327,6 +335,7 @@ fn sse_map_tool_call_from_assistant_completed() {
                 },
             ],
             usage: None,
+            stop_reason: "toolUse".into(),
         },
     );
     let payloads = map_run_event_json(&event);

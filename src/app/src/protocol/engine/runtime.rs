@@ -112,6 +112,7 @@ async fn forward_events(
                 if let bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
                     content,
                     usage,
+                    stop_reason,
                     ..
                 }) = message
                 {
@@ -123,6 +124,7 @@ async fn forward_events(
                     Some(ProtocolEvent::AssistantCompleted {
                         content: blocks,
                         usage: Some(usage_summary),
+                        stop_reason: stop_reason.to_string(),
                     })
                 } else {
                     None

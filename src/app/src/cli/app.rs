@@ -155,10 +155,13 @@ pub async fn run_prompt(
         .await;
     }
 
-    let mut rx = match agent
-        .start(prompt.clone(), &session.transcript().await)
-        .await
-    {
+    // Load prior transcripts and prepare incremental transcript building
+    let prior_transcripts = session.transcript().await;
+    let mut run_transcripts: Vec<TranscriptItem> = vec![TranscriptItem::User {
+        text: prompt.clone(),
+    }];
+
+    let mut rx = match agent.start(prompt.clone(), &prior_transcripts).await {
         Ok(rx) => rx,
         Err(error) => {
             return fail_run(
@@ -183,6 +186,54 @@ pub async fn run_prompt(
             turn += 1;
         }
 
+        // Incrementally build transcript from events
+        match &protocol_event {
+            crate::protocol::ProtocolEvent::AssistantCompleted {
+                content,
+                stop_reason,
+                ..
+            } => {
+                let item = crate::protocol::engine::transcript::transcript_from_assistant_completed(
+                    content,
+                    stop_reason,
+                );
+                run_transcripts.push(item);
+                got_assistant_response = true;
+            }
+            crate::protocol::ProtocolEvent::ToolEnd {
+                tool_call_id,
+                tool_name,
+                content,
+                is_error,
+            } => {
+                run_transcripts.push(TranscriptItem::ToolResult {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    content: content.clone(),
+                    is_error: *is_error,
+                });
+            }
+            crate::protocol::ProtocolEvent::TurnEnd => {
+                // Persist at each turn boundary so ESC never loses completed turns
+                let full: Vec<TranscriptItem> = prior_transcripts
+                    .iter()
+                    .chain(run_transcripts.iter())
+                    .cloned()
+                    .collect();
+                if let Err(e) = session.apply_and_save(full).await {
+                    logx!(
+                        error,
+                        "run",
+                        "incremental_save_failed",
+                        run_id = %run_id,
+                        session_id = %session_meta.session_id,
+                        error = %e,
+                    );
+                }
+            }
+            _ => {}
+        }
+
         if let crate::protocol::ProtocolEvent::AgentEnd {
             ref transcripts,
             ref usage,
@@ -190,11 +241,8 @@ pub async fn run_prompt(
         } = protocol_event
         {
             got_agent_end = true;
-            got_assistant_response = transcripts
-                .iter()
-                .any(|t| matches!(t, TranscriptItem::Assistant { .. }));
 
-            // Real-time save: persist transcript immediately on AgentEnd
+            // AgentEnd carries authoritative transcripts — use them for final save
             if !transcripts.is_empty() {
                 if let Err(e) = session.apply_and_save(transcripts.clone()).await {
                     logx!(
@@ -244,6 +292,16 @@ pub async fn run_prompt(
             }
             run_events.push(event);
         }
+    }
+
+    // Fallback save: if abort happened before AgentEnd, save what we have
+    if !got_agent_end && run_transcripts.len() > 1 {
+        let full: Vec<TranscriptItem> = prior_transcripts
+            .iter()
+            .chain(run_transcripts.iter())
+            .cloned()
+            .collect();
+        let _ = session.apply_and_save(full).await;
     }
 
     // Final save: pick up any transcripts the real-time path may have missed

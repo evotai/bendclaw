@@ -34,6 +34,7 @@ fn make_assistant_transcript(text: &str) -> TranscriptItem {
         text: text.into(),
         thinking: None,
         tool_calls: vec![],
+        stop_reason: "stop".into(),
     }
 }
 fn make_assistant_completed_event(text: &str) -> ProtocolEvent {
@@ -43,6 +44,7 @@ fn make_assistant_completed_event(text: &str) -> ProtocolEvent {
             input: 10,
             output: 5,
         }),
+        stop_reason: "stop".into(),
     }
 }
 

@@ -69,6 +69,7 @@ async fn round_trip_session_with_transcript() -> TestResult {
                 text: "hi".into(),
                 thinking: None,
                 tool_calls: vec![],
+                stop_reason: "stop".into(),
             },
         ])
         .await;
@@ -115,6 +116,7 @@ async fn resume_session_appends_transcript() -> TestResult {
         text: "reply".into(),
         thinking: None,
         tool_calls: vec![],
+        stop_reason: "stop".into(),
     });
 
     resumed.apply_transcript(extended).await;
@@ -150,6 +152,7 @@ async fn session_title_comes_from_first_user_message() -> TestResult {
                 text: "working".into(),
                 thinking: None,
                 tool_calls: vec![],
+                stop_reason: "stop".into(),
             },
         ])
         .await;
@@ -211,6 +214,7 @@ async fn save_and_load_transcript() -> TestResult {
             text: "hi there".into(),
             thinking: None,
             tool_calls: vec![],
+            stop_reason: "stop".into(),
         }),
     ];
 

@@ -49,6 +49,7 @@ pub enum RunEventPayload {
         content: Vec<AssistantBlock>,
         #[serde(skip_serializing_if = "Option::is_none")]
         usage: Option<UsageSummary>,
+        stop_reason: String,
     },
     ToolStarted {
         tool_call_id: String,
@@ -280,6 +281,7 @@ pub enum ProtocolEvent {
     AssistantCompleted {
         content: Vec<AssistantBlock>,
         usage: Option<UsageSummary>,
+        stop_reason: String,
     },
     ToolStart {
         tool_call_id: String,
@@ -435,12 +437,15 @@ impl<'a> RunEventContext<'a> {
                 delta: delta.clone(),
                 thinking_delta: thinking_delta.clone(),
             },
-            ProtocolEvent::AssistantCompleted { content, usage } => {
-                RunEventPayload::AssistantCompleted {
-                    content: content.clone(),
-                    usage: usage.clone(),
-                }
-            }
+            ProtocolEvent::AssistantCompleted {
+                content,
+                usage,
+                stop_reason,
+            } => RunEventPayload::AssistantCompleted {
+                content: content.clone(),
+                usage: usage.clone(),
+                stop_reason: stop_reason.clone(),
+            },
             ProtocolEvent::ToolStart {
                 tool_call_id,
                 tool_name,

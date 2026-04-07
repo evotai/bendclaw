@@ -45,7 +45,11 @@ impl Completer for ReplHelper {
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
         let prefix = &line[..pos];
 
-        if prefix.starts_with('/') && !prefix.contains(' ') {
+        // Only trigger slash-command completion when the prefix looks like a
+        // command typed by hand (`/word`), not a pasted file path that happens
+        // to start with `/`.  A valid command prefix is `/` followed by ASCII
+        // letters only (no digits, dots, extra slashes, etc.).
+        if is_slash_prefix(prefix) && !prefix.contains(' ') {
             let matches: Vec<Pair> = KNOWN_COMMANDS
                 .iter()
                 .filter(|cmd| cmd.starts_with(prefix))
@@ -68,7 +72,7 @@ impl Completer for ReplHelper {
             return Ok((0, matches));
         }
 
-        if prefix.starts_with('/') {
+        if is_slash_prefix(prefix) {
             if let Some(space_pos) = prefix.find(' ') {
                 let cmd = &prefix[..space_pos];
                 let arg_part = &prefix[space_pos + 1..];
@@ -108,33 +112,59 @@ impl Completer for ReplHelper {
     }
 }
 
-impl Hinter for ReplHelper {
-    type Hint = String;
+/// Custom hint that shows a description alongside the completion text but
+/// only inserts the command-name remainder when the user presses right-arrow.
+pub struct CommandHint {
+    /// The full display string (e.g. `lp  show help`)
+    display: String,
+    /// The part to insert on accept (e.g. `lp`)
+    completion: String,
+}
 
-    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
-        if pos != line.len() || !line.starts_with('/') {
+impl rustyline::hint::Hint for CommandHint {
+    fn display(&self) -> &str {
+        &self.display
+    }
+
+    fn completion(&self) -> Option<&str> {
+        Some(&self.completion)
+    }
+}
+
+impl Hinter for ReplHelper {
+    type Hint = CommandHint;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<CommandHint> {
+        if pos != line.len() || !is_slash_prefix(line) {
             return None;
         }
         let typed = &line[1..];
-        if typed.is_empty() || typed.contains(' ') {
+        if typed.contains(' ') {
             return None;
         }
+
+        // Bare `/` → suggest the most common command
+        if typed.is_empty() {
+            return Some(CommandHint {
+                display: "sessions".to_string(),
+                completion: "sessions".to_string(),
+            });
+        }
+
         for cmd in KNOWN_COMMANDS {
             let cmd_name = &cmd[1..];
             if cmd_name.starts_with(typed) && cmd_name != typed {
                 let rest = &cmd_name[typed.len()..];
-                if let Some(desc) = command_short_description(cmd_name) {
-                    return Some(format!("{rest} - {desc}"));
-                }
-                return Some(rest.to_string());
-            }
-        }
-        for cmd in KNOWN_COMMANDS {
-            let cmd_name = &cmd[1..];
-            if cmd_name == typed {
-                if let Some(desc) = command_short_description(cmd_name) {
-                    return Some(format!(" - {desc}"));
-                }
+                let desc = command_short_description(cmd_name).unwrap_or("");
+                let display = if desc.is_empty() {
+                    rest.to_string()
+                } else {
+                    format!("{rest}  {desc}")
+                };
+                return Some(CommandHint {
+                    display,
+                    completion: rest.to_string(),
+                });
             }
         }
         None
@@ -149,6 +179,24 @@ impl Highlighter for ReplHelper {
 
 impl Validator for ReplHelper {}
 impl rustyline::Helper for ReplHelper {}
+
+/// Returns `true` when `text` looks like a hand-typed slash command prefix:
+/// `/` followed by zero or more ASCII lowercase letters (and optionally `!`).
+/// Pasted paths like `/some/path.rs` or `:/foo/bar` are rejected because
+/// they contain characters that never appear in a valid command name.
+pub fn is_slash_prefix(text: &str) -> bool {
+    let Some(rest) = text.strip_prefix('/') else {
+        return false;
+    };
+    // After the leading `/`, allow only ASCII letters and `!` (for `/clear!`).
+    // A space is fine — it separates the command from its argument — but
+    // anything before the first space must be pure command chars.
+    // A bare `/` (rest is empty) is also valid — it triggers the full command list.
+    let cmd_part = rest.split_once(' ').map_or(rest, |(cmd, _)| cmd);
+    cmd_part
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b == b'!')
+}
 
 pub fn complete_file_path(partial: &str) -> Vec<String> {
     let path = Path::new(partial);

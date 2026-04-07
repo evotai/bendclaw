@@ -91,6 +91,16 @@ pub fn help_command_completions(partial_lower: &str) -> Vec<String> {
         .collect()
 }
 
+/// Returns `true` when `input` starts with a known slash command.
+///
+/// Only the first word (up to the first space) is checked against
+/// `KNOWN_COMMANDS`, so pasted paths like `/some/path.rs` or
+/// `:/foo/bar` are *not* treated as commands.
+pub fn is_slash_command(input: &str) -> bool {
+    let first_word = input.split_whitespace().next().unwrap_or("");
+    KNOWN_COMMANDS.contains(&first_word)
+}
+
 pub fn command_arg_completions(cmd: &str, arg_part: &str, state: &CompletionState) -> Vec<String> {
     let partial = arg_part.to_lowercase();
     match cmd {

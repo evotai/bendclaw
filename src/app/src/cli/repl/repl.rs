@@ -9,6 +9,7 @@ use rustyline::Editor;
 
 use super::commands::command_help;
 use super::commands::command_short_description;
+use super::commands::is_slash_command;
 use super::commands::KNOWN_COMMANDS;
 use super::completion::CompletionState;
 use super::completion::CompletionStateRef;
@@ -122,7 +123,7 @@ impl Repl {
             };
             let input = input.trim();
 
-            if input.starts_with('/') {
+            if is_slash_command(input) {
                 if self.handle_command(input).await? {
                     break;
                 }

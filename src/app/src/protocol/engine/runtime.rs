@@ -113,6 +113,7 @@ async fn forward_events(
                     content,
                     usage,
                     stop_reason,
+                    error_message,
                     ..
                 }) = message
                 {
@@ -125,6 +126,7 @@ async fn forward_events(
                         content: blocks,
                         usage: Some(usage_summary),
                         stop_reason: stop_reason.to_string(),
+                        error_message: error_message.clone(),
                     })
                 } else {
                     None

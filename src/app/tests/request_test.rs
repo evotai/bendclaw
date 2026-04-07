@@ -38,6 +38,7 @@ fn make_assistant_completed_event(text: &str) -> ProtocolEvent {
             output: 5,
         }),
         stop_reason: "stop".into(),
+        error_message: None,
     }
 }
 

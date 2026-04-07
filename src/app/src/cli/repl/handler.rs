@@ -248,10 +248,23 @@ impl Repl {
             })?;
         let meta = session.meta().await;
         let messages = session.transcript().await;
-        let provider = self.config.llm.provider.clone();
 
         self.session_id = Some(meta.session_id.clone());
-        self.config.provider_config_mut(&provider).model = meta.model.clone();
+
+        // Restore the model from the session without clobbering provider defaults.
+        // If the session model matches a known provider config, switch to that provider.
+        // Otherwise, set it on the current provider as a custom override.
+        let session_model = &meta.model;
+        if self.config.anthropic.model == *session_model {
+            self.config.llm.provider = ProviderKind::Anthropic;
+        } else if self.config.openai.model == *session_model {
+            self.config.llm.provider = ProviderKind::OpenAi;
+        } else {
+            // Custom model — apply to current provider without overwriting the default
+            let provider = self.config.llm.provider.clone();
+            self.config.provider_config_mut(&provider).model = session_model.clone();
+        }
+        self.agent.set_llm(self.config.active_llm());
 
         println!(
             "{DIM}  resumed {}  ·  {}  ·  {} turns{RESET}",

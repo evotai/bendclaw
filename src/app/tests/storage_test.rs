@@ -86,6 +86,7 @@ async fn append_and_load_events() -> TestResult {
             }],
             usage: None,
             stop_reason: "stop".into(),
+            error_message: None,
         },
     );
 

@@ -112,6 +112,7 @@ fn run_event_round_trip_assistant_completed() {
                 output: 50,
             }),
             stop_reason: "toolUse".into(),
+            error_message: None,
         },
     );
     let json = serde_json::to_string(&event).unwrap();
@@ -121,6 +122,7 @@ fn run_event_round_trip_assistant_completed() {
         content,
         usage,
         stop_reason,
+        ..
     } = &deserialized.payload
     {
         assert_eq!(content.len(), 2);
@@ -253,6 +255,7 @@ fn run_event_context_maps_all_protocol_events() {
         content: vec![],
         usage: None,
         stop_reason: "stop".into(),
+        error_message: None,
     });
     assert_eq!(e.unwrap().kind_str(), "assistant_completed");
 
@@ -338,6 +341,7 @@ fn sse_map_tool_call_from_assistant_completed() {
             ],
             usage: None,
             stop_reason: "toolUse".into(),
+            error_message: None,
         },
     );
     let payloads = map_run_event_json(&event);

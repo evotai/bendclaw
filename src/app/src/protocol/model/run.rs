@@ -50,6 +50,8 @@ pub enum RunEventPayload {
         #[serde(skip_serializing_if = "Option::is_none")]
         usage: Option<UsageSummary>,
         stop_reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error_message: Option<String>,
     },
     ToolStarted {
         tool_call_id: String,
@@ -284,6 +286,7 @@ pub enum ProtocolEvent {
         content: Vec<AssistantBlock>,
         usage: Option<UsageSummary>,
         stop_reason: String,
+        error_message: Option<String>,
     },
     ToolStart {
         tool_call_id: String,
@@ -444,10 +447,12 @@ impl<'a> RunEventContext<'a> {
                 content,
                 usage,
                 stop_reason,
+                error_message,
             } => RunEventPayload::AssistantCompleted {
                 content: content.clone(),
                 usage: usage.clone(),
                 stop_reason: stop_reason.clone(),
+                error_message: error_message.clone(),
             },
             ProtocolEvent::ToolStart {
                 tool_call_id,

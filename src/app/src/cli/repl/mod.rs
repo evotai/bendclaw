@@ -7,5 +7,6 @@ mod repl;
 mod selector;
 mod sink;
 pub mod spinner;
+pub mod transcript_log;
 
 pub use repl::Repl;

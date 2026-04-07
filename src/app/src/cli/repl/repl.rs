@@ -184,6 +184,7 @@ impl Repl {
         let agent = self.agent.clone();
         let spinner_state = Arc::new(std::sync::Mutex::new(super::spinner::SpinnerState::new()));
         let sink = Arc::new(ReplSink::new(spinner_state.clone()));
+        sink.set_user_prompt(input);
 
         let mut run_task = tokio::spawn(async move {
             let mut stream = agent.run(request).await?;
@@ -302,7 +303,9 @@ impl Repl {
     }
 
     fn print_banner(&self) -> Result<()> {
-        println!("{BOLD}Bendclaw{RESET}");
+        let version = env!("CARGO_PKG_VERSION");
+        let git_sha = env!("BENDCLAW_GIT_SHA");
+        println!("{BOLD}Bendclaw v{version}{RESET} {DIM}({git_sha}){RESET}");
         if let Ok(env_path) = paths::env_file_path() {
             let display = collapse_home(&env_path);
             if env_path.exists() {

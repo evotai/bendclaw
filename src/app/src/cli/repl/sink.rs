@@ -15,6 +15,7 @@ use super::render::GRAY;
 use super::render::RED;
 use super::render::RESET;
 use super::spinner::SpinnerState;
+use super::transcript_log::TranscriptLog;
 use crate::protocol::AssistantBlock;
 use crate::protocol::RunEvent;
 use crate::protocol::RunEventPayload;
@@ -73,6 +74,8 @@ pub fn finish_assistant_stream(state: &mut SinkState) {
 pub struct ReplSink {
     state: Mutex<SinkState>,
     spinner: Arc<Mutex<SpinnerState>>,
+    transcript_log: Mutex<Option<TranscriptLog>>,
+    user_prompt: Mutex<Option<String>>,
 }
 
 impl ReplSink {
@@ -80,6 +83,14 @@ impl ReplSink {
         Self {
             state: Mutex::new(SinkState::default()),
             spinner,
+            transcript_log: Mutex::new(None),
+            user_prompt: Mutex::new(None),
+        }
+    }
+
+    pub fn set_user_prompt(&self, prompt: &str) {
+        if let Ok(mut p) = self.user_prompt.lock() {
+            *p = Some(prompt.to_string());
         }
     }
 
@@ -99,6 +110,24 @@ impl Default for ReplSink {
 
 impl ReplSink {
     pub fn render(&self, event: &RunEvent) {
+        // Lazily open transcript log on first event (session_id is now known)
+        if let Ok(mut log_guard) = self.transcript_log.lock() {
+            if log_guard.is_none() {
+                if let Some(log) = TranscriptLog::open(&event.session_id) {
+                    // Write the user prompt that was buffered before the session started
+                    if let Ok(mut prompt) = self.user_prompt.lock() {
+                        if let Some(p) = prompt.take() {
+                            log.write_user_prompt(&p);
+                        }
+                    }
+                    *log_guard = Some(log);
+                }
+            }
+            if let Some(log) = log_guard.as_ref() {
+                log.write_event(event);
+            }
+        }
+
         // Lock spinner, update state and clear line before any output
         {
             let Ok(mut spinner) = self.spinner.lock() else {

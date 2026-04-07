@@ -88,6 +88,17 @@ impl StreamProvider for OpenAiCompatProvider {
                                 }
                             };
 
+                            // Check for inline error (non-standard but used by some proxies)
+                            if let Some(err) = &chunk.error {
+                                let msg = if err.message.is_empty() {
+                                    msg.data.clone()
+                                } else {
+                                    err.message.clone()
+                                };
+                                warn!("OpenAI stream error: {}", msg);
+                                return Err(ProviderError::Api(msg));
+                            }
+
                             // Process usage
                             if let Some(u) = &chunk.usage {
                                 usage.input = u.prompt_tokens;
@@ -416,6 +427,14 @@ struct OpenAiChunk {
     choices: Vec<OpenAiChoice>,
     #[serde(default)]
     usage: Option<OpenAiUsage>,
+    #[serde(default)]
+    error: Option<OpenAiErrorBody>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiErrorBody {
+    #[serde(default)]
+    message: String,
 }
 
 #[derive(Deserialize)]
@@ -665,5 +684,26 @@ mod tests {
         let tool_msg = msgs.last().unwrap();
         // Text-only: content should be a plain string
         assert_eq!(tool_msg["content"], "hello");
+    }
+
+    #[test]
+    fn test_chunk_with_inline_error_parses_error_field() {
+        let data = r#"{"error":{"message":"Usage not included in your plan","type":"usage_not_included","param":null,"code":null,"plan_type":"pro"}}"#;
+        let chunk: OpenAiChunk = serde_json::from_str(data).unwrap();
+        assert!(chunk.choices.is_empty());
+        assert!(chunk.usage.is_none());
+        assert!(chunk.error.is_some());
+        assert_eq!(
+            chunk.error.unwrap().message,
+            "Usage not included in your plan"
+        );
+    }
+
+    #[test]
+    fn test_chunk_without_error_has_none() {
+        let data = r#"{"id":"x","object":"chat.completion.chunk","created":0,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
+        let chunk: OpenAiChunk = serde_json::from_str(data).unwrap();
+        assert!(chunk.error.is_none());
+        assert_eq!(chunk.choices.len(), 1);
     }
 }

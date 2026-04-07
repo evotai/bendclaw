@@ -866,13 +866,13 @@ async fn test_retry_exhausted_returns_error() {
 }
 
 #[tokio::test]
-async fn test_no_retry_on_auth_error() {
+async fn test_retry_on_auth_error_succeeds() {
     let provider: std::sync::Arc<FailThenSucceedProvider> =
         std::sync::Arc::new(FailThenSucceedProvider {
             fail_count: std::sync::atomic::AtomicUsize::new(0),
             max_failures: 1,
             error: ProviderError::Auth("invalid key".into()),
-            inner: MockProvider::text("never reached"),
+            inner: MockProvider::text("recovered"),
         });
 
     let config = AgentLoopConfig {
@@ -892,7 +892,12 @@ async fn test_no_retry_on_auth_error() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::default(), // 3 retries, but auth is not retryable
+        retry_config: bendengine::RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 10,
+            backoff_multiplier: 1.0,
+            max_delay_ms: 50,
+        },
         before_turn: None,
         after_turn: None,
         on_error: None,
@@ -911,13 +916,16 @@ async fn test_no_retry_on_auth_error() {
 
     agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
 
-    // Should have been called exactly once — no retries for auth errors
+    // Should have retried after the auth error and succeeded on 2nd attempt
+    // fail_count is incremented on every call (fail + success), so 1 fail + 1 success = 2
     assert_eq!(
         provider
             .fail_count
             .load(std::sync::atomic::Ordering::SeqCst),
-        1
+        2
     );
+    // Context should have the recovered response
+    assert!(!context.messages.is_empty());
 }
 
 #[tokio::test]

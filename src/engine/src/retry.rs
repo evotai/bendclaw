@@ -58,10 +58,14 @@ impl RetryConfig {
 impl ProviderError {
     /// Whether this error is safe to retry.
     ///
-    /// Retryable: rate limits (429) and network/transient errors.
-    /// Not retryable: auth errors, API errors (bad request), cancellation.
+    /// Retryable: rate limits (429), network/transient errors, API errors (400),
+    /// and auth errors (401/403) — these can be transient.
+    /// Not retryable: context overflow, cancellation.
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::RateLimited { .. } | Self::Network(_))
+        matches!(
+            self,
+            Self::RateLimited { .. } | Self::Network(_) | Self::Api(_) | Self::Auth(_)
+        )
     }
 
     /// If this is a rate limit with a server-specified retry delay, return it.

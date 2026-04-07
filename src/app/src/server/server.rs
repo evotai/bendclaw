@@ -143,7 +143,7 @@ impl Server {
 pub async fn start(conf: Config) -> Result<()> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
+        .map_err(|e| BendclawError::Run(format!("failed to get cwd: {e}")))?;
     let system_prompt = SystemPrompt::new(&cwd)
         .with_env()
         .with_project_context()
@@ -177,6 +177,19 @@ pub async fn start(conf: Config) -> Result<()> {
         storage_backend = storage_backend,
         storage_target = %storage_target,
     );
+
+    eprintln!();
+    eprintln!("  bendclaw server");
+    eprintln!("  ───────────────────────────────────");
+    eprintln!("  address:  http://{addr}");
+    eprintln!("  provider: {provider:?}");
+    eprintln!("  model:    {model}");
+    if !base_url.is_empty() {
+        eprintln!("  base_url: {base_url}");
+    }
+    eprintln!("  storage:  {storage_backend} ({storage_target})");
+    eprintln!("  ───────────────────────────────────");
+    eprintln!();
 
     server
         .start(conf.server.host.clone(), conf.server.port)

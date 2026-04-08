@@ -1,4 +1,4 @@
-use bendclaw::protocol::*;
+use bendclaw::agent::*;
 
 #[test]
 fn run_event_round_trip_run_started() {

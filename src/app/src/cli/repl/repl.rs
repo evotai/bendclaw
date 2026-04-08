@@ -33,13 +33,13 @@ use super::selector::SelectorOption;
 use super::sink::ReplSink;
 use crate::agent::AppAgent;
 use crate::agent::ExecutionLimits;
+use crate::agent::SessionMeta;
 use crate::agent::TurnRequest;
 use crate::conf::paths;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::protocol::SessionMeta;
 
 // ---------------------------------------------------------------------------
 // Repl

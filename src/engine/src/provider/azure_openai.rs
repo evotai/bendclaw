@@ -41,13 +41,7 @@ impl StreamProvider for AzureOpenAiProvider {
         let body = build_azure_request_body(&config);
         debug!("Azure OpenAI request: model={} url={}", config.model, url);
 
-        let client = match &config.user_agent {
-            Some(ua) => reqwest::Client::builder()
-                .user_agent(ua)
-                .build()
-                .map_err(|e| ProviderError::Other(e.to_string()))?,
-            None => reqwest::Client::new(),
-        };
+        let client = reqwest::Client::new();
         let mut request = client
             .post(&url)
             .header("content-type", "application/json")

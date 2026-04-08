@@ -77,9 +77,6 @@ pub struct AgentLoopConfig {
     /// Prompt caching configuration.
     pub cache_config: CacheConfig,
 
-    /// Custom User-Agent header for HTTP requests to LLM providers.
-    pub user_agent: Option<String>,
-
     /// Tool execution strategy (sequential, parallel, or batched).
     pub tool_execution: ToolExecutionStrategy,
 
@@ -558,7 +555,6 @@ async fn stream_assistant_response(
             temperature: config.temperature,
             model_config: config.model_config.clone(),
             cache_config: config.cache_config.clone(),
-            user_agent: config.user_agent.clone(),
         };
 
         // Emit LlmCallStart before each provider attempt

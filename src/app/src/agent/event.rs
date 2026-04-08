@@ -1,64 +1,13 @@
+//! Event system — RunEvent, RunEventPayload, ProtocolEvent, RunEventContext.
+
 use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::transcript::TranscriptItem;
-
-// ---------------------------------------------------------------------------
-// AssistantBlock + UsageSummary (shared by RunEventPayload and ProtocolEvent)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum AssistantBlock {
-    Text {
-        text: String,
-    },
-    ToolCall {
-        id: String,
-        name: String,
-        input: serde_json::Value,
-    },
-    Thinking {
-        text: String,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageSummary {
-    pub input: u64,
-    pub output: u64,
-    #[serde(default)]
-    pub cache_read: u64,
-    #[serde(default)]
-    pub cache_write: u64,
-}
-
-impl UsageSummary {
-    /// Cache hit rate as a fraction (0.0–1.0).
-    pub fn cache_hit_rate(&self) -> f64 {
-        let total_input = self.input + self.cache_read + self.cache_write;
-        if total_input == 0 {
-            return 0.0;
-        }
-        self.cache_read as f64 / total_input as f64
-    }
-}
-
-/// Timing metrics for a single LLM streaming call.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LlmCallMetrics {
-    /// Total wall-clock time (ms).
-    pub duration_ms: u64,
-    /// Time to first byte — request start to stream start (ms).
-    pub ttfb_ms: u64,
-    /// Time to first token — request start to first text/thinking delta (ms).
-    pub ttft_ms: u64,
-    /// Streaming duration — first delta to completion (ms).
-    pub streaming_ms: u64,
-    /// Number of delta chunks received.
-    pub chunk_count: u64,
-}
+use super::types::AssistantBlock;
+use super::types::LlmCallMetrics;
+use super::types::TranscriptItem;
+use super::types::UsageSummary;
 
 // ---------------------------------------------------------------------------
 // RunEventPayload — strongly typed event payload

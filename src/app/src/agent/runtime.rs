@@ -1,16 +1,18 @@
+//! Engine runtime — start engine, forward events, build agent.
+
 use tokio::sync::mpsc;
 
-use super::transcript::assistant_blocks_from_content;
-use super::transcript::extract_content_text;
-use super::transcript::from_agent_messages;
-use super::transcript::into_agent_messages;
-use super::transcript::total_usage;
+use super::convert::assistant_blocks_from_content;
+use super::convert::extract_content_text;
+use super::convert::from_agent_messages;
+use super::convert::into_agent_messages;
+use super::convert::total_usage;
+use super::event::ProtocolEvent;
+use super::types::LlmCallMetrics;
+use super::types::TranscriptItem;
+use super::types::UsageSummary;
 use crate::conf::ProviderKind;
 use crate::error::Result;
-use crate::protocol::model::run::LlmCallMetrics;
-use crate::protocol::model::run::ProtocolEvent;
-use crate::protocol::model::run::UsageSummary;
-use crate::protocol::model::transcript::TranscriptItem;
 
 pub struct EngineOptions {
     pub provider: ProviderKind,
@@ -18,7 +20,7 @@ pub struct EngineOptions {
     pub api_key: String,
     pub base_url: Option<String>,
     pub system_prompt: String,
-    pub limits: crate::agent::ExecutionLimits,
+    pub limits: super::ExecutionLimits,
     pub skills_dirs: Vec<std::path::PathBuf>,
     pub tools: Vec<Box<dyn bend_engine::AgentTool>>,
 }
@@ -349,20 +351,13 @@ fn build_agent(
         }
     };
 
-    let agent = provider_agent
+    provider_agent
         .with_model(&options.model)
         .with_api_key(&options.api_key)
         .with_model_config(model_config)
         .with_system_prompt(&options.system_prompt)
-        .with_user_agent(format!(
-            "bendclaw/{} ({})",
-            env!("CARGO_PKG_VERSION"),
-            std::env::consts::OS,
-        ))
         .with_skills(skills)
         .with_messages(prior_messages)
         .with_execution_limits(limits)
-        .with_tools(options.tools);
-
-    agent
+        .with_tools(options.tools)
 }

@@ -1,7 +1,24 @@
 mod agent;
+pub mod convert;
+pub mod event;
+pub mod runtime;
+pub mod types;
 
 pub use agent::AppAgent;
 pub use agent::ExecutionLimits;
 pub use agent::ToolMode;
 pub use agent::TurnRequest;
 pub use agent::TurnStream;
+pub use event::ProtocolEvent;
+pub use event::RunEvent;
+pub use event::RunEventContext;
+pub use event::RunEventPayload;
+pub use types::AssistantBlock;
+pub use types::ListSessions;
+pub use types::ListTranscriptEntries;
+pub use types::LlmCallMetrics;
+pub use types::SessionMeta;
+pub use types::ToolCallRecord;
+pub use types::TranscriptEntry;
+pub use types::TranscriptItem;
+pub use types::UsageSummary;

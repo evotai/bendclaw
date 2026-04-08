@@ -2,9 +2,9 @@ use std::convert::Infallible;
 
 use serde_json::json;
 
-use crate::protocol::AssistantBlock;
-use crate::protocol::RunEvent;
-use crate::protocol::RunEventPayload;
+use crate::agent::AssistantBlock;
+use crate::agent::RunEvent;
+use crate::agent::RunEventPayload;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
 

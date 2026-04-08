@@ -1,5 +1,5 @@
+use bendclaw::agent::*;
 use bendclaw::conf::StorageConfig;
-use bendclaw::protocol::*;
 use bendclaw::storage::open_storage;
 use tempfile::TempDir;
 

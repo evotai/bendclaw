@@ -1,7 +1,9 @@
-use super::super::model::run::AssistantBlock;
-use super::super::model::run::UsageSummary;
-use super::super::model::transcript::ToolCallRecord;
-use super::super::model::transcript::TranscriptItem;
+//! Message conversion — between engine AgentMessages and TranscriptItems.
+
+use super::types::AssistantBlock;
+use super::types::ToolCallRecord;
+use super::types::TranscriptItem;
+use super::types::UsageSummary;
 
 /// Extract text content from engine Content blocks.
 pub fn extract_content_text(content: &[bend_engine::Content]) -> String {

@@ -59,7 +59,6 @@ pub struct Agent {
     context_management_disabled: bool,
     pub execution_limits: Option<ExecutionLimits>,
     pub cache_config: CacheConfig,
-    pub user_agent: Option<String>,
     pub tool_execution: ToolExecutionStrategy,
     pub retry_config: crate::retry::RetryConfig,
 
@@ -104,7 +103,6 @@ impl Agent {
             context_management_disabled: false,
             execution_limits: Some(ExecutionLimits::default()),
             cache_config: CacheConfig::default(),
-            user_agent: None,
             tool_execution: ToolExecutionStrategy::default(),
             retry_config: crate::retry::RetryConfig::default(),
             before_turn: None,
@@ -162,11 +160,6 @@ impl Agent {
 
     pub fn with_cache_config(mut self, config: CacheConfig) -> Self {
         self.cache_config = config;
-        self
-    }
-
-    pub fn with_user_agent(mut self, ua: impl Into<String>) -> Self {
-        self.user_agent = Some(ua.into());
         self
     }
 
@@ -688,7 +681,6 @@ impl Agent {
             compaction_strategy: self.compaction_strategy.clone(),
             execution_limits: self.execution_limits.clone(),
             cache_config: self.cache_config.clone(),
-            user_agent: self.user_agent.clone(),
             tool_execution: self.tool_execution.clone(),
             retry_config: self.retry_config.clone(),
             get_follow_up_messages: Some(Box::new(move || {

@@ -4,12 +4,12 @@ use std::sync::OnceLock;
 
 use parking_lot::Mutex;
 
+use crate::agent::TranscriptItem;
+use crate::agent::UsageSummary;
 pub use crate::cli::format::format_tool_input;
 pub use crate::cli::format::format_tool_input_lines;
 pub use crate::cli::format::summarize_inline;
 pub use crate::cli::format::truncate;
-use crate::protocol::TranscriptItem;
-use crate::protocol::UsageSummary;
 
 pub const RESET: &str = "\x1b[0m";
 pub const BOLD: &str = "\x1b[1m";
@@ -104,7 +104,7 @@ pub fn build_run_summary(
 ///   timing   3.2s · ttfb 245ms (8%) · ttft 892ms (28%) · stream 2.3s (72%)
 pub fn format_llm_completed_lines(
     usage: &UsageSummary,
-    metrics: Option<&crate::protocol::LlmCallMetrics>,
+    metrics: Option<&crate::agent::LlmCallMetrics>,
 ) -> Vec<String> {
     let mut lines = Vec::new();
 
@@ -178,7 +178,7 @@ pub struct RunSummaryData {
     pub tool_call_count: u32,
     pub system_prompt_tokens: usize,
     pub last_message_stats: Option<MessageStats>,
-    pub llm_metrics: Vec<crate::protocol::LlmCallMetrics>,
+    pub llm_metrics: Vec<crate::agent::LlmCallMetrics>,
     pub llm_output_tokens: Vec<u64>,
     pub tool_stats: Vec<(String, ToolAggStats)>,
     pub compact_history: Vec<CompactRecord>,

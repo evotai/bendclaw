@@ -8,11 +8,11 @@ use chrono::Utc;
 
 use super::render::build_run_summary;
 use super::render::count_messages_by_role;
+use crate::agent::AssistantBlock;
+use crate::agent::RunEvent;
+use crate::agent::RunEventPayload;
 use crate::cli::format::format_tool_input_lines;
 use crate::cli::format::summarize_inline;
-use crate::protocol::AssistantBlock;
-use crate::protocol::RunEvent;
-use crate::protocol::RunEventPayload;
 
 // ---------------------------------------------------------------------------
 // TranscriptLog

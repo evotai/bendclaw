@@ -1,5 +1,5 @@
+use bendclaw::agent::RunEventPayload;
 use bendclaw::cli::repl::transcript_log::format_event;
-use bendclaw::protocol::RunEventPayload;
 
 #[test]
 fn format_tool_started() {
@@ -67,7 +67,7 @@ fn format_delta_is_empty() {
 #[test]
 fn format_assistant_text() {
     let payload = RunEventPayload::AssistantCompleted {
-        content: vec![bendclaw::protocol::AssistantBlock::Text {
+        content: vec![bendclaw::agent::AssistantBlock::Text {
             text: "Hello world".into(),
         }],
         usage: None,
@@ -94,7 +94,7 @@ fn format_assistant_error_stop_reason() {
 fn format_run_finished() {
     let payload = RunEventPayload::RunFinished {
         text: "done".into(),
-        usage: bendclaw::protocol::UsageSummary {
+        usage: bendclaw::agent::UsageSummary {
             input: 100,
             output: 50,
             cache_read: 0,
@@ -134,7 +134,7 @@ fn format_llm_call_completed() {
     let payload = RunEventPayload::LlmCallCompleted {
         turn: 1,
         attempt: 0,
-        usage: bendclaw::protocol::UsageSummary {
+        usage: bendclaw::agent::UsageSummary {
             input: 200,
             output: 80,
             cache_read: 0,
@@ -170,9 +170,9 @@ fn format_timestamp_invalid_falls_back() {
 
 #[test]
 fn write_event_includes_timestamp() {
+    use bendclaw::agent::RunEvent;
+    use bendclaw::agent::RunEventPayload;
     use bendclaw::cli::repl::transcript_log::TranscriptLog;
-    use bendclaw::protocol::RunEvent;
-    use bendclaw::protocol::RunEventPayload;
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.log");

@@ -7,6 +7,8 @@ use super::format::format_tool_input;
 use super::format::truncate;
 use crate::agent::AppAgent;
 use crate::agent::ExecutionLimits;
+use crate::agent::RunEvent;
+use crate::agent::RunEventPayload;
 use crate::agent::TurnRequest;
 use crate::cli::args::CliArgs;
 use crate::cli::args::CliCommand;
@@ -15,8 +17,6 @@ use crate::cli::repl::Repl;
 use crate::conf::Config;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::protocol::RunEvent;
-use crate::protocol::RunEventPayload;
 use crate::server;
 
 // ---------------------------------------------------------------------------
@@ -143,12 +143,12 @@ fn print_event_text(event: &RunEvent) {
         RunEventPayload::AssistantCompleted { content, .. } => {
             for block in content {
                 match block {
-                    crate::protocol::AssistantBlock::Text { .. } => {}
-                    crate::protocol::AssistantBlock::ToolCall { name, input, .. } => {
+                    crate::agent::AssistantBlock::Text { .. } => {}
+                    crate::agent::AssistantBlock::ToolCall { name, input, .. } => {
                         let detail = format_tool_input(input);
                         eprintln!("[call: {name}] {detail}");
                     }
-                    crate::protocol::AssistantBlock::Thinking { .. } => {}
+                    crate::agent::AssistantBlock::Thinking { .. } => {}
                 }
             }
         }

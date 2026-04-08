@@ -6,18 +6,19 @@ use bend_base::logx;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 
+use super::convert::transcript_from_assistant_completed;
+use super::event::ProtocolEvent;
+use super::event::RunEvent;
+use super::event::RunEventContext;
+use super::runtime::EngineHandle;
+use super::runtime::EngineOptions;
+use super::types::ListSessions;
+use super::types::SessionMeta;
+use super::types::TranscriptItem;
 use crate::conf::Config;
 use crate::conf::LlmConfig;
 use crate::error::BendclawError;
 use crate::error::Result;
-use crate::protocol::engine::EngineHandle;
-use crate::protocol::engine::EngineOptions;
-use crate::protocol::ListSessions;
-use crate::protocol::ProtocolEvent;
-use crate::protocol::RunEvent;
-use crate::protocol::RunEventContext;
-use crate::protocol::SessionMeta;
-use crate::protocol::TranscriptItem;
 use crate::session::Session;
 use crate::storage::open_storage;
 use crate::storage::Storage;
@@ -297,11 +298,7 @@ impl AppAgent {
                         error_message,
                         ..
                     } => {
-                        let item =
-                            crate::protocol::engine::transcript::transcript_from_assistant_completed(
-                                content,
-                                stop_reason,
-                            );
+                        let item = transcript_from_assistant_completed(content, stop_reason);
                         run_transcripts.push(item);
 
                         // Emit an Error RunEvent when the LLM turn ended with an error
@@ -509,7 +506,7 @@ impl AppAgent {
             tools,
         };
         let (rx, engine_handle) =
-            crate::protocol::engine::start_engine(options, prior_transcripts, prompt).await?;
+            super::runtime::start_engine(options, prior_transcripts, prompt).await?;
 
         *self.engine.write() = Some(engine_handle);
         Ok(rx)

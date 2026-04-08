@@ -45,9 +45,6 @@ pub struct StreamConfig {
     pub model_config: Option<ModelConfig>,
     /// Prompt caching configuration. Default: enabled with auto strategy.
     pub cache_config: CacheConfig,
-    /// Custom User-Agent header for HTTP requests.
-    /// When set, providers use this instead of the default reqwest UA.
-    pub user_agent: Option<String>,
 }
 
 /// Tool definition sent to the LLM (schema only, no execute fn)
@@ -111,6 +108,9 @@ impl ProviderError {
             }
         } else if status == 401 || status == 403 {
             Self::Auth(message.to_string())
+        } else if status == 400 || status == 404 || status == 405 || status == 422 {
+            // Client errors that won't resolve on retry
+            Self::Other(message.to_string())
         } else {
             Self::Api(message.to_string())
         }
@@ -145,7 +145,17 @@ pub async fn classify_eventsource_error(error: reqwest_eventsource::Error) -> Pr
                 ),
             )
         }
-        reqwest_eventsource::Error::Transport(e) => ProviderError::Network(e.to_string()),
+        reqwest_eventsource::Error::Transport(e) => {
+            // Walk the error source chain for more diagnostic context
+            let mut detail = e.to_string();
+            let mut source = std::error::Error::source(&e);
+            while let Some(cause) = source {
+                detail.push_str(" -> ");
+                detail.push_str(&cause.to_string());
+                source = cause.source();
+            }
+            ProviderError::Network(detail)
+        }
         other => ProviderError::Other(other.to_string()),
     }
 }
@@ -278,10 +288,10 @@ mod tests {
     }
 
     #[test]
-    fn classify_regular_api_error() {
+    fn classify_400_not_retryable() {
         let err = ProviderError::classify(400, "invalid request format");
-        assert!(matches!(err, ProviderError::Api(_)));
-        assert!(!err.is_context_overflow());
+        assert!(matches!(err, ProviderError::Other(_)));
+        assert!(!err.is_retryable());
     }
 
     #[test]
@@ -295,5 +305,26 @@ mod tests {
         assert!(!is_context_overflow_message("invalid api key"));
         assert!(!is_context_overflow_message("internal server error"));
         assert!(!is_context_overflow_message(""));
+    }
+
+    #[test]
+    fn classify_404_not_retryable() {
+        let err = ProviderError::classify(404, "model not found");
+        assert!(matches!(err, ProviderError::Other(_)));
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn classify_405_not_retryable() {
+        let err = ProviderError::classify(405, "method not allowed");
+        assert!(matches!(err, ProviderError::Other(_)));
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn classify_422_not_retryable() {
+        let err = ProviderError::classify(422, "unprocessable entity");
+        assert!(matches!(err, ProviderError::Other(_)));
+        assert!(!err.is_retryable());
     }
 }

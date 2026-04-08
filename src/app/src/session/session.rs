@@ -3,11 +3,11 @@ use std::sync::Arc;
 use chrono::Utc;
 use tokio::sync::RwLock;
 
+use crate::agent::ListTranscriptEntries;
+use crate::agent::SessionMeta;
+use crate::agent::TranscriptEntry;
+use crate::agent::TranscriptItem;
 use crate::error::Result;
-use crate::protocol::ListTranscriptEntries;
-use crate::protocol::SessionMeta;
-use crate::protocol::TranscriptEntry;
-use crate::protocol::TranscriptItem;
 use crate::storage::Storage;
 
 pub struct Session {

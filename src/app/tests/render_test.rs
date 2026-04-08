@@ -175,7 +175,7 @@ fn tool_result_lines_no_truncation_under_limit() {
 
 #[test]
 fn format_llm_completed_lines_without_metrics() {
-    let usage = bendclaw::protocol::UsageSummary {
+    let usage = bendclaw::agent::UsageSummary {
         input: 61001,
         output: 248,
         cache_read: 0,
@@ -189,13 +189,13 @@ fn format_llm_completed_lines_without_metrics() {
 
 #[test]
 fn format_llm_completed_lines_with_metrics_and_throughput() {
-    let usage = bendclaw::protocol::UsageSummary {
+    let usage = bendclaw::agent::UsageSummary {
         input: 61001,
         output: 248,
         cache_read: 0,
         cache_write: 0,
     };
-    let metrics = bendclaw::protocol::LlmCallMetrics {
+    let metrics = bendclaw::agent::LlmCallMetrics {
         duration_ms: 3200,
         ttfb_ms: 245,
         ttft_ms: 892,
@@ -215,13 +215,13 @@ fn format_llm_completed_lines_with_metrics_and_throughput() {
 
 #[test]
 fn format_llm_completed_lines_skips_throughput_when_streaming_missing() {
-    let usage = bendclaw::protocol::UsageSummary {
+    let usage = bendclaw::agent::UsageSummary {
         input: 200,
         output: 80,
         cache_read: 0,
         cache_write: 0,
     };
-    let metrics = bendclaw::protocol::LlmCallMetrics {
+    let metrics = bendclaw::agent::LlmCallMetrics {
         duration_ms: 900,
         ttfb_ms: 120,
         ttft_ms: 0,
@@ -252,7 +252,7 @@ fn make_summary_data() -> RunSummaryData {
     RunSummaryData {
         duration_ms: 226500,
         turn_count: 11,
-        usage: bendclaw::protocol::UsageSummary {
+        usage: bendclaw::agent::UsageSummary {
             input: 750142,
             output: 1796,
             cache_read: 710000,
@@ -271,14 +271,14 @@ fn make_summary_data() -> RunSummaryData {
             tool_details: vec![],
         }),
         llm_metrics: vec![
-            bendclaw::protocol::LlmCallMetrics {
+            bendclaw::agent::LlmCallMetrics {
                 duration_ms: 41200,
                 ttfb_ms: 300,
                 ttft_ms: 1800,
                 streaming_ms: 39000,
                 chunk_count: 50,
             },
-            bendclaw::protocol::LlmCallMetrics {
+            bendclaw::agent::LlmCallMetrics {
                 duration_ms: 22800,
                 ttfb_ms: 280,
                 ttft_ms: 1400,
@@ -371,7 +371,7 @@ fn format_run_summary_no_compact_when_empty() {
 fn format_run_summary_llm_bars_are_aligned() {
     // Use metrics with varying index widths (#1 vs #12) and duration widths (8.5s vs 46.9s)
     let mut data = make_summary_data();
-    let base_metric = bendclaw::protocol::LlmCallMetrics {
+    let base_metric = bendclaw::agent::LlmCallMetrics {
         duration_ms: 5000,
         ttfb_ms: 200,
         ttft_ms: 800,
@@ -380,7 +380,7 @@ fn format_run_summary_llm_bars_are_aligned() {
     };
     // 12 calls so indices range from #1 to #12
     data.llm_metrics = (0..12)
-        .map(|i| bendclaw::protocol::LlmCallMetrics {
+        .map(|i| bendclaw::agent::LlmCallMetrics {
             duration_ms: if i == 0 {
                 46900
             } else if i == 4 {

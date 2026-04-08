@@ -42,13 +42,7 @@ impl StreamProvider for AnthropicProvider {
             config.model, is_oauth, url
         );
 
-        let client = match &config.user_agent {
-            Some(ua) => reqwest::Client::builder()
-                .user_agent(ua)
-                .build()
-                .map_err(|e| ProviderError::Other(e.to_string()))?,
-            None => reqwest::Client::new(),
-        };
+        let client = reqwest::Client::new();
         let mut builder = client.post(&url).header("content-type", "application/json");
 
         if is_custom {
@@ -63,6 +57,7 @@ impl StreamProvider for AnthropicProvider {
                     "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14",
                 )
                 .header("anthropic-dangerous-direct-browser-access", "true")
+                .header("user-agent", "claude-cli/2.1.2 (external, cli)")
                 .header("x-app", "cli");
         } else {
             // Official endpoint, API key
@@ -580,7 +575,6 @@ mod tests {
             temperature: None,
             model_config: None,
             cache_config: cache,
-            user_agent: None,
         }
     }
 
@@ -722,7 +716,6 @@ mod tests {
                 enabled: false,
                 strategy: CacheStrategy::Disabled,
             },
-            user_agent: None,
         };
 
         let body = build_request_body(&config, false);
@@ -777,7 +770,6 @@ mod tests {
                 enabled: false,
                 strategy: CacheStrategy::Disabled,
             },
-            user_agent: None,
         };
 
         let body = build_request_body(&config, false);
@@ -831,7 +823,6 @@ mod tests {
             temperature: None,
             model_config: None,
             cache_config: CacheConfig::default(),
-            user_agent: None,
         };
         let body = build_request_body(&config, false);
         let msgs = body["messages"].as_array().unwrap();
@@ -886,7 +877,6 @@ mod tests {
             temperature: None,
             model_config: None,
             cache_config: CacheConfig::default(),
-            user_agent: None,
         };
 
         let body = build_request_body(&config, false);

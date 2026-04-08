@@ -24,9 +24,9 @@ use super::render::RED;
 use super::render::RESET;
 use super::spinner::SpinnerState;
 use super::transcript_log::TranscriptLog;
-use crate::protocol::AssistantBlock;
-use crate::protocol::RunEvent;
-use crate::protocol::RunEventPayload;
+use crate::agent::AssistantBlock;
+use crate::agent::RunEvent;
+use crate::agent::RunEventPayload;
 
 // ---------------------------------------------------------------------------
 // State
@@ -43,7 +43,7 @@ pub struct SinkState {
     // Run summary aggregation
     pub system_prompt_tokens: usize,
     pub last_message_stats: Option<super::render::MessageStats>,
-    pub llm_metrics: Vec<crate::protocol::LlmCallMetrics>,
+    pub llm_metrics: Vec<crate::agent::LlmCallMetrics>,
     pub llm_output_tokens: Vec<u64>,
     pub tool_stats: HashMap<String, ToolAggStats>,
     pub compact_history: Vec<CompactRecord>,

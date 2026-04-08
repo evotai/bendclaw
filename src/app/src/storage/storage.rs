@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 
+use crate::agent::ListSessions;
+use crate::agent::ListTranscriptEntries;
+use crate::agent::SessionMeta;
+use crate::agent::TranscriptEntry;
 use crate::error::Result;
-use crate::protocol::ListSessions;
-use crate::protocol::ListTranscriptEntries;
-use crate::protocol::SessionMeta;
-use crate::protocol::TranscriptEntry;
 
 #[async_trait]
 pub trait Storage: Send + Sync {

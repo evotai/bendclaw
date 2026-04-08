@@ -144,17 +144,14 @@ impl Repl {
 
     async fn handle_command(&mut self, input: &str) -> Result<bool> {
         match input {
-            "/quit" | "/exit" => return Ok(true),
+            "/quit" => return Ok(true),
             "/help" => self.print_help_summary(),
             s if s.starts_with("/help ") => {
                 self.print_help_for(s.trim_start_matches("/help ").trim())
             }
             "/status" => self.print_status().await?,
-            "/config" => self.print_config(),
             "/version" => self.print_version(),
             "/history" => self.print_history().await?,
-            "/sessions" => self.choose_session(false).await?,
-            "/sessions all" => self.choose_session(true).await?,
             "/resume" => self.choose_session(false).await?,
             s if s.starts_with("/resume ") => {
                 let session_id = self
@@ -164,7 +161,6 @@ impl Repl {
             }
             "/new" => self.start_new_session(false).await?,
             "/clear" => self.start_new_session(true).await?,
-            "/clear!" => self.force_new_session(),
             "/model" => self.choose_model().await?,
             s if s.starts_with("/model ") => {
                 self.set_model(s.trim_start_matches("/model ").trim())?
@@ -172,6 +168,16 @@ impl Repl {
             "/provider" => self.print_provider(),
             s if s.starts_with("/provider ") => {
                 self.set_provider(s.trim_start_matches("/provider ").trim())?
+            }
+            "/plan" => {
+                self.agent.with_tool_mode(crate::agent::ToolMode::Planning);
+                println!(
+                    "{DIM}  planning mode on — read-only tools only; use /act to resume execution{RESET}\n"
+                );
+            }
+            "/act" => {
+                self.agent.with_tool_mode(crate::agent::ToolMode::Normal);
+                println!("{DIM}  action mode on — full tool set restored{RESET}\n");
             }
             _ => {
                 eprintln!("{RED}  unknown command: {input}{RESET}");
@@ -183,17 +189,23 @@ impl Repl {
     }
 
     async fn run_prompt(&mut self, input: &str) -> Result<bool> {
-        let request = TurnRequest::text(input).session_id(self.session_id.clone());
+        let effective_prompt = self.agent.effective_prompt(input);
+
+        let request = TurnRequest::text(&effective_prompt).session_id(self.session_id.clone());
         let agent = self.agent.clone();
         let spinner_state = Arc::new(parking_lot::Mutex::new(super::spinner::SpinnerState::new()));
         let sink = Arc::new(ReplSink::new(spinner_state.clone()));
         sink.set_user_prompt(input);
 
+        let sink_ref = sink.clone();
+        let early_sid = Arc::new(parking_lot::Mutex::new(None::<String>));
+        let early_sid_ref = early_sid.clone();
         let mut run_task = tokio::spawn(async move {
             let mut stream = agent.run(request).await?;
             let session_id = stream.session_id.clone();
+            *early_sid_ref.lock() = Some(session_id.clone());
             while let Some(event) = stream.next().await {
-                sink.render(&event);
+                sink_ref.render(&event);
             }
             Ok::<_, BendclawError>(session_id)
         });
@@ -203,28 +215,30 @@ impl Repl {
                 self.agent.abort();
                 run_task.abort();
                 let _ = run_task.await;
+                // Capture session_id even on cancel
+                if let Some(sid) = early_sid.lock().take() {
+                    self.session_id = Some(sid);
+                }
                 PromptExit::Cancelled(action == RunControl::Exit)
             }
             None => {
                 let session_id = run_task
                     .await
                     .map_err(|e| BendclawError::Cli(format!("request task failed: {e}")))??;
+
+                self.session_id = Some(session_id.clone());
                 PromptExit::Finished(session_id, false)
             }
         };
-
-        // Always update session_id
-        match &outcome {
-            PromptExit::Finished(sid, _) => self.session_id = Some(sid.clone()),
-            PromptExit::Cancelled(_) => {
-                // session_id may have been set before abort; keep existing
-            }
-        }
 
         match outcome {
             PromptExit::Finished(_result, exit_requested) => Ok(exit_requested),
             PromptExit::Cancelled(exit_requested) => {
                 println!("{DIM}[stopped]{RESET}");
+                if let Some(session_id) = &self.session_id {
+                    println!("{DIM}  resume with /resume {session_id}{RESET}");
+                }
+                println!();
                 Ok(exit_requested)
             }
         }
@@ -273,13 +287,9 @@ impl Repl {
             println!("{DIM}  (clear cancelled){RESET}\n");
             return Ok(());
         }
-        self.force_new_session();
-        Ok(())
-    }
-
-    fn force_new_session(&mut self) {
         self.session_id = None;
         println!("{DIM}  (started new session){RESET}\n");
+        Ok(())
     }
 
     async fn confirm_clear(&self) -> Result<bool> {
@@ -362,50 +372,36 @@ impl Repl {
     async fn print_status(&self) -> Result<()> {
         let active = self.config.active_llm();
         println!("{BOLD}Status{RESET}");
-        println!("{DIM}  provider:{RESET} {}", active.provider);
-        println!("{DIM}  model:{RESET}    {}", active.model);
+        println!("{DIM}  provider:{RESET}   {}", active.provider);
+        println!("{DIM}  model:{RESET}      {}", active.model);
         println!(
-            "{DIM}  session:{RESET}  {}",
+            "{DIM}  session:{RESET}    {}",
             self.session_id
                 .as_deref()
                 .map(short_id)
                 .unwrap_or_else(|| "(new)".into())
         );
         if let Some(branch) = git_branch() {
-            println!("{DIM}  git:{RESET}      {branch}");
+            println!("{DIM}  git:{RESET}        {branch}");
         }
-        println!("{DIM}  cwd:{RESET}      {}", self.cwd);
+        println!("{DIM}  cwd:{RESET}        {}", self.cwd);
+        println!("{DIM}  anthropic:{RESET}  {}", self.config.anthropic.model);
+        println!("{DIM}  openai:{RESET}     {}", self.config.openai.model);
 
         if let Some(meta) = self.current_session_meta().await? {
             println!(
-                "{DIM}  title:{RESET}    {}",
+                "{DIM}  title:{RESET}      {}",
                 meta.title.unwrap_or_else(|| "(untitled)".into())
             );
-            println!("{DIM}  turns:{RESET}    {}", meta.turns);
+            println!("{DIM}  turns:{RESET}      {}", meta.turns);
             println!(
-                "{DIM}  updated:{RESET}  {}",
+                "{DIM}  updated:{RESET}    {}",
                 relative_time(&meta.updated_at)
             );
         }
 
         println!();
         Ok(())
-    }
-
-    fn print_config(&self) {
-        let active = self.config.active_llm();
-        println!("{BOLD}Config{RESET}");
-        println!("{DIM}  active provider:{RESET} {}", active.provider);
-        println!("{DIM}  active model:{RESET}    {}", active.model);
-        println!(
-            "{DIM}  anthropic:{RESET}       {}",
-            self.config.anthropic.model
-        );
-        println!(
-            "{DIM}  openai:{RESET}          {}",
-            self.config.openai.model
-        );
-        println!();
     }
 
     fn print_version(&self) {
@@ -678,13 +674,16 @@ impl Repl {
             .as_deref()
             .map(short_id)
             .unwrap_or_else(|| "new".into());
-
+        let mode = match self.agent.tool_mode() {
+            crate::agent::ToolMode::Normal => "",
+            crate::agent::ToolMode::Planning => " plan",
+        };
         match branch {
             Some(branch) => format!(
-                "{BOLD}{GREEN}{}{RESET} {DIM}[{}]{RESET} {BOLD}{YELLOW}>{RESET}",
-                branch, session,
+                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {BOLD}{YELLOW}>{RESET}",
+                branch, session, mode,
             ),
-            None => format!("{DIM}[{}]{RESET} {BOLD}{YELLOW}>{RESET}", session,),
+            None => format!("{DIM}[{}{}]{RESET} {BOLD}{YELLOW}>{RESET}", session, mode),
         }
     }
 

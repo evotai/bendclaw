@@ -3,35 +3,32 @@ use super::completion::CompletionState;
 pub const KNOWN_COMMANDS: &[&str] = &[
     "/help",
     "/status",
-    "/config",
     "/history",
-    "/sessions",
     "/resume",
     "/new",
     "/clear",
-    "/clear!",
     "/model",
     "/provider",
+    "/plan",
+    "/act",
     "/version",
     "/quit",
-    "/exit",
 ];
 
 pub fn command_short_description(cmd: &str) -> Option<&'static str> {
     match cmd {
         "help" => Some("show help"),
-        "status" => Some("show current session status"),
-        "config" => Some("show provider/model config"),
+        "status" => Some("show current session and config"),
         "history" => Some("print current transcript"),
-        "sessions" => Some("choose a recent session"),
         "resume" => Some("resume a session"),
         "new" => Some("start a new session"),
         "clear" => Some("clear conversation"),
-        "clear!" => Some("clear without confirmation"),
         "model" => Some("show or change model"),
         "provider" => Some("show or change provider"),
+        "plan" => Some("enter planning mode"),
+        "act" => Some("return to normal action mode"),
         "version" => Some("show build info"),
-        "quit" | "exit" => Some("exit bendclaw"),
+        "quit" => Some("exit bendclaw"),
         _ => None,
     }
 }
@@ -42,16 +39,10 @@ pub fn command_help(cmd: &str) -> Option<&'static str> {
             "/help [command] - Show help information\n\nUsage:\n  /help\n  /help model\n  /help resume",
         ),
         "status" => Some(
-            "/status - Show current provider, model, session, cwd, and session metadata.",
-        ),
-        "config" => Some(
-            "/config - Show the active provider/model and the configured provider defaults.",
+            "/status - Show current provider, model, session, cwd, and provider defaults.",
         ),
         "history" => Some(
             "/history - Print the current session transcript from storage.",
-        ),
-        "sessions" => Some(
-            "/sessions [all] - List recent sessions and let you choose one.\n\nDefault scope is current folder when matches exist. Use `/sessions all` to show everything.",
         ),
         "resume" => Some(
             "/resume [session-id] - Resume a previous session.\n\nWithout an argument it opens the session selector. Prefixes are accepted when unambiguous.",
@@ -60,10 +51,7 @@ pub fn command_help(cmd: &str) -> Option<&'static str> {
             "/new - Start a fresh session without deleting stored history.",
         ),
         "clear" => Some(
-            "/clear - Start a fresh session after confirmation when the current transcript is non-trivial.\n\nSee also: /clear!",
-        ),
-        "clear!" => Some(
-            "/clear! - Force a fresh session without confirmation.",
+            "/clear - Start a fresh session after confirmation when the current transcript is non-trivial.",
         ),
         "model" => Some(
             "/model [name] - Show or change the active model for the current provider.\n\nWithout an argument it opens the model selector.",
@@ -71,11 +59,17 @@ pub fn command_help(cmd: &str) -> Option<&'static str> {
         "provider" => Some(
             "/provider [anthropic|openai] - Show or change the active provider.",
         ),
+        "plan" => Some(
+            "/plan - Enter planning mode. Uses only read-only tools. Use /act to return to normal mode.",
+        ),
+        "act" => Some(
+            "/act - Return to normal execution mode with the full tool set.",
+        ),
         "version" => Some(
             "/version - Show build version, git sha, branch, and build timestamp.",
         ),
-        "quit" | "exit" => Some(
-            "/quit - Exit Bendclaw.\n\nAliases: /quit, /exit",
+        "quit" => Some(
+            "/quit - Exit Bendclaw.",
         ),
         _ => None,
     }
@@ -121,11 +115,6 @@ pub fn command_arg_completions(cmd: &str, arg_part: &str, state: &CompletionStat
             .iter()
             .filter(|session_id| session_id.starts_with(arg_part))
             .cloned()
-            .collect(),
-        "/sessions" => ["all"]
-            .into_iter()
-            .filter(|value| value.starts_with(&partial))
-            .map(|value| value.to_string())
             .collect(),
         _ => Vec::new(),
     }

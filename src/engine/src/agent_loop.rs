@@ -767,7 +767,9 @@ async fn stream_assistant_response(
             msg.clone()
         }
         Err(e) => {
-            warn!("Provider error: {}", e);
+            if !matches!(e, crate::provider::ProviderError::Cancelled) {
+                warn!("Provider error: {}", e);
+            }
             tx.send(AgentEvent::LlmCallEnd {
                 turn,
                 attempt,

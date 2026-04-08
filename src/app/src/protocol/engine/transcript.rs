@@ -65,7 +65,7 @@ pub fn transcript_from_agent_message(message: &bend_engine::AgentMessage) -> Tra
                         tool_calls.push(ToolCallRecord {
                             id: id.clone(),
                             name: name.clone(),
-                            input: arguments.clone(),
+                            input: scrub_tool_args(name, arguments),
                         });
                     }
                     _ => {}
@@ -162,14 +162,9 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> bend_engine::Agen
         TranscriptItem::Extension { kind, data } => bend_engine::AgentMessage::Extension(
             bend_engine::ExtensionMessage::new(kind.clone(), data.clone()),
         ),
-        TranscriptItem::Compact { .. } => {
-            // Compact entries are metadata for the transcript log; they should
-            // never be sent to the engine. Represent as a no-op extension.
-            bend_engine::AgentMessage::Extension(bend_engine::ExtensionMessage::new(
-                "compact",
-                serde_json::json!({}),
-            ))
-        }
+        TranscriptItem::Compact { .. } => bend_engine::AgentMessage::Extension(
+            bend_engine::ExtensionMessage::new("compact", serde_json::json!({})),
+        ),
     }
 }
 
@@ -191,7 +186,7 @@ pub fn assistant_blocks_from_content(content: &[bend_engine::Content]) -> Vec<As
             } => Some(AssistantBlock::ToolCall {
                 id: id.clone(),
                 name: name.clone(),
-                input: arguments.clone(),
+                input: scrub_tool_args(name, arguments),
             }),
             _ => None,
         })
@@ -224,24 +219,8 @@ pub fn total_usage(messages: &[bend_engine::AgentMessage]) -> UsageSummary {
     }
 }
 
-/// Extract the last assistant text from engine AgentMessages.
-pub fn extract_last_assistant_text(messages: &[bend_engine::AgentMessage]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find_map(|message| {
-            if let bend_engine::AgentMessage::Llm(bend_engine::Message::Assistant {
-                content, ..
-            }) = message
-            {
-                let text = extract_content_text(content);
-                if !text.is_empty() {
-                    return Some(text);
-                }
-            }
-            None
-        })
-        .unwrap_or_default()
+pub fn scrub_tool_args(_tool_name: &str, args: &serde_json::Value) -> serde_json::Value {
+    args.clone()
 }
 
 /// Parse a stop_reason string back into the engine StopReason enum.
@@ -281,7 +260,7 @@ pub fn transcript_from_assistant_completed(
                 tool_calls.push(ToolCallRecord {
                     id: id.clone(),
                     name: name.clone(),
-                    input: input.clone(),
+                    input: scrub_tool_args(name, input),
                 });
             }
         }

@@ -20,6 +20,7 @@ pub struct EngineOptions {
     pub system_prompt: String,
     pub limits: crate::agent::ExecutionLimits,
     pub skills_dirs: Vec<std::path::PathBuf>,
+    pub tools: Vec<Box<dyn bend_engine::AgentTool>>,
 }
 
 /// Handle to a running engine instance.
@@ -67,7 +68,7 @@ impl EngineHandle {
 /// Internally builds a `bend_engine::Agent`, starts it with the given prompt,
 /// and spawns a forwarder task that converts `AgentEvent` → `ProtocolEvent`.
 pub async fn start_engine(
-    options: &EngineOptions,
+    options: EngineOptions,
     prior_transcripts: &[TranscriptItem],
     prompt: String,
 ) -> Result<(mpsc::UnboundedReceiver<ProtocolEvent>, EngineHandle)> {
@@ -182,6 +183,7 @@ async fn forward_events(
                 duration_ms,
             } => {
                 let content = extract_content_text(&result.content);
+
                 Some(ProtocolEvent::ToolEnd {
                     tool_call_id: tool_call_id.clone(),
                     tool_name: tool_name.clone(),
@@ -309,7 +311,7 @@ async fn forward_events(
 }
 
 fn build_agent(
-    options: &EngineOptions,
+    options: EngineOptions,
     prior_messages: Vec<bend_engine::AgentMessage>,
 ) -> bend_engine::Agent {
     use bend_engine::provider::AnthropicProvider;
@@ -347,7 +349,7 @@ fn build_agent(
         }
     };
 
-    provider_agent
+    let agent = provider_agent
         .with_model(&options.model)
         .with_api_key(&options.api_key)
         .with_model_config(model_config)
@@ -358,7 +360,9 @@ fn build_agent(
             std::env::consts::OS,
         ))
         .with_skills(skills)
-        .with_tools(bend_engine::tools::default_tools())
         .with_messages(prior_messages)
         .with_execution_limits(limits)
+        .with_tools(options.tools);
+
+    agent
 }

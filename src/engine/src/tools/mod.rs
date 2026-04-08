@@ -15,8 +15,8 @@ pub use web_fetch::WebFetchTool;
 
 use crate::types::AgentTool;
 
-/// Get the standard set of coding agent tools.
-pub fn default_tools() -> Vec<Box<dyn AgentTool>> {
+/// Base tools for a coding agent.
+pub fn base_tools() -> Vec<Box<dyn AgentTool>> {
     vec![
         Box::new(BashTool::default()),
         Box::new(ReadFileTool::default()),
@@ -26,4 +26,9 @@ pub fn default_tools() -> Vec<Box<dyn AgentTool>> {
         Box::new(SearchTool::default()),
         Box::new(WebFetchTool::new()),
     ]
+}
+
+/// Backward-compatible alias for the full normal tool set.
+pub fn default_tools() -> Vec<Box<dyn AgentTool>> {
+    base_tools()
 }

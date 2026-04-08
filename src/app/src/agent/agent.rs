@@ -52,6 +52,12 @@ pub struct TurnRequest {
     pub session_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolMode {
+    Normal,
+    Planning,
+}
+
 impl TurnRequest {
     pub fn text(prompt: impl Into<String>) -> Self {
         Self {
@@ -86,11 +92,31 @@ impl TurnStream {
 // AppAgent
 // ---------------------------------------------------------------------------
 
+const PLANNING_MODE_PROMPT: &str = "\
+You are currently in planning mode.
+Your job is to investigate, analyze, and propose a concrete implementation plan.
+Do not execute changes, do not modify files, and do not run commands that make changes.
+Use only the available read-only tools to inspect the codebase and gather context.
+Present the plan clearly in your normal response.
+If the user wants you to start implementing, they should switch to action mode first.";
+
+/// Read-only tools for planning/investigation mode.
+fn read_only_tools() -> Vec<Box<dyn bend_engine::AgentTool>> {
+    use bend_engine::tools::*;
+    vec![
+        Box::new(ReadFileTool::default()),
+        Box::new(ListFilesTool::default()),
+        Box::new(SearchTool::default()),
+        Box::new(WebFetchTool::new()),
+    ]
+}
+
 pub struct AppAgent {
     llm: RwLock<LlmConfig>,
     system_prompt: RwLock<String>,
     limits: RwLock<ExecutionLimits>,
     skills_dirs: RwLock<Vec<PathBuf>>,
+    tool_mode: RwLock<ToolMode>,
     cwd: String,
     storage: RwLock<Arc<dyn Storage>>,
     engine: RwLock<Option<EngineHandle>>,
@@ -106,6 +132,7 @@ impl AppAgent {
             system_prompt: RwLock::new(system_prompt),
             limits: RwLock::new(ExecutionLimits::default()),
             skills_dirs: RwLock::new(Vec::new()),
+            tool_mode: RwLock::new(ToolMode::Normal),
             cwd,
             storage: RwLock::new(storage),
             engine: RwLock::new(None),
@@ -132,6 +159,11 @@ impl AppAgent {
 
     pub fn with_skills_dirs(self: &Arc<Self>, dirs: Vec<PathBuf>) -> Arc<Self> {
         *self.skills_dirs.write() = dirs;
+        Arc::clone(self)
+    }
+
+    pub fn with_tool_mode(self: &Arc<Self>, mode: ToolMode) -> Arc<Self> {
+        *self.tool_mode.write() = mode;
         Arc::clone(self)
     }
 
@@ -166,6 +198,17 @@ impl AppAgent {
 
     pub fn set_llm(&self, llm: LlmConfig) {
         *self.llm.write() = llm;
+    }
+
+    pub fn tool_mode(&self) -> ToolMode {
+        *self.tool_mode.read()
+    }
+
+    pub fn effective_prompt(&self, input: &str) -> String {
+        match *self.tool_mode.read() {
+            ToolMode::Normal => input.to_string(),
+            ToolMode::Planning => format!("{}\n\nUser task:\n{}", PLANNING_MODE_PROMPT, input),
+        }
     }
 
     // -- core: run a turn, return a stream of RunEvents --------------------
@@ -440,6 +483,10 @@ impl AppAgent {
         prior_transcripts: &[TranscriptItem],
     ) -> Result<mpsc::UnboundedReceiver<ProtocolEvent>> {
         let llm = self.llm.read().clone();
+        let tools = match *self.tool_mode.read() {
+            ToolMode::Planning => read_only_tools(),
+            ToolMode::Normal => bend_engine::tools::base_tools(),
+        };
         let options = EngineOptions {
             provider: llm.provider,
             model: llm.model,
@@ -448,9 +495,10 @@ impl AppAgent {
             system_prompt: self.system_prompt.read().clone(),
             limits: self.limits.read().clone(),
             skills_dirs: self.skills_dirs.read().clone(),
+            tools,
         };
         let (rx, engine_handle) =
-            crate::protocol::engine::start_engine(&options, prior_transcripts, prompt).await?;
+            crate::protocol::engine::start_engine(options, prior_transcripts, prompt).await?;
 
         *self.engine.write() = Some(engine_handle);
         Ok(rx)

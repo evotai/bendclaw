@@ -37,7 +37,7 @@ pub fn message_tokens(msg: &AgentMessage) -> usize {
     }
 }
 
-fn content_tokens(content: &[Content]) -> usize {
+pub fn content_tokens(content: &[Content]) -> usize {
     content
         .iter()
         .map(|c| match c {
@@ -193,6 +193,13 @@ impl ContextConfig {
 // Compaction strategy
 // ---------------------------------------------------------------------------
 
+/// Per-tool token breakdown entry.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolTokenDetail {
+    pub tool_name: String,
+    pub tokens: usize,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CompactionStats {
     pub level: u8,
@@ -203,6 +210,30 @@ pub struct CompactionStats {
     pub tool_outputs_truncated: usize,
     pub turns_summarized: usize,
     pub messages_dropped: usize,
+    /// Per-tool token breakdown before compaction (sorted by tokens desc).
+    #[serde(default)]
+    pub before_tool_details: Vec<ToolTokenDetail>,
+    /// Per-tool token breakdown after compaction (sorted by tokens desc).
+    #[serde(default)]
+    pub after_tool_details: Vec<ToolTokenDetail>,
+}
+
+/// Collect per-tool token details from messages, sorted by tokens descending.
+fn collect_tool_details(messages: &[AgentMessage]) -> Vec<ToolTokenDetail> {
+    let mut details = Vec::new();
+    for msg in messages {
+        if let AgentMessage::Llm(Message::ToolResult {
+            tool_name, content, ..
+        }) = msg
+        {
+            details.push(ToolTokenDetail {
+                tool_name: tool_name.clone(),
+                tokens: content_tokens(content),
+            });
+        }
+    }
+    details.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    details
 }
 
 #[derive(Debug, Clone)]
@@ -241,10 +272,12 @@ pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> 
 
     let before_message_count = messages.len();
     let before_estimated_tokens = total_tokens(&messages);
+    let before_tool_details = collect_tool_details(&messages);
 
     let make_result = |msgs: Vec<AgentMessage>, level: u8, stats: CompactionStats| {
         let after_message_count = msgs.len();
         let after_estimated_tokens = total_tokens(&msgs);
+        let after_tool_details = collect_tool_details(&msgs);
         CompactionResult {
             messages: msgs,
             stats: CompactionStats {
@@ -253,6 +286,8 @@ pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> 
                 after_message_count,
                 before_estimated_tokens,
                 after_estimated_tokens,
+                before_tool_details: before_tool_details.clone(),
+                after_tool_details,
                 ..stats
             },
         }

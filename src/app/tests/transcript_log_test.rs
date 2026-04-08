@@ -22,6 +22,7 @@ fn format_tool_finished_ok() {
         content: "file contents here".into(),
         is_error: false,
         details: serde_json::Value::Null,
+        result_tokens: 5,
     };
     let lines = format_event(&payload);
     assert_eq!(lines[0], "[read_file completed]");
@@ -36,6 +37,7 @@ fn format_tool_finished_error() {
         content: "".into(),
         is_error: true,
         details: serde_json::Value::Null,
+        result_tokens: 0,
     };
     let lines = format_event(&payload);
     assert_eq!(lines[0], "[bash failed]");

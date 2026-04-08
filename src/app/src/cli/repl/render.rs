@@ -267,6 +267,8 @@ pub struct MessageStats {
     pub user_tokens: usize,
     pub assistant_tokens: usize,
     pub tool_result_tokens: usize,
+    /// Per-tool token breakdown (name, tokens), sorted by tokens desc.
+    pub tool_details: Vec<(String, usize)>,
 }
 
 impl MessageStats {
@@ -300,23 +302,33 @@ pub fn count_messages_by_role(messages: &[serde_json::Value]) -> MessageStats {
             "toolResult" | "tool_result" | "tool" => {
                 stats.tool_result_count += 1;
                 stats.tool_result_tokens += est;
+                let name = msg
+                    .get("toolName")
+                    .or_else(|| msg.get("tool_name"))
+                    .or_else(|| msg.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                stats.tool_details.push((name, est));
             }
             _ => {
-                // Unknown roles count as user
                 stats.user_count += 1;
                 stats.user_tokens += est;
             }
         }
     }
+    stats.tool_details.sort_by(|a, b| b.1.cmp(&a.1));
     stats
 }
 
-/// Format the two detail lines for an LLM call badge.
+/// Format detail lines for an LLM call badge.
 pub fn format_llm_call_lines(
     stats: &MessageStats,
     tool_count: usize,
     system_prompt_tokens: usize,
-) -> (String, String) {
+) -> Vec<String> {
+    let mut lines = Vec::new();
+
     // Line 1: message counts
     let total = stats.total_count();
     let mut role_parts = Vec::new();
@@ -337,6 +349,7 @@ pub fn format_llm_call_lines(
             role_parts.join(" · ")
         )
     };
+    lines.push(msg_line);
 
     // Line 2: token estimates by role
     let est_total = stats.total_tokens(system_prompt_tokens);
@@ -350,7 +363,76 @@ pub fn format_llm_call_lines(
     if stats.tool_result_tokens > 0 {
         token_parts.push(format!("tool_result ~{}", stats.tool_result_tokens));
     }
-    let token_line = format!("~{est_total} est tokens ({})", token_parts.join(" · "));
+    lines.push(format!(
+        "~{est_total} est tokens ({})",
+        token_parts.join(" · ")
+    ));
 
-    (msg_line, token_line)
+    // Line 3+: per-tool breakdown (only if >= 2 tool results)
+    if stats.tool_details.len() >= 2 {
+        lines.push(String::new());
+        lines.push("tool results:".to_string());
+        let breakdown = format_tool_breakdown(&stats.tool_details, stats.tool_result_tokens);
+        lines.extend(breakdown);
+    }
+
+    lines
+}
+
+/// Render a mini bar chart.
+fn render_bar(ratio: f64, width: usize) -> String {
+    let filled = (ratio * width as f64).round() as usize;
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+}
+
+/// Aggregate same-name tools and sort by tokens descending.
+fn aggregate_tool_details(details: &[(String, usize)]) -> Vec<(String, usize)> {
+    use std::collections::BTreeMap;
+    let mut map: BTreeMap<String, usize> = BTreeMap::new();
+    for (name, tokens) in details {
+        *map.entry(name.clone()).or_default() += tokens;
+    }
+    let mut agg: Vec<(String, usize)> = map.into_iter().collect();
+    agg.sort_by(|a, b| b.1.cmp(&a.1));
+    agg
+}
+
+/// Format per-tool token breakdown lines (aggregated by tool name).
+pub fn format_tool_breakdown(details: &[(String, usize)], total: usize) -> Vec<String> {
+    let agg = aggregate_tool_details(details);
+    let max_name_len = agg.iter().map(|(n, _)| n.len()).max().unwrap_or(4);
+    let bar_width = 20;
+
+    agg.iter()
+        .map(|(name, tokens)| {
+            let pct = if total > 0 {
+                *tokens as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            let bar = render_bar(pct / 100.0, bar_width);
+            format!(
+                "  {:<width$}  ~{:<8} ({:>5.1}%)  {bar}",
+                name,
+                tokens,
+                pct,
+                width = max_name_len,
+            )
+        })
+        .collect()
+}
+
+/// Render a budget usage bar with percentage.
+pub fn format_budget_bar(used: usize, budget: usize, width: usize) -> String {
+    if budget == 0 {
+        return String::new();
+    }
+    let ratio = used as f64 / budget as f64;
+    let capped = ratio.min(2.0);
+    let filled = ((capped / 2.0) * width as f64).round() as usize;
+    let bar: String = (0..width)
+        .map(|i| if i < filled { '█' } else { '░' })
+        .collect();
+    format!("{bar}  {:.0}%", ratio * 100.0)
 }

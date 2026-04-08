@@ -5,13 +5,16 @@ use std::sync::Mutex;
 use super::markdown::MarkdownStream;
 use super::render::build_run_summary;
 use super::render::count_messages_by_role;
+use super::render::format_budget_bar;
 use super::render::format_llm_call_lines;
+use super::render::format_tool_breakdown;
 use super::render::format_tool_input;
 use super::render::print_tool_result;
 use super::render::terminal_writeln;
 use super::render::ToolCallSummary;
 use super::render::DIM;
 use super::render::GRAY;
+use super::render::GREEN;
 use super::render::RED;
 use super::render::RESET;
 use super::spinner::SpinnerState;
@@ -205,6 +208,7 @@ impl ReplSink {
                 content,
                 is_error,
                 details,
+                ..
             } => {
                 finish_assistant_stream(state);
                 let tool_call =
@@ -300,10 +304,11 @@ impl ReplSink {
                 let title = format!("LLM call · {model} · turn {turn}{attempt_str}");
                 super::render::print_badge_line(&title, false, false);
                 let stats = count_messages_by_role(messages);
-                let (msg_line, token_line) =
+                let detail_lines =
                     format_llm_call_lines(&stats, tools.len(), *system_prompt_tokens);
-                terminal_writeln(&format!("{GRAY}  {msg_line}{RESET}"));
-                terminal_writeln(&format!("{GRAY}  {token_line}{RESET}"));
+                for line in &detail_lines {
+                    terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
+                }
                 terminal_writeln("");
             }
             RunEventPayload::LlmCallCompleted {
@@ -335,16 +340,17 @@ impl ReplSink {
                 context_window,
             } => {
                 finish_assistant_stream(state);
-                let usage_pct = if *budget_tokens > 0 {
-                    *estimated_tokens as f64 / *budget_tokens as f64 * 100.0
-                } else {
-                    0.0
-                };
-                let title = format!("compact · {message_count} messages · ~{estimated_tokens} tokens · {usage_pct:.0}% of budget");
-                super::render::print_badge_line(&title, false, false);
+                let title = "compact call";
+                super::render::print_badge_line(title, false, false);
                 terminal_writeln(&format!(
-                    "{GRAY}  budget: {budget_tokens} (window {context_window} − sys {system_prompt_tokens}){RESET}",
+                    "{GRAY}  {message_count} messages · ~{estimated_tokens} tokens{RESET}",
                 ));
+                let bar = format_budget_bar(*estimated_tokens, *budget_tokens, 40);
+                terminal_writeln(&format!("{GRAY}  {bar} of budget{RESET}"));
+                terminal_writeln(&format!(
+                    "{GRAY}  budget {budget_tokens} (window {context_window} − sys {system_prompt_tokens}){RESET}",
+                ));
+                terminal_writeln("");
             }
             RunEventPayload::ContextCompactionCompleted {
                 level,
@@ -355,21 +361,48 @@ impl ReplSink {
                 tool_outputs_truncated,
                 turns_summarized,
                 messages_dropped,
+                before_tool_details,
+                after_tool_details,
             } => {
                 if *level > 0 {
                     let saved = before_estimated_tokens.saturating_sub(*after_estimated_tokens);
+                    let saved_pct = if *before_estimated_tokens > 0 {
+                        saved as f64 / *before_estimated_tokens as f64 * 100.0
+                    } else {
+                        0.0
+                    };
                     let removed = before_message_count.saturating_sub(*after_message_count);
                     let title = format!("compact completed · level {level}");
                     super::render::print_badge_line(&title, true, true);
                     terminal_writeln(&format!(
-                        "{GRAY}  {after_message_count} messages · ~{after_estimated_tokens} tokens · saved ~{saved} tokens · {removed} messages removed{RESET}",
+                        "{GREEN}  saved ~{saved} tokens ({saved_pct:.1}%) · {removed} messages removed{RESET}",
                     ));
+                    terminal_writeln(&format!(
+                        "{GRAY}  {before_message_count} messages ~{before_estimated_tokens} tok → {after_message_count} messages ~{after_estimated_tokens} tok{RESET}",
+                    ));
+
+                    // Per-tool before/after breakdown
+                    if !before_tool_details.is_empty() {
+                        terminal_writeln(&format!("{GRAY}  tool results before:{RESET}"));
+                        let before_total: usize = before_tool_details.iter().map(|(_, t)| t).sum();
+                        for line in format_tool_breakdown(before_tool_details, before_total) {
+                            terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
+                        }
+                    }
+                    if !after_tool_details.is_empty() {
+                        terminal_writeln(&format!("{GRAY}  tool results after:{RESET}"));
+                        let after_total: usize = after_tool_details.iter().map(|(_, t)| t).sum();
+                        for line in format_tool_breakdown(after_tool_details, after_total) {
+                            terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
+                        }
+                    }
+
                     let mut actions = Vec::new();
                     if *tool_outputs_truncated > 0 {
-                        actions.push(format!("truncated {tool_outputs_truncated}"));
+                        actions.push(format!("truncated {tool_outputs_truncated} tools"));
                     }
                     if *turns_summarized > 0 {
-                        actions.push(format!("summarized {turns_summarized}"));
+                        actions.push(format!("summarized {turns_summarized} turns"));
                     }
                     if *messages_dropped > 0 {
                         actions.push(format!("dropped {messages_dropped}"));

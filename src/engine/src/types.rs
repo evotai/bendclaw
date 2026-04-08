@@ -436,6 +436,8 @@ pub enum AgentEvent {
         tool_name: String,
         result: ToolResult,
         is_error: bool,
+        /// Estimated token count of the tool result content.
+        result_tokens: usize,
     },
     ProgressMessage {
         tool_call_id: String,

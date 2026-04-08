@@ -163,6 +163,7 @@ async fn forward_events(
                 tool_name,
                 result,
                 is_error,
+                result_tokens,
             } => {
                 let content = extract_content_text(&result.content);
                 Some(ProtocolEvent::ToolEnd {
@@ -171,6 +172,7 @@ async fn forward_events(
                     content,
                     is_error: *is_error,
                     details: result.details.clone(),
+                    result_tokens: *result_tokens,
                 })
             }
             bend_engine::AgentEvent::ProgressMessage {
@@ -249,6 +251,16 @@ async fn forward_events(
             }),
             bend_engine::AgentEvent::ContextCompactionEnd { stats, messages } => {
                 let compacted_transcripts = from_agent_messages(messages);
+                let before_tool_details: Vec<(String, usize)> = stats
+                    .before_tool_details
+                    .iter()
+                    .map(|d| (d.tool_name.clone(), d.tokens))
+                    .collect();
+                let after_tool_details: Vec<(String, usize)> = stats
+                    .after_tool_details
+                    .iter()
+                    .map(|d| (d.tool_name.clone(), d.tokens))
+                    .collect();
                 Some(ProtocolEvent::ContextCompactionEnd {
                     level: stats.level,
                     before_message_count: stats.before_message_count,
@@ -258,6 +270,8 @@ async fn forward_events(
                     tool_outputs_truncated: stats.tool_outputs_truncated,
                     turns_summarized: stats.turns_summarized,
                     messages_dropped: stats.messages_dropped,
+                    before_tool_details,
+                    after_tool_details,
                     compacted_transcripts,
                 })
             }

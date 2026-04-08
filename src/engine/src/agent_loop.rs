@@ -938,11 +938,14 @@ async fn execute_single_tool(
         ),
     };
 
+    let result_tokens = context::content_tokens(&result.content);
+
     tx.send(AgentEvent::ToolExecutionEnd {
         tool_call_id: id.to_string(),
         tool_name: name.to_string(),
         result: result.clone(),
         is_error,
+        result_tokens,
     })
     .ok();
 
@@ -986,11 +989,14 @@ fn skip_tool_call(
     })
     .ok();
 
+    let result_tokens = context::content_tokens(&result.content);
+
     tx.send(AgentEvent::ToolExecutionEnd {
         tool_call_id: tool_call_id.into(),
         tool_name: tool_name.into(),
         result: result.clone(),
         is_error: true,
+        result_tokens,
     })
     .ok();
 

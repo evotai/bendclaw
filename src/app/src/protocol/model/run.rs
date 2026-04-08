@@ -87,6 +87,9 @@ pub enum RunEventPayload {
         is_error: bool,
         #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
         details: serde_json::Value,
+        /// Estimated token count of the tool result content.
+        #[serde(default)]
+        result_tokens: usize,
     },
     LlmCallStarted {
         turn: usize,
@@ -126,6 +129,10 @@ pub enum RunEventPayload {
         tool_outputs_truncated: usize,
         turns_summarized: usize,
         messages_dropped: usize,
+        #[serde(default)]
+        before_tool_details: Vec<(String, usize)>,
+        #[serde(default)]
+        after_tool_details: Vec<(String, usize)>,
     },
     RunFinished {
         text: String,
@@ -333,6 +340,8 @@ pub enum ProtocolEvent {
         content: String,
         is_error: bool,
         details: serde_json::Value,
+        /// Estimated token count of the tool result content.
+        result_tokens: usize,
     },
     LlmCallStart {
         turn: usize,
@@ -371,6 +380,8 @@ pub enum ProtocolEvent {
         tool_outputs_truncated: usize,
         turns_summarized: usize,
         messages_dropped: usize,
+        before_tool_details: Vec<(String, usize)>,
+        after_tool_details: Vec<(String, usize)>,
         compacted_transcripts: Vec<TranscriptItem>,
     },
 }
@@ -466,12 +477,14 @@ impl<'a> RunEventContext<'a> {
                 content,
                 is_error,
                 details,
+                result_tokens,
             } => RunEventPayload::ToolFinished {
                 tool_call_id: tool_call_id.clone(),
                 tool_name: tool_name.clone(),
                 content: content.clone(),
                 is_error: *is_error,
                 details: details.clone(),
+                result_tokens: *result_tokens,
             },
             ProtocolEvent::InputRejected { reason } => RunEventPayload::Error {
                 message: reason.clone(),
@@ -536,6 +549,8 @@ impl<'a> RunEventContext<'a> {
                 tool_outputs_truncated,
                 turns_summarized,
                 messages_dropped,
+                before_tool_details,
+                after_tool_details,
                 compacted_transcripts: _,
             } => RunEventPayload::ContextCompactionCompleted {
                 level: *level,
@@ -546,6 +561,8 @@ impl<'a> RunEventContext<'a> {
                 tool_outputs_truncated: *tool_outputs_truncated,
                 turns_summarized: *turns_summarized,
                 messages_dropped: *messages_dropped,
+                before_tool_details: before_tool_details.clone(),
+                after_tool_details: after_tool_details.clone(),
             },
         };
 

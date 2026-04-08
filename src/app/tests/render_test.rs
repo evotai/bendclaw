@@ -95,7 +95,10 @@ fn format_llm_call_lines_basic() {
         serde_json::json!({"role": "assistant", "content": "hi"}),
     ];
     let stats = count_messages_by_role(&messages);
-    let (msg_line, token_line) = format_llm_call_lines(&stats, 3, 495);
+    let lines = format_llm_call_lines(&stats, 3, 495);
+
+    let msg_line = &lines[0];
+    let token_line = &lines[1];
 
     assert!(msg_line.contains("2 messages"));
     assert!(msg_line.contains("user 1"));
@@ -115,10 +118,13 @@ fn format_llm_call_lines_with_tool_results() {
     let messages: Vec<serde_json::Value> = vec![
         serde_json::json!({"role": "user", "content": "read the file"}),
         serde_json::json!({"role": "assistant", "content": "sure"}),
-        serde_json::json!({"role": "toolResult", "content": "file data here"}),
+        serde_json::json!({"role": "toolResult", "toolName": "read", "content": "file data here"}),
     ];
     let stats = count_messages_by_role(&messages);
-    let (msg_line, token_line) = format_llm_call_lines(&stats, 6, 500);
+    let lines = format_llm_call_lines(&stats, 6, 500);
+
+    let msg_line = &lines[0];
+    let token_line = &lines[1];
 
     assert!(msg_line.contains("3 messages"));
     assert!(msg_line.contains("tool_result 1"));
@@ -130,7 +136,10 @@ fn format_llm_call_lines_with_tool_results() {
 #[test]
 fn format_llm_call_lines_empty_messages() {
     let stats = count_messages_by_role(&[]);
-    let (msg_line, token_line) = format_llm_call_lines(&stats, 0, 200);
+    let lines = format_llm_call_lines(&stats, 0, 200);
+
+    let msg_line = &lines[0];
+    let token_line = &lines[1];
 
     assert!(msg_line.contains("0 messages"));
     assert!(msg_line.contains("0 tools"));

@@ -753,8 +753,8 @@ pub fn format_budget_bar(used: usize, budget: usize, width: usize) -> String {
         return String::new();
     }
     let ratio = used as f64 / budget as f64;
-    let capped = ratio.min(2.0);
-    let filled = ((capped / 2.0) * width as f64).round() as usize;
+    let capped = ratio.clamp(0.0, 1.0);
+    let filled = (capped * width as f64).round() as usize;
     let bar: String = (0..width)
         .map(|i| if i < filled { '█' } else { '░' })
         .collect();

@@ -42,5 +42,22 @@ chmod +x "${INSTALL_DIR}/${BINARY}"
 echo "Installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
 
 if ! echo "${PATH}" | tr ':' '\n' | grep -qx "${INSTALL_DIR}"; then
-  echo "Add ${INSTALL_DIR} to your PATH if it's not already there."
+  SHELL_NAME="$(basename "${SHELL:-/bin/bash}")"
+  case "${SHELL_NAME}" in
+    zsh)  RC="$HOME/.zshrc" ;;
+    bash) RC="$HOME/.bashrc" ;;
+    fish) RC="$HOME/.config/fish/config.fish" ;;
+    *)    RC="$HOME/.profile" ;;
+  esac
+
+  echo ""
+  echo "${INSTALL_DIR} is not in your PATH. Run:"
+  echo ""
+  if [ "${SHELL_NAME}" = "fish" ]; then
+    echo "  set -Ux fish_user_paths ${INSTALL_DIR} \$fish_user_paths"
+  else
+    echo "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ${RC}"
+    echo "  source ${RC}"
+  fi
+  echo ""
 fi

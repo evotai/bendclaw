@@ -1,5 +1,6 @@
 use bendclaw::cli::repl::commands::is_slash_command;
 use bendclaw::cli::repl::commands::KNOWN_COMMANDS;
+use bendclaw::cli::repl::completion::bare_slash_hint_display;
 use bendclaw::cli::repl::completion::is_slash_prefix;
 
 // ---------------------------------------------------------------------------
@@ -105,4 +106,27 @@ fn slash_command_rejects_empty() {
     assert!(!is_slash_command(""));
     assert!(!is_slash_command("/"));
     assert!(!is_slash_command("  "));
+}
+
+// ---------------------------------------------------------------------------
+// bare_slash_hint_display
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bare_slash_hint_contains_all_commands() {
+    let display = bare_slash_hint_display();
+    for cmd in KNOWN_COMMANDS {
+        let name = &cmd[1..];
+        assert!(
+            display.contains(name),
+            "bare slash hint should contain '{name}', got: {display}"
+        );
+    }
+}
+
+#[test]
+fn bare_slash_hint_is_bracketed() {
+    let display = bare_slash_hint_display();
+    assert!(display.contains('['), "hint should start with '['");
+    assert!(display.contains(']'), "hint should end with ']'");
 }

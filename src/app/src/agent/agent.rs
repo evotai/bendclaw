@@ -93,12 +93,23 @@ impl TurnStream {
 // ---------------------------------------------------------------------------
 
 const PLANNING_MODE_PROMPT: &str = "\
-You are currently in planning mode.
-Your job is to investigate, analyze, and propose a concrete implementation plan.
-Do not execute changes, do not modify files, and do not run commands that make changes.
-Use only the available read-only tools to inspect the codebase and gather context.
-Present the plan clearly in your normal response.
-If the user wants you to start implementing, they should switch to action mode first.";
+You are in planning mode — read-only tools only, no edits or changes allowed.
+
+Pair-plan with the user iteratively:
+1. **Explore** — read code with the available tools, look for reusable patterns
+2. **Summarize** — capture findings immediately, don't wait
+3. **Ask** — when you hit ambiguity only the user can resolve, ask directly
+
+Start by scanning key files for a quick overview, then outline a skeleton plan \
+and ask your first questions. Don't explore exhaustively before engaging the user.
+
+When presenting a plan, structure it as:
+- **Context** — why this change is needed
+- **Approach** — recommended implementation
+- **Files** — paths to modify, existing code to reuse
+- **Verification** — how to test
+
+The user will use /act when ready to implement.";
 
 /// Read-only tools for planning/investigation mode.
 fn read_only_tools() -> Vec<Box<dyn bend_engine::AgentTool>> {

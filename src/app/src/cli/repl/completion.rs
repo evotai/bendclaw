@@ -143,11 +143,11 @@ impl Hinter for ReplHelper {
             return None;
         }
 
-        // Bare `/` → suggest the most common command
+        // Bare `/` → show all available commands as a compact hint
         if typed.is_empty() {
             return Some(CommandHint {
-                display: "sessions".to_string(),
-                completion: "sessions".to_string(),
+                display: bare_slash_hint_display(),
+                completion: String::new(),
             });
         }
 
@@ -179,6 +179,16 @@ impl Highlighter for ReplHelper {
 
 impl Validator for ReplHelper {}
 impl rustyline::Helper for ReplHelper {}
+
+/// Build the display string shown as a hint when the user types a bare `/`.
+pub fn bare_slash_hint_display() -> String {
+    let names: String = KNOWN_COMMANDS
+        .iter()
+        .map(|cmd| &cmd[1..])
+        .collect::<Vec<_>>()
+        .join("  ");
+    format!("  [{names}]")
+}
 
 /// Returns `true` when `text` looks like a hand-typed slash command prefix:
 /// `/` followed by zero or more ASCII lowercase letters (and optionally `!`).

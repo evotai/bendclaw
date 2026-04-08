@@ -65,7 +65,10 @@ into this:
 ## Installation
 
 ```bash
-# cargo binstall (prebuilt binary, recommended)
+# Install cargo-binstall first (if you don't have it)
+cargo install cargo-binstall
+
+# Then install bendclaw (prebuilt binary, recommended)
 cargo binstall bendclaw
 
 # Or build from source

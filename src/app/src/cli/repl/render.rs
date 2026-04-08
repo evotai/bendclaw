@@ -290,6 +290,21 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
                 .map(|(n, _)| n.len())
                 .max()
                 .unwrap_or(0);
+            let max_calls_width = data
+                .tool_stats
+                .iter()
+                .map(|(_, agg)| {
+                    let call_word = if agg.calls == 1 { "call" } else { "calls" };
+                    format!("{} {}", agg.calls, call_word).len()
+                })
+                .max()
+                .unwrap_or(0);
+            let max_tok_width = data
+                .tool_stats
+                .iter()
+                .map(|(_, agg)| human_tokens(agg.result_tokens).len())
+                .max()
+                .unwrap_or(0);
             for (name, agg) in &data.tool_stats {
                 let pct = if total_input > 0 {
                     agg.result_tokens as f64 / total_input as f64 * 100.0
@@ -298,13 +313,15 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
                 };
                 let bar = render_ratio_bar(pct / 100.0, bar_width);
                 let call_word = if agg.calls == 1 { "call" } else { "calls" };
+                let calls_str = format!("{} {}", agg.calls, call_word);
                 lines.push(format!(
-                    "              {:<width$}  {} {}  {:>6}  {bar} {pct:>5.1}%",
+                    "              {:<name_w$}  {:<calls_w$}  {:>tok_w$}  {bar} {pct:>5.1}%",
                     name,
-                    agg.calls,
-                    call_word,
+                    calls_str,
                     human_tokens(agg.result_tokens),
-                    width = max_name,
+                    name_w = max_name,
+                    calls_w = max_calls_width,
+                    tok_w = max_tok_width,
                 ));
             }
         }
@@ -393,6 +410,19 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
 
         let max_dur = indexed.first().map(|(_, d)| *d).unwrap_or(1);
         let show = indexed.len().min(3);
+
+        // Pre-compute max widths for alignment
+        let max_idx_width = indexed[..show]
+            .iter()
+            .map(|(i, _)| format!("#{}", i + 1).len())
+            .max()
+            .unwrap_or(2);
+        let max_dur_width = indexed[..show]
+            .iter()
+            .map(|(_, d)| human_duration(*d).len())
+            .max()
+            .unwrap_or(4);
+
         for &(idx, dur) in &indexed[..show] {
             let bar = render_ratio_bar(dur as f64 / max_dur as f64, bar_width);
             let pct = if total_llm_ms > 0 {
@@ -400,10 +430,13 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
             } else {
                 0.0
             };
+            let idx_str = format!("#{}", idx + 1);
             lines.push(format!(
-                "            #{}  {} {bar} {pct:.0}%",
-                idx + 1,
+                "            {:<idx_w$}  {:>dur_w$} {bar} {pct:>3.0}%",
+                idx_str,
                 human_duration(dur),
+                idx_w = max_idx_width,
+                dur_w = max_dur_width,
             ));
         }
         if indexed.len() > 3 {

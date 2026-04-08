@@ -247,19 +247,19 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ needs.create_release.outputs.tag }}"
-          SEMVER="${{ needs.create_release.outputs.semver }}"
+          VERSION="${{ needs.create_release.outputs.version }}"
           mkdir -p distro/{bin,configs}
           cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} distro/bin/
           cp configs/bendclaw.env.example distro/configs/
-          tar -C distro -czf ${{ env.BINARY_NAME }}-v${SEMVER}-${{ matrix.target }}.tar.gz bin configs
+          tar -C distro -czf ${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz bin configs
 
       - name: Upload artifact to release
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ needs.create_release.outputs.tag }}"
-          SEMVER="${{ needs.create_release.outputs.semver }}"
-          gh release upload "${TAG}" ${{ env.BINARY_NAME }}-v${SEMVER}-${{ matrix.target }}.tar.gz --clobber
+          VERSION="${{ needs.create_release.outputs.version }}"
+          gh release upload "${TAG}" ${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -366,3 +366,88 @@ fn format_run_summary_no_compact_when_empty() {
     let all = lines.join("\n");
     assert!(!all.contains("compact"));
 }
+
+#[test]
+fn format_run_summary_llm_bars_are_aligned() {
+    // Use metrics with varying index widths (#1 vs #12) and duration widths (8.5s vs 46.9s)
+    let mut data = make_summary_data();
+    let base_metric = bendclaw::protocol::LlmCallMetrics {
+        duration_ms: 5000,
+        ttfb_ms: 200,
+        ttft_ms: 800,
+        streaming_ms: 4000,
+        chunk_count: 10,
+    };
+    // 12 calls so indices range from #1 to #12
+    data.llm_metrics = (0..12)
+        .map(|i| bendclaw::protocol::LlmCallMetrics {
+            duration_ms: if i == 0 {
+                46900
+            } else if i == 4 {
+                8500
+            } else {
+                3000 + i as u64 * 100
+            },
+            ..base_metric
+        })
+        .collect();
+    data.llm_output_tokens = vec![100; 12];
+    data.llm_call_count = 12;
+
+    let lines = format_run_summary(&data);
+
+    // Find the top-3 LLM call lines (they start with spaces + '#' and contain bar + percentage)
+    let bar_lines: Vec<&String> = lines
+        .iter()
+        .filter(|l| {
+            let trimmed = l.trim_start();
+            trimmed.starts_with('#') && l.contains('█') && !l.contains("lv")
+        })
+        .collect();
+    assert_eq!(
+        bar_lines.len(),
+        3,
+        "expected 3 bar lines, got: {bar_lines:?}"
+    );
+
+    // The bar character '█' must start at the same column in each line
+    let bar_positions: Vec<usize> = bar_lines
+        .iter()
+        .map(|l| l.find('█').expect("bar char not found"))
+        .collect();
+    assert!(
+        bar_positions.windows(2).all(|w| w[0] == w[1]),
+        "bar positions not aligned: {bar_positions:?}\n{}\n{}\n{}",
+        bar_lines[0],
+        bar_lines[1],
+        bar_lines[2],
+    );
+}
+
+#[test]
+fn format_run_summary_tool_stats_bars_are_aligned() {
+    let data = make_summary_data();
+    let lines = format_run_summary(&data);
+
+    // Tool stat lines contain tool names from the fixture: read_file, search
+    let tool_lines: Vec<&String> = lines
+        .iter()
+        .filter(|l| (l.contains("read_file") || l.contains("search")) && l.contains('█'))
+        .collect();
+    assert_eq!(
+        tool_lines.len(),
+        2,
+        "expected 2 tool lines, got: {tool_lines:?}"
+    );
+
+    let bar_positions: Vec<usize> = tool_lines
+        .iter()
+        .map(|l| l.find('█').expect("bar char not found"))
+        .collect();
+    assert!(
+        bar_positions.windows(2).all(|w| w[0] == w[1]),
+        "tool bar positions not aligned: {bar_positions:?}\n{}\n{}",
+        tool_lines[0],
+        tool_lines[1],
+    );
+}

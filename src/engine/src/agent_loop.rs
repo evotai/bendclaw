@@ -712,10 +712,11 @@ async fn stream_assistant_response(
             Err(e) if e.is_retryable() && attempt < retry.max_retries && !cancel.is_cancelled() => {
                 // Abort forwarder to prevent forwarding events from failed attempt
                 forward_handle.abort();
-                let error_metrics = LlmCallMetrics {
-                    duration_ms: call_start.elapsed().as_millis() as u64,
-                    ..LlmCallMetrics::default()
-                };
+                let mut error_metrics =
+                    shared_metrics.lock().map(|m| m.clone()).unwrap_or_default();
+                if error_metrics.duration_ms == 0 {
+                    error_metrics.duration_ms = call_start.elapsed().as_millis() as u64;
+                }
                 // Emit LlmCallEnd for the failed attempt
                 tx.send(AgentEvent::LlmCallEnd {
                     turn,

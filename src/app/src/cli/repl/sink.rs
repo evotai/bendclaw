@@ -164,6 +164,12 @@ impl ReplSink {
                 state.pending_tools.clear();
                 state.llm_call_count = 0;
                 state.tool_call_count = 0;
+                state.system_prompt_tokens = 0;
+                state.last_message_stats = None;
+                state.llm_metrics.clear();
+                state.llm_output_tokens.clear();
+                state.tool_stats.clear();
+                state.compact_history.clear();
             }
             RunEventPayload::TurnStarted {} => {}
             RunEventPayload::AssistantCompleted { content, .. } => {

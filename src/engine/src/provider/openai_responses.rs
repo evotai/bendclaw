@@ -9,7 +9,6 @@ use reqwest_eventsource::EventSource;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::model::ModelConfig;
 use super::traits::*;
@@ -157,7 +156,6 @@ impl StreamProvider for OpenAiResponsesProvider {
                                 }
                                 "error" => {
                                     let provider_err = classify_sse_error_event(&msg.data);
-                                    warn!("OpenAI Responses error: {}", provider_err);
                                     return Err(provider_err);
                                 }
                                 _ => {
@@ -167,7 +165,6 @@ impl StreamProvider for OpenAiResponsesProvider {
                         }
                         Some(Err(e)) => {
                             let provider_err = classify_eventsource_error(e).await;
-                            warn!("OpenAI Responses SSE error: {}", provider_err);
                             return Err(provider_err);
                         }
                     }

@@ -286,9 +286,10 @@ fn run_event_context_maps_all_protocol_events() {
     });
     assert_eq!(e.unwrap().kind_str(), "tool_finished");
 
-    // InputRejected -> Error
-    let e = ctx.map(&ProtocolEvent::InputRejected {
-        reason: "bad".into(),
+    // Error -> Error
+    let e = ctx.map(&ProtocolEvent::Error {
+        kind: "input_rejected".into(),
+        message: "bad".into(),
     });
     assert_eq!(e.unwrap().kind_str(), "error");
 

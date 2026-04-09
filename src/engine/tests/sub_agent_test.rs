@@ -32,7 +32,6 @@ fn make_config(provider: MockProvider) -> AgentLoopConfig {
         retry_config: bendengine::RetryConfig::default(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     }
 }

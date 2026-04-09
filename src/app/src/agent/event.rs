@@ -331,8 +331,11 @@ pub enum ProtocolEvent {
         error: Option<String>,
         metrics: Option<LlmCallMetrics>,
     },
-    InputRejected {
-        reason: String,
+    /// Unified error event from the engine.
+    /// Replaces the former `InputRejected` variant.
+    Error {
+        kind: String,
+        message: String,
     },
     ContextCompactionStart {
         message_count: usize,
@@ -458,8 +461,8 @@ impl<'a> RunEventContext<'a> {
                 result_tokens: *result_tokens,
                 duration_ms: *duration_ms,
             },
-            ProtocolEvent::InputRejected { reason } => RunEventPayload::Error {
-                message: reason.clone(),
+            ProtocolEvent::Error { message, .. } => RunEventPayload::Error {
+                message: message.clone(),
             },
             ProtocolEvent::LlmCallStart {
                 turn,

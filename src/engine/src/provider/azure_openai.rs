@@ -12,7 +12,6 @@ use reqwest_eventsource::EventSource;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::traits::*;
 use crate::types::*;
@@ -134,7 +133,6 @@ impl StreamProvider for AzureOpenAiProvider {
                                 }
                                 "error" => {
                                     let provider_err = classify_sse_error_event(&msg.data);
-                                    warn!("Azure OpenAI error: {}", provider_err);
                                     return Err(provider_err);
                                 }
                                 _ => {}
@@ -142,7 +140,6 @@ impl StreamProvider for AzureOpenAiProvider {
                         }
                         Some(Err(e)) => {
                             let provider_err = classify_eventsource_error(e).await;
-                            warn!("Azure SSE error: {}", provider_err);
                             return Err(provider_err);
                         }
                     }

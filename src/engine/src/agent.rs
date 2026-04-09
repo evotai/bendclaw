@@ -14,7 +14,6 @@ use crate::agent_loop::agent_loop_continue;
 use crate::agent_loop::AfterTurnFn;
 use crate::agent_loop::AgentLoopConfig;
 use crate::agent_loop::BeforeTurnFn;
-use crate::agent_loop::OnErrorFn;
 use crate::context::CompactionStrategy;
 use crate::context::ContextConfig;
 use crate::context::ExecutionLimits;
@@ -65,7 +64,6 @@ pub struct Agent {
     // Lifecycle callbacks
     before_turn: Option<BeforeTurnFn>,
     after_turn: Option<AfterTurnFn>,
-    on_error: Option<OnErrorFn>,
 
     // Input filters
     input_filters: Vec<Arc<dyn InputFilter>>,
@@ -107,7 +105,6 @@ impl Agent {
             retry_config: crate::retry::RetryConfig::default(),
             before_turn: None,
             after_turn: None,
-            on_error: None,
             input_filters: Vec::new(),
             compaction_strategy: None,
             cancel: None,
@@ -213,11 +210,6 @@ impl Agent {
         f: impl Fn(&[AgentMessage], &Usage) + Send + Sync + 'static,
     ) -> Self {
         self.after_turn = Some(Arc::new(f));
-        self
-    }
-
-    pub fn on_error(mut self, f: impl Fn(&str) + Send + Sync + 'static) -> Self {
-        self.on_error = Some(Arc::new(f));
         self
     }
 
@@ -545,11 +537,23 @@ impl Agent {
         let (tx, rx) = mpsc::unbounded_channel();
 
         if self.is_streaming {
-            tracing::warn!("Agent is already streaming, skipping continue");
+            tx.send(AgentEvent::Error {
+                error: AgentErrorInfo {
+                    kind: AgentErrorKind::Runtime,
+                    message: "Agent is already streaming, skipping continue".into(),
+                },
+            })
+            .ok();
             return rx;
         }
         if self.messages.is_empty() {
-            tracing::warn!("No messages to continue from, skipping continue");
+            tx.send(AgentEvent::Error {
+                error: AgentErrorInfo {
+                    kind: AgentErrorKind::Runtime,
+                    message: "No messages to continue from, skipping continue".into(),
+                },
+            })
+            .ok();
             return rx;
         }
 
@@ -580,11 +584,23 @@ impl Agent {
         self.finish().await; // restore from previous if needed
 
         if self.is_streaming {
-            tracing::warn!("Agent is already streaming, skipping continue");
+            tx.send(AgentEvent::Error {
+                error: AgentErrorInfo {
+                    kind: AgentErrorKind::Runtime,
+                    message: "Agent is already streaming, skipping continue".into(),
+                },
+            })
+            .ok();
             return;
         }
         if self.messages.is_empty() {
-            tracing::warn!("No messages to continue from, skipping continue");
+            tx.send(AgentEvent::Error {
+                error: AgentErrorInfo {
+                    kind: AgentErrorKind::Runtime,
+                    message: "No messages to continue from, skipping continue".into(),
+                },
+            })
+            .ok();
             return;
         }
 
@@ -698,7 +714,6 @@ impl Agent {
             })),
             before_turn: self.before_turn.clone(),
             after_turn: self.after_turn.clone(),
-            on_error: self.on_error.clone(),
             input_filters: self.input_filters.clone(),
         }
     }

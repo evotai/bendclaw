@@ -15,7 +15,6 @@ use futures::StreamExt;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::traits::*;
 use crate::types::*;
@@ -100,7 +99,7 @@ impl StreamProvider for BedrockProvider {
                     match chunk {
                         None => break,
                         Some(Err(e)) => {
-                            warn!("Bedrock stream error: {}", e);
+                            debug!("Bedrock stream error: {}", e);
                             break;
                         }
                         Some(Ok(bytes)) => {

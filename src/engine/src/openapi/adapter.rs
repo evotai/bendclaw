@@ -95,7 +95,7 @@ impl OpenApiToolAdapter {
             let operation_id = match &operation.operation_id {
                 Some(id) => id.clone(),
                 None => {
-                    tracing::warn!(
+                    tracing::debug!(
                         path = path,
                         method = method,
                         "Skipping operation without operationId"

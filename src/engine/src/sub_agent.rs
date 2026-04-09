@@ -246,7 +246,6 @@ impl AgentTool for SubAgentTool {
             retry_config: self.retry_config.clone(),
             before_turn: None,
             after_turn: None,
-            on_error: None,
             input_filters: vec![],
         };
 

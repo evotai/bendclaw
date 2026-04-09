@@ -30,7 +30,6 @@ fn make_config(provider: MockProvider) -> AgentLoopConfig {
         retry_config: bendengine::RetryConfig::default(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     }
 }
@@ -78,7 +77,7 @@ async fn test_simple_text_response() {
             AgentEvent::ToolExecutionUpdate { .. } => "ToolExecUpdate",
             AgentEvent::ToolExecutionEnd { .. } => "ToolExecEnd",
             AgentEvent::ProgressMessage { .. } => "ProgressMessage",
-            AgentEvent::InputRejected { .. } => "InputRejected",
+            AgentEvent::Error { .. } => "Error",
             AgentEvent::LlmCallStart { .. } => "LlmCallStart",
             AgentEvent::LlmCallEnd { .. } => "LlmCallEnd",
             AgentEvent::ContextCompactionStart { .. } => "CompactionStart",
@@ -177,7 +176,7 @@ async fn test_tool_call_and_response() {
             AgentEvent::ToolExecutionUpdate { .. } => "ToolExecUpdate",
             AgentEvent::ToolExecutionEnd { .. } => "ToolExecEnd",
             AgentEvent::ProgressMessage { .. } => "ProgressMessage",
-            AgentEvent::InputRejected { .. } => "InputRejected",
+            AgentEvent::Error { .. } => "Error",
             AgentEvent::LlmCallStart { .. } => "LlmCallStart",
             AgentEvent::LlmCallEnd { .. } => "LlmCallEnd",
             AgentEvent::ContextCompactionStart { .. } => "CompactionStart",
@@ -759,7 +758,6 @@ async fn test_retry_on_rate_limit_succeeds() {
         },
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -826,7 +824,6 @@ async fn test_retry_exhausted_returns_error() {
         },
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -900,7 +897,6 @@ async fn test_retry_on_auth_error_succeeds() {
         },
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -960,7 +956,6 @@ async fn test_retry_none_disables_retries() {
         retry_config: bendengine::RetryConfig::none(), // disabled
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -1157,7 +1152,7 @@ async fn test_after_turn_receives_messages() {
 }
 
 #[tokio::test]
-async fn test_on_error_fires_on_provider_error() {
+async fn test_error_event_fires_on_provider_error() {
     let provider = FailThenSucceedProvider {
         fail_count: std::sync::atomic::AtomicUsize::new(0),
         max_failures: 10, // more failures than retries
@@ -1165,35 +1160,9 @@ async fn test_on_error_fires_on_provider_error() {
         inner: MockProvider::text("never reached"),
     };
 
-    let error_msgs: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let error_msgs_clone = error_msgs.clone();
-
-    let config = AgentLoopConfig {
-        provider: std::sync::Arc::new(provider),
-        model: "mock".into(),
-        api_key: "test".into(),
-        thinking_level: ThinkingLevel::Off,
-        max_tokens: None,
-        temperature: None,
-        model_config: None,
-        convert_to_llm: None,
-        transform_context: None,
-        get_steering_messages: None,
-        get_follow_up_messages: None,
-        context_config: None,
-        compaction_strategy: None,
-        execution_limits: None,
-        cache_config: CacheConfig::default(),
-        tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(),
-        before_turn: None,
-        after_turn: None,
-        on_error: Some(std::sync::Arc::new(move |err| {
-            error_msgs_clone.lock().unwrap().push(err.to_string());
-        })),
-        input_filters: vec![],
-    };
+    let mut config = make_config(MockProvider::text("unused"));
+    config.provider = std::sync::Arc::new(provider);
+    config.retry_config = bendengine::RetryConfig::none();
 
     let mut context = AgentContext {
         system_prompt: "test".into(),
@@ -1202,14 +1171,25 @@ async fn test_on_error_fires_on_provider_error() {
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
-    let (tx, _rx) = mpsc::unbounded_channel();
+    let (tx, rx) = mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
     agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
 
-    let errors = error_msgs.lock().unwrap();
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("connection reset"), "got: {}", errors[0]);
+    let events = collect_events(rx);
+    let error_events: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::Error { error } => Some(error.message.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(error_events.len(), 1);
+    assert!(
+        error_events[0].contains("connection reset"),
+        "got: {}",
+        error_events[0]
+    );
 }
 
 #[tokio::test]
@@ -1633,11 +1613,12 @@ async fn test_filter_reject_returns_empty() {
         "Rejected prompts should not leak into context, got {} messages",
         context.messages.len()
     );
-    // InputRejected event should carry the reason
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, AgentEvent::InputRejected { reason } if reason == "blocked")));
-    // AgentStart + InputRejected + AgentEnd
+    // Error event should carry the reason
+    assert!(events.iter().any(|e| matches!(
+        e,
+        AgentEvent::Error { error } if error.kind == AgentErrorKind::InputRejected && error.message == "blocked"
+    )));
+    // AgentStart + Error + AgentEnd
     assert!(events.iter().any(|e| matches!(e, AgentEvent::AgentStart)));
     assert!(events
         .iter()
@@ -1891,7 +1872,6 @@ async fn test_custom_compaction_strategy_is_called() {
         retry_config: bendengine::RetryConfig::none(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -1966,7 +1946,6 @@ async fn test_none_compaction_strategy_uses_default() {
         retry_config: bendengine::RetryConfig::none(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -2046,7 +2025,6 @@ async fn test_compaction_events_emitted_when_context_exceeds_budget() {
         retry_config: bendengine::RetryConfig::none(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 
@@ -2124,7 +2102,6 @@ async fn test_compaction_events_level_zero_when_within_budget() {
         retry_config: bendengine::RetryConfig::none(),
         before_turn: None,
         after_turn: None,
-        on_error: None,
         input_filters: vec![],
     };
 

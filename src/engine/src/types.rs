@@ -414,6 +414,39 @@ pub enum ToolError {
 }
 
 // ---------------------------------------------------------------------------
+// Unified error model
+// ---------------------------------------------------------------------------
+
+/// Classification of agent errors by source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentErrorKind {
+    /// LLM provider / network / SSE error (after retries exhausted).
+    Provider,
+    /// Engine runtime state error (invalid continue, already streaming, etc.).
+    Runtime,
+    /// User input rejected by an input filter.
+    InputRejected,
+}
+
+/// Structured error information emitted via [`AgentEvent::Error`].
+///
+/// This is the single, unified way for the engine to report user-visible
+/// errors to the app layer. All provider failures, runtime state errors,
+/// and input rejections flow through this type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentErrorInfo {
+    pub kind: AgentErrorKind,
+    pub message: String,
+}
+
+impl fmt::Display for AgentErrorInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Agent events (for streaming UI updates)
 // ---------------------------------------------------------------------------
 
@@ -464,8 +497,12 @@ pub enum AgentEvent {
         tool_name: String,
         text: String,
     },
-    InputRejected {
-        reason: String,
+    /// Unified error event — the single channel for all user-visible errors.
+    ///
+    /// Replaces the former `InputRejected` variant and provider/runtime `warn!` logs.
+    /// App layer should display this to the user but NOT write it to transcript.
+    Error {
+        error: AgentErrorInfo,
     },
     LlmCallStart {
         turn: usize,

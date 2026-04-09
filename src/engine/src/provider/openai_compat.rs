@@ -12,7 +12,6 @@ use reqwest_eventsource::EventSource;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::model::MaxTokensField;
 use super::model::ModelConfig;
@@ -95,7 +94,7 @@ impl StreamProvider for OpenAiCompatProvider {
                                 } else {
                                     err.message.clone()
                                 };
-                                warn!("OpenAI stream error: {}", msg);
+                                debug!("OpenAI stream error: {}", msg);
                                 return Err(ProviderError::Api(msg));
                             }
 
@@ -199,7 +198,6 @@ impl StreamProvider for OpenAiCompatProvider {
                         }
                         Some(Err(e)) => {
                             let provider_err = classify_eventsource_error(e).await;
-                            warn!("OpenAI SSE error: {}", provider_err);
                             return Err(provider_err);
                         }
                     }

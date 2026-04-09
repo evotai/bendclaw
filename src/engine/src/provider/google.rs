@@ -8,7 +8,6 @@ use futures::StreamExt;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::traits::*;
 use crate::types::*;
@@ -80,7 +79,7 @@ impl StreamProvider for GoogleProvider {
                     match chunk {
                         None => break,
                         Some(Err(e)) => {
-                            warn!("Google stream error: {}", e);
+                            debug!("Google stream error: {}", e);
                             break;
                         }
                         Some(Ok(bytes)) => {

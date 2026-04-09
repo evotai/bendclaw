@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use tracing::warn;
-
 use crate::provider::ProviderError;
 
 /// Configuration for automatic retry of transient provider errors.
@@ -77,15 +75,4 @@ impl ProviderError {
             _ => None,
         }
     }
-}
-
-/// Log a retry attempt.
-pub(crate) fn log_retry(attempt: usize, max: usize, delay: &Duration, error: &ProviderError) {
-    warn!(
-        "Provider error (attempt {}/{}), retrying in {:.1}s: {}",
-        attempt,
-        max,
-        delay.as_secs_f64(),
-        error
-    );
 }

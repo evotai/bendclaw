@@ -17,7 +17,7 @@ pub fn try_repair_json(raw: &str) -> Result<serde_json::Value, serde_json::Error
     // Only attempt repair on input that looks like JSON
     if looks_like_json(raw) {
         if let Ok(v) = jsonrepair::repair_to_value(raw, &jsonrepair::Options::default()) {
-            tracing::warn!("repaired malformed tool-call JSON");
+            tracing::debug!("repaired malformed tool-call JSON");
             return Ok(v);
         }
     }

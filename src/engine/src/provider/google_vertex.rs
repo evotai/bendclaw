@@ -108,7 +108,6 @@ async fn parse_google_sse_response(
     use futures::StreamExt;
     use serde::Deserialize;
     use tracing::debug;
-    use tracing::warn;
 
     let mut content: Vec<Content> = Vec::new();
     let mut usage = Usage::default();
@@ -128,7 +127,7 @@ async fn parse_google_sse_response(
                 match chunk {
                     None => break,
                     Some(Err(e)) => {
-                        warn!("Vertex stream error: {}", e);
+                        debug!("Vertex stream error: {}", e);
                         break;
                     }
                     Some(Ok(bytes)) => {

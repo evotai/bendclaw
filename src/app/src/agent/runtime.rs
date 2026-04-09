@@ -205,11 +205,10 @@ async fn forward_events(
                 tool_name: tool_name.clone(),
                 text: text.clone(),
             }),
-            bend_engine::AgentEvent::InputRejected { reason } => {
-                Some(ProtocolEvent::InputRejected {
-                    reason: reason.clone(),
-                })
-            }
+            bend_engine::AgentEvent::Error { error } => Some(ProtocolEvent::Error {
+                kind: format!("{:?}", error.kind).to_lowercase(),
+                message: error.message.clone(),
+            }),
             bend_engine::AgentEvent::LlmCallStart {
                 turn,
                 attempt,

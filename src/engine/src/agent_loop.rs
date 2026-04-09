@@ -32,10 +32,7 @@ pub type GetMessagesFn = Box<dyn Fn() -> Vec<AgentMessage> + Send + Sync>;
 pub type BeforeTurnFn = Arc<dyn Fn(&[AgentMessage], usize) -> bool + Send + Sync>;
 /// Called after each LLM turn with the current messages and the turn's usage.
 pub type AfterTurnFn = Arc<dyn Fn(&[AgentMessage], &Usage) + Send + Sync>;
-/// Called when the LLM returns a `StopReason::Error`.
-pub type OnErrorFn = Arc<dyn Fn(&str) + Send + Sync>;
 use tokio::sync::mpsc;
-use tracing::warn;
 
 /// Configuration for the agent loop
 pub struct AgentLoopConfig {
@@ -87,8 +84,6 @@ pub struct AgentLoopConfig {
     pub before_turn: Option<BeforeTurnFn>,
     /// Called after each LLM turn with the current messages and the turn's usage.
     pub after_turn: Option<AfterTurnFn>,
-    /// Called when the LLM returns a `StopReason::Error`.
-    pub on_error: Option<OnErrorFn>,
 
     /// Input filters applied to user messages before the LLM call.
     /// Filters run in order; first `Reject` wins and discards any accumulated
@@ -146,8 +141,11 @@ pub async fn agent_loop(
                 FilterResult::Pass => {}
                 FilterResult::Warn(w) => warnings.push(w),
                 FilterResult::Reject(reason) => {
-                    tx.send(AgentEvent::InputRejected {
-                        reason: reason.clone(),
+                    tx.send(AgentEvent::Error {
+                        error: AgentErrorInfo {
+                            kind: AgentErrorKind::InputRejected,
+                            message: reason,
+                        },
                     })
                     .ok();
                     tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
@@ -220,14 +218,26 @@ pub async fn agent_loop_continue(
     tx.send(AgentEvent::AgentStart).ok();
 
     if context.messages.is_empty() {
-        warn!("Cannot continue: no messages in context");
+        tx.send(AgentEvent::Error {
+            error: AgentErrorInfo {
+                kind: AgentErrorKind::Runtime,
+                message: "Cannot continue: no messages in context".into(),
+            },
+        })
+        .ok();
         tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
         return vec![];
     }
 
     if let Some(last) = context.messages.last() {
         if last.role() == "assistant" {
-            warn!("Cannot continue from assistant message");
+            tx.send(AgentEvent::Error {
+                error: AgentErrorInfo {
+                    kind: AgentErrorKind::Runtime,
+                    message: "Cannot continue from assistant message".into(),
+                },
+            })
+            .ok();
             tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
             return vec![];
         }
@@ -310,7 +320,6 @@ async fn run_loop(
             // Check execution limits
             if let Some(ref tracker) = tracker {
                 if let Some(reason) = tracker.check_limits() {
-                    warn!("Execution limit reached: {}", reason);
                     let limit_msg = AgentMessage::Llm(Message::User {
                         content: vec![Content::Text {
                             text: format!("[Agent stopped: {}]", reason),
@@ -387,11 +396,19 @@ async fn run_loop(
             } = message
             {
                 if *stop_reason == StopReason::Error || *stop_reason == StopReason::Aborted {
-                    if *stop_reason == StopReason::Error {
-                        if let Some(ref on_error) = config.on_error {
-                            let err_str = error_message.as_deref().unwrap_or("Unknown error");
-                            on_error(err_str);
-                        }
+                    // Emit unified Error event for provider errors (but not cancellations)
+                    if *stop_reason == StopReason::Error && !cancel.is_cancelled() {
+                        let err_str = error_message
+                            .as_deref()
+                            .unwrap_or("Unknown error")
+                            .to_string();
+                        tx.send(AgentEvent::Error {
+                            error: AgentErrorInfo {
+                                kind: AgentErrorKind::Provider,
+                                message: err_str,
+                            },
+                        })
+                        .ok();
                     }
                     // Call after_turn even on error/abort so callers tracking usage don't miss this turn
                     if let Some(ref after_turn) = config.after_turn {
@@ -726,7 +743,6 @@ async fn stream_assistant_response(
                 let delay = e
                     .retry_after()
                     .unwrap_or_else(|| retry.delay_for_attempt(attempt));
-                crate::retry::log_retry(attempt, retry.max_retries, &delay, e);
                 tokio::time::sleep(delay).await;
                 continue;
             }
@@ -763,9 +779,6 @@ async fn stream_assistant_response(
             msg.clone()
         }
         Err(e) => {
-            if !matches!(e, crate::provider::ProviderError::Cancelled) {
-                warn!("Provider error: {}", e);
-            }
             tx.send(AgentEvent::LlmCallEnd {
                 turn,
                 attempt,

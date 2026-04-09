@@ -20,3 +20,7 @@
 - Fast iteration is expected
 - All tests must go in the `tests/` directory, never inline in source files
 - Focus on core logic coverage, not overall coverage
+
+# Pre-commit
+
+- Always run `make check` before committing — it runs `cargo fmt --check` and `cargo clippy`

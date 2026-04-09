@@ -7,7 +7,6 @@ use reqwest_eventsource::EventSource;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::warn;
 
 use super::traits::*;
 use crate::types::*;
@@ -196,7 +195,7 @@ impl StreamProvider for AnthropicProvider {
                                                 match super::json_repair::try_repair_json(&partial) {
                                                     Ok(parsed) => *arguments = parsed,
                                                     Err(e) => {
-                                                        warn!("Failed to parse tool call JSON: {} ({})", partial, e);
+                                                        debug!("Failed to parse tool call JSON: {} ({})", partial, e);
                                                         *arguments = serde_json::Value::Object(Default::default());
                                                     }
                                                 }
@@ -219,7 +218,6 @@ impl StreamProvider for AnthropicProvider {
                                 "ping" => {}
                                 "error" => {
                                     let provider_err = classify_sse_error_event(&msg.data);
-                                    warn!("Anthropic stream error: {}", provider_err);
                                     return Err(provider_err);
                                 }
                                 other => {
@@ -229,7 +227,6 @@ impl StreamProvider for AnthropicProvider {
                         }
                         Some(Err(e)) => {
                             let provider_err = classify_eventsource_error(e).await;
-                            warn!("SSE error: {}", provider_err);
                             return Err(provider_err);
                         }
                     }

@@ -295,23 +295,10 @@ impl AppAgent {
                     ProtocolEvent::AssistantCompleted {
                         content,
                         stop_reason,
-                        error_message,
                         ..
                     } => {
                         let item = transcript_from_assistant_completed(content, stop_reason);
                         run_transcripts.push(item);
-
-                        // Emit an Error RunEvent when the LLM turn ended with an error
-                        if stop_reason == "error" {
-                            let err_msg = error_message
-                                .clone()
-                                .unwrap_or_else(|| "Unknown error".to_string());
-                            let error_event = RunEventContext::new(&rid, &sid, turn)
-                                .map(&ProtocolEvent::InputRejected { reason: err_msg });
-                            if let Some(evt) = error_event {
-                                let _ = tx.send(evt);
-                            }
-                        }
                     }
                     ProtocolEvent::ToolEnd {
                         tool_call_id,

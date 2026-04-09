@@ -47,6 +47,7 @@ pub struct SinkState {
     pub llm_output_tokens: Vec<u64>,
     pub tool_stats: HashMap<String, ToolAggStats>,
     pub compact_history: Vec<CompactRecord>,
+    pub current_model: String,
 }
 
 pub struct ToolCallDisplay {
@@ -318,6 +319,7 @@ impl ReplSink {
                 finish_assistant_stream(state);
                 state.llm_call_count += 1;
                 state.system_prompt_tokens = *system_prompt_tokens;
+                state.current_model = model.clone();
                 let attempt_str = if *attempt > 0 {
                     format!(" · retry {attempt}")
                 } else {
@@ -340,7 +342,11 @@ impl ReplSink {
                 metrics,
                 ..
             } => {
-                let title = "LLM completed".to_string();
+                let title = if state.current_model.is_empty() {
+                    "LLM completed".to_string()
+                } else {
+                    format!("LLM completed · {}", state.current_model)
+                };
                 let ok = error.is_none();
                 super::render::print_badge_line(&title, true, ok);
                 if let Some(err) = error {

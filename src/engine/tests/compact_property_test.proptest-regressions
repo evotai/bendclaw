@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 097d300fb6084676fb064c42f1ff4d9c02837cd9a99d3348067379aab9022843 # shrinks to pattern = "ttuaaa", config = ContextConfig { max_context_tokens: 295, system_prompt_tokens: 0, keep_recent: 1, keep_first: 0, tool_output_max_lines: 10 }, pad = 10, tool_output = 1000

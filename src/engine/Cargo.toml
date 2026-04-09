@@ -49,6 +49,7 @@ tree-sitter-haskell = "0.23"
 tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
 wiremock = "0.6"
+proptest = "1"
 
 [lints.clippy]
 module_inception = "allow"

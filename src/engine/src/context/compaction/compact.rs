@@ -415,32 +415,53 @@ fn level2_summarize_old_turns(
                     timestamp: now_ms(),
                 });
                 let after_tokens = crate::context::tokens::message_tokens(&summary_msg);
-                result.push(summary_msg);
-                turns_summarized += 1;
 
-                // Count and skip trailing tool results
-                i += 1;
+                // Peek ahead to count trailing tool results
+                let mut peek = i + 1;
                 let mut tool_result_count: usize = 0;
                 let mut tool_result_tokens: usize = 0;
-                while i < boundary {
-                    if let AgentMessage::Llm(Message::ToolResult { .. }) = &messages[i] {
-                        tool_result_tokens += crate::context::tokens::message_tokens(&messages[i]);
+                while peek < boundary {
+                    if let AgentMessage::Llm(Message::ToolResult { .. }) = &messages[peek] {
+                        tool_result_tokens +=
+                            crate::context::tokens::message_tokens(&messages[peek]);
                         tool_result_count += 1;
-                        i += 1;
+                        peek += 1;
                     } else {
                         break;
                     }
                 }
 
-                actions.push(CompactionAction {
-                    index: turn_start,
-                    tool_name: "assistant".into(),
-                    method: CompactionMethod::Summarized,
-                    before_tokens: before_tokens + tool_result_tokens,
-                    after_tokens,
-                    end_index: None,
-                    related_count: Some(tool_result_count),
-                });
+                let total_before = before_tokens + tool_result_tokens;
+
+                // Only summarize if it actually saves tokens
+                if after_tokens < total_before {
+                    result.push(summary_msg);
+                    turns_summarized += 1;
+                    i = peek;
+
+                    actions.push(CompactionAction {
+                        index: turn_start,
+                        tool_name: "assistant".into(),
+                        method: CompactionMethod::Summarized,
+                        before_tokens: total_before,
+                        after_tokens,
+                        end_index: None,
+                        related_count: Some(tool_result_count),
+                    });
+                } else {
+                    // Keep original assistant + tool results as-is
+                    result.push(msg.clone());
+                    i += 1;
+                    while i < boundary {
+                        if let AgentMessage::Llm(Message::ToolResult { .. }) = &messages[i] {
+                            result.push(messages[i].clone());
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
                 continue;
             }
             AgentMessage::Llm(Message::ToolResult { .. }) => {

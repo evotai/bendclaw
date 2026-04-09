@@ -126,9 +126,13 @@ impl ProviderError {
 ///
 /// - `InvalidStatusCode` — reads the response body and classifies via
 ///   [`ProviderError::classify()`] (context overflow, rate limit, auth, etc.).
+/// - `InvalidContentType` — reads the JSON body and classifies via
+///   [`super::stream_http::classify_json_error()`]. This handles the case where
+///   the upstream returns `application/json` instead of `text/event-stream`
+///   (e.g. transient errors, overloaded responses).
 /// - `Transport` — maps to [`ProviderError::Network`] (retryable).
 /// - All other variants (protocol/parse errors like `StreamEnded`,
-///   `InvalidContentType`, `Utf8`, `Parser`) — maps to [`ProviderError::Other`]
+///   `Utf8`, `Parser`) — maps to [`ProviderError::Other`]
 ///   (non-retryable, fail fast).
 pub async fn classify_eventsource_error(error: reqwest_eventsource::Error) -> ProviderError {
     match error {
@@ -144,6 +148,19 @@ pub async fn classify_eventsource_error(error: reqwest_eventsource::Error) -> Pr
                     body
                 ),
             )
+        }
+        reqwest_eventsource::Error::InvalidContentType(_content_type, response) => {
+            // The upstream returned a non-SSE content type (typically application/json).
+            // Read the body and try to classify the JSON error.
+            let body = response.text().await.unwrap_or_default();
+            if body.trim().is_empty() {
+                ProviderError::Api("Server returned non-SSE content type".into())
+            } else {
+                match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(value) => super::stream_http::classify_json_error(&value),
+                    Err(_) => ProviderError::classify(200, &body),
+                }
+            }
         }
         reqwest_eventsource::Error::Transport(e) => {
             // Walk the error source chain for more diagnostic context

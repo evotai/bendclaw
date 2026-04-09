@@ -16,8 +16,9 @@ fn tool_result_lines_keeps_single_line_summary_behavior() {
         name: "read_file".into(),
         summary: "/tmp/demo.txt".into(),
     };
+    // read_file no longer gets special treatment; single-line content is returned as-is
     let lines = tool_result_lines("full file contents", false, Some(&tool_call));
-    assert_eq!(lines, vec!["Result: /tmp/demo.txt"]);
+    assert_eq!(lines, vec!["Result: full file contents"]);
 }
 
 #[test]
@@ -26,12 +27,13 @@ fn tool_result_lines_keeps_read_results_compact_even_when_multiline() {
         name: "read_file".into(),
         summary: "/tmp/demo.txt".into(),
     };
+    // read_file multiline content now shows all lines (under compact threshold)
     let lines = tool_result_lines(
-        "[20 lines]\n   1 | first\n   2 | second",
+        "[3 lines]\n   1 | first\n   2 | second",
         false,
         Some(&tool_call),
     );
-    assert_eq!(lines, vec!["Result: /tmp/demo.txt"]);
+    assert_eq!(lines, vec!["[3 lines]", "   1 | first", "   2 | second"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -155,18 +157,39 @@ fn tool_result_lines_truncates_large_output() {
         .collect::<Vec<_>>()
         .join("\n");
     let lines = tool_result_lines(&big_content, false, None);
-    assert_eq!(lines.len(), 31); // 30 lines + 1 truncation notice
-    assert!(lines[30].contains("70 more lines truncated"));
+    // head 5 + ellipsis + tail 3 = 9 lines
+    assert_eq!(lines.len(), 9);
+    assert_eq!(lines[0], "line 0");
+    assert_eq!(lines[4], "line 4");
+    assert!(lines[5].contains("92 more lines"));
+    assert_eq!(lines[6], "line 97");
+    assert_eq!(lines[8], "line 99");
 }
 
 #[test]
 fn tool_result_lines_no_truncation_under_limit() {
-    let content: String = (0..20)
+    let content: String = (0..10)
         .map(|i| format!("line {i}"))
         .collect::<Vec<_>>()
         .join("\n");
     let lines = tool_result_lines(&content, false, None);
-    assert_eq!(lines.len(), 20);
+    assert_eq!(lines.len(), 10);
+}
+
+#[test]
+fn tool_result_lines_truncates_just_above_threshold() {
+    // 11 lines: exceeds COMPACT_THRESHOLD (10), should truncate
+    let content: String = (0..11)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lines = tool_result_lines(&content, false, None);
+    assert_eq!(lines.len(), 9); // head 5 + ellipsis + tail 3
+    assert_eq!(lines[0], "line 0");
+    assert_eq!(lines[4], "line 4");
+    assert!(lines[5].contains("3 more lines"));
+    assert_eq!(lines[6], "line 8");
+    assert_eq!(lines[8], "line 10");
 }
 
 // ---------------------------------------------------------------------------

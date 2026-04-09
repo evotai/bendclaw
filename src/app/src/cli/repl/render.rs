@@ -501,13 +501,16 @@ pub fn print_transcript_messages(items: &[TranscriptItem]) {
 
 pub fn print_tool_call(name: &str, input: &serde_json::Value, preview_command: Option<&str>) {
     let title = format!("{name} call");
-    let lines = format_tool_input_lines(input);
     print_badge_line(&title, false, false);
-    for line in lines {
-        terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
-    }
     if let Some(cmd) = preview_command {
+        // preview_command already contains the full operation info; skip redundant param lines
         terminal_writeln(&format!("{GRAY}  ❯ {cmd}{RESET}"));
+    } else {
+        // No preview_command (e.g. web_fetch): fall back to parameter lines
+        let lines = format_tool_input_lines(input);
+        for line in lines {
+            terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
+        }
     }
     terminal_writeln("");
 }
@@ -556,17 +559,8 @@ pub fn print_badge_line(title: &str, is_result: bool, ok: bool) {
 pub fn tool_result_lines(
     content: &str,
     is_error: bool,
-    tool_call: Option<&ToolCallSummary>,
+    _tool_call: Option<&ToolCallSummary>,
 ) -> Vec<String> {
-    // For read-like tools, show the call summary instead of raw content
-    if !is_error {
-        if let Some(tc) = tool_call {
-            if tc.name.to_lowercase().contains("read") {
-                return vec![format!("Result: {}", tc.summary)];
-            }
-        }
-    }
-
     let summarize = || -> String {
         if content.trim().is_empty() {
             if is_error {
@@ -579,7 +573,9 @@ pub fn tool_result_lines(
         }
     };
 
-    const MAX_RESULT_LINES: usize = 30;
+    const HEAD_LINES: usize = 5;
+    const TAIL_LINES: usize = 3;
+    const COMPACT_THRESHOLD: usize = HEAD_LINES + TAIL_LINES + 2;
 
     let normalized = content.replace("\r\n", "\n");
     if normalized.contains('\n') {
@@ -588,15 +584,16 @@ pub fn tool_result_lines(
             return vec![summarize()];
         }
         let all_lines: Vec<&str> = trimmed.split('\n').collect();
-        if all_lines.len() > MAX_RESULT_LINES {
-            let mut result: Vec<String> = all_lines[..MAX_RESULT_LINES]
-                .iter()
-                .map(|l| l.to_string())
-                .collect();
-            result.push(format!(
-                "... ({} more lines truncated)",
-                all_lines.len() - MAX_RESULT_LINES
-            ));
+        if all_lines.len() > COMPACT_THRESHOLD {
+            let mut result: Vec<String> = Vec::new();
+            result.extend(all_lines[..HEAD_LINES].iter().map(|l| l.to_string()));
+            let omitted = all_lines.len() - HEAD_LINES - TAIL_LINES;
+            result.push(format!("... ({omitted} more lines)"));
+            result.extend(
+                all_lines[all_lines.len() - TAIL_LINES..]
+                    .iter()
+                    .map(|l| l.to_string()),
+            );
             return result;
         }
         return all_lines.into_iter().map(|l| l.to_string()).collect();

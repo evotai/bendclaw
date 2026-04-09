@@ -9,7 +9,6 @@ use super::render::format_budget_bar;
 use super::render::format_llm_call_lines;
 use super::render::format_llm_completed_lines;
 use super::render::format_run_summary;
-use super::render::format_tool_breakdown;
 use super::render::format_tool_input;
 use super::render::print_tool_result;
 use super::render::terminal_writeln;
@@ -418,8 +417,8 @@ impl ReplSink {
                 tool_outputs_truncated,
                 turns_summarized,
                 messages_dropped,
-                before_tool_details,
-                after_tool_details,
+                before_tool_details: _,
+                after_tool_details: _,
                 actions,
             } => {
                 // Ingest via aggregator
@@ -438,10 +437,13 @@ impl ReplSink {
                             actions: actions
                                 .iter()
                                 .map(|a| crate::types::CompactionActionStats {
+                                    index: a.index,
                                     tool_name: a.tool_name.clone(),
                                     method: a.method.clone(),
                                     before_tokens: a.before_tokens,
                                     after_tokens: a.after_tokens,
+                                    end_index: a.end_index,
+                                    related_count: a.related_count,
                                 })
                                 .collect(),
                         },
@@ -454,12 +456,30 @@ impl ReplSink {
                     } else {
                         0.0
                     };
-                    let removed = before_message_count.saturating_sub(*after_message_count);
                     let h_saved = super::render::human_tokens(saved);
+
+                    // Build summary line based on level
+                    let mut summary_parts = Vec::new();
+                    if *tool_outputs_truncated > 0 {
+                        summary_parts
+                            .push(format!("truncated {tool_outputs_truncated} tool outputs"));
+                    }
+                    if *turns_summarized > 0 {
+                        summary_parts.push(format!("summarized {turns_summarized} turns"));
+                    }
+                    if *messages_dropped > 0 {
+                        summary_parts.push(format!("dropped {messages_dropped} messages"));
+                    }
+                    let summary_suffix = if summary_parts.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" · {}", summary_parts.join(" · "))
+                    };
+
                     let title = format!("compact completed · level {level}");
                     super::render::print_badge_line(&title, true, true);
                     terminal_writeln(&format!(
-                        "{GREEN}  saved ~{h_saved} tokens ({saved_pct:.1}%) · {removed} messages removed{RESET}",
+                        "{GREEN}  saved ~{h_saved} tokens ({saved_pct:.1}%){summary_suffix}{RESET}",
                     ));
                     let h_before = super::render::human_tokens(*before_estimated_tokens);
                     let h_after = super::render::human_tokens(*after_estimated_tokens);
@@ -467,52 +487,40 @@ impl ReplSink {
                         "{GRAY}  {before_message_count} messages ~{h_before} tok → {after_message_count} messages ~{h_after} tok{RESET}",
                     ));
 
-                    // Per-tool before/after breakdown
-                    if !before_tool_details.is_empty() {
-                        terminal_writeln(&format!("{GRAY}  tool results before:{RESET}"));
-                        let before_total: usize = before_tool_details.iter().map(|(_, t)| t).sum();
-                        for line in format_tool_breakdown(before_tool_details, before_total) {
-                            terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
+                    // Per-action detail (only non-Skipped actions)
+                    for a in actions {
+                        let h_before = super::render::human_tokens(a.before_tokens);
+                        let h_after = super::render::human_tokens(a.after_tokens);
+                        match a.method.as_str() {
+                            "Summarized" => {
+                                let rc = a.related_count.unwrap_or(0);
+                                terminal_writeln(&format!(
+                                    "{GRAY}  #{:<3} assistant(+{} results) {:<12} ~{} → ~{}{RESET}",
+                                    a.index, rc, a.method, h_before, h_after,
+                                ));
+                            }
+                            "Dropped" => {
+                                if let Some(end) = a.end_index {
+                                    terminal_writeln(&format!(
+                                        "{GRAY}  #{}..#{} {:<12} {:<12} ~{} → ~{}{RESET}",
+                                        a.index, end, "messages", a.method, h_before, h_after,
+                                    ));
+                                } else {
+                                    let rc = a.related_count.unwrap_or(0);
+                                    terminal_writeln(&format!(
+                                        "{GRAY}  Dropped {} messages ~{} → ~{}{RESET}",
+                                        rc, h_before, h_after,
+                                    ));
+                                }
+                            }
+                            _ => {
+                                // Level 1: Outline / HeadTail
+                                terminal_writeln(&format!(
+                                    "{GRAY}  #{:<3} {:<12} {:<12} ~{} → ~{}{RESET}",
+                                    a.index, a.tool_name, a.method, h_before, h_after,
+                                ));
+                            }
                         }
-                    }
-                    if !after_tool_details.is_empty() {
-                        terminal_writeln(&format!("{GRAY}  tool results after:{RESET}"));
-                        let after_total: usize = after_tool_details.iter().map(|(_, t)| t).sum();
-                        for line in format_tool_breakdown(after_tool_details, after_total) {
-                            terminal_writeln(&format!("{GRAY}  {line}{RESET}"));
-                        }
-                    }
-
-                    // Per-action detail
-                    if !actions.is_empty() {
-                        terminal_writeln(&format!("{GRAY}  details:{RESET}"));
-                        for a in actions {
-                            let h_before = super::render::human_tokens(a.before_tokens);
-                            let h_after = super::render::human_tokens(a.after_tokens);
-                            let saved = a.before_tokens.saturating_sub(a.after_tokens);
-                            let h_saved = super::render::human_tokens(saved);
-                            terminal_writeln(&format!(
-                                "{GRAY}    {:<12} {:<10} ~{} → ~{} (saved ~{}){RESET}",
-                                a.tool_name, a.method, h_before, h_after, h_saved,
-                            ));
-                        }
-                    }
-
-                    let mut summary_parts = Vec::new();
-                    if *tool_outputs_truncated > 0 {
-                        summary_parts.push(format!("truncated {tool_outputs_truncated} tools"));
-                    }
-                    if *turns_summarized > 0 {
-                        summary_parts.push(format!("summarized {turns_summarized} turns"));
-                    }
-                    if *messages_dropped > 0 {
-                        summary_parts.push(format!("dropped {messages_dropped}"));
-                    }
-                    if !summary_parts.is_empty() {
-                        terminal_writeln(&format!(
-                            "{GRAY}  actions: {}{RESET}",
-                            summary_parts.join(" · "),
-                        ));
                     }
                 } else {
                     let title = "compact completed · level 0".to_string();

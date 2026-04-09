@@ -23,17 +23,25 @@ pub struct ToolTokenDetail {
     pub tokens: usize,
 }
 
-/// Describes what happened to a single tool result during compaction.
+/// Describes what happened to a single item during compaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionAction {
-    /// Tool name (e.g. "read_file", "bash")
+    /// Message index in the original list (0-based).
+    pub index: usize,
+    /// Tool name (Level 1), "assistant" (Level 2), or "messages" (Level 3).
     pub tool_name: String,
-    /// What method was used
+    /// What method was used.
     pub method: CompactionMethod,
-    /// Tokens before compaction
+    /// Tokens before compaction.
     pub before_tokens: usize,
-    /// Tokens after compaction
+    /// Tokens after compaction.
     pub after_tokens: usize,
+    /// End index for range actions (Level 3 drop).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_index: Option<usize>,
+    /// Count of related messages (e.g. tool results in a Level 2 turn).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_count: Option<usize>,
 }
 
 /// The method used to compact a tool result.
@@ -174,32 +182,33 @@ pub fn compact_messages(messages: Vec<AgentMessage>, config: &ContextConfig) -> 
         return make_result(messages, 0, CompactionStats::default());
     }
 
-    let (compacted, tool_outputs_truncated, actions) =
+    let (compacted, tool_outputs_truncated, l1_actions) =
         level1_truncate_tool_outputs(&messages, config.tool_output_max_lines);
     if total_tokens(&compacted) <= budget {
         return make_result(compacted, 1, CompactionStats {
             tool_outputs_truncated,
-            actions,
+            actions: l1_actions,
             ..Default::default()
         });
     }
 
-    let (compacted, turns_summarized) = level2_summarize_old_turns(&compacted, config.keep_recent);
+    let (compacted, turns_summarized, l2_actions) =
+        level2_summarize_old_turns(&compacted, config.keep_recent);
     if total_tokens(&compacted) <= budget {
         return make_result(compacted, 2, CompactionStats {
             tool_outputs_truncated,
             turns_summarized,
-            actions,
+            actions: l2_actions,
             ..Default::default()
         });
     }
 
-    let (compacted, messages_dropped) = level3_drop_middle(&compacted, config, budget);
+    let (compacted, messages_dropped, l3_actions) = level3_drop_middle(&compacted, config, budget);
     make_result(compacted, 3, CompactionStats {
         tool_outputs_truncated,
         turns_summarized,
         messages_dropped,
-        actions,
+        actions: l3_actions,
         ..Default::default()
     })
 }
@@ -222,7 +231,8 @@ pub fn level1_truncate_tool_outputs(
     let mut actions = Vec::new();
     let result = messages
         .iter()
-        .map(|msg| match msg {
+        .enumerate()
+        .map(|(idx, msg)| match msg {
             AgentMessage::Llm(Message::ToolResult {
                 tool_call_id,
                 tool_name,
@@ -261,13 +271,16 @@ pub fn level1_truncate_tool_outputs(
                 let after_tokens = content_tokens(&truncated_content);
                 if method != CompactionMethod::Skipped {
                     truncated_count += 1;
+                    actions.push(CompactionAction {
+                        index: idx,
+                        tool_name: tool_name.clone(),
+                        method,
+                        before_tokens,
+                        after_tokens,
+                        end_index: None,
+                        related_count: None,
+                    });
                 }
-                actions.push(CompactionAction {
-                    tool_name: tool_name.clone(),
-                    method,
-                    before_tokens,
-                    after_tokens,
-                });
                 AgentMessage::Llm(Message::ToolResult {
                     tool_call_id: tool_call_id.clone(),
                     tool_name: tool_name.clone(),
@@ -283,43 +296,41 @@ pub fn level1_truncate_tool_outputs(
 }
 
 /// Try tree-sitter outline for a `read_file` result, fall back to head+tail.
+///
+/// Always attempts outline first (regardless of line count). Uses outline only
+/// if it saves at least 10% of the original size. Falls back to head+tail
+/// truncation otherwise.
 fn try_outline_or_truncate(
     text: &str,
     tool_call_index: &HashMap<String, serde_json::Value>,
     tool_call_id: &str,
     max_lines: usize,
 ) -> String {
-    // Only attempt outline if the text is long enough to warrant it
-    if text.lines().count() <= max_lines {
-        return text.to_string();
-    }
-
     // Look up the file path from the ToolCall arguments
     let path = tool_call_index
         .get(tool_call_id)
         .and_then(|args| args.get("path"))
         .and_then(|v| v.as_str());
 
-    let path = match path {
-        Some(p) => p,
-        None => return truncate_text_head_tail(text, max_lines),
-    };
+    if let Some(path) = path {
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str());
 
-    // Extract extension
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str());
-
-    let ext = match ext {
-        Some(e) => e,
-        None => return truncate_text_head_tail(text, max_lines),
-    };
-
-    // Parse the read_file numbered output and try outline
-    match outline::extract_outline_from_read_file_output(text, ext, path) {
-        Some(outlined) if outlined.len() < text.len() => outlined,
-        _ => truncate_text_head_tail(text, max_lines),
+        if let Some(ext) = ext {
+            if let Some(outlined) = outline::extract_outline_from_read_file_output(text, ext, path)
+            {
+                // Use outline only if it saves at least 10%
+                let threshold = text.len() / 10;
+                if outlined.len() + threshold < text.len() {
+                    return outlined;
+                }
+            }
+        }
     }
+
+    // Outline not available or not enough savings — fall back to head+tail
+    truncate_text_head_tail(text, max_lines)
 }
 
 /// Truncate text keeping first N/2 and last N/2 lines.
@@ -351,21 +362,25 @@ pub fn truncate_text_head_tail(text: &str, max_lines: usize) -> String {
 fn level2_summarize_old_turns(
     messages: &[AgentMessage],
     keep_recent: usize,
-) -> (Vec<AgentMessage>, usize) {
+) -> (Vec<AgentMessage>, usize, Vec<CompactionAction>) {
     let len = messages.len();
     if len <= keep_recent {
-        return (messages.to_vec(), 0);
+        return (messages.to_vec(), 0, Vec::new());
     }
 
     let boundary = len - keep_recent;
     let mut result = Vec::new();
     let mut turns_summarized = 0;
+    let mut actions = Vec::new();
 
     let mut i = 0;
     while i < boundary {
         let msg = &messages[i];
         match msg {
             AgentMessage::Llm(Message::Assistant { content, .. }) => {
+                let turn_start = i;
+                let before_tokens = crate::context::tokens::message_tokens(msg);
+
                 let text_parts: Vec<&str> = content
                     .iter()
                     .filter_map(|c| match c {
@@ -393,22 +408,39 @@ fn level2_summarize_old_turns(
                     "[Assistant response]".into()
                 };
 
-                result.push(AgentMessage::Llm(Message::User {
+                let summary_msg = AgentMessage::Llm(Message::User {
                     content: vec![Content::Text {
                         text: format!("[Summary] {}", summary),
                     }],
                     timestamp: now_ms(),
-                }));
+                });
+                let after_tokens = crate::context::tokens::message_tokens(&summary_msg);
+                result.push(summary_msg);
                 turns_summarized += 1;
 
+                // Count and skip trailing tool results
                 i += 1;
+                let mut tool_result_count: usize = 0;
+                let mut tool_result_tokens: usize = 0;
                 while i < boundary {
                     if let AgentMessage::Llm(Message::ToolResult { .. }) = &messages[i] {
+                        tool_result_tokens += crate::context::tokens::message_tokens(&messages[i]);
+                        tool_result_count += 1;
                         i += 1;
                     } else {
                         break;
                     }
                 }
+
+                actions.push(CompactionAction {
+                    index: turn_start,
+                    tool_name: "assistant".into(),
+                    method: CompactionMethod::Summarized,
+                    before_tokens: before_tokens + tool_result_tokens,
+                    after_tokens,
+                    end_index: None,
+                    related_count: Some(tool_result_count),
+                });
                 continue;
             }
             AgentMessage::Llm(Message::ToolResult { .. }) => {
@@ -423,7 +455,7 @@ fn level2_summarize_old_turns(
     }
 
     result.extend_from_slice(&messages[boundary..]);
-    (result, turns_summarized)
+    (result, turns_summarized, actions)
 }
 
 // ---------------------------------------------------------------------------
@@ -435,7 +467,7 @@ fn level3_drop_middle(
     messages: &[AgentMessage],
     config: &ContextConfig,
     budget: usize,
-) -> (Vec<AgentMessage>, usize) {
+) -> (Vec<AgentMessage>, usize, Vec<CompactionAction>) {
     let len = messages.len();
     let first_end = config.keep_first.min(len);
     let recent_start = len.saturating_sub(config.keep_recent);
@@ -443,12 +475,31 @@ fn level3_drop_middle(
     if first_end >= recent_start {
         let result = keep_within_budget(messages, budget);
         let dropped = len.saturating_sub(result.len());
-        return (result, dropped);
+        let actions = if dropped > 0 {
+            vec![CompactionAction {
+                index: 0,
+                tool_name: "messages".into(),
+                method: CompactionMethod::Dropped,
+                before_tokens: total_tokens(messages),
+                after_tokens: total_tokens(&result),
+                end_index: None,
+                related_count: Some(dropped),
+            }]
+        } else {
+            Vec::new()
+        };
+        return (result, dropped, actions);
     }
 
     let first_msgs = &messages[..first_end];
     let recent_msgs = &messages[recent_start..];
     let removed = recent_start - first_end;
+
+    // Calculate tokens of the dropped range
+    let dropped_tokens: usize = messages[first_end..recent_start]
+        .iter()
+        .map(crate::context::tokens::message_tokens)
+        .sum();
 
     let marker = AgentMessage::Llm(Message::User {
         content: vec![Content::Text {
@@ -459,6 +510,7 @@ fn level3_drop_middle(
         }],
         timestamp: now_ms(),
     });
+    let marker_tokens = crate::context::tokens::message_tokens(&marker);
 
     let mut result = first_msgs.to_vec();
     result.push(marker);
@@ -467,10 +519,33 @@ fn level3_drop_middle(
     if total_tokens(&result) > budget {
         let result = keep_within_budget(&result, budget);
         let dropped = len.saturating_sub(result.len());
-        return (result, dropped);
+        let actions = if dropped > 0 {
+            vec![CompactionAction {
+                index: 0,
+                tool_name: "messages".into(),
+                method: CompactionMethod::Dropped,
+                before_tokens: total_tokens(messages),
+                after_tokens: total_tokens(&result),
+                end_index: None,
+                related_count: Some(dropped),
+            }]
+        } else {
+            Vec::new()
+        };
+        return (result, dropped, actions);
     }
 
-    (result, removed)
+    let actions = vec![CompactionAction {
+        index: first_end,
+        tool_name: "messages".into(),
+        method: CompactionMethod::Dropped,
+        before_tokens: dropped_tokens,
+        after_tokens: marker_tokens,
+        end_index: Some(recent_start.saturating_sub(1)),
+        related_count: Some(removed),
+    }];
+
+    (result, removed, actions)
 }
 
 /// Keep as many recent messages as fit within budget.

@@ -71,10 +71,15 @@ pub struct ContextCompactionCompletedStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionActionStats {
+    pub index: usize,
     pub tool_name: String,
     pub method: String,
     pub before_tokens: usize,
     pub after_tokens: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

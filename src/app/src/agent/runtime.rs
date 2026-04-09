@@ -600,10 +600,13 @@ fn map_agent_event(
                             .actions
                             .iter()
                             .map(|a| crate::types::CompactionActionStats {
+                                index: a.index,
                                 tool_name: a.tool_name.clone(),
                                 method: format!("{:?}", a.method),
                                 before_tokens: a.before_tokens,
                                 after_tokens: a.after_tokens,
+                                end_index: a.end_index,
+                                related_count: a.related_count,
                             })
                             .collect(),
                     })
@@ -624,10 +627,13 @@ fn map_agent_event(
                         .actions
                         .iter()
                         .map(|a| crate::agent::event::CompactionActionInfo {
+                            index: a.index,
                             tool_name: a.tool_name.clone(),
                             method: format!("{:?}", a.method),
                             before_tokens: a.before_tokens,
                             after_tokens: a.after_tokens,
+                            end_index: a.end_index,
+                            related_count: a.related_count,
                         })
                         .collect(),
                 }),

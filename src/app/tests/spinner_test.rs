@@ -144,3 +144,438 @@ fn spinner_runs_full_speed_without_tokens() {
     state.render_frame();
     assert_eq!(state.frame_index(), 3);
 }
+
+#[test]
+fn set_progress_extracts_tail_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    let text = "line1\nline2\nline3\nline4\nline5\nline6\nline7";
+    state.set_progress(text);
+
+    // Should keep last 5 lines
+    let lines = state.progress_lines();
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0], "line3");
+    assert_eq!(lines[4], "line7");
+}
+
+#[test]
+fn set_progress_fewer_than_max_keeps_all() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("a\nb");
+    assert_eq!(state.progress_lines().len(), 2);
+    assert_eq!(state.progress_lines()[0], "a");
+    assert_eq!(state.progress_lines()[1], "b");
+}
+
+#[test]
+fn set_progress_empty_text_yields_no_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("");
+    assert_eq!(state.progress_lines().len(), 0);
+}
+
+#[test]
+fn restore_verb_clears_progress_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("line1\nline2\nline3");
+    assert_eq!(state.progress_lines().len(), 3);
+
+    state.restore_verb();
+    assert!(state.progress_lines().is_empty());
+    assert!(state.phase().is_verb());
+}
+
+#[test]
+fn set_tool_clears_progress_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("line1\nline2");
+    assert_eq!(state.progress_lines().len(), 2);
+
+    state.set_tool("bash");
+    assert!(state.progress_lines().is_empty());
+    assert!(state.phase().is_tool());
+}
+
+#[test]
+fn render_frame_progress_tracks_rendered_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("line1\nline2\nline3");
+    state.render_frame();
+
+    // 3 progress lines + 1 spinner line = 4
+    assert_eq!(state.rendered_line_count(), 4);
+    assert_eq!(state.frame_index(), 1);
+}
+
+#[test]
+fn clear_if_rendered_resets_rendered_lines() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("line1\nline2");
+    state.render_frame();
+    assert_eq!(state.rendered_line_count(), 3);
+
+    state.clear_if_rendered();
+    assert_eq!(state.rendered_line_count(), 0);
+}
+
+#[test]
+fn normal_render_frame_tracks_single_line() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.render_frame();
+    assert_eq!(state.rendered_line_count(), 1);
+}
+
+#[test]
+fn activate_resets_progress_state() {
+    let mut state = SpinnerState::new();
+    state.activate();
+
+    state.set_progress("line1\nline2");
+    state.render_frame();
+    assert_eq!(state.rendered_line_count(), 3);
+
+    // Re-activate should reset everything
+    state.activate();
+    assert!(state.progress_lines().is_empty());
+    assert_eq!(state.rendered_line_count(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// build_progress_frame / build_clear_sequence tests
+// ---------------------------------------------------------------------------
+
+use bendclaw::cli::repl::spinner::build_clear_sequence;
+use bendclaw::cli::repl::spinner::build_progress_frame;
+
+/// Helper: count occurrences of a substring.
+fn count_occurrences(haystack: &str, needle: &str) -> usize {
+    haystack.matches(needle).count()
+}
+
+/// Helper: count `\r\n` sequences (raw-mode newlines).
+fn count_newlines(s: &str) -> usize {
+    count_occurrences(s, "\r\n")
+}
+
+/// Helper: extract all cursor-up values from `\x1b[NA` sequences.
+fn extract_cursor_ups(s: &str) -> Vec<usize> {
+    let mut ups = Vec::new();
+    let mut rest = s;
+    while let Some(pos) = rest.find("\x1b[") {
+        rest = &rest[pos + 2..];
+        if let Some(a_pos) = rest.find('A') {
+            let num_str = &rest[..a_pos];
+            if let Ok(n) = num_str.parse::<usize>() {
+                ups.push(n);
+            }
+        }
+    }
+    ups
+}
+
+#[test]
+fn progress_frame_first_render_no_cursor_up() {
+    let lines = vec!["line1".to_string(), "line2".to_string()];
+    let (output, new_lines) = build_progress_frame(&lines, 0, "⠋", "\x1b[90m", "1.2s", "·");
+
+    // 2 progress + 1 spinner = 3
+    assert_eq!(new_lines, 3);
+
+    // No cursor-up on first render (prev_rendered_lines = 0)
+    let ups = extract_cursor_ups(&output);
+    assert!(
+        ups.is_empty(),
+        "first render should have no cursor-up, got: {ups:?}"
+    );
+
+    // Should have exactly 2 \r\n (one per progress line), spinner has none
+    assert_eq!(count_newlines(&output), 2);
+
+    // Should contain both progress lines
+    assert!(output.contains("line1"));
+    assert!(output.contains("line2"));
+
+    // Should contain spinner text
+    assert!(output.contains("Running…"));
+    assert!(output.contains("1.2s"));
+}
+
+#[test]
+fn progress_frame_subsequent_render_cursor_up() {
+    let lines = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+    // Previous render had 4 lines (3 progress + 1 spinner)
+    let (output, new_lines) = build_progress_frame(&lines, 4, "⠙", "\x1b[90m", "2.0s", "•");
+
+    assert_eq!(new_lines, 4);
+
+    // Should cursor-up 3 (prev_rendered_lines - 1 = 3)
+    let ups = extract_cursor_ups(&output);
+    assert!(
+        ups.contains(&3),
+        "should cursor-up 3 to reach top of previous block, got: {ups:?}"
+    );
+}
+
+#[test]
+fn progress_frame_block_shrinks_pads_to_keep_spinner_pinned() {
+    let lines = vec!["only".to_string()];
+    // Previous render had 4 lines, now 1 progress + 1 spinner = 2 content lines
+    // But block stays pinned at 4 (padding fills the gap)
+    let (output, new_lines) = build_progress_frame(&lines, 4, "⠹", "\x1b[90m", "3.0s", "·");
+
+    // Block stays at 4 (pinned)
+    assert_eq!(new_lines, 4);
+
+    // Should have cursor-up 3 at the start (prev 4 - 1)
+    let ups = extract_cursor_ups(&output);
+    assert!(
+        ups.contains(&3),
+        "should cursor-up 3 at start, got: {ups:?}"
+    );
+
+    // No extra cursor-up needed — padding replaces the old clear-and-return logic
+    assert_eq!(
+        ups.len(),
+        1,
+        "only 1 cursor-up (initial), no clear-return, got: {ups:?}"
+    );
+
+    // 3 \r\n total: 1 progress + 2 padding, spinner on row 4
+    assert_eq!(count_newlines(&output), 3);
+}
+
+#[test]
+fn progress_frame_block_grows_no_extra_clear() {
+    let lines = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+    // Previous render had 2 lines, now 4 (3 progress + 1 spinner)
+    let (output, new_lines) = build_progress_frame(&lines, 2, "⠸", "\x1b[90m", "4.0s", "·");
+
+    assert_eq!(new_lines, 4);
+
+    // Should cursor-up 1 at the start (prev 2 - 1)
+    let ups = extract_cursor_ups(&output);
+    assert!(ups.contains(&1), "should cursor-up 1, got: {ups:?}");
+
+    // No extra clear needed — block grew, so no leftover lines
+    // Only 1 cursor-up total (the initial one)
+    assert_eq!(
+        ups.len(),
+        1,
+        "should have exactly 1 cursor-up, got: {ups:?}"
+    );
+}
+
+#[test]
+fn progress_frame_same_size_no_extra_clear() {
+    let lines = vec!["x".to_string(), "y".to_string()];
+    let (output, new_lines) = build_progress_frame(&lines, 3, "⠼", "\x1b[90m", "5.0s", "·");
+
+    assert_eq!(new_lines, 3);
+
+    let ups = extract_cursor_ups(&output);
+    // cursor-up 2 at start (prev 3 - 1)
+    assert!(ups.contains(&2), "should cursor-up 2, got: {ups:?}");
+    // No extra clear
+    assert_eq!(
+        ups.len(),
+        1,
+        "should have exactly 1 cursor-up, got: {ups:?}"
+    );
+}
+
+#[test]
+fn progress_frame_single_line_from_single_line() {
+    let lines = vec!["one".to_string()];
+    // Previous was also single-line spinner (rendered_lines = 1)
+    let (output, new_lines) = build_progress_frame(&lines, 1, "⠴", "\x1b[90m", "0.5s", "·");
+
+    assert_eq!(new_lines, 2);
+
+    // prev_rendered_lines = 1, so no cursor-up (only cursor-up when > 1)
+    let ups = extract_cursor_ups(&output);
+    assert!(
+        ups.is_empty(),
+        "should have no cursor-up from single-line, got: {ups:?}"
+    );
+
+    // Starts with \r to return to line start
+    assert!(output.starts_with('\r'));
+}
+
+#[test]
+fn progress_frame_empty_progress_lines() {
+    let lines: Vec<String> = vec![];
+    let (output, new_lines) = build_progress_frame(&lines, 0, "⠋", "\x1b[90m", "0s", "·");
+
+    // 0 progress + 1 spinner = 1
+    assert_eq!(new_lines, 1);
+
+    // No \r\n (no progress lines)
+    assert_eq!(count_newlines(&output), 0);
+
+    // Still has spinner
+    assert!(output.contains("Running…"));
+}
+
+#[test]
+fn progress_frame_all_newlines_are_raw_mode_safe() {
+    let lines = vec!["a".to_string(), "b".to_string()];
+    let (output, _) = build_progress_frame(&lines, 0, "⠋", "\x1b[90m", "1s", "·");
+
+    // Every \n must be preceded by \r (raw mode requirement)
+    for (i, _) in output.match_indices('\n') {
+        assert!(
+            i > 0 && output.as_bytes()[i - 1] == b'\r',
+            "bare \\n at byte {i} — must use \\r\\n in raw mode"
+        );
+    }
+}
+
+#[test]
+fn progress_frame_contains_tab_title() {
+    let lines = vec!["x".to_string()];
+    let (output, _) = build_progress_frame(&lines, 0, "⠋", "\x1b[90m", "1s", "•");
+
+    assert!(output.contains("\x1b]0;• BendClaw\x07"));
+}
+
+// ---------------------------------------------------------------------------
+// build_clear_sequence tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn clear_single_line() {
+    let seq = build_clear_sequence(1);
+    assert_eq!(seq, "\r\x1b[K");
+}
+
+#[test]
+fn clear_zero_lines() {
+    let seq = build_clear_sequence(0);
+    // Treat 0 same as 1 (single-line path)
+    assert_eq!(seq, "\r\x1b[K");
+}
+
+#[test]
+fn clear_multi_line_cursor_up_and_erase() {
+    let seq = build_clear_sequence(4);
+
+    // Should cursor-up 3 at start (4 - 1)
+    assert!(seq.contains("\x1b[3A"), "should start with cursor-up 3");
+
+    // Should have 4 erase-line + newline sequences
+    assert_eq!(count_occurrences(&seq, "\r\x1b[K\r\n"), 4);
+
+    // Should cursor-up 4 at end to return to start
+    assert!(seq.contains("\x1b[4A"), "should end with cursor-up 4");
+}
+
+#[test]
+fn clear_multi_line_all_newlines_raw_mode_safe() {
+    let seq = build_clear_sequence(3);
+
+    for (i, _) in seq.match_indices('\n') {
+        assert!(
+            i > 0 && seq.as_bytes()[i - 1] == b'\r',
+            "bare \\n at byte {i} — must use \\r\\n in raw mode"
+        );
+    }
+}
+
+#[test]
+fn clear_two_lines() {
+    let seq = build_clear_sequence(2);
+
+    // cursor-up 1 at start
+    assert!(seq.contains("\x1b[1A"), "should cursor-up 1 at start");
+
+    // 2 clear lines
+    assert_eq!(count_occurrences(&seq, "\r\x1b[K\r\n"), 2);
+
+    // cursor-up 2 at end
+    assert!(seq.contains("\x1b[2A"), "should cursor-up 2 at end");
+}
+
+// ---------------------------------------------------------------------------
+// Spinner line must stay pinned at a fixed terminal row.
+// When progress lines shrink, the gap is padded so the spinner
+// doesn't jump upward.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn progress_frame_shrink_keeps_spinner_pinned() {
+    // First render: 3 progress lines → 4 total (3 progress + 1 spinner)
+    let lines_big = vec!["a".into(), "b".into(), "c".into()];
+    let (out1, n1) = build_progress_frame(&lines_big, 0, "⠋", "\x1b[90m", "1s", "·");
+    assert_eq!(n1, 4);
+
+    // The spinner line is always preceded by exactly (n-1) \r\n sequences
+    // so it sits on the n-th terminal row of the block.
+    assert_eq!(
+        count_newlines(&out1),
+        3,
+        "first render: 3 \\r\\n before spinner"
+    );
+
+    // Second render: shrink to 1 progress line.
+    // The block should still occupy 4 terminal rows so the spinner stays put.
+    let lines_small = vec!["x".into()];
+    let (out2, n2) = build_progress_frame(&lines_small, 4, "⠙", "\x1b[90m", "2s", "·");
+
+    // returned new_lines should stay at prev size (pinned)
+    assert_eq!(
+        n2, 4,
+        "spinner must stay pinned: new_lines should equal prev_rendered_lines"
+    );
+
+    // There should be 3 \r\n before the spinner line (to keep it on row 4)
+    assert_eq!(
+        count_newlines(&out2),
+        3,
+        "shrunk render must still have 3 \\r\\n to keep spinner on row 4"
+    );
+}
+
+#[test]
+fn progress_frame_shrink_to_zero_keeps_spinner_pinned() {
+    // Previous: 3 progress + 1 spinner = 4 lines
+    let lines_empty: Vec<String> = vec![];
+    let (out, n) = build_progress_frame(&lines_empty, 4, "⠹", "\x1b[90m", "3s", "·");
+
+    // Spinner must stay on row 4
+    assert_eq!(n, 4, "spinner pinned at row 4 even with 0 progress lines");
+    assert_eq!(
+        count_newlines(&out),
+        3,
+        "3 \\r\\n needed to reach row 4 for spinner"
+    );
+}
+
+#[test]
+fn progress_frame_grow_expands_block() {
+    // Previous: 1 progress + 1 spinner = 2 lines
+    // New: 4 progress + 1 spinner = 5 lines → block grows, spinner moves down
+    let lines = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+    let (out, n) = build_progress_frame(&lines, 2, "⠸", "\x1b[90m", "4s", "·");
+
+    // Block grows to 5
+    assert_eq!(n, 5);
+    // 4 \r\n before spinner
+    assert_eq!(count_newlines(&out), 4);
+}

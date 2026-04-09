@@ -1,7 +1,6 @@
 pub mod commands;
 pub mod completion;
 pub mod diff;
-pub mod live_output;
 pub mod markdown;
 pub mod render;
 mod repl;

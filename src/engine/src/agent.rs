@@ -1,7 +1,6 @@
 //! Stateful Agent struct — wraps the agent loop with state management,
 //! steering/follow-up queues, and abort support.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -17,9 +16,6 @@ use crate::agent_loop::BeforeTurnFn;
 use crate::context::CompactionStrategy;
 use crate::context::ContextConfig;
 use crate::context::ExecutionLimits;
-use crate::mcp::McpClient;
-use crate::mcp::McpError;
-use crate::mcp::McpToolAdapter;
 use crate::provider::ModelConfig;
 use crate::provider::StreamProvider;
 use crate::types::*;
@@ -239,82 +235,6 @@ impl Agent {
         self.context_management_disabled = true;
         self.execution_limits = None;
         self
-    }
-
-    // -- OpenAPI integration --
-
-    /// Load tools from an OpenAPI spec file and add them to the agent.
-    #[cfg(feature = "openapi")]
-    pub async fn with_openapi_file(
-        mut self,
-        path: impl AsRef<std::path::Path>,
-        config: crate::openapi::OpenApiConfig,
-        filter: &crate::openapi::OperationFilter,
-    ) -> Result<Self, crate::openapi::OpenApiError> {
-        let adapters = crate::openapi::OpenApiToolAdapter::from_file(path, config, filter).await?;
-        for adapter in adapters {
-            self.tools.push(Box::new(adapter));
-        }
-        Ok(self)
-    }
-
-    /// Fetch an OpenAPI spec from a URL and add its tools to the agent.
-    #[cfg(feature = "openapi")]
-    pub async fn with_openapi_url(
-        mut self,
-        url: &str,
-        config: crate::openapi::OpenApiConfig,
-        filter: &crate::openapi::OperationFilter,
-    ) -> Result<Self, crate::openapi::OpenApiError> {
-        let adapters = crate::openapi::OpenApiToolAdapter::from_url(url, config, filter).await?;
-        for adapter in adapters {
-            self.tools.push(Box::new(adapter));
-        }
-        Ok(self)
-    }
-
-    /// Parse an OpenAPI spec string and add its tools to the agent.
-    #[cfg(feature = "openapi")]
-    pub fn with_openapi_spec(
-        mut self,
-        spec_str: &str,
-        config: crate::openapi::OpenApiConfig,
-        filter: &crate::openapi::OperationFilter,
-    ) -> Result<Self, crate::openapi::OpenApiError> {
-        let adapters = crate::openapi::OpenApiToolAdapter::from_str(spec_str, config, filter)?;
-        for adapter in adapters {
-            self.tools.push(Box::new(adapter));
-        }
-        Ok(self)
-    }
-
-    // -- MCP integration --
-
-    /// Connect to an MCP server via stdio and add its tools to the agent.
-    pub async fn with_mcp_server_stdio(
-        mut self,
-        command: &str,
-        args: &[&str],
-        env: Option<HashMap<String, String>>,
-    ) -> Result<Self, McpError> {
-        let client = McpClient::connect_stdio(command, args, env).await?;
-        let client = Arc::new(tokio::sync::Mutex::new(client));
-        let adapters = McpToolAdapter::from_client(client).await?;
-        for adapter in adapters {
-            self.tools.push(Box::new(adapter));
-        }
-        Ok(self)
-    }
-
-    /// Connect to an MCP server via HTTP and add its tools to the agent.
-    pub async fn with_mcp_server_http(mut self, url: &str) -> Result<Self, McpError> {
-        let client = McpClient::connect_http(url).await?;
-        let client = Arc::new(tokio::sync::Mutex::new(client));
-        let adapters = McpToolAdapter::from_client(client).await?;
-        for adapter in adapters {
-            self.tools.push(Box::new(adapter));
-        }
-        Ok(self)
     }
 
     // -- State access --

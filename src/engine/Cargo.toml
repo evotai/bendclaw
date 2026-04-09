@@ -24,11 +24,6 @@ futures = "0.3"
 jsonrepair = "0.1"
 rand = "0.8"
 base64 = "0.22"
-openapiv3 = { version = "2", optional = true }
-serde_yaml = { version = "0.9", optional = true }
-
-[features]
-openapi = ["dep:openapiv3", "dep:serde_yaml"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

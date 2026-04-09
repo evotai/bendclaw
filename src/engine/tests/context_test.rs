@@ -735,3 +735,442 @@ fn test_level1_read_file_python_uses_outline() {
         panic!("expected tool result");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Level 1 action structure tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_level1_actions_only_non_skipped() {
+    let big_output = (1..=200)
+        .map(|i| format!("output line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("do something")),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result_with_content("tc-1", "bash", &big_output),
+        make_assistant_with_tool_call("tc-2", "bash"),
+        make_tool_result_with_content("tc-2", "bash", "short output"),
+    ];
+
+    let (_compacted, count, actions) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1, "only one tool output should be truncated");
+    assert_eq!(
+        actions.len(),
+        1,
+        "only non-Skipped actions should be recorded"
+    );
+    assert_eq!(
+        actions[0].index, 2,
+        "action index should point to the truncated ToolResult"
+    );
+    assert_eq!(actions[0].tool_name, "bash");
+    assert!(
+        actions[0].before_tokens > actions[0].after_tokens,
+        "truncated output should have fewer tokens"
+    );
+}
+
+#[test]
+fn test_level1_actions_have_correct_index() {
+    let big_output = (1..=200)
+        .map(|i| format!("output line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("msg 0")),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result_with_content("tc-1", "bash", "ok"),
+        AgentMessage::Llm(Message::user("msg 3")),
+        make_assistant_with_tool_call("tc-2", "bash"),
+        make_tool_result_with_content("tc-2", "bash", &big_output),
+    ];
+
+    let (_compacted, count, actions) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].index, 5);
+}
+
+#[test]
+fn test_level1_outline_action_method() {
+    let rust_output = fake_rust_read_file_output(200);
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/src/foo.rs"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", &rust_output),
+    ];
+
+    let (_compacted, count, actions) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].index, 2);
+    assert_eq!(actions[0].tool_name, "read_file");
+    assert_eq!(actions[0].method, CompactionMethod::Outline);
+    assert!(actions[0].end_index.is_none());
+    assert!(actions[0].related_count.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Level 1 outline threshold tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_level1_outline_requires_10_percent_savings() {
+    let short_rust = "[10 lines]\n   1 | use std::io;\n   2 | \n   3 | fn main() {\n   4 |     println!(\"hello\");\n   5 | }\n   6 | \n   7 | fn helper() {\n   8 |     println!(\"help\");\n   9 | }\n  10 | ";
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/src/tiny.rs"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", short_rust),
+    ];
+
+    let (_compacted, _count, actions) = level1_truncate_tool_outputs(&messages, 50);
+    for a in &actions {
+        if a.method == CompactionMethod::Outline {
+            let savings_pct =
+                (a.before_tokens as f64 - a.after_tokens as f64) / a.before_tokens as f64;
+            assert!(
+                savings_pct >= 0.05,
+                "outline should only be used with meaningful savings, got {:.1}%",
+                savings_pct * 100.0
+            );
+        }
+    }
+}
+
+#[test]
+fn test_level1_outline_works_on_short_code_files() {
+    let mut code_lines = vec![
+        "use std::collections::HashMap;".to_string(),
+        String::new(),
+        "pub struct Config {".to_string(),
+        "    name: String,".to_string(),
+        "    value: usize,".to_string(),
+        "}".to_string(),
+        String::new(),
+        "impl Config {".to_string(),
+        "    pub fn new(name: &str) -> Self {".to_string(),
+    ];
+    for _ in 0..15 {
+        code_lines.push("        let x = HashMap::new();".to_string());
+    }
+    code_lines.push("    }".to_string());
+    code_lines.push(String::new());
+    code_lines.push("    pub fn validate(&self) -> bool {".to_string());
+    for _ in 0..5 {
+        code_lines.push("        let y = self.value + 1;".to_string());
+    }
+    code_lines.push("    }".to_string());
+    code_lines.push("}".to_string());
+
+    let line_count = code_lines.len();
+    let mut lines = vec![format!("[{} lines]", line_count)];
+    for (i, code_line) in code_lines.iter().enumerate() {
+        lines.push(format!("{:>4} | {}", i + 1, code_line));
+    }
+    let rust_output = lines.join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/src/config.rs"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", &rust_output),
+    ];
+
+    let (compacted, _count, actions) = level1_truncate_tool_outputs(&messages, 50);
+
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            if text.contains("Structural outline") {
+                assert!(text.len() < rust_output.len());
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].method, CompactionMethod::Outline);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Level 2 action structure tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_level2_actions_structure() {
+    let pad = "x".repeat(2000); // ~500 tokens each
+    let messages = vec![
+        AgentMessage::Llm(Message::user(&pad)),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result("tc-1", "bash"),
+        make_assistant_with_tool_call("tc-2", "read_file"),
+        make_tool_result("tc-2", "read_file"),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 550,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+
+    let result = compact_messages(messages, &config);
+    assert!(
+        result.stats.level >= 2,
+        "expected level >= 2, got {}",
+        result.stats.level
+    );
+
+    if result.stats.level == 2 {
+        assert!(
+            !result.stats.actions.is_empty(),
+            "level 2 should produce actions"
+        );
+        for action in &result.stats.actions {
+            assert_eq!(action.method, CompactionMethod::Summarized);
+            assert_eq!(action.tool_name, "assistant");
+            assert!(action.related_count.is_some());
+            assert!(
+                action.before_tokens > action.after_tokens,
+                "summarized turn should save tokens"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_level2_action_related_count() {
+    let pad = "x".repeat(800);
+    let messages = vec![
+        AgentMessage::Llm(Message::user(&pad)),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result("tc-1", "bash"),
+        make_tool_result_with_content("tc-1b", "bash", "extra 1"),
+        make_tool_result_with_content("tc-1c", "bash", "extra 2"),
+        AgentMessage::Llm(Message::user("recent")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 200,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+
+    let result = compact_messages(messages, &config);
+    if result.stats.level == 2 {
+        let summarized: Vec<_> = result
+            .stats
+            .actions
+            .iter()
+            .filter(|a| a.method == CompactionMethod::Summarized)
+            .collect();
+
+        for action in &summarized {
+            if action.index == 1 {
+                assert_eq!(
+                    action.related_count,
+                    Some(3),
+                    "assistant at index 1 should have 3 related tool results"
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Level 3 action structure tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_level3_actions_structure() {
+    let mut messages = Vec::new();
+    messages.push(AgentMessage::Llm(Message::user("first")));
+    messages.push(AgentMessage::Llm(Message::user("second")));
+
+    for i in 0..20 {
+        messages.push(make_assistant_with_tool_call(
+            &format!("tc-mid-{i}"),
+            "bash",
+        ));
+        messages.push(make_tool_result(&format!("tc-mid-{i}"), "bash"));
+    }
+
+    messages.push(AgentMessage::Llm(Message::user("recent 1")));
+    messages.push(AgentMessage::Llm(Message::user("recent 2")));
+    messages.push(AgentMessage::Llm(Message::user("recent 3")));
+
+    let config = ContextConfig {
+        max_context_tokens: 150,
+        system_prompt_tokens: 50,
+        keep_recent: 3,
+        keep_first: 2,
+        tool_output_max_lines: 20,
+    };
+
+    let result = compact_messages(messages, &config);
+    assert_eq!(result.stats.level, 3, "should trigger level 3");
+    assert!(
+        !result.stats.actions.is_empty(),
+        "level 3 should produce actions"
+    );
+
+    for action in &result.stats.actions {
+        assert_eq!(action.method, CompactionMethod::Dropped);
+        assert_eq!(action.tool_name, "messages");
+        assert!(
+            action.before_tokens > action.after_tokens,
+            "dropped range should save tokens"
+        );
+    }
+}
+
+#[test]
+fn test_level3_action_has_range() {
+    let mut messages = Vec::new();
+    messages.push(AgentMessage::Llm(Message::user("first")));
+    messages.push(AgentMessage::Llm(Message::user("second")));
+
+    for i in 0..15 {
+        messages.push(AgentMessage::Llm(Message::user(format!(
+            "middle {} {}",
+            i,
+            "y".repeat(100)
+        ))));
+    }
+
+    messages.push(AgentMessage::Llm(Message::user("recent 1")));
+    messages.push(AgentMessage::Llm(Message::user("recent 2")));
+
+    let config = ContextConfig {
+        max_context_tokens: 300,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 2,
+        tool_output_max_lines: 20,
+    };
+
+    let result = compact_messages(messages, &config);
+    if result.stats.level == 3 {
+        let dropped: Vec<_> = result
+            .stats
+            .actions
+            .iter()
+            .filter(|a| a.method == CompactionMethod::Dropped)
+            .collect();
+
+        assert!(!dropped.is_empty());
+        if let Some(action) = dropped.first() {
+            if let Some(end) = action.end_index {
+                assert_eq!(action.index, 2, "drop should start after keep_first");
+                assert!(end > action.index, "end_index should be after start index");
+            }
+            assert!(action.related_count.is_some());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// compact_messages only passes current level actions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_compact_level1_actions_are_level1_only() {
+    // 500 lines of output → ~500 tokens before truncation
+    let big_output = (1..=500)
+        .map(|i| format!("output line {} with some extra padding text here", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("do something")),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result_with_content("tc-1", "bash", &big_output),
+    ];
+
+    // Budget: tight enough to trigger level 1, but after truncation it fits
+    let config = ContextConfig {
+        max_context_tokens: 800,
+        system_prompt_tokens: 0,
+        keep_recent: 10,
+        keep_first: 2,
+        tool_output_max_lines: 20,
+    };
+
+    let result = compact_messages(messages, &config);
+    assert_eq!(result.stats.level, 1, "should trigger level 1");
+    assert!(!result.stats.actions.is_empty(), "should have actions");
+    for action in &result.stats.actions {
+        assert!(
+            action.method == CompactionMethod::Outline
+                || action.method == CompactionMethod::HeadTail,
+            "level 1 result should only contain level 1 actions, got {:?}",
+            action.method
+        );
+    }
+}
+
+#[test]
+fn test_compact_level2_actions_are_level2_only() {
+    let pad = "x".repeat(800);
+    let messages = vec![
+        AgentMessage::Llm(Message::user(&pad)),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result("tc-1", "bash"),
+        AgentMessage::Llm(Message::user(&pad)),
+        make_assistant_with_tool_call("tc-2", "bash"),
+        make_tool_result("tc-2", "bash"),
+        AgentMessage::Llm(Message::user("recent")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 400,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+
+    let result = compact_messages(messages, &config);
+    if result.stats.level == 2 {
+        for action in &result.stats.actions {
+            assert_eq!(
+                action.method,
+                CompactionMethod::Summarized,
+                "level 2 result should only contain Summarized actions"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_compact_level0_no_actions() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("Hello")),
+        AgentMessage::Llm(Message::user("World")),
+    ];
+    let config = ContextConfig::default();
+    let result = compact_messages(messages, &config);
+    assert_eq!(result.stats.level, 0);
+    assert!(
+        result.stats.actions.is_empty(),
+        "level 0 should have no actions"
+    );
+}

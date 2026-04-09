@@ -105,6 +105,7 @@ fn read_only_tools() -> Vec<Box<dyn bend_engine::AgentTool>> {
         Box::new(ListFilesTool::default()),
         Box::new(SearchTool::default()),
         Box::new(WebFetchTool::new()),
+        Box::new(BashTool::default()),
     ]
 }
 

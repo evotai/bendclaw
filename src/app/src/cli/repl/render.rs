@@ -158,7 +158,7 @@ pub fn format_llm_completed_lines(
 // ---------------------------------------------------------------------------
 
 /// Human-friendly token count: "312k", "1.2m", "800".
-fn human_tokens(tokens: usize) -> String {
+pub fn human_tokens(tokens: usize) -> String {
     if tokens >= 1_000_000 {
         format!("{:.1}m", tokens as f64 / 1_000_000.0)
     } else if tokens >= 1_000 {
@@ -674,10 +674,11 @@ pub fn format_tool_breakdown(details: &[(String, usize)], total: usize) -> Vec<S
                 0.0
             };
             let bar = render_bar(pct / 100.0, bar_width);
+            let h_tok = human_tokens(*tokens);
             format!(
                 "  {:<width$}  ~{:<8} ({:>5.1}%)  {bar}",
                 name,
-                tokens,
+                h_tok,
                 pct,
                 width = max_name_len,
             )

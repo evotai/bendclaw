@@ -395,13 +395,17 @@ impl ReplSink {
 
                 let title = "compact call";
                 super::render::print_badge_line(title, false, false);
+                let h_est = super::render::human_tokens(*estimated_tokens);
                 terminal_writeln(&format!(
-                    "{GRAY}  {message_count} messages · ~{estimated_tokens} tokens{RESET}",
+                    "{GRAY}  {message_count} messages · ~{h_est} tokens{RESET}",
                 ));
                 let bar = format_budget_bar(*estimated_tokens, *budget_tokens, 40);
                 terminal_writeln(&format!("{GRAY}  {bar} of budget{RESET}"));
+                let h_budget = super::render::human_tokens(*budget_tokens);
+                let h_window = super::render::human_tokens(*context_window);
+                let h_sys = super::render::human_tokens(*system_prompt_tokens);
                 terminal_writeln(&format!(
-                    "{GRAY}  budget {budget_tokens} (window {context_window} − sys {system_prompt_tokens}){RESET}",
+                    "{GRAY}  budget {h_budget} (window {h_window} − sys {h_sys}){RESET}",
                 ));
                 terminal_writeln("");
             }
@@ -441,13 +445,16 @@ impl ReplSink {
                         0.0
                     };
                     let removed = before_message_count.saturating_sub(*after_message_count);
+                    let h_saved = super::render::human_tokens(saved);
                     let title = format!("compact completed · level {level}");
                     super::render::print_badge_line(&title, true, true);
                     terminal_writeln(&format!(
-                        "{GREEN}  saved ~{saved} tokens ({saved_pct:.1}%) · {removed} messages removed{RESET}",
+                        "{GREEN}  saved ~{h_saved} tokens ({saved_pct:.1}%) · {removed} messages removed{RESET}",
                     ));
+                    let h_before = super::render::human_tokens(*before_estimated_tokens);
+                    let h_after = super::render::human_tokens(*after_estimated_tokens);
                     terminal_writeln(&format!(
-                        "{GRAY}  {before_message_count} messages ~{before_estimated_tokens} tok → {after_message_count} messages ~{after_estimated_tokens} tok{RESET}",
+                        "{GRAY}  {before_message_count} messages ~{h_before} tok → {after_message_count} messages ~{h_after} tok{RESET}",
                     ));
 
                     // Per-tool before/after breakdown

@@ -487,38 +487,97 @@ impl ReplSink {
                         "{GRAY}  {before_message_count} messages ~{h_before} tok → {after_message_count} messages ~{h_after} tok{RESET}",
                     ));
 
-                    // Per-action detail (only non-Skipped actions)
-                    for a in actions {
-                        let h_before = super::render::human_tokens(a.before_tokens);
-                        let h_after = super::render::human_tokens(a.after_tokens);
-                        match a.method.as_str() {
-                            "Summarized" => {
-                                let rc = a.related_count.unwrap_or(0);
-                                terminal_writeln(&format!(
-                                    "{GRAY}  #{:<3} assistant(+{} results) {:<12} ~{} → ~{}{RESET}",
-                                    a.index, rc, a.method, h_before, h_after,
-                                ));
+                    // Per-action detail: sorted by savings, top/tail with ellipsis
+                    const TOP: usize = 3;
+                    const TAIL: usize = 2;
+
+                    // Sort actions by saved tokens descending
+                    let mut sorted: Vec<_> =
+                        actions.iter().filter(|a| a.method != "Skipped").collect();
+                    sorted.sort_by(|a, b| {
+                        let sa = a.before_tokens.saturating_sub(a.after_tokens);
+                        let sb = b.before_tokens.saturating_sub(b.after_tokens);
+                        sb.cmp(&sa)
+                    });
+
+                    if !sorted.is_empty() {
+                        let total_actions = actions.len();
+                        let changed = sorted.len();
+
+                        // Actions header with inline stats
+                        let header = match *level {
+                            1 => format!(
+                                "  actions: ({changed} of {total_actions} changed, sorted by savings)"
+                            ),
+                            2 => {
+                                let total_msgs: usize = sorted
+                                    .iter()
+                                    .map(|a| 1 + a.related_count.unwrap_or(0))
+                                    .sum();
+                                format!(
+                                    "  actions: ({changed} turns, {total_msgs} msgs → {changed} summaries)"
+                                )
                             }
-                            "Dropped" => {
-                                if let Some(end) = a.end_index {
-                                    terminal_writeln(&format!(
-                                        "{GRAY}  #{}..#{} {:<12} {:<12} ~{} → ~{}{RESET}",
-                                        a.index, end, "messages", a.method, h_before, h_after,
-                                    ));
-                                } else {
+                            3 => {
+                                let kept =
+                                    after_message_count.saturating_sub(1); // minus marker
+                                format!(
+                                    "  actions: ({} dropped, {} kept, 1 marker)",
+                                    messages_dropped, kept
+                                )
+                            }
+                            _ => format!("  actions: ({changed} changed)"),
+                        };
+                        terminal_writeln(&format!("{GRAY}{header}{RESET}"));
+
+                        let render_action = |a: &&crate::agent::event::CompactionActionInfo| {
+                            let hb = super::render::human_tokens(a.before_tokens);
+                            let ha = super::render::human_tokens(a.after_tokens);
+                            let saved_tok = a.before_tokens.saturating_sub(a.after_tokens);
+                            let hs = super::render::human_tokens(saved_tok);
+                            match a.method.as_str() {
+                                "Summarized" => {
                                     let rc = a.related_count.unwrap_or(0);
                                     terminal_writeln(&format!(
-                                        "{GRAY}  Dropped {} messages ~{} → ~{}{RESET}",
-                                        rc, h_before, h_after,
-                                    ));
+                                            "{GRAY}    #{:<3} assistant(+{} results) {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, rc, a.method, hb, ha, hs,
+                                        ));
+                                }
+                                "Dropped" => {
+                                    if let Some(end) = a.end_index {
+                                        terminal_writeln(&format!(
+                                                "{GRAY}    #{}..#{} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                                a.index, end, "messages", a.method, hb, ha, hs,
+                                            ));
+                                    } else {
+                                        let rc = a.related_count.unwrap_or(0);
+                                        terminal_writeln(&format!(
+                                                "{GRAY}    Dropped {} messages ~{} → ~{}  (saved ~{}){RESET}",
+                                                rc, hb, ha, hs,
+                                            ));
+                                    }
+                                }
+                                _ => {
+                                    terminal_writeln(&format!(
+                                            "{GRAY}    #{:<3} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, a.tool_name, a.method, hb, ha, hs,
+                                        ));
                                 }
                             }
-                            _ => {
-                                // Level 1: Outline / HeadTail
-                                terminal_writeln(&format!(
-                                    "{GRAY}  #{:<3} {:<12} {:<12} ~{} → ~{}{RESET}",
-                                    a.index, a.tool_name, a.method, h_before, h_after,
-                                ));
+                        };
+
+                        if sorted.len() <= TOP + TAIL {
+                            for a in &sorted {
+                                render_action(a);
+                            }
+                        } else {
+                            for a in &sorted[..TOP] {
+                                render_action(a);
+                            }
+                            let omitted = sorted.len() - TOP - TAIL;
+                            terminal_writeln(&format!("{GRAY}    ... {omitted} more ...{RESET}"));
+                            for a in &sorted[sorted.len() - TAIL..] {
+                                render_action(a);
                             }
                         }
                     }

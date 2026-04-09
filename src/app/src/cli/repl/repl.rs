@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -188,14 +187,10 @@ impl Repl {
 
     async fn handle_command(&mut self, input: &str) -> Result<bool> {
         match input {
-            "/quit" => return Ok(true),
             "/help" => self.print_help_summary(),
             s if s.starts_with("/help ") => {
                 self.print_help_for(s.trim_start_matches("/help ").trim())
             }
-            "/status" => self.print_status().await?,
-            "/version" => self.print_version(),
-            "/history" => self.print_history().await?,
             "/resume" => self.choose_session(false).await?,
             s if s.starts_with("/resume ") => {
                 let session_id = self
@@ -203,15 +198,10 @@ impl Repl {
                     .await?;
                 self.resume_session(&session_id, true).await?;
             }
-            "/new" => self.start_new_session(false).await?,
-            "/clear" => self.start_new_session(true).await?,
+            "/new" => self.start_new_session().await?,
             "/model" => self.choose_model().await?,
             s if s.starts_with("/model ") => {
                 self.set_model(s.trim_start_matches("/model ").trim())?
-            }
-            "/provider" => self.print_provider(),
-            s if s.starts_with("/provider ") => {
-                self.set_provider(s.trim_start_matches("/provider ").trim())?
             }
             "/plan" => {
                 self.agent.with_tool_mode(crate::agent::ToolMode::Planning);
@@ -323,37 +313,10 @@ impl Repl {
         Ok(())
     }
 
-    async fn start_new_session(&mut self, confirm: bool) -> Result<()> {
-        if confirm && !self.confirm_clear().await? {
-            println!("{DIM}  (clear cancelled){RESET}\n");
-            return Ok(());
-        }
+    async fn start_new_session(&mut self) -> Result<()> {
         self.session_id = None;
         println!("{DIM}  (started new session){RESET}\n");
         Ok(())
-    }
-
-    async fn confirm_clear(&self) -> Result<bool> {
-        let Some(session_id) = &self.session_id else {
-            return Ok(true);
-        };
-
-        let session = match self.agent.load_session(session_id).await? {
-            Some(session) => session,
-            None => return Ok(true),
-        };
-        let count = session.transcript().await.len();
-        if count <= 4 {
-            return Ok(true);
-        }
-
-        print!("{DIM}  clear current conversation ({count} messages)? [y/N] {RESET}");
-        std::io::stdout().flush()?;
-
-        let mut answer = String::new();
-        std::io::stdin().read_line(&mut answer)?;
-        let answer = answer.trim().to_lowercase();
-        Ok(answer == "y" || answer == "yes")
     }
 
     fn print_banner(&self) -> Result<()> {
@@ -408,75 +371,6 @@ impl Repl {
             println!("\n{DIM}{rule}{RESET}");
             println!("{DIM}Resume this session with:{RESET}\n  {DIM}{exe} --resume {session_id}{RESET}\n");
         }
-    }
-
-    async fn print_status(&self) -> Result<()> {
-        let active = self.config.active_llm();
-        println!("{BOLD}Status{RESET}");
-        println!("{DIM}  provider:{RESET}   {}", active.provider);
-        println!("{DIM}  model:{RESET}      {}", active.model);
-        println!(
-            "{DIM}  session:{RESET}    {}",
-            self.session_id
-                .as_deref()
-                .map(short_id)
-                .unwrap_or_else(|| "(new)".into())
-        );
-        if let Some(branch) = git_branch() {
-            println!("{DIM}  git:{RESET}        {branch}");
-        }
-        println!("{DIM}  cwd:{RESET}        {}", self.cwd);
-        println!("{DIM}  anthropic:{RESET}  {}", self.config.anthropic.model);
-        println!("{DIM}  openai:{RESET}     {}", self.config.openai.model);
-
-        if let Some(meta) = self.current_session_meta().await? {
-            println!(
-                "{DIM}  title:{RESET}      {}",
-                meta.title.unwrap_or_else(|| "(untitled)".into())
-            );
-            println!("{DIM}  turns:{RESET}      {}", meta.turns);
-            println!(
-                "{DIM}  updated:{RESET}    {}",
-                relative_time(&meta.updated_at)
-            );
-        }
-
-        println!();
-        Ok(())
-    }
-
-    fn print_version(&self) {
-        println!(
-            "bendclaw {}  ({})",
-            env!("CARGO_PKG_VERSION"),
-            &env!("BENDCLAW_GIT_SHA")[..env!("BENDCLAW_GIT_SHA").len().min(8)]
-        );
-        println!("{DIM}  branch: {}{RESET}", env!("BENDCLAW_GIT_BRANCH"));
-        println!(
-            "{DIM}  built:  {}{RESET}\n",
-            env!("BENDCLAW_BUILD_TIMESTAMP")
-        );
-    }
-
-    async fn print_history(&self) -> Result<()> {
-        let Some(session_id) = &self.session_id else {
-            println!("{DIM}  no active session{RESET}\n");
-            return Ok(());
-        };
-
-        let session =
-            self.agent.load_session(session_id).await?.ok_or_else(|| {
-                BendclawError::Session(format!("session not found: {session_id}"))
-            })?;
-        let messages = session.transcript().await;
-
-        if messages.is_empty() {
-            println!("{DIM}  session is empty{RESET}\n");
-            return Ok(());
-        }
-
-        print_transcript_messages(&messages);
-        Ok(())
     }
 
     async fn choose_session(&mut self, include_all: bool) -> Result<()> {
@@ -639,28 +533,6 @@ impl Repl {
         Ok(())
     }
 
-    fn print_provider(&self) {
-        println!("current provider: {}\n", self.config.llm.provider);
-    }
-
-    fn set_provider(&mut self, value: &str) -> Result<()> {
-        let value = value.trim();
-        if value.is_empty() {
-            self.print_provider();
-            return Ok(());
-        }
-
-        let provider = ProviderKind::from_str_loose(value)?;
-        self.config.llm.provider = provider;
-        self.agent.set_llm(self.config.active_llm());
-        println!(
-            "{DIM}  provider -> {}  ·  model {}{RESET}\n",
-            self.config.llm.provider,
-            self.config.active_llm().model
-        );
-        Ok(())
-    }
-
     async fn resolve_session_id(&self, value: &str) -> Result<String> {
         let value = value.trim();
         if value.is_empty() {
@@ -682,13 +554,6 @@ impl Repl {
                 "session id is ambiguous: {value}"
             ))),
         }
-    }
-
-    async fn current_session_meta(&self) -> Result<Option<SessionMeta>> {
-        let Some(session_id) = &self.session_id else {
-            return Ok(None);
-        };
-        self.agent.find_session(session_id).await
     }
 
     async fn refresh_completion_state(&self) -> Result<()> {

@@ -427,3 +427,289 @@ fn test_compact_level3_no_orphans() {
     let result = compact_messages(messages, &config);
     assert_no_orphan_tool_pairs(&result.messages);
 }
+
+// ---------------------------------------------------------------------------
+// Level 1 outline tests
+// ---------------------------------------------------------------------------
+
+/// Helper: create an assistant message with a ToolCall that has arguments.
+fn make_assistant_with_tool_call_args(
+    tool_call_id: &str,
+    tool_name: &str,
+    args: serde_json::Value,
+) -> AgentMessage {
+    AgentMessage::Llm(Message::Assistant {
+        content: vec![Content::ToolCall {
+            id: tool_call_id.into(),
+            name: tool_name.into(),
+            arguments: args,
+        }],
+        stop_reason: StopReason::ToolUse,
+        model: "test".into(),
+        provider: "test".into(),
+        usage: Usage::default(),
+        timestamp: 0,
+        error_message: None,
+    })
+}
+
+/// Helper: create a ToolResult with specific text content.
+fn make_tool_result_with_content(tool_call_id: &str, tool_name: &str, text: &str) -> AgentMessage {
+    AgentMessage::Llm(Message::ToolResult {
+        tool_call_id: tool_call_id.into(),
+        tool_name: tool_name.into(),
+        content: vec![Content::Text { text: text.into() }],
+        is_error: false,
+        timestamp: 0,
+    })
+}
+
+/// Generate a fake read_file output with numbered lines of Rust code.
+fn fake_rust_read_file_output(line_count: usize) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!("[{} lines]", line_count));
+
+    // Generate a simple Rust file with functions
+    let mut code_lines = vec![
+        "use std::collections::HashMap;".to_string(),
+        String::new(),
+        "pub struct Foo {".to_string(),
+        "    field1: String,".to_string(),
+        "    field2: usize,".to_string(),
+        "}".to_string(),
+        String::new(),
+        "impl Foo {".to_string(),
+        "    pub fn new() -> Self {".to_string(),
+    ];
+
+    // Pad with body lines to reach desired count
+    while code_lines.len() < line_count.saturating_sub(3) {
+        code_lines.push("        let x = 1;".to_string());
+    }
+
+    code_lines.push("    }".to_string());
+    code_lines.push("}".to_string());
+    code_lines.push(String::new());
+
+    // Truncate or extend to exact line_count
+    code_lines.truncate(line_count);
+
+    for (i, code_line) in code_lines.iter().enumerate() {
+        lines.push(format!("{:>4} | {}", i + 1, code_line));
+    }
+
+    lines.join("\n")
+}
+
+#[test]
+fn test_level1_read_file_rust_uses_outline() {
+    let rust_output = fake_rust_read_file_output(200);
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/src/foo.rs"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", &rust_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            // Should be an outline, not head+tail
+            assert!(
+                text.contains("Structural outline"),
+                "expected outline header, got: {}",
+                &text[..text.len().min(200)]
+            );
+            assert!(
+                !text.contains("lines truncated"),
+                "should not use head+tail truncation"
+            );
+            // Should be shorter than original
+            assert!(text.len() < rust_output.len());
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}
+
+#[test]
+fn test_level1_read_file_unsupported_ext_falls_back_to_head_tail() {
+    // .toml is not supported by tree-sitter outline
+    let toml_output = {
+        let mut lines = vec!["[200 lines]".to_string()];
+        for i in 1..=200 {
+            lines.push(format!("{:>4} | key{} = \"value{}\"", i, i, i));
+        }
+        lines.join("\n")
+    };
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/config/settings.toml"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", &toml_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.contains("truncated"),
+                "should fall back to head+tail for .toml"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}
+
+#[test]
+fn test_level1_bash_still_uses_head_tail() {
+    let big_output = (1..=200)
+        .map(|i| format!("output line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("run command")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "bash",
+            serde_json::json!({"command": "cargo test"}),
+        ),
+        make_tool_result_with_content("tc-1", "bash", &big_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.contains("truncated"),
+                "bash should always use head+tail"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}
+
+#[test]
+fn test_level1_read_file_no_matching_tool_call_falls_back() {
+    let rust_output = fake_rust_read_file_output(200);
+
+    // ToolResult without a matching ToolCall in the messages
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_tool_result_with_content("tc-orphan", "read_file", &rust_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[1] {
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.contains("truncated"),
+                "should fall back to head+tail when no ToolCall found"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}
+
+#[test]
+fn test_level1_read_file_short_content_not_truncated() {
+    // Short file — should not be truncated at all
+    let short_output = "[5 lines]\n   1 | fn main() {\n   2 |     println!(\"hello\");\n   3 | }\n   4 | \n   5 | // end";
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/src/main.rs"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", short_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 0, "short content should not be truncated");
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            assert_eq!(text, short_output);
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}
+
+#[test]
+fn test_level1_read_file_python_uses_outline() {
+    let mut lines = vec!["[100 lines]".to_string()];
+    let mut code_lines = vec![
+        "import os".to_string(),
+        "import sys".to_string(),
+        String::new(),
+        "class MyClass:".to_string(),
+        "    def __init__(self):".to_string(),
+    ];
+    // Pad with body lines
+    for _ in 0..90 {
+        code_lines.push("        self.x = 1".to_string());
+    }
+    code_lines.push("    def run(self):".to_string());
+    code_lines.push("        pass".to_string());
+    code_lines.push(String::new());
+
+    code_lines.truncate(100);
+    for (i, code_line) in code_lines.iter().enumerate() {
+        lines.push(format!("{:>4} | {}", i + 1, code_line));
+    }
+    let py_output = lines.join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("read the file")),
+        make_assistant_with_tool_call_args(
+            "tc-1",
+            "read_file",
+            serde_json::json!({"path": "/app/main.py"}),
+        ),
+        make_tool_result_with_content("tc-1", "read_file", &py_output),
+    ];
+
+    let (compacted, count) = level1_truncate_tool_outputs(&messages, 20);
+    assert_eq!(count, 1);
+    if let AgentMessage::Llm(Message::ToolResult { content, .. }) = &compacted[2] {
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.contains("Structural outline"),
+                "expected outline for .py, got: {}",
+                &text[..text.len().min(200)]
+            );
+            assert!(text.len() < py_output.len());
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected tool result");
+    }
+}

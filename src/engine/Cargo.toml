@@ -24,6 +24,7 @@ futures = "0.3"
 jsonrepair = "0.1"
 rand = "0.8"
 base64 = "0.22"
+command-group = { version = "5", features = ["with-tokio"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

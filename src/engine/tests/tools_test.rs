@@ -1,5 +1,7 @@
 //! Tests for built-in tools.
 
+use std::sync::Arc;
+
 use base64::Engine;
 use bendengine::tools::edit::EditFileTool;
 use bendengine::tools::list::ListFilesTool;
@@ -363,6 +365,118 @@ async fn test_base_tools_complete() {
     let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
     assert_eq!(names.len(), 7);
     assert!(names.contains(&"bash"));
+}
+
+// --- Bash streaming / cleanup tests ---
+
+#[tokio::test]
+async fn test_bash_timeout_includes_partial_output() {
+    let tool = BashTool::new().with_timeout(std::time::Duration::from_millis(500));
+    let result = tool
+        .execute(
+            serde_json::json!({"command": "echo before_timeout; sleep 10"}),
+            ctx("bash"),
+        )
+        .await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("timed out"));
+    assert!(err.contains("before_timeout"));
+}
+
+#[tokio::test]
+async fn test_bash_progress_emitted() {
+    let progress_count = Arc::new(parking_lot::Mutex::new(0u32));
+    let count_ref = progress_count.clone();
+
+    let on_progress: Option<ProgressFn> = Some(Arc::new(move |_text: String| {
+        *count_ref.lock() += 1;
+    }));
+
+    let cancel = CancellationToken::new();
+    let tool_ctx = ToolContext {
+        tool_call_id: "t1".into(),
+        tool_name: "bash".into(),
+        cancel,
+        on_update: None,
+        on_progress,
+    };
+
+    // Command runs ~4s, progress fires every 3s, so we should get at least 1
+    let tool = BashTool::new();
+    let _result = tool
+        .execute(
+            serde_json::json!({"command": "for i in 1 2 3 4; do echo $i; sleep 1; done"}),
+            tool_ctx,
+        )
+        .await;
+
+    let count = *progress_count.lock();
+    assert!(
+        count >= 1,
+        "Expected at least 1 progress callback, got {count}"
+    );
+}
+
+#[tokio::test]
+async fn test_bash_update_emitted() {
+    let updates = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+    let updates_ref = updates.clone();
+
+    let on_update: Option<ToolUpdateFn> = Some(Arc::new(move |partial: ToolResult| {
+        if let Some(Content::Text { text }) = partial.content.first() {
+            updates_ref.lock().push(text.clone());
+        }
+    }));
+
+    let cancel = CancellationToken::new();
+    let tool_ctx = ToolContext {
+        tool_call_id: "t1".into(),
+        tool_name: "bash".into(),
+        cancel,
+        on_update,
+        on_progress: None,
+    };
+
+    // Command runs ~4s with output, update fires every 2s
+    let tool = BashTool::new();
+    let _result = tool
+        .execute(
+            serde_json::json!({"command": "for i in 1 2 3 4; do echo line_$i; sleep 1; done"}),
+            tool_ctx,
+        )
+        .await;
+
+    let collected = updates.lock();
+    assert!(
+        !collected.is_empty(),
+        "Expected at least 1 update callback with partial output"
+    );
+    // At least one update should contain some of our output
+    assert!(
+        collected.iter().any(|s| s.contains("line_")),
+        "Expected partial output to contain 'line_', got: {collected:?}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_bash_timeout_no_hang() {
+    // Verify that timeout + kill completes promptly, not hanging on zombie/pipe
+    let start = std::time::Instant::now();
+    let tool = BashTool::new().with_timeout(std::time::Duration::from_millis(200));
+    let result = tool
+        .execute(serde_json::json!({"command": "sleep 999"}), ctx("bash"))
+        .await;
+
+    assert!(result.is_err());
+    let elapsed = start.elapsed();
+    // Should complete well within 5 seconds (200ms timeout + kill + drain)
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "Bash timeout took too long: {elapsed:?}, expected < 5s"
+    );
 }
 
 // --- Image support tests ---

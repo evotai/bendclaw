@@ -473,7 +473,7 @@ pub fn print_transcript_messages(items: &[TranscriptItem]) {
                 text, tool_calls, ..
             } => {
                 if !text.trim().is_empty() {
-                    terminal_prefixed_writeln(text.trim());
+                    let _ = super::markdown::render_markdown(text.trim());
                     terminal_writeln("");
                 }
                 for tc in tool_calls {

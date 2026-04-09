@@ -154,3 +154,48 @@ fn terminal_width() -> usize {
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
 }
+
+/// Render a complete markdown string to the terminal with ANSI styling.
+///
+/// Used for non-streaming contexts like transcript replay on resume.
+pub fn render_markdown(text: &str) -> io::Result<()> {
+    let width = terminal_width();
+    let mut renderer = Renderer::new(DirectWriter, width);
+    let mut parser = Parser::new();
+
+    renderer.write_raw("\x1b[2m•\x1b[0m ")?;
+
+    for line in text.lines() {
+        for repaired in repair_line(line, parser.state()) {
+            for event in parser.parse_line(&repaired) {
+                renderer.render_event(&event)?;
+            }
+        }
+    }
+    for event in parser.finalize() {
+        renderer.render_event(&event)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// DirectWriter — io::Write that goes straight to stdout
+// ---------------------------------------------------------------------------
+
+struct DirectWriter;
+
+impl Write for DirectWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let content = String::from_utf8_lossy(buf);
+        let normalized = content.replace("\r\n", "\n").replace('\n', "\r\n");
+        with_terminal(|stdout| {
+            stdout.write_all(normalized.as_bytes())?;
+            stdout.flush()
+        })?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        with_terminal(|stdout| stdout.flush())
+    }
+}

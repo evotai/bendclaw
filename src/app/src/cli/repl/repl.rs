@@ -29,7 +29,7 @@ use super::completion::ReplHelper;
 use super::interrupt::Action as InterruptAction;
 use super::interrupt::InterruptHandler;
 use super::render::print_transcript_messages;
-use super::render::truncate;
+use super::render::truncate_head_tail;
 use super::render::BOLD;
 use super::render::DIM;
 use super::render::GREEN;
@@ -600,11 +600,11 @@ impl Repl {
         let model = &self.config.active_llm().model;
         match branch {
             Some(branch) => format!(
-                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET}",
+                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET} ",
                 branch, session, mode, model,
             ),
             None => format!(
-                "{DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET}",
+                "{DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET} ",
                 session, mode, model,
             ),
         }
@@ -761,7 +761,7 @@ fn short_id(value: &str) -> String {
 }
 
 fn summarize_title(value: &str) -> String {
-    truncate(value, 56)
+    truncate_head_tail(value, 56)
 }
 
 fn relative_time(value: &str) -> String {

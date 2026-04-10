@@ -8,6 +8,29 @@ pub fn truncate(s: &str, max: usize) -> String {
     }
 }
 
+/// Truncate a string keeping both head and tail: `"head ... tail"`.
+///
+/// The separator ` ... ` costs 5 characters. If `max` is too small to fit
+/// even a minimal head + separator + tail (< 12), falls back to plain `truncate`.
+pub fn truncate_head_tail(s: &str, max: usize) -> String {
+    const SEP: &str = " ... ";
+    let sep_len = SEP.len();
+
+    let char_count = s.chars().count();
+    if char_count <= max || max < sep_len + 6 {
+        return truncate(s, max);
+    }
+
+    let budget = max - sep_len;
+    let head_len = budget / 2;
+    let tail_len = budget - head_len;
+
+    let head: String = s.chars().take(head_len).collect();
+    let tail: String = s.chars().skip(char_count - tail_len).collect();
+
+    format!("{}{SEP}{}", head.trim_end(), tail.trim_start())
+}
+
 pub fn summarize_inline(value: &str, max_chars: usize) -> String {
     let collapsed = value.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate(&collapsed, max_chars)

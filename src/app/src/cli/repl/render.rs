@@ -10,6 +10,7 @@ pub use crate::cli::format::format_tool_input;
 pub use crate::cli::format::format_tool_input_lines;
 pub use crate::cli::format::summarize_inline;
 pub use crate::cli::format::truncate;
+pub use crate::cli::format::truncate_head_tail;
 pub use crate::types::count_messages_by_role;
 pub use crate::types::CompactRecord;
 pub use crate::types::MessageStats;

@@ -154,23 +154,12 @@ fn current_dir() -> Result<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
-use super::format::mask_value;
-
-fn mask_secrets(text: &str, secret_values: &[String]) -> String {
-    let mut result = text.to_string();
-    for secret in secret_values {
-        if secret.is_empty() {
-            continue;
-        }
-        result = result.replace(secret, &mask_value(secret));
-    }
-    result
-}
+use super::format::mask_secrets;
 
 fn print_event(event: &RunEvent, format: &OutputFormat, secret_values: &[String]) {
     match format {
         OutputFormat::Text => print_event_text(event, secret_values),
-        OutputFormat::StreamJson => print_event_json(event),
+        OutputFormat::StreamJson => print_event_json(event, secret_values),
     }
 }
 
@@ -220,8 +209,14 @@ fn print_event_text(event: &RunEvent, secret_values: &[String]) {
     }
 }
 
-fn print_event_json(event: &RunEvent) {
+fn print_event_json(event: &RunEvent, secret_values: &[String]) {
+    if secret_values.is_empty() {
+        if let Ok(json) = serde_json::to_string(event) {
+            println!("{json}");
+        }
+        return;
+    }
     if let Ok(json) = serde_json::to_string(event) {
-        println!("{json}");
+        println!("{}", mask_secrets(&json, secret_values));
     }
 }

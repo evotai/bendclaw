@@ -12,6 +12,24 @@ pub fn mask_value(s: &str) -> String {
     format!("{head}{mid}{tail}")
 }
 
+/// Replace all known secret values in `text` with their masked form.
+///
+/// Secrets are sorted by length descending before replacement so that a longer
+/// secret is masked before any shorter substring it might contain.
+pub fn mask_secrets(text: &str, secrets: &[String]) -> String {
+    if secrets.is_empty() {
+        return text.to_string();
+    }
+    let mut sorted: Vec<&String> = secrets.iter().filter(|s| !s.is_empty()).collect();
+    sorted.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    sorted.dedup();
+    let mut result = text.to_string();
+    for secret in sorted {
+        result = result.replace(secret.as_str(), &mask_value(secret));
+    }
+    result
+}
+
 pub fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()

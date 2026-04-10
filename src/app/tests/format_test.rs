@@ -104,3 +104,64 @@ fn mask_value_unicode() {
     let star_count = result.chars().filter(|c| *c == '*').count();
     assert_eq!(star_count, 5, "middle should be masked: {result}");
 }
+
+// ---------------------------------------------------------------------------
+// mask_secrets
+// ---------------------------------------------------------------------------
+
+use bendclaw::cli::format::mask_secrets;
+
+#[test]
+fn mask_secrets_empty_secrets_is_noop() {
+    assert_eq!(mask_secrets("hello world", &[]), "hello world");
+}
+
+#[test]
+fn mask_secrets_replaces_value_in_text() {
+    let secrets = vec!["secret-token".to_string()];
+    let result = mask_secrets("got secret-token from server", &secrets);
+    assert!(
+        !result.contains("secret-token"),
+        "should be masked: {result}"
+    );
+    assert!(
+        result.contains("se********en"),
+        "should contain masked form: {result}"
+    );
+}
+
+#[test]
+fn mask_secrets_longer_secret_replaced_first() {
+    // "abcd1234" contains "1234" as a substring.
+    // If we replace "1234" first, "abcd1234" won't match anymore.
+    // Sorting by length descending ensures the longer one is replaced first.
+    let secrets = vec!["1234".to_string(), "abcd1234".to_string()];
+    let result = mask_secrets("value is abcd1234 here", &secrets);
+    // The long secret should be fully masked
+    assert!(
+        !result.contains("abcd1234"),
+        "long secret should be masked: {result}"
+    );
+    // The masked form of "abcd1234" is "ab****34" which still contains "34",
+    // but the short secret "1234" should not appear in the original text after
+    // the long one is replaced.
+    assert!(
+        !result.contains("1234"),
+        "short secret substring should not remain: {result}"
+    );
+}
+
+#[test]
+fn mask_secrets_skips_empty_values() {
+    let secrets = vec!["".to_string(), "token".to_string()];
+    let result = mask_secrets("my token here", &secrets);
+    assert!(!result.contains("token"), "should mask non-empty: {result}");
+}
+
+#[test]
+fn mask_secrets_deduplicates() {
+    let secrets = vec!["abc123".to_string(), "abc123".to_string()];
+    let result = mask_secrets("abc123", &secrets);
+    // Should not double-mask
+    assert_eq!(result, mask_value("abc123"));
+}

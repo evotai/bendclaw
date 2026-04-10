@@ -14,7 +14,7 @@ use crate::types::VariableRecord;
 use crate::types::VariableScope;
 
 // ---------------------------------------------------------------------------
-// VariableInfo — projection for REPL display (no value exposed)
+// VariableInfo — projection for REPL display (value included for masked display)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]

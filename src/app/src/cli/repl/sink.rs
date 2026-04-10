@@ -23,7 +23,7 @@ use super::transcript_log::TranscriptLog;
 use crate::agent::AssistantBlock;
 use crate::agent::RunEvent;
 use crate::agent::RunEventPayload;
-use crate::cli::format::mask_value;
+use crate::cli::format::mask_secrets;
 use crate::session::observability::StatsAggregator;
 use crate::types::ContextCompactionCompletedStats;
 use crate::types::ContextCompactionStartedStats;
@@ -131,16 +131,9 @@ impl ReplSink {
     }
 
     /// Replace all known secret values in `text` with their masked form.
-    fn mask_secrets(&self, text: &str) -> String {
+    fn mask_secrets_text(&self, text: &str) -> String {
         let secrets = self.secret_values.lock();
-        let mut result = text.to_string();
-        for secret in secrets.iter() {
-            if secret.is_empty() {
-                continue;
-            }
-            result = result.replace(secret, &mask_value(secret));
-        }
-        result
+        mask_secrets(text, &secrets)
     }
 
     fn deactivate_spinner(&self) {
@@ -200,7 +193,7 @@ impl ReplSink {
             }
             RunEventPayload::ToolProgress { text, .. } => {
                 // Progress lines are rendered by spinner's render_frame.
-                let masked = self.mask_secrets(text);
+                let masked = self.mask_secrets_text(text);
                 spinner.set_progress(&masked);
             }
             // RunFinished and Error are deferred — spinner stays alive
@@ -287,7 +280,7 @@ impl ReplSink {
                     }
                 }
 
-                let masked_content = self.mask_secrets(content);
+                let masked_content = self.mask_secrets_text(content);
                 print_tool_result(tool_name, &masked_content, *is_error, tool_call.as_ref());
             }
             RunEventPayload::AssistantDelta { delta, .. } => {

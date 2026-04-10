@@ -141,7 +141,12 @@ impl SkillSet {
             return String::new();
         }
 
-        let mut out = String::from("<available_skills>\n");
+        let mut out = String::from(
+            "When the user's request matches a skill's description, \
+             use read_file to load the SKILL.md at the given location, \
+             then follow its instructions to complete the task.\n\n",
+        );
+        out.push_str("<available_skills>\n");
         for skill in &self.skills {
             out.push_str("  <skill>\n");
             out.push_str(&format!("    <name>{}</name>\n", xml_escape(&skill.name)));

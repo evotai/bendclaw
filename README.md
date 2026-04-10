@@ -30,7 +30,7 @@
 ## 📢 News
 
 - **2026-04-11** 🧠 Auto-load Claude Code memories for the current project.
-- **2026-04-10** 🎯 AskUser tool adds interactive option picker.
+- **2026-04-10** 🎯 Plan mode: AskUser tool adds interactive option picker.
 - **2026-04-10** 🌐 `web_fetch` supports SPA pages — headless Chrome fallback when static extraction fails.
 
 ---

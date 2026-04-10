@@ -7,11 +7,11 @@
 
 use streamdown_parser::ParseEvent;
 
-/// Per-level entry: (indent, is_ordered).
+/// Per-level entry.
 #[derive(Debug)]
 struct Level {
     indent: usize,
-    _ordered: bool,
+    ordered: bool,
 }
 
 /// Tracks ordered-list numbering across streaming parse events.
@@ -38,6 +38,13 @@ impl ListState {
         } else {
             1
         }
+    }
+
+    /// Notify the state about a list item without incrementing any counter.
+    /// Used for unordered items so the state tracks type changes at each level.
+    pub fn track_item(&mut self, indent: usize, ordered: bool) {
+        self.resume_if_pending();
+        self.adjust_for_indent(indent, ordered);
     }
 
     /// Mark the list as "maybe finished" — a subsequent `ListItem` will
@@ -81,6 +88,14 @@ impl ListState {
             }
         }
 
+        // Same indent but different list type → replace the level (resets counter).
+        if let Some(top) = self.stack.last() {
+            if top.indent == indent && top.ordered != ordered {
+                self.stack.pop();
+                self.numbers.pop();
+            }
+        }
+
         // Push a new level if needed.
         let need_push = self
             .stack
@@ -89,10 +104,7 @@ impl ListState {
             .unwrap_or(true);
 
         if need_push {
-            self.stack.push(Level {
-                indent,
-                _ordered: ordered,
-            });
+            self.stack.push(Level { indent, ordered });
             self.numbers.push(0);
         }
     }

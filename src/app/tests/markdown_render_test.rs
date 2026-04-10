@@ -266,3 +266,55 @@ fn mixed_ordered_and_unordered_do_not_interfere() {
         "ordered should continue, got:\n{plain}"
     );
 }
+
+#[test]
+fn same_indent_ordered_then_unordered_then_ordered_restarts() {
+    // ordered list → unordered at same indent → new ordered should restart at 1
+    let output = render_events(80, &[
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "first".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "second".into(),
+        },
+        ParseEvent::ListEnd,
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Dash,
+            content: "bullet a".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Dash,
+            content: "bullet b".into(),
+        },
+        ParseEvent::ListEnd,
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "new first".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "new second".into(),
+        },
+    ]);
+    let plain = strip_ansi(&output);
+    // First ordered list: 1, 2
+    assert!(plain.contains("1. first"), "got:\n{plain}");
+    assert!(plain.contains("2. second"), "got:\n{plain}");
+    // Unordered list
+    assert!(plain.contains("- bullet a"), "got:\n{plain}");
+    assert!(plain.contains("- bullet b"), "got:\n{plain}");
+    // New ordered list should restart at 1
+    assert!(
+        plain.contains("1. new first"),
+        "new ordered list should restart at 1, got:\n{plain}"
+    );
+    assert!(plain.contains("2. new second"), "got:\n{plain}");
+}

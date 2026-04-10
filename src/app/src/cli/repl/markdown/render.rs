@@ -105,10 +105,18 @@ impl<W: Write> Renderer<W> {
                 let pad = "  ".repeat(*indent);
                 let ordered = bullet.is_ordered();
                 let marker = match bullet {
-                    streamdown_parser::ListBullet::Dash => self.theme.bullet.paint("-"),
-                    streamdown_parser::ListBullet::Asterisk => self.theme.bullet.paint("*"),
-                    streamdown_parser::ListBullet::Plus => self.theme.bullet.paint("+"),
-                    streamdown_parser::ListBullet::PlusExpand => self.theme.bullet.paint("+"),
+                    streamdown_parser::ListBullet::Dash
+                    | streamdown_parser::ListBullet::Asterisk
+                    | streamdown_parser::ListBullet::Plus
+                    | streamdown_parser::ListBullet::PlusExpand => {
+                        self.list_state.track_item(*indent, ordered);
+                        match bullet {
+                            streamdown_parser::ListBullet::Dash => self.theme.bullet.paint("-"),
+                            streamdown_parser::ListBullet::Asterisk => self.theme.bullet.paint("*"),
+                            streamdown_parser::ListBullet::Plus => self.theme.bullet.paint("+"),
+                            _ => self.theme.bullet.paint("+"),
+                        }
+                    }
                     streamdown_parser::ListBullet::Ordered(_) => {
                         let n = self.list_state.next_number(*indent, ordered);
                         self.theme.list_number.paint(&format!("{}.", n))

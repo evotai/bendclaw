@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bend_base::prompt::SystemPrompt;
-
 use super::format::format_tool_input;
 use super::format::truncate;
+use crate::agent::prompt::SystemPrompt;
 use crate::agent::AppAgent;
 use crate::agent::ExecutionLimits;
 use crate::agent::RunEvent;
@@ -59,7 +58,11 @@ impl Cli {
     async fn run_prompt(&self, prompt: String) -> Result<()> {
         let config = Config::load()?.with_model(self.args.model.clone());
         let cwd = current_dir()?;
-        let mut builder = SystemPrompt::new(&cwd).with_env().with_project_context();
+        let mut builder = SystemPrompt::new(&cwd)
+            .with_system()
+            .with_git()
+            .with_tools()
+            .with_project_context();
         if let Some(extra) = self.args.append_system_prompt.as_deref() {
             builder = builder.with_append(extra);
         }
@@ -87,7 +90,11 @@ impl Cli {
     async fn run_repl(&self) -> Result<()> {
         let config = Config::load()?.with_model(self.args.model.clone());
         let cwd = current_dir()?;
-        let mut builder = SystemPrompt::new(&cwd).with_env().with_project_context();
+        let mut builder = SystemPrompt::new(&cwd)
+            .with_system()
+            .with_git()
+            .with_tools()
+            .with_project_context();
         if let Some(extra) = self.args.append_system_prompt.as_deref() {
             builder = builder.with_append(extra);
         }

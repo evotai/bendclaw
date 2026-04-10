@@ -8,7 +8,9 @@ const MAX_GIT_STATUS_CHARS: usize = 2000;
 ///
 /// ```ignore
 /// let prompt = SystemPrompt::new("/path/to/project")
-///     .with_env()
+///     .with_system()
+///     .with_git()
+///     .with_tools()
 ///     .with_project_context()
 ///     .with_append("Be concise.")
 ///     .build();
@@ -26,13 +28,12 @@ impl SystemPrompt {
         }
     }
 
-    /// Append environment info: working dir, date, platform, shell, OS, git.
-    pub fn with_env(mut self) -> Self {
+    /// Append system info: working dir, date, platform, shell, OS version.
+    pub fn with_system(mut self) -> Self {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let platform = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
         let shell = detect_shell();
-        let os_version = detect_os_version();
 
         let mut lines = vec![
             format!("Working directory: {}", self.cwd),
@@ -41,15 +42,23 @@ impl SystemPrompt {
             format!("Shell: {shell}"),
         ];
 
-        if let Some(ver) = os_version {
+        if let Some(ver) = detect_os_version() {
             lines.push(format!("OS version: {ver}"));
         }
 
+        self.sections
+            .push(format!("# System\n\n{}", lines.join("\n")));
+        self
+    }
+
+    /// Append git repository info: branch, default branch, user, status, recent commits.
+    pub fn with_git(mut self) -> Self {
         let is_git = is_git_repo(&self.cwd);
-        lines.push(format!(
+
+        let mut lines = vec![format!(
             "Git repository: {}",
             if is_git { "yes" } else { "no" }
-        ));
+        )];
 
         if is_git {
             if let Some(git_info) = collect_git_info(&self.cwd) {
@@ -57,8 +66,26 @@ impl SystemPrompt {
             }
         }
 
-        self.sections
-            .push(format!("# Environment\n\n{}", lines.join("\n")));
+        self.sections.push(format!("# Git\n\n{}", lines.join("\n")));
+        self
+    }
+
+    /// Append available CLI tools (e.g. `gh`).
+    pub fn with_tools(mut self) -> Self {
+        let mut lines: Vec<String> = Vec::new();
+
+        if has_command("gh") {
+            lines.push(
+                "GitHub CLI (`gh`): available — prefer `gh` for all GitHub operations \
+                 (issues, PRs, API calls, repo info) instead of `curl` or direct API access"
+                    .to_string(),
+            );
+        }
+
+        if !lines.is_empty() {
+            self.sections
+                .push(format!("# Tools\n\n{}", lines.join("\n")));
+        }
         self
     }
 
@@ -97,7 +124,7 @@ impl SystemPrompt {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// System helpers
 // ---------------------------------------------------------------------------
 
 fn detect_shell() -> String {
@@ -116,6 +143,10 @@ fn detect_os_version() -> Option<String> {
         None
     }
 }
+
+// ---------------------------------------------------------------------------
+// Git helpers
+// ---------------------------------------------------------------------------
 
 fn is_git_repo(cwd: &str) -> bool {
     Command::new("git")
@@ -208,6 +239,24 @@ fn run_git(cwd: &str, args: &[&str]) -> Option<String> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
 }
+
+// ---------------------------------------------------------------------------
+// Tool detection helpers
+// ---------------------------------------------------------------------------
+
+fn has_command(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+// ---------------------------------------------------------------------------
+// General helpers
+// ---------------------------------------------------------------------------
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
     Command::new(cmd)

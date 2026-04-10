@@ -9,10 +9,10 @@ use axum::routing::post;
 use axum::Json;
 use axum::Router;
 use bend_base::logx;
-use bend_base::prompt::SystemPrompt;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 
+use crate::agent::prompt::SystemPrompt;
 use crate::agent::AppAgent;
 use crate::agent::TurnRequest;
 use crate::conf::Config;
@@ -123,7 +123,9 @@ pub async fn start(conf: Config) -> Result<()> {
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| BendclawError::Run(format!("failed to get cwd: {e}")))?;
     let system_prompt = SystemPrompt::new(&cwd)
-        .with_env()
+        .with_system()
+        .with_git()
+        .with_tools()
         .with_project_context()
         .build();
 

@@ -102,7 +102,7 @@ impl TurnStream {
 // AppAgent
 // ---------------------------------------------------------------------------
 
-const PLANNING_MODE_PROMPT: &str = include_str!("prompts/plan.md");
+const PLANNING_MODE_PROMPT: &str = include_str!("prompt/plan.md");
 
 pub struct AppAgent {
     llm: RwLock<LlmConfig>,

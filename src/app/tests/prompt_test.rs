@@ -1,17 +1,19 @@
-use bend_base::prompt::SystemPrompt;
+use bendclaw::agent::prompt::SystemPrompt;
 
 fn build_prompt(cwd: &str) -> String {
     SystemPrompt::new(cwd)
-        .with_env()
+        .with_system()
+        .with_git()
+        .with_tools()
         .with_project_context()
         .build()
 }
 
 #[test]
-fn no_context_files_produces_base_prompt_with_env() {
+fn no_context_files_produces_base_prompt_with_system() {
     let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
     let prompt = build_prompt(&tmp.path().to_string_lossy());
-    assert!(prompt.contains("# Environment"));
+    assert!(prompt.contains("# System"));
     assert!(prompt.contains("Working directory:"));
     assert!(prompt.contains("Today's date:"));
     assert!(prompt.contains("Platform:"));
@@ -52,7 +54,9 @@ fn skips_empty_context_files() {
 fn append_is_included() {
     let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
     let prompt = SystemPrompt::new(&tmp.path().to_string_lossy())
-        .with_env()
+        .with_system()
+        .with_git()
+        .with_tools()
         .with_project_context()
         .with_append("Be concise.")
         .build();
@@ -89,6 +93,7 @@ fn git_repo_detected() {
         .expect("failed to set git user");
 
     let prompt = build_prompt(&cwd);
+    assert!(prompt.contains("# Git"));
     assert!(prompt.contains("Git repository: yes"));
     assert!(prompt.contains("Git user: Test User"));
 }
@@ -134,4 +139,13 @@ fn git_repo_shows_branch_and_status() {
     assert!(prompt.contains("Current branch: main"));
     assert!(prompt.contains("Recent commits:"));
     assert!(prompt.contains("initial commit"));
+}
+
+#[test]
+fn sections_are_ordered_system_git_tools() {
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+    let prompt = build_prompt(&tmp.path().to_string_lossy());
+    let system_pos = prompt.find("# System").expect("missing # System");
+    let git_pos = prompt.find("# Git").expect("missing # Git");
+    assert!(system_pos < git_pos, "# System should come before # Git");
 }

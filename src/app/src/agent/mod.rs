@@ -1,6 +1,7 @@
 mod agent;
 pub mod convert;
 pub mod event;
+pub mod prompt;
 pub mod runtime;
 
 pub use agent::AppAgent;

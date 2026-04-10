@@ -7,12 +7,7 @@
 </p>
 
 <p align="center">
-  A self-evolving agent engine for long-running, high-complexity work.
-</p>
-
-<p align="center">
-  Fully observable. Every token tracked. Every decision auditable.<br>
-  BendClaw uses this observability to evolve — so every prompt sent to the LLM is minimal, high-signal, and zero-waste.
+  A self-evolving agent engine — every token tracked, every prompt lean, built for long-running complex work.
 </p>
 
 <p align="center">

@@ -3,7 +3,7 @@
 //! Buffers incoming tokens, parses complete lines, and renders with
 //! syntax highlighting and ANSI styling.
 
-mod ansi;
+pub(crate) mod ansi;
 pub mod highlight;
 mod linkify;
 mod list_state;

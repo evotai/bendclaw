@@ -30,6 +30,59 @@ pub fn mask_secrets(text: &str, secrets: &[String]) -> String {
     result
 }
 
+/// Clone an event for display and mask secret-bearing payload fields.
+///
+/// This is intended for user-facing serialization paths such as `stream-json`.
+/// It masks structured string fields before JSON encoding, so values containing
+/// JSON-escaped characters (e.g. `"`, `\\`, `\n`) are still protected.
+pub fn mask_run_event_for_display(
+    event: &crate::agent::RunEvent,
+    secrets: &[String],
+) -> crate::agent::RunEvent {
+    if secrets.is_empty() {
+        return event.clone();
+    }
+
+    let payload = match &event.payload {
+        crate::agent::RunEventPayload::ToolFinished {
+            tool_call_id,
+            tool_name,
+            content,
+            is_error,
+            details,
+            result_tokens,
+            duration_ms,
+        } => crate::agent::RunEventPayload::ToolFinished {
+            tool_call_id: tool_call_id.clone(),
+            tool_name: tool_name.clone(),
+            content: mask_secrets(content, secrets),
+            is_error: *is_error,
+            details: details.clone(),
+            result_tokens: *result_tokens,
+            duration_ms: *duration_ms,
+        },
+        crate::agent::RunEventPayload::ToolProgress {
+            tool_call_id,
+            tool_name,
+            text,
+        } => crate::agent::RunEventPayload::ToolProgress {
+            tool_call_id: tool_call_id.clone(),
+            tool_name: tool_name.clone(),
+            text: mask_secrets(text, secrets),
+        },
+        other => other.clone(),
+    };
+
+    crate::agent::RunEvent {
+        event_id: event.event_id.clone(),
+        run_id: event.run_id.clone(),
+        session_id: event.session_id.clone(),
+        turn: event.turn,
+        payload,
+        created_at: event.created_at.clone(),
+    }
+}
+
 pub fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()

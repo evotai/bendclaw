@@ -154,6 +154,7 @@ fn current_dir() -> Result<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+use super::format::mask_run_event_for_display;
 use super::format::mask_secrets;
 
 fn print_event(event: &RunEvent, format: &OutputFormat, secret_values: &[String]) {
@@ -210,13 +211,8 @@ fn print_event_text(event: &RunEvent, secret_values: &[String]) {
 }
 
 fn print_event_json(event: &RunEvent, secret_values: &[String]) {
-    if secret_values.is_empty() {
-        if let Ok(json) = serde_json::to_string(event) {
-            println!("{json}");
-        }
-        return;
-    }
-    if let Ok(json) = serde_json::to_string(event) {
-        println!("{}", mask_secrets(&json, secret_values));
+    let masked_event = mask_run_event_for_display(event, secret_values);
+    if let Ok(json) = serde_json::to_string(&masked_event) {
+        println!("{json}");
     }
 }

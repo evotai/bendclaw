@@ -1,3 +1,7 @@
+use bendclaw::agent::RunEvent;
+use bendclaw::agent::RunEventPayload;
+use bendclaw::cli::format::mask_run_event_for_display;
+use bendclaw::cli::format::mask_secrets;
 use bendclaw::cli::format::mask_value;
 use bendclaw::cli::repl::render::truncate_head_tail;
 
@@ -109,8 +113,6 @@ fn mask_value_unicode() {
 // mask_secrets
 // ---------------------------------------------------------------------------
 
-use bendclaw::cli::format::mask_secrets;
-
 #[test]
 fn mask_secrets_empty_secrets_is_noop() {
     assert_eq!(mask_secrets("hello world", &[]), "hello world");
@@ -164,4 +166,93 @@ fn mask_secrets_deduplicates() {
     let result = mask_secrets("abc123", &secrets);
     // Should not double-mask
     assert_eq!(result, mask_value("abc123"));
+}
+
+// ---------------------------------------------------------------------------
+// mask_run_event_for_display
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mask_run_event_for_display_masks_tool_finished_with_escaped_secret() {
+    let secret = "ab\"c\\d\nEF".to_string();
+    let event = RunEvent::new(
+        "run-1".into(),
+        "sess-1".into(),
+        1,
+        RunEventPayload::ToolFinished {
+            tool_call_id: "tc-1".into(),
+            tool_name: "bash".into(),
+            content: format!("stdout: {secret}"),
+            is_error: false,
+            details: serde_json::Value::Null,
+            result_tokens: 3,
+            duration_ms: 10,
+        },
+    );
+
+    let masked = mask_run_event_for_display(&event, std::slice::from_ref(&secret));
+    let json = serde_json::to_string(&masked).unwrap();
+
+    assert!(
+        !json.contains("ab\\\"c\\\\d\\nEF"),
+        "serialized JSON should not contain raw escaped secret: {json}"
+    );
+    assert!(
+        json.contains(&mask_value(&secret)),
+        "serialized JSON should contain masked secret: {json}"
+    );
+
+    match masked.payload {
+        RunEventPayload::ToolFinished { content, .. } => {
+            assert_eq!(content, format!("stdout: {}", mask_value(&secret)));
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn mask_run_event_for_display_masks_tool_progress_with_escaped_secret() {
+    let secret = "xy\"z\\k\nLM".to_string();
+    let event = RunEvent::new(
+        "run-1".into(),
+        "sess-1".into(),
+        1,
+        RunEventPayload::ToolProgress {
+            tool_call_id: "tc-1".into(),
+            tool_name: "bash".into(),
+            text: format!("progress: {secret}"),
+        },
+    );
+
+    let masked = mask_run_event_for_display(&event, std::slice::from_ref(&secret));
+    let json = serde_json::to_string(&masked).unwrap();
+
+    assert!(
+        !json.contains("xy\\\"z\\\\k\\nLM"),
+        "serialized JSON should not contain raw escaped secret: {json}"
+    );
+    assert!(
+        json.contains(&mask_value(&secret)),
+        "serialized JSON should contain masked secret: {json}"
+    );
+
+    match masked.payload {
+        RunEventPayload::ToolProgress { text, .. } => {
+            assert_eq!(text, format!("progress: {}", mask_value(&secret)));
+        }
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn mask_run_event_for_display_leaves_other_payloads_unchanged() {
+    let event = RunEvent::new("run-1".into(), "sess-1".into(), 1, RunEventPayload::Error {
+        message: "oops".into(),
+    });
+
+    let masked = mask_run_event_for_display(&event, &["secret".to_string()]);
+    match masked.payload {
+        RunEventPayload::Error { message } => assert_eq!(message, "oops"),
+        _ => panic!("wrong variant"),
+    }
 }

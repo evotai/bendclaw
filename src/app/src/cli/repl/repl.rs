@@ -584,12 +584,16 @@ impl Repl {
             crate::agent::ToolMode::Normal => "",
             crate::agent::ToolMode::Planning => " plan",
         };
+        let model = &self.config.active_llm().model;
         match branch {
             Some(branch) => format!(
-                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {BOLD}{YELLOW}>{RESET}",
-                branch, session, mode,
+                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET}",
+                branch, session, mode, model,
             ),
-            None => format!("{DIM}[{}{}]{RESET} {BOLD}{YELLOW}>{RESET}", session, mode),
+            None => format!(
+                "{DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET}",
+                session, mode, model,
+            ),
         }
     }
 

@@ -15,6 +15,9 @@ use super::render::RESET;
 /// Spinner glyphs — gentle pulsing dot to indicate activity.
 const GLYPHS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Terminal tab title glyphs — soft three-state activity dots.
+const TITLE_GLYPHS: &[&str] = &["·", "•", "·"];
+
 /// Obscure database-flavored verbs for the spinner.
 const VERBS: &[&str] = &[
     "Defragmenting",
@@ -150,6 +153,9 @@ impl SpinnerState {
         self.rendered = false;
         self.paused = false;
         self.phase = SpinnerPhase::Hidden;
+        with_terminal(|stdout| {
+            let _ = write!(stdout, "\x1b]0;BendClaw\x07");
+        });
     }
 
     pub fn set_tool(&mut self, name: &str) {
@@ -215,6 +221,7 @@ impl SpinnerState {
         }
 
         let glyph = GLYPHS[self.frame % GLYPHS.len()];
+        let title_glyph = TITLE_GLYPHS[self.frame % TITLE_GLYPHS.len()];
         self.frame += 1;
 
         let elapsed_ms = self.run_started_at.elapsed().as_millis() as u64;
@@ -244,6 +251,7 @@ impl SpinnerState {
 
             with_terminal(|stdout| {
                 let _ = write!(stdout, "{output}");
+                let _ = write!(stdout, "\x1b]0;{title_glyph} BendClaw\x07");
             });
 
             self.rendered_lines = new_lines;
@@ -273,6 +281,7 @@ impl SpinnerState {
                 stdout,
                 "\r{glyph_color}{glyph}{RESET} {rendered_msg} {DIM}({status}) · esc to interrupt{RESET}\x1b[K"
             );
+            let _ = write!(stdout, "\x1b]0;{title_glyph} BendClaw\x07");
         });
         self.rendered_lines = 1;
         self.rendered = true;

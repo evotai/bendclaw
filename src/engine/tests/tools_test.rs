@@ -818,3 +818,151 @@ async fn test_web_fetch_html_to_markdown() {
     assert!(text.contains("Test Page"));
     assert!(text.contains("paragraph"));
 }
+
+// --- Browser fallback decision tests ---
+
+#[test]
+fn test_should_try_browser_fallback_no_extraction() {
+    use bendengine::tools::web_fetch::should_try_browser_fallback;
+    // No extracted text, no custom headers → should fallback
+    assert!(should_try_browser_fallback(None, false));
+}
+
+#[test]
+fn test_should_try_browser_fallback_short_extraction() {
+    use bendengine::tools::web_fetch::should_try_browser_fallback;
+    // Very short extracted text → should fallback
+    assert!(should_try_browser_fallback(Some("short"), false));
+}
+
+#[test]
+fn test_should_try_browser_fallback_sufficient_extraction() {
+    use bendengine::tools::web_fetch::should_try_browser_fallback;
+    // Enough extracted text → no fallback needed
+    let long_text = "x".repeat(200);
+    assert!(!should_try_browser_fallback(Some(&long_text), false));
+}
+
+#[test]
+fn test_should_try_browser_fallback_with_custom_headers() {
+    use bendengine::tools::web_fetch::should_try_browser_fallback;
+    // Custom headers present → never fallback, even with no extraction
+    assert!(!should_try_browser_fallback(None, true));
+    assert!(!should_try_browser_fallback(Some("short"), true));
+}
+
+#[tokio::test]
+async fn test_web_fetch_json_no_browser_fallback() {
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/data"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"{"key": "value"}"#)
+                .insert_header("content-type", "application/json"),
+        )
+        .mount(&server)
+        .await;
+
+    let tool = bendengine::tools::web_fetch::WebFetchTool::new();
+    let url = format!("{}/api/data", server.uri());
+    let result = tool
+        .execute(serde_json::json!({"url": url}), ctx("web_fetch"))
+        .await
+        .unwrap();
+
+    let text = match &result.content[0] {
+        Content::Text { text } => text,
+        _ => panic!("expected text"),
+    };
+    assert!(text.contains("key"));
+    assert!(text.contains("value"));
+    // Should use reqwest renderer for JSON
+    assert_eq!(result.details["renderer"], "reqwest");
+}
+
+#[tokio::test]
+async fn test_web_fetch_html_good_content_no_fallback() {
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+
+    let html = r#"<html><head><title>Test Page</title></head><body>
+    <article>
+    <h1>Hello</h1>
+    <p>This is a paragraph with enough content for readability to extract it properly.
+    It needs to be substantial enough to pass the content length threshold that the
+    readability library uses to determine if content is worth extracting.</p>
+    <p>Here is another paragraph to add more weight to the article body so the
+    extraction algorithm considers this a real article worth converting.</p>
+    </article>
+    </body></html>"#;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/good-page"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(html, "text/html; charset=utf-8"))
+        .mount(&server)
+        .await;
+
+    let tool = bendengine::tools::web_fetch::WebFetchTool::new();
+    let url = format!("{}/good-page", server.uri());
+    let result = tool
+        .execute(serde_json::json!({"url": url}), ctx("web_fetch"))
+        .await
+        .unwrap();
+
+    let text = match &result.content[0] {
+        Content::Text { text } => text,
+        _ => panic!("expected text"),
+    };
+    assert!(text.contains("paragraph"));
+    // Good HTML extraction → reqwest renderer, no browser fallback
+    assert_eq!(result.details["renderer"], "reqwest");
+}
+
+#[tokio::test]
+async fn test_web_fetch_headers_skip_browser_fallback() {
+    use wiremock::matchers::header;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+
+    // Serve a minimal SPA-like shell that would normally trigger fallback
+    let spa_html = r#"<html><head><title>App</title></head><body><div id="root"></div>
+    <script src="/bundle.js"></script></body></html>"#;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/spa"))
+        .and(header("Authorization", "Bearer token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(spa_html, "text/html; charset=utf-8"))
+        .mount(&server)
+        .await;
+
+    let tool = bendengine::tools::web_fetch::WebFetchTool::new();
+    let url = format!("{}/spa", server.uri());
+    let result = tool
+        .execute(
+            serde_json::json!({
+                "url": url,
+                "headers": { "Authorization": "Bearer token" }
+            }),
+            ctx("web_fetch"),
+        )
+        .await
+        .unwrap();
+
+    // With custom headers, should always use reqwest — never browser fallback
+    assert_eq!(result.details["renderer"], "reqwest");
+}

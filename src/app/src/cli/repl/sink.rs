@@ -200,7 +200,8 @@ impl ReplSink {
             }
             RunEventPayload::ToolProgress { text, .. } => {
                 // Progress lines are rendered by spinner's render_frame.
-                spinner.set_progress(text);
+                let masked = self.mask_secrets(text);
+                spinner.set_progress(&masked);
             }
             // RunFinished and Error are deferred — spinner stays alive
             // until the output block deactivates it.

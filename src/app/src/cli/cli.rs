@@ -210,7 +210,8 @@ fn print_event_text(event: &RunEvent, secret_values: &[String]) {
             eprintln!("error: {message}");
         }
         RunEventPayload::ToolProgress { text, .. } => {
-            eprintln!("[{text}]");
+            let masked = mask_secrets(text, secret_values);
+            eprintln!("[{masked}]");
         }
         RunEventPayload::RunFinished { .. } => {
             println!();

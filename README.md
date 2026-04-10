@@ -20,12 +20,17 @@
 </p>
 
 <p align="center">
+  <a href="#-news">News</a> &middot;
   <a href="#-why-bendclaw">Why</a> &middot;
   <a href="#installation">Install</a> &middot;
   <a href="#quickstart">Quickstart</a> &middot;
   <a href="#development">Dev</a> &middot;
   <a href="#community">Community</a>
 </p>
+
+## 📢 News
+
+- **2026-04-10** 🌐 `web_fetch` supports SPA pages — headless Chrome fallback when static extraction fails.
 
 ---
 

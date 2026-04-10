@@ -44,9 +44,209 @@ pub fn physical_row_count(line: &str, term_width: usize) -> usize {
     w.div_ceil(tw)
 }
 
-fn total_options(request: &AskUserRequest) -> usize {
+// ---------------------------------------------------------------------------
+// State machine — pure logic, no IO
+// ---------------------------------------------------------------------------
+
+/// UI mode for the ask_user selector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskUserMode {
+    /// Arrow-key / digit selection mode.
+    Selecting { selected: usize },
+    /// Free-text input mode.
+    Typing { selected: usize, input: String },
+}
+
+/// Action returned by the state machine after processing a key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskUserAction {
+    /// Re-render the UI with the updated mode.
+    Redraw,
+    /// Submit a final answer and exit.
+    Submit(AskUserResponse),
+    /// User pressed Ctrl-C — abort the run.
+    ExitRun,
+    /// Key was ignored, no state change.
+    Noop,
+}
+
+/// Total visible items (options + "None of the above").
+pub fn total_items(request: &AskUserRequest) -> usize {
     request.options.len() + 1
 }
+
+/// The display number for the "None of the above" item.
+pub fn none_number(request: &AskUserRequest) -> usize {
+    request.options.len() + 1
+}
+
+/// Process a single key press and return the next mode + action.
+///
+/// This is a pure function — no IO, no terminal access.
+pub fn handle_key(
+    request: &AskUserRequest,
+    mode: AskUserMode,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> (AskUserMode, AskUserAction) {
+    let total = total_items(request);
+
+    match mode {
+        AskUserMode::Selecting { selected } => {
+            handle_selecting(request, selected, total, code, modifiers)
+        }
+        AskUserMode::Typing {
+            selected,
+            mut input,
+        } => handle_typing(selected, &mut input, code, modifiers),
+    }
+}
+
+fn handle_selecting(
+    request: &AskUserRequest,
+    selected: usize,
+    total: usize,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> (AskUserMode, AskUserAction) {
+    match code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            let next = if selected > 0 {
+                selected - 1
+            } else {
+                total - 1
+            };
+            (
+                AskUserMode::Selecting { selected: next },
+                AskUserAction::Redraw,
+            )
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            let next = (selected + 1) % total;
+            (
+                AskUserMode::Selecting { selected: next },
+                AskUserAction::Redraw,
+            )
+        }
+
+        KeyCode::Enter => {
+            if selected < request.options.len() {
+                let label = request.options[selected].label.clone();
+                (
+                    AskUserMode::Selecting { selected },
+                    AskUserAction::Submit(AskUserResponse::Selected(label)),
+                )
+            } else {
+                (
+                    AskUserMode::Typing {
+                        selected,
+                        input: String::new(),
+                    },
+                    AskUserAction::Redraw,
+                )
+            }
+        }
+
+        KeyCode::Char(ch @ '1'..='9') => {
+            let idx = (ch as usize) - ('1' as usize);
+            if idx < request.options.len() {
+                let label = request.options[idx].label.clone();
+                (
+                    AskUserMode::Selecting { selected },
+                    AskUserAction::Submit(AskUserResponse::Selected(label)),
+                )
+            } else if idx == request.options.len() {
+                (
+                    AskUserMode::Typing {
+                        selected: idx,
+                        input: String::new(),
+                    },
+                    AskUserAction::Redraw,
+                )
+            } else {
+                (AskUserMode::Selecting { selected }, AskUserAction::Noop)
+            }
+        }
+
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (AskUserMode::Selecting { selected }, AskUserAction::ExitRun)
+        }
+
+        KeyCode::Esc => (
+            AskUserMode::Selecting { selected },
+            AskUserAction::Submit(AskUserResponse::Skipped),
+        ),
+
+        _ => (AskUserMode::Selecting { selected }, AskUserAction::Noop),
+    }
+}
+
+fn handle_typing(
+    selected: usize,
+    input: &mut String,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> (AskUserMode, AskUserAction) {
+    match code {
+        KeyCode::Enter => {
+            let trimmed = input.trim().to_string();
+            if trimmed.is_empty() {
+                // Empty input — go back to selection
+                (AskUserMode::Selecting { selected }, AskUserAction::Redraw)
+            } else {
+                (
+                    AskUserMode::Typing {
+                        selected,
+                        input: input.clone(),
+                    },
+                    AskUserAction::Submit(AskUserResponse::Custom(trimmed)),
+                )
+            }
+        }
+        KeyCode::Esc => {
+            // Back to selection mode
+            (AskUserMode::Selecting { selected }, AskUserAction::Redraw)
+        }
+        KeyCode::Backspace => {
+            input.pop();
+            (
+                AskUserMode::Typing {
+                    selected,
+                    input: input.clone(),
+                },
+                AskUserAction::Redraw,
+            )
+        }
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => (
+            AskUserMode::Typing {
+                selected,
+                input: input.clone(),
+            },
+            AskUserAction::ExitRun,
+        ),
+        KeyCode::Char(ch) => {
+            input.push(ch);
+            (
+                AskUserMode::Typing {
+                    selected,
+                    input: input.clone(),
+                },
+                AskUserAction::Redraw,
+            )
+        }
+        _ => (
+            AskUserMode::Typing {
+                selected,
+                input: input.clone(),
+            },
+            AskUserAction::Noop,
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rendering — pure string building, no IO
+// ---------------------------------------------------------------------------
 
 pub fn build_question_block(
     request: &AskUserRequest,
@@ -103,11 +303,13 @@ fn build_question_block_inner(
     }
 
     let none_idx = request.options.len();
+    let none_num = none_idx + 1;
     let is_none_selected = selected == none_idx;
     let marker = if is_none_selected { "›" } else { " " };
     let highlight = if is_none_selected { YELLOW } else { DIM };
-    let none_line =
-        format!("{ERASE_LINE}  {highlight}{marker} 0. None of the above (type your own){RESET}",);
+    let none_line = format!(
+        "{ERASE_LINE}  {highlight}{marker} {none_num}. None of the above (type your own){RESET}",
+    );
     out.push_str(&none_line);
     out.push_str("\r\n");
     rows += physical_row_count(&none_line, term_width);
@@ -117,7 +319,11 @@ fn build_question_block_inner(
 
     if let Some(input) = typing {
         // Inline input mode: show input field instead of footer
-        let input_line = format!("{ERASE_LINE}  {YELLOW}> {RESET}{input}█");
+        let input_line = if input.is_empty() {
+            format!("{ERASE_LINE}  {YELLOW}> {DIM}Type something...{RESET}")
+        } else {
+            format!("{ERASE_LINE}  {YELLOW}> {RESET}{input}█")
+        };
         out.push_str(&input_line);
         out.push_str("\r\n");
         rows += physical_row_count(&input_line, term_width);
@@ -128,8 +334,9 @@ fn build_question_block_inner(
         rows += physical_row_count(&hint_line, term_width);
     } else {
         let footer_line = format!(
-            "{ERASE_LINE}  {DIM}[↑↓ select  Enter confirm  1-{} pick  0 custom  Esc skip]{RESET}",
-            request.options.len()
+            "{ERASE_LINE}  {DIM}[↑↓ select  Enter confirm  1-{} pick  {} custom  Esc skip]{RESET}",
+            request.options.len(),
+            none_num
         );
         out.push_str(&footer_line);
         out.push_str("\r\n");
@@ -147,24 +354,30 @@ pub fn build_skipped() -> String {
     format!("  {DIM}— skipped{RESET}")
 }
 
+// ---------------------------------------------------------------------------
+// Terminal IO loop — thin wrapper around the state machine
+// ---------------------------------------------------------------------------
+
 pub enum AskUserUiResult {
     Answer(AskUserResponse),
     ExitRun,
 }
 
 pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiResult> {
-    let total = total_options(request);
-    let mut selected: usize = 0;
+    let mut mode = AskUserMode::Selecting { selected: 0 };
     let mut prev_lines: usize = 0;
     let mut needs_redraw = true;
-    let mut typing: Option<String> = None;
 
     loop {
         if needs_redraw {
             let term_width = terminal_width();
-            let (output, line_count) = match &typing {
-                Some(input) => build_question_block_typing(request, selected, term_width, input),
-                None => build_question_block(request, selected, term_width),
+            let (output, line_count) = match &mode {
+                AskUserMode::Typing { selected, input } => {
+                    build_question_block_typing(request, *selected, term_width, input)
+                }
+                AskUserMode::Selecting { selected } => {
+                    build_question_block(request, *selected, term_width)
+                }
             };
             with_terminal(|stdout| {
                 if prev_lines > 0 {
@@ -183,103 +396,33 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiR
 
         match read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if let Some(ref mut input) = typing {
-                    // Inline typing mode
-                    match key.code {
-                        KeyCode::Enter => {
-                            let trimmed = input.trim().to_string();
-                            clear_block(prev_lines);
-                            if trimmed.is_empty() {
-                                // Empty input — go back to selection
-                                typing = None;
-                                needs_redraw = true;
-                            } else {
-                                print_result(&build_confirmation(&trimmed));
-                                return Ok(AskUserUiResult::Answer(AskUserResponse::Custom(
-                                    trimmed,
-                                )));
-                            }
-                        }
-                        KeyCode::Esc => {
-                            // Back to selection mode, keep the list visible
-                            typing = None;
-                            needs_redraw = true;
-                        }
-                        KeyCode::Backspace => {
-                            input.pop();
-                            needs_redraw = true;
-                        }
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            clear_block(prev_lines);
-                            return Ok(AskUserUiResult::ExitRun);
-                        }
-                        KeyCode::Char(ch) => {
-                            input.push(ch);
-                            needs_redraw = true;
-                        }
-                        _ => {}
+                let (next_mode, action) = handle_key(request, mode, key.code, key.modifiers);
+                mode = next_mode;
+
+                match action {
+                    AskUserAction::Redraw => {
+                        needs_redraw = true;
                     }
-                } else {
-                    // Selection mode
-                    match key.code {
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if selected > 0 {
-                                selected -= 1;
-                            } else {
-                                selected = total - 1;
+                    AskUserAction::Submit(response) => {
+                        clear_block(prev_lines);
+                        match &response {
+                            AskUserResponse::Skipped => {
+                                print_result(&build_skipped());
                             }
-                            needs_redraw = true;
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            selected = (selected + 1) % total;
-                            needs_redraw = true;
-                        }
-
-                        KeyCode::Enter => {
-                            if selected < request.options.len() {
-                                let label = request.options[selected].label.clone();
-                                clear_block(prev_lines);
-                                print_result(&build_confirmation(&label));
-                                return Ok(AskUserUiResult::Answer(AskUserResponse::Selected(
-                                    label,
-                                )));
-                            } else {
-                                // Enter inline typing mode
-                                typing = Some(String::new());
-                                needs_redraw = true;
+                            AskUserResponse::Selected(label) => {
+                                print_result(&build_confirmation(label));
+                            }
+                            AskUserResponse::Custom(text) => {
+                                print_result(&build_confirmation(text));
                             }
                         }
-
-                        KeyCode::Char(ch @ '1'..='9') => {
-                            let idx = (ch as usize) - ('1' as usize);
-                            if idx < request.options.len() {
-                                let label = request.options[idx].label.clone();
-                                clear_block(prev_lines);
-                                print_result(&build_confirmation(&label));
-                                return Ok(AskUserUiResult::Answer(AskUserResponse::Selected(
-                                    label,
-                                )));
-                            }
-                        }
-                        KeyCode::Char('0') => {
-                            // Enter inline typing mode
-                            typing = Some(String::new());
-                            needs_redraw = true;
-                        }
-
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            clear_block(prev_lines);
-                            return Ok(AskUserUiResult::ExitRun);
-                        }
-
-                        KeyCode::Esc => {
-                            clear_block(prev_lines);
-                            print_result(&build_skipped());
-                            return Ok(AskUserUiResult::Answer(AskUserResponse::Skipped));
-                        }
-
-                        _ => {}
+                        return Ok(AskUserUiResult::Answer(response));
                     }
+                    AskUserAction::ExitRun => {
+                        clear_block(prev_lines);
+                        return Ok(AskUserUiResult::ExitRun);
+                    }
+                    AskUserAction::Noop => {}
                 }
             }
             _ => {}

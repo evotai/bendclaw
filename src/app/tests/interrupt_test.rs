@@ -2,42 +2,40 @@ use bendclaw::cli::repl::interrupt::Action;
 use bendclaw::cli::repl::interrupt::InterruptHandler;
 
 #[test]
-fn first_ctrl_c_on_empty_line_returns_clear() {
+fn first_ctrl_c_on_empty_returns_show_hint() {
     let mut handler = InterruptHandler::new();
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
 }
 
 #[test]
-fn second_consecutive_ctrl_c_on_empty_line_returns_exit() {
+fn consecutive_on_interrupt_true_returns_exit() {
+    // Pure state-machine consistency: two on_interrupt(true) in a row.
+    // In practice the second Ctrl+C during the hint window goes through
+    // on_hint_ctrl_c(), but this validates internal pending logic.
     let mut handler = InterruptHandler::new();
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     assert_eq!(handler.on_interrupt(true), Action::Exit);
 }
 
 #[test]
 fn input_between_ctrl_c_resets_state() {
     let mut handler = InterruptHandler::new();
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     handler.on_input();
-    // After normal input, first Ctrl+C is Clear again
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
 }
 
 #[test]
 fn ctrl_c_with_content_always_clears_and_resets() {
     let mut handler = InterruptHandler::new();
-    // First Ctrl+C on empty → arms pending
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
-    // Ctrl+C with content → clears line AND resets pending
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     assert_eq!(handler.on_interrupt(false), Action::Clear);
-    // So next empty Ctrl+C is Clear, not Exit
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
 }
 
 #[test]
 fn ctrl_c_with_content_never_exits() {
     let mut handler = InterruptHandler::new();
-    // Even many Ctrl+C with content never triggers Exit
     for _ in 0..10 {
         assert_eq!(handler.on_interrupt(false), Action::Clear);
     }
@@ -46,21 +44,53 @@ fn ctrl_c_with_content_never_exits() {
 #[test]
 fn content_ctrl_c_between_empty_ctrl_c_resets() {
     let mut handler = InterruptHandler::new();
-    // Empty Ctrl+C → arms pending
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
-    // User types something then Ctrl+C → resets pending
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     assert_eq!(handler.on_interrupt(false), Action::Clear);
-    // Empty Ctrl+C again → arms pending (not exit)
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
-    // Empty Ctrl+C → now exits
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     assert_eq!(handler.on_interrupt(true), Action::Exit);
 }
 
 #[test]
-fn exit_resets_so_next_is_clear() {
+fn exit_resets_so_next_is_show_hint() {
     let mut handler = InterruptHandler::new();
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
     assert_eq!(handler.on_interrupt(true), Action::Exit);
-    // After exit, internal state resets
-    assert_eq!(handler.on_interrupt(true), Action::Clear);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+}
+
+// ---------------------------------------------------------------------------
+// Hint lifecycle
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hint_timeout_resets_so_next_ctrl_c_shows_hint_again() {
+    let mut handler = InterruptHandler::new();
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+    handler.on_hint_timeout();
+    // 1-second window expired → pending reset, next Ctrl+C starts over
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+}
+
+#[test]
+fn hint_timeout_then_input_resets() {
+    let mut handler = InterruptHandler::new();
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+    handler.on_hint_timeout();
+    handler.on_input();
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+}
+
+#[test]
+fn hint_ctrl_c_returns_exit() {
+    let mut handler = InterruptHandler::new();
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+    assert_eq!(handler.on_hint_ctrl_c(), Action::Exit);
+}
+
+#[test]
+fn hint_ctrl_c_resets_state() {
+    let mut handler = InterruptHandler::new();
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
+    assert_eq!(handler.on_hint_ctrl_c(), Action::Exit);
+    assert_eq!(handler.on_interrupt(true), Action::ShowHint);
 }

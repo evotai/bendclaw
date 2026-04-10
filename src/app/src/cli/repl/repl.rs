@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -6,6 +7,12 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use bend_engine::tools::AskUserFn;
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
+use crossterm::terminal::disable_raw_mode;
+use crossterm::terminal::enable_raw_mode;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
@@ -120,9 +127,15 @@ impl Repl {
                     let is_empty = line_empty.load(Ordering::Relaxed);
                     match interrupt.on_interrupt(is_empty) {
                         InterruptAction::Clear => {
-                            if is_empty {
-                                println!("{DIM}  press Ctrl+C again to exit{RESET}");
+                            continue;
+                        }
+                        InterruptAction::ShowHint => {
+                            if show_exit_hint(std::time::Duration::from_secs(1)) {
+                                interrupt.on_hint_ctrl_c();
+                                println!();
+                                break;
                             }
+                            interrupt.on_hint_timeout();
                             continue;
                         }
                         InterruptAction::Exit => {
@@ -612,6 +625,68 @@ impl Repl {
             let _ = fs::create_dir_all(parent);
         }
         let _ = rl.save_history(&path);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Timed exit hint
+// ---------------------------------------------------------------------------
+
+/// Display "press Ctrl+C again to exit" on the line below `^C`, wait up to
+/// `timeout` for a second Ctrl+C, then erase both the hint line and the `^C`
+/// line.  Returns `true` if Ctrl+C was pressed during the window.
+fn show_exit_hint(timeout: std::time::Duration) -> bool {
+    use super::render::with_terminal;
+
+    // Print hint (no newline — stays on the current line).
+    with_terminal(|stdout| {
+        let _ = write!(stdout, "{DIM}  press Ctrl+C again to exit{RESET}");
+    });
+
+    let got_ctrl_c = if enable_raw_mode().is_ok() {
+        let result = poll_for_ctrl_c(timeout);
+        let _ = disable_raw_mode();
+        result
+    } else {
+        std::thread::sleep(timeout);
+        false
+    };
+
+    // Erase hint line, move up, erase ^C line.
+    with_terminal(|stdout| {
+        let _ = write!(stdout, "\r\x1b[K\x1b[A\r\x1b[K");
+    });
+
+    got_ctrl_c
+}
+
+/// Poll for a Ctrl+C keypress within `timeout`. Must be called while raw mode
+/// is enabled. Returns `true` if Ctrl+C was detected.
+fn poll_for_ctrl_c(timeout: std::time::Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        let Ok(ready) = crossterm::event::poll(remaining.min(std::time::Duration::from_millis(50)))
+        else {
+            return false;
+        };
+        if !ready {
+            continue;
+        }
+        let Ok(event) = crossterm::event::read() else {
+            return false;
+        };
+        if let Event::Key(key) = event {
+            if key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Char('c')
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                return true;
+            }
+        }
     }
 }
 

@@ -114,7 +114,7 @@ make test       # unit + integration tests
   <tr>
     <td align="center" width="33%">
       <a href="https://github.com/EvotAI/bendclaw/issues"><b>GitHub Issues</b></a><br>
-      <sub>Bug reports & feature requests</sub>
+      <sub>Bug reports / Feature</sub>
     </td>
     <td align="center" width="33%">
       <a href="https://twitter.com/Evot_AI"><b>Twitter @Evot_AI</b></a><br>

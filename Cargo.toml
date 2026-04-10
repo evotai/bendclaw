@@ -33,3 +33,4 @@ uuid = { version = "1", features = ["v4", "v7"] }
 readability = "0.3"
 htmd = "0.5"
 headless_chrome = "1.0"
+html2text = "0.13"

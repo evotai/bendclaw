@@ -775,7 +775,7 @@ async fn test_web_fetch_cancel() {
 }
 
 #[tokio::test]
-async fn test_web_fetch_html_to_markdown() {
+async fn test_web_fetch_html_to_text() {
     use wiremock::matchers::method;
     use wiremock::matchers::path;
     use wiremock::Mock;
@@ -785,11 +785,8 @@ async fn test_web_fetch_html_to_markdown() {
     let html = r#"<html><head><title>Test Page</title></head><body>
     <article>
     <h1>Hello</h1>
-    <p>This is a paragraph with enough content for readability to extract it properly.
-    It needs to be substantial enough to pass the content length threshold that the
-    readability library uses to determine if content is worth extracting.</p>
-    <p>Here is another paragraph to add more weight to the article body so the
-    extraction algorithm considers this a real article worth converting.</p>
+    <p>This is a paragraph with enough content for text extraction to include it.</p>
+    <p>Here is another paragraph to make the extracted text clearly longer.</p>
     </article>
     </body></html>"#;
 
@@ -811,44 +808,32 @@ async fn test_web_fetch_html_to_markdown() {
         Content::Text { text } => text,
         _ => panic!("expected text"),
     };
-    // Should be converted to markdown, not raw HTML
     assert!(!text.contains("<html>"));
     assert!(!text.contains("<p>"));
-    // readability extracts the title from <title>, and the body from <article>
-    assert!(text.contains("Test Page"));
+    assert!(text.contains("Test Page") || text.contains("Hello"));
     assert!(text.contains("paragraph"));
 }
 
 // --- Browser fallback decision tests ---
 
 #[test]
-fn test_should_try_browser_fallback_no_extraction() {
+fn test_should_try_browser_fallback_short_text() {
     use bendengine::tools::web_fetch::should_try_browser_fallback;
-    // No extracted text, no custom headers → should fallback
-    assert!(should_try_browser_fallback(None, false));
+    assert!(should_try_browser_fallback("short", false));
 }
 
 #[test]
-fn test_should_try_browser_fallback_short_extraction() {
+fn test_should_try_browser_fallback_sufficient_text() {
     use bendengine::tools::web_fetch::should_try_browser_fallback;
-    // Very short extracted text → should fallback
-    assert!(should_try_browser_fallback(Some("short"), false));
-}
-
-#[test]
-fn test_should_try_browser_fallback_sufficient_extraction() {
-    use bendengine::tools::web_fetch::should_try_browser_fallback;
-    // Enough extracted text → no fallback needed
     let long_text = "x".repeat(200);
-    assert!(!should_try_browser_fallback(Some(&long_text), false));
+    assert!(!should_try_browser_fallback(&long_text, false));
 }
 
 #[test]
 fn test_should_try_browser_fallback_with_custom_headers() {
     use bendengine::tools::web_fetch::should_try_browser_fallback;
-    // Custom headers present → never fallback, even with no extraction
-    assert!(!should_try_browser_fallback(None, true));
-    assert!(!should_try_browser_fallback(Some("short"), true));
+    assert!(!should_try_browser_fallback("", true));
+    assert!(!should_try_browser_fallback("short", true));
 }
 
 #[tokio::test]
@@ -883,7 +868,6 @@ async fn test_web_fetch_json_no_browser_fallback() {
     };
     assert!(text.contains("key"));
     assert!(text.contains("value"));
-    // Should use reqwest renderer for JSON
     assert_eq!(result.details["renderer"], "reqwest");
 }
 
@@ -898,11 +882,13 @@ async fn test_web_fetch_html_good_content_no_fallback() {
     let html = r#"<html><head><title>Test Page</title></head><body>
     <article>
     <h1>Hello</h1>
-    <p>This is a paragraph with enough content for readability to extract it properly.
-    It needs to be substantial enough to pass the content length threshold that the
-    readability library uses to determine if content is worth extracting.</p>
-    <p>Here is another paragraph to add more weight to the article body so the
-    extraction algorithm considers this a real article worth converting.</p>
+    <p>This is a paragraph with enough content for text extraction to include it, and it should be
+    comfortably long enough that html2text produces a clearly useful body of text for the reqwest path.
+    We want this content to exceed the browser fallback threshold without needing any JS rendering.</p>
+    <p>Here is another paragraph to make the extracted text clearly longer, with additional descriptive
+    content that simulates a normal article page and ensures the direct HTML-to-text conversion is sufficient.</p>
+    <p>A third paragraph adds even more plain text so the output remains comfortably above the threshold
+    and the tool should stay on the reqwest renderer instead of invoking browser fallback.</p>
     </article>
     </body></html>"#;
 
@@ -925,7 +911,6 @@ async fn test_web_fetch_html_good_content_no_fallback() {
         _ => panic!("expected text"),
     };
     assert!(text.contains("paragraph"));
-    // Good HTML extraction → reqwest renderer, no browser fallback
     assert_eq!(result.details["renderer"], "reqwest");
 }
 
@@ -938,7 +923,6 @@ async fn test_web_fetch_headers_skip_browser_fallback() {
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
 
-    // Serve a minimal SPA-like shell that would normally trigger fallback
     let spa_html = r#"<html><head><title>App</title></head><body><div id="root"></div>
     <script src="/bundle.js"></script></body></html>"#;
 
@@ -963,6 +947,5 @@ async fn test_web_fetch_headers_skip_browser_fallback() {
         .await
         .unwrap();
 
-    // With custom headers, should always use reqwest — never browser fallback
     assert_eq!(result.details["renderer"], "reqwest");
 }

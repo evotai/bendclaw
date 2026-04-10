@@ -1,10 +1,10 @@
 //! Web fetch tool — fetch content from a URL with timeout and size limits.
 //!
-//! Uses reqwest for HTTP requests. For HTML pages where readability extraction
-//! fails (e.g. SPA / JS-rendered pages), automatically falls back to headless
-//! Chrome rendering if a browser is available on the system.
+//! Uses reqwest for HTTP requests. For HTML pages with sparse extracted text
+//! (e.g. SPA / JS-rendered pages), automatically falls back to headless Chrome
+//! if a browser is available on the system. HTML is converted to plain text
+//! via html2text for consistent, simple output.
 
-use std::io::Cursor;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,6 +16,7 @@ const TIMEOUT_SECS: u64 = 30;
 const BROWSER_RENDER_WAIT_SECS: u64 = 5;
 const BROWSER_POLL_INTERVAL_MS: u64 = 300;
 const BROWSER_TIMEOUT_SECS: u64 = 15;
+const HTML_TEXT_WIDTH: usize = 100;
 
 /// Minimum extracted text length to consider the reqwest result usable.
 /// Below this threshold, browser fallback is attempted for HTML pages.
@@ -141,40 +142,23 @@ impl AgentTool for WebFetchTool {
             .await
             .map_err(|e| ToolError::Failed(format!("Failed to read response body: {e}")))?;
 
-        // --- Non-HTML: return as-is ---
         if !content_type.contains("text/html") {
-            let mut text = body;
-            if text.len() > MAX_RESPONSE_SIZE {
-                text.truncate(MAX_RESPONSE_SIZE);
-                text.push_str("\n... (response truncated at 512KB)");
-            }
+            let text = truncate_text(body);
             return Ok(ToolResult {
                 content: vec![Content::Text { text }],
                 details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
             });
         }
 
-        // --- HTML: try readability extraction ---
-        let extracted = html_to_markdown(&body, url);
+        let reqwest_text = html_to_text(&body);
 
-        if !should_try_browser_fallback(extracted.as_deref(), has_custom_headers) {
-            let mut text = extracted.unwrap_or(body);
-            if text.len() > MAX_RESPONSE_SIZE {
-                text.truncate(MAX_RESPONSE_SIZE);
-                text.push_str("\n... (response truncated at 512KB)");
-            }
+        if !should_try_browser_fallback(&reqwest_text, has_custom_headers) {
+            let text = truncate_text(reqwest_text);
             return Ok(ToolResult {
                 content: vec![Content::Text { text }],
                 details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
             });
         }
-
-        // --- Browser fallback for SPA / JS-rendered pages ---
-        tracing::debug!(
-            url,
-            extracted_len = extracted.as_deref().map(|t| t.len()),
-            "Attempting browser fallback for SPA page"
-        );
 
         if let Some(ref progress) = ctx.on_progress {
             progress("Rendering page with browser...".into());
@@ -183,54 +167,19 @@ impl AgentTool for WebFetchTool {
         let url_owned = url.to_string();
         let browser_result = tokio::time::timeout(
             Duration::from_secs(BROWSER_TIMEOUT_SECS),
-            tokio::task::spawn_blocking(move || browser_fetch(&url_owned)),
+            tokio::task::spawn_blocking(move || browser_fetch_html(&url_owned)),
         )
         .await;
 
-        match &browser_result {
-            Ok(Ok(Ok(r))) => {
-                tracing::debug!(
-                    url,
-                    rendered_len = r.html.len(),
-                    visible_text_len = r.visible_text.len(),
-                    "Browser fallback succeeded"
-                );
-            }
-            Ok(Ok(Err(e))) => {
-                tracing::debug!(url, error = %e, "Browser fetch failed");
-            }
-            Ok(Err(e)) => {
-                tracing::debug!(url, error = %e, "Browser task panicked");
-            }
-            Err(_) => {
-                tracing::debug!(url, "Browser fallback timed out");
-            }
-        }
-
-        if let Ok(Ok(Ok(result))) = browser_result {
-            // Prefer JS-extracted visible text; fall back to readability on rendered HTML
-            let mut text = if result.visible_text.len() >= BROWSER_FALLBACK_THRESHOLD {
-                result.visible_text
-            } else {
-                html_to_markdown(&result.html, url).unwrap_or(result.visible_text)
-            };
-            if text.len() > MAX_RESPONSE_SIZE {
-                text.truncate(MAX_RESPONSE_SIZE);
-                text.push_str("\n... (response truncated at 512KB)");
-            }
+        if let Ok(Ok(Ok(rendered_html))) = browser_result {
+            let text = truncate_text(html_to_text(&rendered_html));
             return Ok(ToolResult {
                 content: vec![Content::Text { text }],
                 details: serde_json::json!({ "status": status, "renderer": "browser_fallback" }),
             });
         }
 
-        // Browser failed — return original reqwest result
-        let mut text = extracted.unwrap_or(body);
-        if text.len() > MAX_RESPONSE_SIZE {
-            text.truncate(MAX_RESPONSE_SIZE);
-            text.push_str("\n... (response truncated at 512KB)");
-        }
-
+        let text = truncate_text(reqwest_text);
         Ok(ToolResult {
             content: vec![Content::Text { text }],
             details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
@@ -240,31 +189,20 @@ impl AgentTool for WebFetchTool {
 
 /// Determine whether to attempt browser fallback for an HTML page.
 ///
-/// Returns `true` when readability extraction produced no usable content
+/// Returns `true` when extracted text is too short to be useful
 /// and no custom headers were provided (browser cannot replicate custom headers).
-pub fn should_try_browser_fallback(extracted_text: Option<&str>, has_custom_headers: bool) -> bool {
+pub fn should_try_browser_fallback(extracted_text: &str, has_custom_headers: bool) -> bool {
     if has_custom_headers {
         return false;
     }
-    match extracted_text {
-        None => true,
-        Some(text) => text.len() < BROWSER_FALLBACK_THRESHOLD,
-    }
+    extracted_text.trim().len() < BROWSER_FALLBACK_THRESHOLD
 }
 
-/// Result from browser rendering — includes both HTML and extracted visible text.
-struct BrowserFetchResult {
-    /// The visible text content extracted via JS from the rendered page.
-    visible_text: String,
-    /// The full rendered HTML (fallback if text extraction is poor).
-    html: String,
-}
-
-/// Render a page using headless Chrome and extract content.
+/// Render a page using headless Chrome and return the rendered HTML.
 ///
 /// This is a blocking function — call via `spawn_blocking`.
 /// Returns `Err` if Chrome is not installed or any step fails.
-fn browser_fetch(url: &str) -> Result<BrowserFetchResult, String> {
+fn browser_fetch_html(url: &str) -> Result<String, String> {
     use headless_chrome::Browser;
 
     let browser = Browser::default().map_err(|e| format!("Browser launch failed: {e}"))?;
@@ -274,8 +212,6 @@ fn browser_fetch(url: &str) -> Result<BrowserFetchResult, String> {
     tab.navigate_to(url)
         .map_err(|e| format!("Navigation failed: {e}"))?;
 
-    // Poll until page content stabilizes or timeout is reached.
-    // This avoids both fixed sleeps (wasteful) and wait_until_navigated (unreliable for SPAs).
     let deadline = std::time::Instant::now() + Duration::from_secs(BROWSER_RENDER_WAIT_SECS);
     let mut last_len: usize = 0;
     let mut stable_count: u8 = 0;
@@ -288,7 +224,7 @@ fn browser_fetch(url: &str) -> Result<BrowserFetchResult, String> {
             .unwrap_or(0) as usize;
         if len > 0 && len == last_len {
             stable_count += 1;
-            if stable_count >= 2 {
+            if stable_count >= 3 {
                 break;
             }
         } else {
@@ -297,83 +233,23 @@ fn browser_fetch(url: &str) -> Result<BrowserFetchResult, String> {
         last_len = len;
     }
 
-    // Extract visible text via JS — works for any page including listing pages
-    let js_result = tab
-        .evaluate(
-            r#"
-            (() => {
-                const title = document.title || '';
-                const walker = document.createTreeWalker(
-                    document.body,
-                    NodeFilter.SHOW_TEXT,
-                    {
-                        acceptNode: (node) => {
-                            const el = node.parentElement;
-                            if (!el) return NodeFilter.FILTER_REJECT;
-                            const tag = el.tagName;
-                            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT')
-                                return NodeFilter.FILTER_REJECT;
-                            const style = window.getComputedStyle(el);
-                            if (style.display === 'none' || style.visibility === 'hidden')
-                                return NodeFilter.FILTER_REJECT;
-                            return NodeFilter.FILTER_ACCEPT;
-                        }
-                    }
-                );
-                const parts = [];
-                while (walker.nextNode()) {
-                    const text = walker.currentNode.textContent.trim();
-                    if (text) parts.push(text);
-                }
-                return JSON.stringify({ title, text: parts.join('\n') });
-            })()
-            "#,
-            false,
-        )
-        .map_err(|e| format!("JS evaluation failed: {e}"))?;
-
-    let visible_text = js_result
-        .value
-        .as_ref()
-        .and_then(|v| v.as_str())
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .map(|obj| {
-            let title = obj["title"].as_str().unwrap_or("");
-            let text = obj["text"].as_str().unwrap_or("");
-            if title.is_empty() {
-                text.to_string()
-            } else {
-                format!("# {title}\n\n{text}")
-            }
-        })
-        .unwrap_or_default();
-
-    let html = tab
-        .get_content()
-        .map_err(|e| format!("Failed to get content: {e}"))?;
-
-    Ok(BrowserFetchResult { visible_text, html })
+    tab.get_content()
+        .map_err(|e| format!("Failed to get content: {e}"))
 }
 
-/// Extract readable content from HTML and convert it to markdown.
-///
-/// Returns `None` if the input cannot be parsed or has no extractable content,
-/// allowing the caller to fall back to the raw text.
-fn html_to_markdown(html: &str, url: &str) -> Option<String> {
-    let mut cursor = Cursor::new(html.as_bytes());
-    let parsed_url = reqwest::Url::parse(url).ok()?;
-    let article = readability::extractor::extract(&mut cursor, &parsed_url).ok()?;
-
-    let md = htmd::convert(&article.content).ok()?;
-    let trimmed = md.trim();
-    if trimmed.is_empty() {
-        return None;
+/// Convert HTML to plain text.
+fn html_to_text(html: &str) -> String {
+    match html2text::from_read(html.as_bytes(), HTML_TEXT_WIDTH) {
+        Ok(text) => text,
+        Err(_) => html.to_string(),
     }
+}
 
-    let title = article.title.trim();
-    if title.is_empty() {
-        Some(trimmed.to_string())
-    } else {
-        Some(format!("# {title}\n\n{trimmed}"))
+/// Truncate large text responses to the tool limit.
+fn truncate_text(mut text: String) -> String {
+    if text.len() > MAX_RESPONSE_SIZE {
+        text.truncate(MAX_RESPONSE_SIZE);
+        text.push_str("\n... (response truncated at 512KB)");
     }
+    text
 }

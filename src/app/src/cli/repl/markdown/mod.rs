@@ -6,6 +6,7 @@
 mod ansi;
 pub mod highlight;
 mod linkify;
+mod list_state;
 pub mod render;
 mod table;
 mod theme;

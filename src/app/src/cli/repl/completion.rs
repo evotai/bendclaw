@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -26,11 +28,14 @@ pub struct CompletionState {
 
 pub struct ReplHelper {
     state: CompletionStateRef,
+    /// Tracks whether the input line is empty; updated on every keystroke
+    /// via the `Hinter` callback so the REPL can read it on Ctrl+C.
+    line_empty: Arc<AtomicBool>,
 }
 
 impl ReplHelper {
-    pub fn new(state: CompletionStateRef) -> Self {
-        Self { state }
+    pub fn new(state: CompletionStateRef, line_empty: Arc<AtomicBool>) -> Self {
+        Self { state, line_empty }
     }
 }
 
@@ -135,6 +140,8 @@ impl Hinter for ReplHelper {
     type Hint = CommandHint;
 
     fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<CommandHint> {
+        self.line_empty.store(line.is_empty(), Ordering::Relaxed);
+
         if pos != line.len() || !is_slash_prefix(line) {
             return None;
         }

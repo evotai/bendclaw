@@ -8,6 +8,7 @@ use streamdown_parser::ParseEvent;
 use super::highlight::Highlighter;
 use super::linkify::format_hyperlink;
 use super::linkify::linkify_issue_refs;
+use super::list_state::ListState;
 use super::table;
 use super::theme::Theme;
 
@@ -19,6 +20,7 @@ pub struct Renderer<W: Write> {
     in_blockquote: bool,
     blockquote_depth: usize,
     table_rows: Vec<Vec<String>>,
+    list_state: ListState,
 }
 
 impl<W: Write> Renderer<W> {
@@ -31,10 +33,16 @@ impl<W: Write> Renderer<W> {
             in_blockquote: false,
             blockquote_depth: 0,
             table_rows: Vec::new(),
+            list_state: ListState::default(),
         }
     }
 
     pub fn render_event(&mut self, event: &ParseEvent) -> io::Result<()> {
+        // Reset list state when a non-list event breaks the context.
+        if ListState::should_reset(event) {
+            self.list_state.reset();
+        }
+
         match event {
             // --- Inline ---
             ParseEvent::Text(text) => self.write(
@@ -95,19 +103,23 @@ impl<W: Write> Renderer<W> {
             } => {
                 let margin = self.left_margin();
                 let pad = "  ".repeat(*indent);
+                let ordered = bullet.is_ordered();
                 let marker = match bullet {
                     streamdown_parser::ListBullet::Dash => self.theme.bullet.paint("-"),
                     streamdown_parser::ListBullet::Asterisk => self.theme.bullet.paint("*"),
                     streamdown_parser::ListBullet::Plus => self.theme.bullet.paint("+"),
                     streamdown_parser::ListBullet::PlusExpand => self.theme.bullet.paint("+"),
-                    streamdown_parser::ListBullet::Ordered(n) => {
+                    streamdown_parser::ListBullet::Ordered(_) => {
+                        let n = self.list_state.next_number(*indent, ordered);
                         self.theme.list_number.paint(&format!("{}.", n))
                     }
                 };
                 let rendered_content = self.render_inline(content);
                 self.writeln(&format!("{margin}{pad}{marker} {rendered_content}"))?;
             }
-            ParseEvent::ListEnd => {}
+            ParseEvent::ListEnd => {
+                self.list_state.mark_pending_reset();
+            }
 
             // --- Table ---
             ParseEvent::TableHeader(cols) | ParseEvent::TableRow(cols) => {

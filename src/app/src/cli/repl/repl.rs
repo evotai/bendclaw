@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -14,6 +16,8 @@ use super::commands::KNOWN_COMMANDS;
 use super::completion::CompletionState;
 use super::completion::CompletionStateRef;
 use super::completion::ReplHelper;
+use super::interrupt::Action as InterruptAction;
+use super::interrupt::InterruptHandler;
 use super::render::print_transcript_messages;
 use super::render::truncate;
 use super::render::BOLD;
@@ -89,23 +93,40 @@ impl Repl {
             self.print_resume_hint().await?;
         }
 
+        let line_empty = Arc::new(AtomicBool::new(true));
         let config = rustyline::config::Builder::new()
             .completion_type(rustyline::config::CompletionType::List)
             .completion_prompt_limit(50)
             .build();
         let mut rl = Editor::with_config(config)
             .map_err(|e| BendclawError::Cli(format!("failed to initialize readline: {e}")))?;
-        rl.set_helper(Some(ReplHelper::new(self.completion_state.clone())));
+        rl.set_helper(Some(ReplHelper::new(
+            self.completion_state.clone(),
+            line_empty.clone(),
+        )));
 
         self.load_history(&mut rl);
 
+        let mut interrupt = InterruptHandler::new();
         loop {
             let prompt = self.prompt();
+            line_empty.store(true, Ordering::Relaxed);
             let line = match rl.readline(&prompt) {
                 Ok(line) => line,
                 Err(ReadlineError::Interrupted) => {
-                    println!();
-                    break;
+                    let is_empty = line_empty.load(Ordering::Relaxed);
+                    match interrupt.on_interrupt(is_empty) {
+                        InterruptAction::Clear => {
+                            if is_empty {
+                                println!("{DIM}  press Ctrl+C again to exit{RESET}");
+                            }
+                            continue;
+                        }
+                        InterruptAction::Exit => {
+                            println!();
+                            break;
+                        }
+                    }
                 }
                 Err(ReadlineError::Eof) => break,
                 Err(error) => {
@@ -113,6 +134,7 @@ impl Repl {
                 }
             };
 
+            interrupt.on_input();
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -306,7 +328,9 @@ impl Repl {
             println!("{DIM}  git:   {branch}{RESET}");
         }
         println!("{DIM}  cwd:   {}{RESET}", self.cwd);
-        println!("{DIM}  /help commands  ·  Tab complete  ·  ↑↓ history  ·  Ctrl+C exit{RESET}\n");
+        println!(
+            "{DIM}  /help commands  ·  Tab complete  ·  ↑↓ history  ·  Ctrl+C×2 exit{RESET}\n"
+        );
         Ok(())
     }
 

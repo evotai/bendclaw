@@ -1,5 +1,6 @@
 use bendclaw::cli::repl::markdown::render::Renderer;
 use streamdown_parser::inline::InlineElement;
+use streamdown_parser::ListBullet;
 use streamdown_parser::ParseEvent;
 
 fn render_events(width: usize, events: &[ParseEvent]) -> String {
@@ -94,4 +95,174 @@ fn url_fragments_are_not_treated_as_issue_refs() {
 
     assert!(!output.contains("github.com"));
     assert!(output.contains("page#section"));
+}
+
+// ---------------------------------------------------------------------------
+// Ordered list numbering
+// ---------------------------------------------------------------------------
+
+/// Helper: strip ANSI escape sequences so we can assert on visible text.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until 'm' (SGR) or 'ST' (hyperlink OSC)
+            while let Some(&nc) = chars.peek() {
+                let _ = chars.next();
+                if nc == 'm' || (nc.is_ascii_uppercase() && nc != 'O') {
+                    break;
+                }
+                // OSC hyperlink: \x1b]8;;...\x1b\\ — skip to backslash
+                if nc == '\\' {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[test]
+fn ordered_list_all_ones_renders_sequential() {
+    // Simulates LLM streaming where every item has `1.`
+    let output = render_events(80, &[
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "first".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "second".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "third".into(),
+        },
+    ]);
+    let plain = strip_ansi(&output);
+    assert!(
+        plain.contains("1. first"),
+        "expected '1. first', got:\n{plain}"
+    );
+    assert!(
+        plain.contains("2. second"),
+        "expected '2. second', got:\n{plain}"
+    );
+    assert!(
+        plain.contains("3. third"),
+        "expected '3. third', got:\n{plain}"
+    );
+}
+
+#[test]
+fn nested_ordered_lists_have_independent_counters() {
+    let output = render_events(80, &[
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "parent 1".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 1,
+            bullet: ListBullet::Ordered(1),
+            content: "child a".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 1,
+            bullet: ListBullet::Ordered(1),
+            content: "child b".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "parent 2".into(),
+        },
+    ]);
+    let plain = strip_ansi(&output);
+    assert!(plain.contains("1. parent 1"), "got:\n{plain}");
+    assert!(
+        plain.contains("1. child a"),
+        "child should restart at 1, got:\n{plain}"
+    );
+    assert!(plain.contains("2. child b"), "got:\n{plain}");
+    assert!(
+        plain.contains("2. parent 2"),
+        "parent should continue at 2, got:\n{plain}"
+    );
+}
+
+#[test]
+fn list_end_then_new_list_restarts_numbering() {
+    let output = render_events(80, &[
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "a".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "b".into(),
+        },
+        ParseEvent::ListEnd,
+        // A heading breaks the list context
+        ParseEvent::Heading {
+            level: 2,
+            content: "next section".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "c".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "d".into(),
+        },
+    ]);
+    let plain = strip_ansi(&output);
+    // First list: 1, 2
+    assert!(plain.contains("1. a"), "got:\n{plain}");
+    assert!(plain.contains("2. b"), "got:\n{plain}");
+    // Second list restarts: 1, 2
+    assert!(
+        plain.contains("1. c"),
+        "new list should restart at 1, got:\n{plain}"
+    );
+    assert!(plain.contains("2. d"), "got:\n{plain}");
+}
+
+#[test]
+fn mixed_ordered_and_unordered_do_not_interfere() {
+    let output = render_events(80, &[
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "one".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 1,
+            bullet: ListBullet::Dash,
+            content: "bullet".into(),
+        },
+        ParseEvent::ListItem {
+            indent: 0,
+            bullet: ListBullet::Ordered(1),
+            content: "two".into(),
+        },
+    ]);
+    let plain = strip_ansi(&output);
+    assert!(plain.contains("1. one"), "got:\n{plain}");
+    assert!(plain.contains("- bullet"), "got:\n{plain}");
+    assert!(
+        plain.contains("2. two"),
+        "ordered should continue, got:\n{plain}"
+    );
 }

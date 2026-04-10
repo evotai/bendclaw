@@ -457,41 +457,10 @@ impl ReplSink {
                         0.0
                     };
                     let h_saved = super::render::human_tokens(saved);
-
-                    // Build summary line based on level
-                    let mut summary_parts = Vec::new();
-                    if *tool_outputs_truncated > 0 {
-                        summary_parts
-                            .push(format!("truncated {tool_outputs_truncated} tool outputs"));
-                    }
-                    if *turns_summarized > 0 {
-                        summary_parts.push(format!("summarized {turns_summarized} turns"));
-                    }
-                    if *messages_dropped > 0 {
-                        summary_parts.push(format!("dropped {messages_dropped} messages"));
-                    }
-                    let summary_suffix = if summary_parts.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" · {}", summary_parts.join(" · "))
-                    };
-
-                    let title = format!("compact completed · level {level}");
-                    super::render::print_badge_line(&title, true, true);
-                    terminal_writeln(&format!(
-                        "{GREEN}  saved ~{h_saved} tokens ({saved_pct:.1}%){summary_suffix}{RESET}",
-                    ));
                     let h_before = super::render::human_tokens(*before_estimated_tokens);
                     let h_after = super::render::human_tokens(*after_estimated_tokens);
-                    terminal_writeln(&format!(
-                        "{GRAY}  {before_message_count} messages ~{h_before} tok → {after_message_count} messages ~{h_after} tok{RESET}",
-                    ));
 
-                    // Per-action detail: sorted by savings, top/tail with ellipsis
-                    const TOP: usize = 3;
-                    const TAIL: usize = 2;
-
-                    // Sort actions by saved tokens descending
+                    // Sort actions by saved tokens descending (exclude Skipped)
                     let mut sorted: Vec<_> =
                         actions.iter().filter(|a| a.method != "Skipped").collect();
                     sorted.sort_by(|a, b| {
@@ -500,11 +469,38 @@ impl ReplSink {
                         sb.cmp(&sa)
                     });
 
+                    // --- Title ---
+                    let title = format!("compact · L{level}");
+                    super::render::print_badge_line(&title, true, true);
+
+                    // --- Line 1: before ---
+                    terminal_writeln(&format!(
+                        "{GRAY}  {before_message_count} messages ~{h_before} tok{RESET}",
+                    ));
+
+                    // --- Line 2: position bar ---
+                    let bar = render_position_bar(*before_message_count, &sorted, *level);
+                    terminal_writeln(&format!("{GRAY}  {bar}{RESET}"));
+
+                    // --- Line 3: ↓ action summary ---
+                    let summary = format_action_summary(
+                        *level,
+                        &sorted,
+                        *messages_dropped,
+                        *after_message_count,
+                    );
+                    terminal_writeln(&format!("{GRAY}  {summary}{RESET}"));
+
+                    // --- Line 4: after + saved ---
+                    terminal_writeln(&format!(
+                        "{GREEN}  {after_message_count} messages ~{h_after} tok  (saved ~{h_saved}, {saved_pct:.1}%){RESET}",
+                    ));
+
+                    // --- Actions detail: top/tail with ellipsis ---
                     if !sorted.is_empty() {
                         let total_actions = actions.len();
                         let changed = sorted.len();
 
-                        // Actions header with inline stats
                         let header = match *level {
                             1 => format!(
                                 "  actions: ({changed} of {total_actions} changed, sorted by savings)"
@@ -519,8 +515,7 @@ impl ReplSink {
                                 )
                             }
                             3 => {
-                                let kept =
-                                    after_message_count.saturating_sub(1); // minus marker
+                                let kept = after_message_count.saturating_sub(1);
                                 format!(
                                     "  actions: ({} dropped, {} kept, 1 marker)",
                                     messages_dropped, kept
@@ -529,6 +524,9 @@ impl ReplSink {
                             _ => format!("  actions: ({changed} changed)"),
                         };
                         terminal_writeln(&format!("{GRAY}{header}{RESET}"));
+
+                        const TOP: usize = 3;
+                        const TAIL: usize = 2;
 
                         let render_action = |a: &&crate::agent::event::CompactionActionInfo| {
                             let hb = super::render::human_tokens(a.before_tokens);
@@ -539,29 +537,28 @@ impl ReplSink {
                                 "Summarized" => {
                                     let rc = a.related_count.unwrap_or(0);
                                     terminal_writeln(&format!(
-                                            "{GRAY}    #{:<3} assistant(+{} results) {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                            a.index, rc, a.method, hb, ha, hs,
-                                        ));
+                                        "{GRAY}    #{:<3} turn({} msgs)  {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                        a.index, 1 + rc, a.method, hb, ha, hs,
+                                    ));
                                 }
                                 "Dropped" => {
                                     if let Some(end) = a.end_index {
                                         terminal_writeln(&format!(
-                                                "{GRAY}    #{}..#{} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                                a.index, end, "messages", a.method, hb, ha, hs,
-                                            ));
+                                            "{GRAY}    #{}..#{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, end, a.method, hb, ha, hs,
+                                        ));
                                     } else {
-                                        let rc = a.related_count.unwrap_or(0);
                                         terminal_writeln(&format!(
-                                                "{GRAY}    Dropped {} messages ~{} → ~{}  (saved ~{}){RESET}",
-                                                rc, hb, ha, hs,
-                                            ));
+                                            "{GRAY}    #{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, a.method, hb, ha, hs,
+                                        ));
                                     }
                                 }
                                 _ => {
                                     terminal_writeln(&format!(
-                                            "{GRAY}    #{:<3} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                            a.index, a.tool_name, a.method, hb, ha, hs,
-                                        ));
+                                        "{GRAY}    #{:<3} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                        a.index, a.tool_name, a.method, hb, ha, hs,
+                                    ));
                                 }
                             }
                         };
@@ -582,13 +579,112 @@ impl ReplSink {
                         }
                     }
                 } else {
-                    let title = "compact completed · level 0".to_string();
+                    let title = "compact · L0".to_string();
                     super::render::print_badge_line(&title, true, true);
                     terminal_writeln(&format!("{GRAY}  no compaction needed{RESET}"));
                 }
                 terminal_writeln("");
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Compact display helpers
+// ---------------------------------------------------------------------------
+
+fn render_position_bar(
+    before_count: usize,
+    sorted_actions: &[&crate::agent::event::CompactionActionInfo],
+    level: u8,
+) -> String {
+    const WIDTH: usize = 40;
+    if before_count == 0 {
+        return format!("[{}]", "·".repeat(WIDTH));
+    }
+
+    let default_char = if level == 3 { 'K' } else { '·' };
+    let mut slots = vec![default_char; WIDTH.min(before_count)];
+    let slot_count = slots.len();
+
+    for a in sorted_actions {
+        let start = a.index;
+        let end = a.end_index.unwrap_or(a.index);
+        let ch = match (level, a.method.as_str()) {
+            (1, "Outline") => 'O',
+            (1, "HeadTail") => 'H',
+            (2, "Summarized") => 'S',
+            (3, "Dropped") => 'D',
+            _ => '?',
+        };
+
+        if before_count <= WIDTH {
+            for slot in slots
+                .iter_mut()
+                .take(end.min(slot_count.saturating_sub(1)) + 1)
+                .skip(start)
+            {
+                *slot = ch;
+            }
+        } else {
+            let map = |idx: usize| idx * slot_count / before_count;
+            let s = map(start);
+            let e = map(end);
+            for slot in slots
+                .iter_mut()
+                .take(e.min(slot_count.saturating_sub(1)) + 1)
+                .skip(s)
+            {
+                *slot = ch;
+            }
+        }
+    }
+
+    format!("[{}]", slots.iter().collect::<String>())
+}
+
+fn format_action_summary(
+    level: u8,
+    sorted_actions: &[&crate::agent::event::CompactionActionInfo],
+    messages_dropped: usize,
+    after_message_count: usize,
+) -> String {
+    match level {
+        1 => {
+            let outline_count = sorted_actions
+                .iter()
+                .filter(|a| a.method == "Outline")
+                .count();
+            let headtail_count = sorted_actions
+                .iter()
+                .filter(|a| a.method == "HeadTail")
+                .count();
+            let mut parts = Vec::new();
+            if outline_count > 0 {
+                parts.push(format!("outlined {outline_count}"));
+            }
+            if headtail_count > 0 {
+                parts.push(format!("head-tail {headtail_count}"));
+            }
+            if parts.is_empty() {
+                "↓ no changes".to_string()
+            } else {
+                format!("↓ {}", parts.join(", "))
+            }
+        }
+        2 => {
+            let turn_count = sorted_actions.len();
+            let total_msgs: usize = sorted_actions
+                .iter()
+                .map(|a| 1 + a.related_count.unwrap_or(0))
+                .sum();
+            format!("↓ summarized {turn_count} turns ({total_msgs} msgs → {turn_count} summaries)")
+        }
+        3 => {
+            let kept = after_message_count.saturating_sub(1);
+            format!("↓ dropped {messages_dropped} msgs, kept {kept} + 1 marker")
+        }
+        _ => "↓ no changes".to_string(),
     }
 }
 

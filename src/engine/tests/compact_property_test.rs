@@ -122,3 +122,91 @@ proptest! {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// P5: action index range is valid
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn compact_action_indices_are_valid(
+        pattern in arb_pattern(),
+        pad in 10..3000usize,
+        tool_out in 10..5000usize,
+        config in arb_config(),
+    ) {
+        let messages = pat(&pattern).pad(pad).tool_output(tool_out).build();
+        let before_count = messages.len();
+        let result = compact_messages(messages, &config);
+        for action in &result.stats.actions {
+            prop_assert!(
+                action.index < before_count,
+                "action index {} >= before_count {}",
+                action.index, before_count,
+            );
+            if let Some(end) = action.end_index {
+                prop_assert!(
+                    end >= action.index,
+                    "end_index {} < index {}",
+                    end, action.index,
+                );
+                prop_assert!(
+                    end < before_count,
+                    "end_index {} >= before_count {}",
+                    end, before_count,
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P6: each action's after_tokens <= before_tokens
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn compact_action_tokens_monotonic(
+        pattern in arb_pattern(),
+        pad in 10..3000usize,
+        tool_out in 10..5000usize,
+        config in arb_config(),
+    ) {
+        let messages = pat(&pattern).pad(pad).tool_output(tool_out).build();
+        let result = compact_messages(messages, &config);
+        for action in &result.stats.actions {
+            prop_assert!(
+                action.after_tokens <= action.before_tokens,
+                "action #{}: after {} > before {}",
+                action.index, action.after_tokens, action.before_tokens,
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P7: sum of action savings <= overall savings
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn compact_action_savings_bounded(
+        pattern in arb_pattern(),
+        pad in 10..3000usize,
+        tool_out in 10..5000usize,
+        config in arb_config(),
+    ) {
+        let messages = pat(&pattern).pad(pad).tool_output(tool_out).build();
+        let result = compact_messages(messages, &config);
+        let overall_saved = result.stats.before_estimated_tokens
+            .saturating_sub(result.stats.after_estimated_tokens);
+        let action_saved: usize = result.stats.actions.iter()
+            .map(|a| a.before_tokens.saturating_sub(a.after_tokens))
+            .sum();
+        prop_assert!(
+            action_saved <= overall_saved,
+            "action savings {} > overall savings {}",
+            action_saved, overall_saved,
+        );
+    }
+}

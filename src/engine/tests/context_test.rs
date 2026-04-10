@@ -1027,3 +1027,61 @@ fn test_compact_level0_no_actions() {
     assert_eq!(result.stats.level, 0);
     assert!(result.stats.actions.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Boundary cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_compact_empty_messages() {
+    let messages: Vec<AgentMessage> = vec![];
+    let config = ContextConfig::default();
+    let result = compact_messages(messages, &config);
+    assert_eq!(result.stats.level, 0);
+    assert!(result.messages.is_empty());
+    assert!(result.stats.actions.is_empty());
+}
+
+#[test]
+fn test_compact_single_user() {
+    let messages = pat("u").build();
+    let config = ContextConfig {
+        max_context_tokens: 1,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+    assert!(!result.messages.is_empty());
+}
+
+#[test]
+fn test_compact_all_users_no_tool() {
+    let messages = pat("u a u a u").pad(5000).build();
+    let config = ContextConfig {
+        max_context_tokens: 200,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+    assert!(!result.messages.is_empty());
+    assert_no_orphan_tool_pairs(&result.messages);
+}
+
+#[test]
+fn test_compact_budget_zero() {
+    let messages = pat("u tr u tr u").pad(100).tool_output(500).build();
+    let config = ContextConfig {
+        max_context_tokens: 0,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 0,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+    assert!(!result.messages.is_empty());
+    assert_no_orphan_tool_pairs(&result.messages);
+}

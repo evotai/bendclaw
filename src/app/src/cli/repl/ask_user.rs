@@ -13,6 +13,7 @@ use crossterm::event::read;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 
@@ -134,11 +135,19 @@ pub fn build_skipped() -> String {
 // Terminal interaction
 // ---------------------------------------------------------------------------
 
+/// Result from the ask_user UI interaction.
+pub enum AskUserUiResult {
+    /// User provided an answer (selected, custom, or skipped).
+    Answer(AskUserResponse),
+    /// User pressed Ctrl+C — caller should abort the entire run.
+    ExitRun,
+}
+
 /// Render the question selector in the current raw-mode terminal and wait
 /// for the user to pick an option, type custom input, or skip.
 ///
 /// Caller must already be in raw mode (via `RawModeGuard`).
-pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserResponse> {
+pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiResult> {
     let total = total_options(request);
     let mut selected: usize = 0;
     let mut prev_lines: usize = 0;
@@ -197,7 +206,7 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserRes
                             }
                         }
                     };
-                    return Ok(response);
+                    return Ok(AskUserUiResult::Answer(response));
                 }
 
                 // Quick-pick by number (1-N for options, 0 for custom)
@@ -207,7 +216,7 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserRes
                         let label = request.options[idx].label.clone();
                         clear_block(prev_lines);
                         print_result(&build_confirmation(&label));
-                        return Ok(AskUserResponse::Selected(label));
+                        return Ok(AskUserUiResult::Answer(AskUserResponse::Selected(label)));
                     }
                 }
                 KeyCode::Char('0') => {
@@ -215,20 +224,26 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserRes
                     match read_custom_input()? {
                         Some(text) => {
                             print_result(&build_confirmation(&text));
-                            return Ok(AskUserResponse::Custom(text));
+                            return Ok(AskUserUiResult::Answer(AskUserResponse::Custom(text)));
                         }
                         None => {
                             print_result(&build_skipped());
-                            return Ok(AskUserResponse::Skipped);
+                            return Ok(AskUserUiResult::Answer(AskUserResponse::Skipped));
                         }
                     }
+                }
+
+                // Ctrl+C — abort the entire run
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    clear_block(prev_lines);
+                    return Ok(AskUserUiResult::ExitRun);
                 }
 
                 // Skip
                 KeyCode::Esc => {
                     clear_block(prev_lines);
                     print_result(&build_skipped());
-                    return Ok(AskUserResponse::Skipped);
+                    return Ok(AskUserUiResult::Answer(AskUserResponse::Skipped));
                 }
 
                 _ => {}

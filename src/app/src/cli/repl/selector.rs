@@ -366,8 +366,19 @@ pub fn wait_for_run_control(
             state.set_paused(true);
             drop(state);
 
-            let response = super::ask_user::render_and_select(&request)?;
-            let _ = responder.send(response);
+            match super::ask_user::render_and_select(&request)? {
+                super::ask_user::AskUserUiResult::Answer(response) => {
+                    let _ = responder.send(response);
+                }
+                super::ask_user::AskUserUiResult::ExitRun => {
+                    // Send Skipped so the engine side doesn't hang on the channel
+                    let _ = responder.send(AskUserResponse::Skipped);
+                    let mut state = spinner.lock();
+                    state.set_paused(false);
+                    state.clear_if_rendered();
+                    return Ok(Some(RunControl::Exit));
+                }
+            }
 
             // Resume spinner
             let mut state = spinner.lock();

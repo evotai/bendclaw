@@ -215,7 +215,7 @@ fn render_selector_popup(frame: &mut ratatui::Frame<'_>, popup: &SelectorPopup<'
         frame.render_widget(
             Table::new(rows, [
                 Constraint::Length(2),
-                Constraint::Percentage(46),
+                Constraint::Percentage(56),
                 Constraint::Min(18),
             ])
             .column_spacing(1),

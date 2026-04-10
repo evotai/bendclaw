@@ -400,15 +400,15 @@ impl Repl {
                 SelectorOption {
                     id: session.session_id.clone(),
                     primary: format!(
+                        "{scope_marker} {}",
+                        summarize_title(session.title.as_deref().unwrap_or("Untitled session"))
+                    ),
+                    secondary: format!(
                         "{}  {}  {} turns  {}",
                         short_id(&session.session_id),
                         relative_time(&session.updated_at),
                         session.turns,
                         session.model
-                    ),
-                    secondary: format!(
-                        "{scope_marker} {}",
-                        summarize_title(session.title.as_deref().unwrap_or("Untitled session"))
                     ),
                 }
             })
@@ -761,7 +761,7 @@ fn short_id(value: &str) -> String {
 }
 
 fn summarize_title(value: &str) -> String {
-    truncate_head_tail(value, 56)
+    truncate_head_tail(value, 72)
 }
 
 fn relative_time(value: &str) -> String {

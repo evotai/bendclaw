@@ -85,7 +85,7 @@ fn render_compact_started(budget: &PendingBudget) {
         budget.message_count,
     ));
     let bar = format_budget_bar(budget.estimated_tokens, budget.budget_tokens, 40);
-    terminal_writeln(&format!("{GRAY}  {bar} of budget{RESET}"));
+    terminal_writeln(&format!("{GRAY}  {bar}{RESET}"));
     let h_budget = super::render::human_tokens(budget.budget_tokens);
     let h_window = super::render::human_tokens(budget.context_window);
     let h_sys = super::render::human_tokens(budget.system_prompt_tokens);
@@ -361,7 +361,7 @@ impl ReplSink {
                 }
                 if let Some(budget) = state.pending_budget.take() {
                     let bar = format_budget_bar(budget.estimated_tokens, budget.budget_tokens, 40);
-                    terminal_writeln(&format!("{GRAY}  {bar} of budget{RESET}"));
+                    terminal_writeln(&format!("{GRAY}  {bar}{RESET}"));
                 }
 
                 state.last_message_stats = Some(stats);
@@ -424,21 +424,13 @@ impl ReplSink {
                         },
                     ));
 
-                let title = "compact call";
-                super::render::print_badge_line(title, false, false);
-                let h_est = super::render::human_tokens(*estimated_tokens);
-                terminal_writeln(&format!(
-                    "{GRAY}  {message_count} messages · ~{h_est} tokens{RESET}",
-                ));
-                let bar = format_budget_bar(*estimated_tokens, *budget_tokens, 40);
-                terminal_writeln(&format!("{GRAY}  {bar} of budget{RESET}"));
-                let h_budget = super::render::human_tokens(*budget_tokens);
-                let h_window = super::render::human_tokens(*context_window);
-                let h_sys = super::render::human_tokens(*system_prompt_tokens);
-                terminal_writeln(&format!(
-                    "{GRAY}  budget {h_budget} (window {h_window} − sys {h_sys}){RESET}",
-                ));
-                terminal_writeln("");
+                state.pending_budget = Some(PendingBudget {
+                    message_count: *message_count,
+                    estimated_tokens: *estimated_tokens,
+                    budget_tokens: *budget_tokens,
+                    system_prompt_tokens: *system_prompt_tokens,
+                    context_window: *context_window,
+                });
             }
             RunEventPayload::ContextCompactionCompleted {
                 level,

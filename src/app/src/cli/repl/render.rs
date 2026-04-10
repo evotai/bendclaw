@@ -704,5 +704,6 @@ pub fn format_budget_bar(used: usize, budget: usize, width: usize) -> String {
     let bar: String = (0..width)
         .map(|i| if i < filled { '█' } else { '░' })
         .collect();
-    format!("{bar}  {:.0}%", ratio * 100.0)
+    let h_budget = human_tokens(budget);
+    format!("{bar}  {:.0}% of budget({h_budget})", ratio * 100.0)
 }

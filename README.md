@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  Everything Claude Code / Codex can do — half the tokens, fully observable, in 20k+ lines of Rust.
+</p>
+
+<p align="center">
   The engine behind <a href="https://evot.ai">evot.ai</a>
 </p>
 

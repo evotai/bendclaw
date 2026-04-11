@@ -35,37 +35,27 @@ fn replace_line() {
 }
 
 #[test]
-fn diff_from_details_with_old_and_new() {
+fn diff_from_details_precomputed_diff_field() {
     let details = serde_json::json!({
-        "old_content": "line1\nline2\n",
-        "new_content": "line1\nchanged\n",
+        "path": "/tmp/foo.rs",
+        "diff": "--- a/foo.rs\n+++ b/foo.rs\n@@ -1,3 +1,3 @@\n a\n-old\n+new\n c\n",
     });
     let diff = diff_from_details(&details).unwrap();
-    assert!(diff.contains("-line2"));
-    assert!(diff.contains("+changed"));
+    assert!(diff.contains("-old"));
+    assert!(diff.contains("+new"));
 }
 
 #[test]
-fn diff_from_details_new_file() {
+fn diff_from_details_empty_diff_returns_none() {
     let details = serde_json::json!({
-        "new_content": "hello\nworld\n",
+        "diff": "",
+        "path": "/tmp/foo",
     });
-    let diff = diff_from_details(&details).unwrap();
-    assert!(diff.contains("+hello"));
-    assert!(diff.contains("+world"));
-}
-
-#[test]
-fn diff_from_details_no_content_returns_none() {
-    let details = serde_json::json!({ "path": "/tmp/foo" });
     assert!(diff_from_details(&details).is_none());
 }
 
 #[test]
-fn diff_from_details_identical_returns_none() {
-    let details = serde_json::json!({
-        "old_content": "same\n",
-        "new_content": "same\n",
-    });
+fn diff_from_details_no_diff_field_returns_none() {
+    let details = serde_json::json!({ "path": "/tmp/foo" });
     assert!(diff_from_details(&details).is_none());
 }

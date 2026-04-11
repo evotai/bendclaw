@@ -108,17 +108,12 @@ pub fn format_diff(old: &str, new: &str) -> DiffResult {
     }
 }
 
-/// Extract old_content and new_content from tool details and format a diff.
-/// Returns None if the details don't contain diff-able content.
+/// Extract a pre-computed unified diff from tool details.
+/// Returns None if the details don't contain a `diff` field.
 pub fn diff_from_details(details: &serde_json::Value) -> Option<String> {
-    let new_content = details.get("new_content")?.as_str()?;
-    let old_content = details
-        .get("old_content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if old_content == new_content {
+    let diff = details.get("diff")?.as_str()?;
+    if diff.is_empty() {
         return None;
     }
-    let result = format_diff(old_content, new_content);
-    Some(result.text)
+    Some(diff.to_string())
 }

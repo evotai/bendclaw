@@ -276,9 +276,34 @@ async fn test_edit_file() {
         _ => panic!("expected text"),
     };
     assert!(text.contains("Updated"));
+
+    // details should contain a diff field for REPL display
+    let diff = result.details["diff"].as_str().unwrap();
+    assert!(diff.contains("-    println!(\"hello\")"));
+    assert!(diff.contains("+    println!(\"goodbye\")"));
+
     let content = std::fs::read_to_string(&tmp).unwrap();
     assert!(content.contains("goodbye"));
     let _ = std::fs::remove_file(tmp);
+}
+
+#[test]
+fn test_edit_file_preview_command() {
+    let tool = EditFileTool::new();
+    let params =
+        serde_json::json!({"path": "/tmp/foo.rs", "old_text": "old_code", "new_text": "new_code"});
+    let cmd = tool.preview_command(&params).unwrap();
+    assert!(cmd.starts_with("sed -i"));
+    assert!(cmd.contains("/tmp/foo.rs"));
+    assert!(cmd.contains("old_code"));
+    assert!(cmd.contains("new_code"));
+}
+
+#[test]
+fn test_edit_file_preview_command_missing_path() {
+    let tool = EditFileTool::new();
+    let params = serde_json::json!({"old_text": "a", "new_text": "b"});
+    assert!(tool.preview_command(&params).is_none());
 }
 
 #[tokio::test]

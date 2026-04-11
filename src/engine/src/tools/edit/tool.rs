@@ -2,10 +2,13 @@
 //!
 //! This is the most important tool for coding agents. Instead of rewriting
 //! entire files, the agent specifies exact text to find and replace.
-//! Modeled after Claude Code's Edit tool and Aider's search/replace blocks.
 
 use async_trait::async_trait;
 
+use super::diff;
+use super::matching;
+use super::matching::MatchError;
+use super::normalize;
 use crate::types::*;
 
 /// Surgical file editing via exact text search/replace.
@@ -82,9 +85,12 @@ impl AgentTool for EditFileTool {
         })
     }
 
-    fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
-        let path = params["path"].as_str()?;
-        Some(format!("sed -i 's/.../.../g' {}", path))
+    fn preview_command(&self, _params: &serde_json::Value) -> Option<String> {
+        None
+    }
+
+    fn is_concurrency_safe(&self) -> bool {
+        false
     }
 
     async fn execute(
@@ -96,7 +102,6 @@ impl AgentTool for EditFileTool {
             return Err(ToolError::Failed(format!("Error: {msg}")));
         }
 
-        let cancel = ctx.cancel;
         let path = params["path"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'path' parameter".into()))?;
@@ -107,108 +112,88 @@ impl AgentTool for EditFileTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'new_text' parameter".into()))?;
 
-        if cancel.is_cancelled() {
+        if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
-        // Read existing file
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+        // Read file bytes and validate UTF-8
+        let bytes = tokio::fs::read(&path).await.map_err(|e| {
             ToolError::Failed(format!(
-                "Cannot read {}: {}. Use write_file to create new files.",
-                path, e
+                "Cannot read {path}: {e}. Use write_file to create new files."
+            ))
+        })?;
+        let raw = String::from_utf8(bytes).map_err(|_| {
+            ToolError::Failed(format!(
+                "Cannot edit {path}: only UTF-8 text files are supported."
             ))
         })?;
 
-        // Find the old text
-        let match_count = content.matches(old_text).count();
+        // Strip BOM, detect line endings, normalize to LF
+        let (bom, content_raw) = normalize::strip_utf8_bom(&raw);
+        let line_ending = normalize::detect_line_ending(content_raw);
+        let content_lf = normalize::normalize_to_lf(content_raw);
+        let old_text_lf = normalize::normalize_to_lf(old_text);
+        let new_text_lf = normalize::normalize_to_lf(new_text);
 
-        if match_count == 0 {
-            // Provide helpful error with context
-            let suggestion = find_similar_text(&content, old_text);
-            let hint = if let Some(similar) = suggestion {
-                format!(
-                    "\n\nDid you mean:\n```\n{}\n```\nMake sure old_text matches exactly, including whitespace and indentation.",
-                    similar
-                )
-            } else {
-                "\n\nTip: Use read_file to see the current file contents, then copy the exact text you want to replace.".into()
-            };
+        // Resolve unique match
+        let resolved =
+            matching::resolve_unique_match(&content_lf, &old_text_lf).map_err(|e| match e {
+                MatchError::EmptyOldText => ToolError::Failed("old_text must not be empty.".into()),
+                MatchError::NotFound => {
+                    let hint = matching::find_similar_text(&content_lf, &old_text_lf);
+                    let suffix = match hint {
+                        Some(similar) => format!(
+                            "\n\nDid you mean:\n```\n{similar}\n```\n\
+                         Make sure old_text matches the current file content, \
+                         including indentation."
+                        ),
+                        None => "\n\nTip: Use read_file to see the current file contents, \
+                             then copy the exact text you want to replace."
+                            .into(),
+                    };
+                    ToolError::Failed(format!("old_text not found in {path}.{suffix}"))
+                }
+                MatchError::NotUnique { count } => ToolError::Failed(format!(
+                    "old_text matches {count} locations in {path}. \
+                 Include more surrounding context to make the match unique."
+                )),
+            })?;
 
+        // Perform replacement
+        let new_content_lf = content_lf.replacen(&resolved.actual_old_text, &new_text_lf, 1);
+
+        // No-change detection
+        if new_content_lf == content_lf {
             return Err(ToolError::Failed(format!(
-                "old_text not found in {}.{}",
-                path, hint
+                "No changes made to {path}. The replacement produced identical content."
             )));
         }
 
-        if match_count > 1 {
-            return Err(ToolError::Failed(format!(
-                "old_text matches {} locations in {}. Include more surrounding context to make the match unique.",
-                match_count, path
-            )));
-        }
+        // Generate diff (for details only, not sent to LLM)
+        let diff_result = diff::unified_diff(&content_lf, &new_content_lf, path);
 
-        // Perform the replacement
-        let new_content = content.replacen(old_text, new_text, 1);
-
-        tokio::fs::write(path, &new_content)
+        // Restore BOM + original line endings and write back
+        let final_content = format!(
+            "{}{}",
+            bom,
+            normalize::restore_line_endings(&new_content_lf, line_ending)
+        );
+        tokio::fs::write(&path, &final_content)
             .await
-            .map_err(|e| ToolError::Failed(format!("Cannot write {}: {}", path, e)))?;
-
-        // Show what changed
-        let old_lines = old_text.lines().count();
-        let new_lines = new_text.lines().count();
-        let diff_summary = if old_text == new_text {
-            "No changes (old_text == new_text)".into()
-        } else {
-            format!(
-                "Replaced {} line{} with {} line{} in {}",
-                old_lines,
-                if old_lines == 1 { "" } else { "s" },
-                new_lines,
-                if new_lines == 1 { "" } else { "s" },
-                path
-            )
-        };
+            .map_err(|e| ToolError::Failed(format!("Cannot write {path}: {e}")))?;
 
         Ok(ToolResult {
-            content: vec![Content::Text { text: diff_summary }],
+            content: vec![Content::Text {
+                text: format!("Updated {path}."),
+            }],
             details: serde_json::json!({
                 "path": path,
-                "old_lines": old_lines,
-                "new_lines": new_lines,
-                "old_content": content,
-                "new_content": new_content,
+                "match_kind": format!("{:?}", resolved.kind),
+                "diff": diff_result.unified,
+                "first_changed_line": diff_result.first_changed_line,
+                "added_lines": diff_result.added_lines,
+                "removed_lines": diff_result.removed_lines,
             }),
         })
     }
-}
-
-/// Try to find similar text in the file (fuzzy match for better error messages).
-fn find_similar_text(content: &str, target: &str) -> Option<String> {
-    let target_trimmed = target.trim();
-    if target_trimmed.is_empty() {
-        return None;
-    }
-
-    // Try to find the first line of target in the content
-    let first_line = target_trimmed.lines().next()?;
-    let first_line_trimmed = first_line.trim();
-
-    if first_line_trimmed.is_empty() {
-        return None;
-    }
-
-    // Search for lines containing the first line (case-sensitive)
-    let lines: Vec<&str> = content.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        if line.contains(first_line_trimmed) {
-            // Return a few lines of context
-            let start = i;
-            let target_line_count = target_trimmed.lines().count();
-            let end = (i + target_line_count + 1).min(lines.len());
-            return Some(lines[start..end].join("\n"));
-        }
-    }
-
-    None
 }

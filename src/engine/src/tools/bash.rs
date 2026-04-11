@@ -195,6 +195,10 @@ impl AgentTool for BashTool {
         params["command"].as_str().map(|s| s.to_string())
     }
 
+    fn is_concurrency_safe(&self) -> bool {
+        false
+    }
+
     async fn execute(
         &self,
         params: serde_json::Value,

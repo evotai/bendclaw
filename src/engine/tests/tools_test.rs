@@ -275,7 +275,7 @@ async fn test_edit_file() {
         Content::Text { text } => text,
         _ => panic!("expected text"),
     };
-    assert!(text.contains("Replaced"));
+    assert!(text.contains("Updated"));
     let content = std::fs::read_to_string(&tmp).unwrap();
     assert!(content.contains("goodbye"));
     let _ = std::fs::remove_file(tmp);

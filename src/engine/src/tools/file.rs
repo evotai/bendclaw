@@ -286,6 +286,10 @@ impl AgentTool for WriteFileTool {
         Some(format!("cat > {}", path))
     }
 
+    fn is_concurrency_safe(&self) -> bool {
+        false
+    }
+
     async fn execute(
         &self,
         params: serde_json::Value,
@@ -323,16 +327,16 @@ impl AgentTool for WriteFileTool {
             .map_err(|e| ToolError::Failed(format!("Cannot write {}: {}", path, e)))?;
 
         let bytes = content.len();
-        let mut details =
-            serde_json::json!({ "path": path, "bytes": bytes, "new_content": content });
-        if let Some(old) = &old_content {
-            details["old_content"] = serde_json::Value::String(old.clone());
-        }
+        let existed = old_content.is_some();
         Ok(ToolResult {
             content: vec![Content::Text {
                 text: format!("Wrote {} bytes to {}", bytes, path),
             }],
-            details,
+            details: serde_json::json!({
+                "path": path,
+                "bytes": bytes,
+                "created": !existed,
+            }),
         })
     }
 }

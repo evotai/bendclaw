@@ -859,14 +859,38 @@ async fn execute_tool_calls(
             execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
         }
         ToolExecutionStrategy::Parallel => {
-            execute_batch(tools, tool_calls, tx, cancel, get_steering).await
+            let all_safe = tool_calls.iter().all(|(_, name, _)| {
+                tools
+                    .iter()
+                    .find(|t| t.name() == name)
+                    .map(|t| t.is_concurrency_safe())
+                    .unwrap_or(false)
+            });
+
+            if all_safe {
+                execute_batch(tools, tool_calls, tx, cancel, get_steering).await
+            } else {
+                execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
+            }
         }
         ToolExecutionStrategy::Batched { size } => {
             let mut results: Vec<Message> = Vec::new();
             let mut steering_messages: Option<Vec<AgentMessage>> = None;
 
             for (batch_idx, batch) in tool_calls.chunks(*size).enumerate() {
-                let batch_result = execute_batch(tools, batch, tx, cancel, None).await;
+                let all_safe = batch.iter().all(|(_, name, _)| {
+                    tools
+                        .iter()
+                        .find(|t| t.name() == name)
+                        .map(|t| t.is_concurrency_safe())
+                        .unwrap_or(false)
+                });
+
+                let batch_result = if all_safe {
+                    execute_batch(tools, batch, tx, cancel, None).await
+                } else {
+                    execute_sequential(tools, batch, tx, cancel, None).await
+                };
                 results.extend(batch_result.tool_results);
 
                 // Check steering between batches

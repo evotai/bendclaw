@@ -9,11 +9,11 @@ use tracing::debug;
 
 use super::request::ToolCallBuffer;
 use super::types::*;
+use crate::provider::error::ProviderError;
 use crate::provider::model::OpenAiCompat;
 use crate::provider::model::ThinkingFormat;
 use crate::provider::sse::SseEvent;
 use crate::provider::stream_http;
-use crate::provider::traits::ProviderError;
 use crate::provider::traits::StreamConfig;
 use crate::provider::traits::StreamEvent;
 use crate::types::*;

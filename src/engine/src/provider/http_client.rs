@@ -1,6 +1,6 @@
 //! Shared HTTP client factory with default user-agent.
 
-use crate::provider::traits::ProviderError;
+use crate::provider::error::ProviderError;
 
 const USER_AGENT: &str = "bendclaw/0.1.0";
 

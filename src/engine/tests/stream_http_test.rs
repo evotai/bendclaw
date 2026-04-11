@@ -72,7 +72,7 @@ fn classify_overflow_json() {
     });
     let err = classify_json_error(&value);
     assert!(err.is_context_overflow());
-    assert!(!err.is_retryable());
+    assert!(!bendengine::retry::should_retry(&err));
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn classify_generic_json_error_is_retryable() {
     });
     let err = classify_json_error(&value);
     assert!(matches!(err, ProviderError::Api(_)));
-    assert!(err.is_retryable());
+    assert!(bendengine::retry::should_retry(&err));
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn classify_overloaded_json_is_retryable() {
     });
     let err = classify_json_error(&value);
     assert!(matches!(err, ProviderError::Api(_)));
-    assert!(err.is_retryable());
+    assert!(bendengine::retry::should_retry(&err));
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn classify_no_message_uses_full_json() {
     let value = serde_json::json!({"foo": "bar"});
     let err = classify_json_error(&value);
     assert!(matches!(err, ProviderError::Api(_)));
-    assert!(err.is_retryable());
+    assert!(bendengine::retry::should_retry(&err));
 }
 
 // ---------------------------------------------------------------------------

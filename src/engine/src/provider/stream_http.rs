@@ -9,9 +9,9 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use super::error::is_context_overflow_message;
+use super::error::ProviderError;
 use super::sse::SseEvent;
-use super::traits::is_context_overflow_message;
-use super::traits::ProviderError;
 
 // ---------------------------------------------------------------------------
 // Response classification
@@ -60,6 +60,9 @@ pub async fn send_stream_request(
 }
 
 /// Check the HTTP status code. Non-2xx responses are read and classified.
+///
+/// Extracts the `Retry-After` header (if present) so the retry policy can
+/// honour server-specified delays.
 pub async fn check_error_status(
     response: reqwest::Response,
 ) -> Result<reqwest::Response, ProviderError> {
@@ -67,11 +70,23 @@ pub async fn check_error_status(
         return Ok(response);
     }
     let status = response.status().as_u16();
+    let retry_after_ms = parse_retry_after_header(&response);
     let body = response.text().await.unwrap_or_default();
     Err(ProviderError::classify(
         status,
         &format!("HTTP {status}: {body}"),
+        retry_after_ms,
     ))
+}
+
+/// Parse the `Retry-After` header value (seconds) into milliseconds.
+pub fn parse_retry_after_header(response: &reqwest::Response) -> Option<u64> {
+    response
+        .headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|secs| secs * 1000)
 }
 
 // ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ pub struct Agent {
     pub execution_limits: Option<ExecutionLimits>,
     pub cache_config: CacheConfig,
     pub tool_execution: ToolExecutionStrategy,
-    pub retry_config: crate::retry::RetryConfig,
+    pub retry_policy: crate::retry::RetryPolicy,
 
     // Lifecycle callbacks
     before_turn: Option<BeforeTurnFn>,
@@ -98,7 +98,7 @@ impl Agent {
             execution_limits: Some(ExecutionLimits::default()),
             cache_config: CacheConfig::default(),
             tool_execution: ToolExecutionStrategy::default(),
-            retry_config: crate::retry::RetryConfig::default(),
+            retry_policy: crate::retry::RetryPolicy::default(),
             before_turn: None,
             after_turn: None,
             input_filters: Vec::new(),
@@ -161,8 +161,18 @@ impl Agent {
         self
     }
 
-    pub fn with_retry_config(mut self, config: crate::retry::RetryConfig) -> Self {
-        self.retry_config = config;
+    pub fn with_retry_policy(mut self, policy: crate::retry::RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    pub fn with_retry_disabled(mut self) -> Self {
+        self.retry_policy = crate::retry::RetryPolicy::disabled();
+        self
+    }
+
+    pub fn with_max_retries(mut self, n: usize) -> Self {
+        self.retry_policy = crate::retry::RetryPolicy::new(n);
         self
     }
 
@@ -603,7 +613,7 @@ impl Agent {
             execution_limits: self.execution_limits.clone(),
             cache_config: self.cache_config.clone(),
             tool_execution: self.tool_execution.clone(),
-            retry_config: self.retry_config.clone(),
+            retry_policy: self.retry_policy.clone(),
             get_follow_up_messages: Some(Box::new(move || {
                 let mut queue = follow_up_queue.lock();
                 match follow_up_mode {

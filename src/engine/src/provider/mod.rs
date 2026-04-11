@@ -1,6 +1,7 @@
 pub mod anthropic;
 pub mod azure_openai;
 pub mod bedrock;
+pub mod error;
 pub mod google;
 pub mod google_vertex;
 pub mod http_client;
@@ -18,6 +19,7 @@ pub mod traits;
 pub use anthropic::AnthropicProvider;
 pub use azure_openai::AzureOpenAiProvider;
 pub use bedrock::BedrockProvider;
+pub use error::*;
 pub use google::GoogleProvider;
 pub use google_vertex::GoogleVertexProvider;
 pub use mock::MockProvider;

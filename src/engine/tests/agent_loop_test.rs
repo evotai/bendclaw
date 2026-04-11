@@ -27,7 +27,7 @@ fn make_config(provider: MockProvider) -> AgentLoopConfig {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::default(),
+        retry_policy: bendengine::RetryPolicy::default(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -750,12 +750,7 @@ async fn test_retry_on_rate_limit_succeeds() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig {
-            max_retries: 3,
-            initial_delay_ms: 10,
-            backoff_multiplier: 2.0,
-            max_delay_ms: 100,
-        },
+        retry_policy: bendengine::RetryPolicy::new(3),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -816,12 +811,7 @@ async fn test_retry_exhausted_returns_error() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig {
-            max_retries: 2,
-            initial_delay_ms: 10,
-            backoff_multiplier: 2.0,
-            max_delay_ms: 100,
-        },
+        retry_policy: bendengine::RetryPolicy::new(2),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -889,12 +879,7 @@ async fn test_retry_on_auth_error_succeeds() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig {
-            max_retries: 3,
-            initial_delay_ms: 10,
-            backoff_multiplier: 1.0,
-            max_delay_ms: 50,
-        },
+        retry_policy: bendengine::RetryPolicy::new(3),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -953,7 +938,7 @@ async fn test_retry_none_disables_retries() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(), // disabled
+        retry_policy: bendengine::RetryPolicy::disabled(), // disabled
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -1162,7 +1147,7 @@ async fn test_error_event_fires_on_provider_error() {
 
     let mut config = make_config(MockProvider::text("unused"));
     config.provider = std::sync::Arc::new(provider);
-    config.retry_config = bendengine::RetryConfig::none();
+    config.retry_policy = bendengine::RetryPolicy::disabled();
 
     let mut context = AgentContext {
         system_prompt: "test".into(),
@@ -1869,7 +1854,7 @@ async fn test_custom_compaction_strategy_is_called() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(),
+        retry_policy: bendengine::RetryPolicy::disabled(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -1943,7 +1928,7 @@ async fn test_none_compaction_strategy_uses_default() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(),
+        retry_policy: bendengine::RetryPolicy::disabled(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -2022,7 +2007,7 @@ async fn test_compaction_events_emitted_when_context_exceeds_budget() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(),
+        retry_policy: bendengine::RetryPolicy::disabled(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],
@@ -2099,7 +2084,7 @@ async fn test_compaction_events_level_zero_when_within_budget() {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::none(),
+        retry_policy: bendengine::RetryPolicy::disabled(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],

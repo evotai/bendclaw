@@ -17,7 +17,7 @@ fn openai_error_generic() {
     });
     let err = classify_json_error(&value);
     assert!(matches!(err, ProviderError::Api(_)));
-    assert!(err.is_retryable());
+    assert!(bendengine::retry::should_retry(&err));
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn openai_error_context_overflow() {
     });
     let err = classify_json_error(&value);
     assert!(err.is_context_overflow());
-    assert!(!err.is_retryable());
+    assert!(!bendengine::retry::should_retry(&err));
 }
 
 // ---------------------------------------------------------------------------

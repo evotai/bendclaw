@@ -13,6 +13,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
 
+use super::error::*;
 use super::traits::*;
 use crate::types::*;
 

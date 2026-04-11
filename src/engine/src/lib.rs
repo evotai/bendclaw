@@ -16,7 +16,7 @@ pub use context::CompactionResult;
 pub use context::CompactionStats;
 pub use context::CompactionStrategy;
 pub use context::DefaultCompaction;
-pub use retry::RetryConfig;
+pub use retry::RetryPolicy;
 pub use skills::SkillSet;
 pub use sub_agent::SubAgentTool;
 pub use types::*;

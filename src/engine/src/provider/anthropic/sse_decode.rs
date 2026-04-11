@@ -8,10 +8,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 use super::types::*;
+use crate::provider::error::classify_sse_error_event;
+use crate::provider::error::ProviderError;
 use crate::provider::sse::SseEvent;
 use crate::provider::stream_http;
-use crate::provider::traits::classify_sse_error_event;
-use crate::provider::traits::ProviderError;
 use crate::provider::traits::StreamConfig;
 use crate::provider::traits::StreamEvent;
 use crate::types::*;

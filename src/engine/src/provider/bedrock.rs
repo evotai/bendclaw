@@ -16,6 +16,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
 
+use super::error::*;
 use super::traits::*;
 use crate::types::*;
 
@@ -76,6 +77,7 @@ impl StreamProvider for BedrockProvider {
             return Err(ProviderError::classify(
                 status.as_u16(),
                 &format!("Bedrock error {}: {}", status, body),
+                None,
             ));
         }
 

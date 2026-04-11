@@ -75,8 +75,8 @@ pub struct AgentLoopConfig {
     /// Tool execution strategy (sequential, parallel, or batched).
     pub tool_execution: ToolExecutionStrategy,
 
-    /// Retry configuration for transient provider errors.
-    pub retry_config: crate::retry::RetryConfig,
+    /// Retry policy for transient provider errors.
+    pub retry_policy: crate::retry::RetryPolicy,
 
     /// Called before each LLM turn. Return `false` to abort the loop.
     pub before_turn: Option<BeforeTurnFn>,
@@ -555,7 +555,7 @@ async fn stream_assistant_response(
         .collect();
 
     // Retry loop for transient provider errors
-    let retry = &config.retry_config;
+    let retry = &config.retry_policy;
     let mut attempt = 0;
     let shared_metrics = std::sync::Arc::new(std::sync::Mutex::new(LlmCallMetrics::default()));
     let result = loop {
@@ -720,7 +720,11 @@ async fn stream_assistant_response(
             .await;
 
         match &result {
-            Err(e) if e.is_retryable() && attempt < retry.max_retries && !cancel.is_cancelled() => {
+            Err(e)
+                if crate::retry::should_retry(e)
+                    && attempt < retry.max_retries()
+                    && !cancel.is_cancelled() =>
+            {
                 // Abort forwarder to prevent forwarding events from failed attempt
                 forward_handle.abort();
                 let mut error_metrics =

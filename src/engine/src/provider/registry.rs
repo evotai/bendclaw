@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
+use super::error::*;
 use super::model::ApiProtocol;
 use super::model::ModelConfig;
 use super::traits::*;

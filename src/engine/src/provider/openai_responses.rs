@@ -10,6 +10,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::debug;
 
+use super::error::*;
 use super::model::ModelConfig;
 use super::traits::*;
 use crate::types::*;

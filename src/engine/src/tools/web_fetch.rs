@@ -53,6 +53,10 @@ impl AgentTool for WebFetchTool {
          Use this tool to retrieve web pages, API responses, or any HTTP-accessible content.\n\
          Supports custom HTTP headers for authenticated requests.\n\
          \n\
+         When you don't know the exact URL, search first using:\n\
+         https://html.duckduckgo.com/html/?q=YOUR+SEARCH+TERMS\n\
+         This returns search results with links you can then fetch directly.\n\
+         \n\
          Parameters:\n\
          - url (required): The URL to fetch\n\
          - headers (optional): A JSON object of HTTP headers to include in the request"

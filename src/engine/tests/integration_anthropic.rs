@@ -33,7 +33,7 @@ fn make_config(provider: AnthropicProvider) -> AgentLoopConfig {
         execution_limits: None,
         cache_config: CacheConfig::default(),
         tool_execution: ToolExecutionStrategy::default(),
-        retry_config: bendengine::RetryConfig::default(),
+        retry_policy: bendengine::RetryPolicy::default(),
         before_turn: None,
         after_turn: None,
         input_filters: vec![],

@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
+use super::error::*;
 use super::traits::*;
 use crate::types::*;
 

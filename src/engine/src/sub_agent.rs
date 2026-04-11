@@ -41,7 +41,7 @@ pub struct SubAgentTool {
     max_tokens: Option<u32>,
     cache_config: CacheConfig,
     tool_execution: ToolExecutionStrategy,
-    retry_config: crate::retry::RetryConfig,
+    retry_policy: crate::retry::RetryPolicy,
     max_turns: usize,
 }
 
@@ -61,7 +61,7 @@ impl SubAgentTool {
             max_tokens: None,
             cache_config: CacheConfig::default(),
             tool_execution: ToolExecutionStrategy::default(),
-            retry_config: crate::retry::RetryConfig::default(),
+            retry_policy: crate::retry::RetryPolicy::default(),
             max_turns: DEFAULT_MAX_TURNS,
         }
     }
@@ -111,8 +111,18 @@ impl SubAgentTool {
         self
     }
 
-    pub fn with_retry_config(mut self, config: crate::retry::RetryConfig) -> Self {
-        self.retry_config = config;
+    pub fn with_retry_policy(mut self, policy: crate::retry::RetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
+    }
+
+    pub fn with_retry_disabled(mut self) -> Self {
+        self.retry_policy = crate::retry::RetryPolicy::disabled();
+        self
+    }
+
+    pub fn with_max_retries(mut self, n: usize) -> Self {
+        self.retry_policy = crate::retry::RetryPolicy::new(n);
         self
     }
 
@@ -228,7 +238,7 @@ impl AgentTool for SubAgentTool {
             }),
             cache_config: self.cache_config.clone(),
             tool_execution: self.tool_execution.clone(),
-            retry_config: self.retry_config.clone(),
+            retry_policy: self.retry_policy.clone(),
             before_turn: None,
             after_turn: None,
             input_filters: vec![],

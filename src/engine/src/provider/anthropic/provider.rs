@@ -7,6 +7,7 @@ use tracing::debug;
 use super::json_fallback;
 use super::request;
 use super::sse_decode;
+use crate::provider::error::*;
 use crate::provider::stream_http::StreamResponseKind;
 use crate::provider::stream_http::{self};
 use crate::provider::traits::*;

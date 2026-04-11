@@ -9,6 +9,7 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
+use super::error::*;
 use super::model::ModelConfig;
 use super::traits::*;
 use crate::types::*;
@@ -77,6 +78,7 @@ impl StreamProvider for GoogleVertexProvider {
             return Err(ProviderError::classify(
                 status.as_u16(),
                 &format!("Vertex AI error {}: {}", status, body),
+                None,
             ));
         }
 

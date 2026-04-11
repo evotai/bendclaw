@@ -7,9 +7,9 @@
 use tokio::sync::mpsc;
 use tracing::debug;
 
+use crate::provider::error::ProviderError;
 use crate::provider::stream_fallback::FallbackEmitter;
 use crate::provider::stream_http;
-use crate::provider::traits::ProviderError;
 use crate::provider::traits::StreamConfig;
 use crate::provider::traits::StreamEvent;
 use crate::types::*;

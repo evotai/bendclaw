@@ -17,6 +17,17 @@ pub enum MatchKind {
     WhitespaceInsensitive,
 }
 
+impl MatchKind {
+    /// Stable string representation for serialization/details.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::QuoteNormalized => "quote_normalized",
+            Self::WhitespaceInsensitive => "whitespace_insensitive",
+        }
+    }
+}
+
 /// A successfully resolved match — contains the actual text from the original
 /// file content that can be used directly with `replacen`.
 #[derive(Debug, Clone, PartialEq, Eq)]

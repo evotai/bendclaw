@@ -846,6 +846,20 @@ struct ToolExecutionResult {
     steering_messages: Option<Vec<AgentMessage>>,
 }
 
+/// Check if all tool calls in a batch are concurrency-safe.
+fn all_concurrency_safe(
+    tools: &[Box<dyn AgentTool>],
+    tool_calls: &[(String, String, serde_json::Value)],
+) -> bool {
+    tool_calls.iter().all(|(_, name, _)| {
+        tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.is_concurrency_safe())
+            .unwrap_or(false)
+    })
+}
+
 async fn execute_tool_calls(
     tools: &[Box<dyn AgentTool>],
     tool_calls: &[(String, String, serde_json::Value)],
@@ -859,15 +873,7 @@ async fn execute_tool_calls(
             execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
         }
         ToolExecutionStrategy::Parallel => {
-            let all_safe = tool_calls.iter().all(|(_, name, _)| {
-                tools
-                    .iter()
-                    .find(|t| t.name() == name)
-                    .map(|t| t.is_concurrency_safe())
-                    .unwrap_or(false)
-            });
-
-            if all_safe {
+            if all_concurrency_safe(tools, tool_calls) {
                 execute_batch(tools, tool_calls, tx, cancel, get_steering).await
             } else {
                 execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
@@ -878,15 +884,7 @@ async fn execute_tool_calls(
             let mut steering_messages: Option<Vec<AgentMessage>> = None;
 
             for (batch_idx, batch) in tool_calls.chunks(*size).enumerate() {
-                let all_safe = batch.iter().all(|(_, name, _)| {
-                    tools
-                        .iter()
-                        .find(|t| t.name() == name)
-                        .map(|t| t.is_concurrency_safe())
-                        .unwrap_or(false)
-                });
-
-                let batch_result = if all_safe {
+                let batch_result = if all_concurrency_safe(tools, batch) {
                     execute_batch(tools, batch, tx, cancel, None).await
                 } else {
                     execute_sequential(tools, batch, tx, cancel, None).await

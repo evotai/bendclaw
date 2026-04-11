@@ -188,7 +188,7 @@ impl AgentTool for EditFileTool {
             }],
             details: serde_json::json!({
                 "path": path,
-                "match_kind": format!("{:?}", resolved.kind),
+                "match_kind": resolved.kind.as_str(),
                 "diff": diff_result.unified,
                 "first_changed_line": diff_result.first_changed_line,
                 "added_lines": diff_result.added_lines,

@@ -7,7 +7,6 @@ use parking_lot::RwLock;
 use crate::error::Result;
 use crate::storage::Storage;
 use crate::types::VariableRecord;
-use crate::types::VariableScope;
 
 // ---------------------------------------------------------------------------
 // VariableInfo — projection for REPL display
@@ -39,7 +38,6 @@ impl Variables {
             .records
             .read()
             .iter()
-            .filter(|r| r.scope == VariableScope::Global)
             .map(|r| VariableInfo {
                 key: r.key.clone(),
                 value: r.value.clone(),
@@ -54,19 +52,13 @@ impl Variables {
         {
             let mut recs = self.records.write();
             let now = now_iso8601();
-            if let Some(existing) = recs
-                .iter_mut()
-                .find(|r| r.key == key && r.scope == VariableScope::Global)
-            {
+            if let Some(existing) = recs.iter_mut().find(|r| r.key == key) {
                 existing.value = value;
                 existing.updated_at = now;
             } else {
                 recs.push(VariableRecord {
                     key,
                     value,
-                    scope: VariableScope::Global,
-                    project_id: None,
-                    session_id: None,
                     updated_at: now,
                 });
             }
@@ -78,7 +70,7 @@ impl Variables {
         let removed = {
             let mut recs = self.records.write();
             let before = recs.len();
-            recs.retain(|r| !(r.key == key && r.scope == VariableScope::Global));
+            recs.retain(|r| r.key != key);
             recs.len() < before
         };
         if removed {

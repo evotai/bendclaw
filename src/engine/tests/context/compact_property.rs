@@ -1,8 +1,8 @@
-mod helpers;
-
 use bendengine::context::*;
 use helpers::message_pattern::*;
 use proptest::prelude::*;
+
+use super::helpers;
 
 /// Generate a random valid pattern from atomic units: "u", "a", "tr"
 fn arb_pattern() -> impl Strategy<Value = String> {

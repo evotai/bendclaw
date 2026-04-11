@@ -1,8 +1,8 @@
-mod helpers;
-
 use bendengine::context::*;
 use bendengine::types::*;
 use helpers::message_pattern::*;
+
+use super::helpers;
 
 #[test]
 fn test_estimate_tokens() {

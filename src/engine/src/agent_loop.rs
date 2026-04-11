@@ -764,10 +764,45 @@ async fn stream_assistant_response(
 
     match result {
         Ok(ref msg) => {
-            let usage = match msg {
-                Message::Assistant { usage, .. } => usage.clone(),
-                _ => Usage::default(),
+            let (usage, is_empty) = match msg {
+                Message::Assistant {
+                    content,
+                    usage,
+                    stop_reason,
+                    ..
+                } => {
+                    let empty = content.is_empty()
+                        && usage.input == 0
+                        && usage.output == 0
+                        && *stop_reason != StopReason::Error;
+                    (usage.clone(), empty)
+                }
+                _ => (Usage::default(), false),
             };
+
+            if is_empty {
+                let err_msg = "Empty response from provider (no content, no usage)".to_string();
+                tx.send(AgentEvent::LlmCallEnd {
+                    turn,
+                    attempt,
+                    usage,
+                    error: Some(err_msg.clone()),
+                    metrics: collected_metrics,
+                })
+                .ok();
+                return Message::Assistant {
+                    content: vec![Content::Text {
+                        text: String::new(),
+                    }],
+                    stop_reason: StopReason::Error,
+                    model: config.model.clone(),
+                    provider: "unknown".into(),
+                    usage: Usage::default(),
+                    timestamp: now_ms(),
+                    error_message: Some(err_msg),
+                };
+            }
+
             tx.send(AgentEvent::LlmCallEnd {
                 turn,
                 attempt,

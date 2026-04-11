@@ -15,9 +15,16 @@ pub(crate) fn build_request_body(config: &StreamConfig, is_oauth: bool) -> serde
                 }));
             }
             Message::Assistant { content, .. } => {
+                let blocks = content_to_anthropic(content);
+                // Skip assistant messages with empty content — Anthropic rejects them
+                // with "Improperly formed request". These can arise from empty provider
+                // responses (e.g. proxy returning 200 with no actual content).
+                if blocks.is_empty() {
+                    continue;
+                }
                 messages.push(serde_json::json!({
                     "role": "assistant",
-                    "content": content_to_anthropic(content),
+                    "content": blocks,
                 }));
             }
             Message::ToolResult {

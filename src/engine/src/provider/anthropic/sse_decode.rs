@@ -77,6 +77,13 @@ pub(crate) async fn decode_sse_stream(
         debug!("SSE driver ended with error after content received: {e}");
     }
 
+    // Detect empty response: no content and no usage from provider
+    if content.is_empty() && usage.input == 0 && usage.output == 0 {
+        return Err(ProviderError::Api(
+            "Empty response from provider (no content, no usage)".into(),
+        ));
+    }
+
     let has_tool_calls = content
         .iter()
         .any(|c| matches!(c, Content::ToolCall { .. }));

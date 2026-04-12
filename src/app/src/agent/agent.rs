@@ -163,6 +163,17 @@ impl AppAgent {
 
     pub fn with_skills_dirs(self: &Arc<Self>, dirs: Vec<PathBuf>) -> Arc<Self> {
         *self.skills_dirs.write() = dirs;
+        self.with_claude_skills_dirs()
+    }
+
+    /// Temporary compatibility: load skills from ~/.claude/skills if it exists.
+    fn with_claude_skills_dirs(self: &Arc<Self>) -> Arc<Self> {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            let claude_dir = PathBuf::from(home).join(".claude").join("skills");
+            if claude_dir.is_dir() {
+                self.skills_dirs.write().push(claude_dir);
+            }
+        }
         Arc::clone(self)
     }
 

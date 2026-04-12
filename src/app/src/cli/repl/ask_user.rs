@@ -66,6 +66,8 @@ pub enum AskUserAction {
     Submit(AskUserResponse),
     /// User pressed Ctrl-C — abort the run.
     ExitRun,
+    /// User pressed Esc in selection mode — cancel the current turn.
+    CancelTurn,
     /// Key was ignored, no state change.
     Noop,
 }
@@ -174,7 +176,7 @@ fn handle_selecting(
 
         KeyCode::Esc => (
             AskUserMode::Selecting { selected },
-            AskUserAction::Submit(AskUserResponse::Skipped),
+            AskUserAction::CancelTurn,
         ),
 
         _ => (AskUserMode::Selecting { selected }, AskUserAction::Noop),
@@ -361,6 +363,7 @@ pub fn build_skipped() -> String {
 pub enum AskUserUiResult {
     Answer(AskUserResponse),
     ExitRun,
+    CancelTurn,
 }
 
 pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiResult> {
@@ -421,6 +424,11 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiR
                     AskUserAction::ExitRun => {
                         clear_block(prev_lines);
                         return Ok(AskUserUiResult::ExitRun);
+                    }
+                    AskUserAction::CancelTurn => {
+                        clear_block(prev_lines);
+                        print_result(&build_skipped());
+                        return Ok(AskUserUiResult::CancelTurn);
                     }
                     AskUserAction::Noop => {}
                 }

@@ -378,6 +378,13 @@ pub fn wait_for_run_control(
                     state.clear_if_rendered();
                     return Ok(Some(RunControl::Exit));
                 }
+                super::ask_user::AskUserUiResult::CancelTurn => {
+                    let _ = responder.send(AskUserResponse::Skipped);
+                    let mut state = spinner.lock();
+                    state.set_paused(false);
+                    state.clear_if_rendered();
+                    return Ok(Some(RunControl::Cancel));
+                }
             }
 
             // Resume spinner

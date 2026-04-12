@@ -566,10 +566,10 @@ fn digit_9_out_of_range_is_noop() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn esc_in_selection_submits_skipped() {
+fn esc_in_selection_cancels_turn() {
     let req = two_option_request();
     let (_, action) = handle_key(&req, selecting(0), KeyCode::Esc, NO_MOD);
-    assert_eq!(action, AskUserAction::Submit(AskUserResponse::Skipped));
+    assert_eq!(action, AskUserAction::CancelTurn);
 }
 
 #[test]

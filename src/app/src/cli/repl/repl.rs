@@ -32,11 +32,12 @@ use super::interrupt::Action as InterruptAction;
 use super::interrupt::InterruptHandler;
 use super::render::print_transcript_messages;
 use super::render::truncate_head_tail;
+use super::render::BG_PROMPT;
 use super::render::BOLD;
 use super::render::DIM;
-use super::render::GREEN;
 use super::render::RED;
 use super::render::RESET;
+use super::render::WHITE;
 use super::render::YELLOW;
 use super::selector::available_models;
 use super::selector::provider_marker_for_model;
@@ -892,24 +893,13 @@ impl Repl {
     }
 
     fn prompt(&self) -> String {
-        let branch = git_branch();
-        let session = self
-            .session_id
-            .as_deref()
-            .map(short_id)
-            .unwrap_or_else(|| "new".into());
         let mode = if self.planning { " plan" } else { "" };
         let model = &self.config.active_llm().model;
-        match branch {
-            Some(branch) => format!(
-                "{BOLD}{GREEN}{}{RESET} {DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET} ",
-                branch, session, mode, model,
-            ),
-            None => format!(
-                "{DIM}[{}{}]{RESET} {DIM}{}{RESET} {BOLD}{YELLOW}>{RESET} ",
-                session, mode, model,
-            ),
-        }
+        let tag = format!("{BG_PROMPT}{WHITE}{BOLD} bendclaw {RESET}");
+        format!(
+            "{tag} {DIM}{}{}{RESET} {BOLD}{YELLOW}>{RESET} ",
+            model, mode,
+        )
     }
 
     fn load_history(&self, rl: &mut Editor<ReplHelper, DefaultHistory>) {

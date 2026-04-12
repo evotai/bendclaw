@@ -29,6 +29,7 @@ pub const GRAY: &str = "\x1b[90m";
 pub const BG_TOOL: &str = "\x1b[48;2;245;197;66m";
 pub const BG_OK: &str = "\x1b[48;2;133;220;140m";
 pub const BG_ERR: &str = "\x1b[48;2;157;57;57m";
+pub const BG_PROMPT: &str = "\x1b[48;2;88;86;214m";
 
 static TERMINAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 

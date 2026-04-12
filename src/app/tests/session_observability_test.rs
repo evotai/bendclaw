@@ -105,15 +105,17 @@ fn aggregator_ingests_compaction_completed() {
     let mut agg = StatsAggregator::new();
     agg.ingest(&TranscriptStats::ContextCompactionCompleted(
         ContextCompactionCompletedStats {
-            level: 1,
-            before_message_count: 20,
-            after_message_count: 10,
-            before_estimated_tokens: 50000,
-            after_estimated_tokens: 25000,
-            tool_outputs_truncated: 3,
-            turns_summarized: 5,
-            messages_dropped: 2,
-            actions: vec![],
+            result: bendclaw::types::CompactionResultStats::LevelCompacted {
+                level: 1,
+                before_message_count: 20,
+                after_message_count: 10,
+                before_estimated_tokens: 50000,
+                after_estimated_tokens: 25000,
+                tool_outputs_truncated: 3,
+                turns_summarized: 5,
+                messages_dropped: 2,
+                actions: vec![],
+            },
         },
     ));
     assert_eq!(agg.compact_history.len(), 1);

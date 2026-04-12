@@ -71,13 +71,32 @@ impl StatsAggregator {
             TranscriptStats::ContextCompactionStarted(_) => {
                 // No aggregation needed for started events.
             }
-            TranscriptStats::ContextCompactionCompleted(s) => {
-                self.compact_history.push(CompactRecord {
-                    level: s.level,
-                    before_tokens: s.before_estimated_tokens,
-                    after_tokens: s.after_estimated_tokens,
-                });
-            }
+            TranscriptStats::ContextCompactionCompleted(s) => match &s.result {
+                crate::types::CompactionResultStats::LevelCompacted {
+                    level,
+                    before_estimated_tokens,
+                    after_estimated_tokens,
+                    ..
+                } => {
+                    self.compact_history.push(CompactRecord {
+                        level: *level,
+                        before_tokens: *before_estimated_tokens,
+                        after_tokens: *after_estimated_tokens,
+                    });
+                }
+                crate::types::CompactionResultStats::RunOnceCleared {
+                    before_estimated_tokens,
+                    after_estimated_tokens,
+                    ..
+                } => {
+                    self.compact_history.push(CompactRecord {
+                        level: 0,
+                        before_tokens: *before_estimated_tokens,
+                        after_tokens: *after_estimated_tokens,
+                    });
+                }
+                crate::types::CompactionResultStats::NoOp => {}
+            },
             TranscriptStats::RunFinished(s) => {
                 self.run_duration_ms = Some(s.duration_ms);
                 self.run_usage = Some(s.usage.clone());

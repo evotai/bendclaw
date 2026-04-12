@@ -155,33 +155,11 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                 }
             }));
         }
-        RunEventPayload::ContextCompactionCompleted {
-            level,
-            before_message_count,
-            after_message_count,
-            before_estimated_tokens,
-            after_estimated_tokens,
-            tool_outputs_truncated,
-            turns_summarized,
-            messages_dropped,
-            before_tool_details,
-            after_tool_details,
-            actions,
-        } => {
+        RunEventPayload::ContextCompactionCompleted { result } => {
             events.push(json!({
                 "type": "context_compaction_completed",
                 "data": {
-                    "level": level,
-                    "before_message_count": before_message_count,
-                    "after_message_count": after_message_count,
-                    "before_estimated_tokens": before_estimated_tokens,
-                    "after_estimated_tokens": after_estimated_tokens,
-                    "tool_outputs_truncated": tool_outputs_truncated,
-                    "turns_summarized": turns_summarized,
-                    "messages_dropped": messages_dropped,
-                    "before_tool_details": before_tool_details,
-                    "after_tool_details": after_tool_details,
-                    "actions": actions,
+                    "result": result,
                 }
             }));
         }

@@ -56,20 +56,6 @@ pub struct ContextCompactionStartedStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContextCompactionCompletedStats {
-    pub level: u8,
-    pub before_message_count: usize,
-    pub after_message_count: usize,
-    pub before_estimated_tokens: usize,
-    pub after_estimated_tokens: usize,
-    pub tool_outputs_truncated: usize,
-    pub turns_summarized: usize,
-    pub messages_dropped: usize,
-    #[serde(default)]
-    pub actions: Vec<CompactionActionStats>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionActionStats {
     pub index: usize,
     pub tool_name: String,
@@ -80,6 +66,35 @@ pub struct CompactionActionStats {
     pub end_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub related_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CompactionResultStats {
+    NoOp,
+    RunOnceCleared {
+        cleared_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        saved_tokens: usize,
+    },
+    LevelCompacted {
+        level: u8,
+        before_message_count: usize,
+        after_message_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        tool_outputs_truncated: usize,
+        turns_summarized: usize,
+        messages_dropped: usize,
+        #[serde(default)]
+        actions: Vec<CompactionActionStats>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextCompactionCompletedStats {
+    pub result: CompactionResultStats,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

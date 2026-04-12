@@ -104,22 +104,34 @@ fn stats_context_compaction_started_round_trip() {
 #[test]
 fn stats_context_compaction_completed_round_trip() {
     let stats = TranscriptStats::ContextCompactionCompleted(ContextCompactionCompletedStats {
-        level: 2,
-        before_message_count: 20,
-        after_message_count: 8,
-        before_estimated_tokens: 50000,
-        after_estimated_tokens: 20000,
-        tool_outputs_truncated: 3,
-        turns_summarized: 5,
-        messages_dropped: 4,
-        actions: vec![],
+        result: bendclaw::types::CompactionResultStats::LevelCompacted {
+            level: 2,
+            before_message_count: 20,
+            after_message_count: 8,
+            before_estimated_tokens: 50000,
+            after_estimated_tokens: 20000,
+            tool_outputs_truncated: 3,
+            turns_summarized: 5,
+            messages_dropped: 4,
+            actions: vec![],
+        },
     });
     let item = stats.to_item();
     let decoded = TranscriptStats::try_from_item(&item);
     if let Some(TranscriptStats::ContextCompactionCompleted(s)) = decoded {
-        assert_eq!(s.level, 2);
-        assert_eq!(s.before_estimated_tokens, 50000);
-        assert_eq!(s.after_estimated_tokens, 20000);
+        match s.result {
+            bendclaw::types::CompactionResultStats::LevelCompacted {
+                level,
+                before_estimated_tokens,
+                after_estimated_tokens,
+                ..
+            } => {
+                assert_eq!(level, 2);
+                assert_eq!(before_estimated_tokens, 50000);
+                assert_eq!(after_estimated_tokens, 20000);
+            }
+            _ => panic!("expected LevelCompacted"),
+        }
     } else {
         panic!("expected ContextCompactionCompleted");
     }

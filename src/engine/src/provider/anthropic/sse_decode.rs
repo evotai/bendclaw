@@ -68,13 +68,12 @@ pub(crate) async fn decode_sse_stream(
         }
     }
 
-    // Wait for SSE driver to finish
+    // Wait for SSE driver to finish.
+    // If the driver errored (e.g. network disconnect mid-stream), always
+    // propagate — partial content is incomplete and must not be used.
     if let Ok(Err(e)) = sse_handle.await {
-        // Only report if we haven't already built a message
-        if content.is_empty() {
-            return Err(ProviderError::Network(e));
-        }
-        debug!("SSE driver ended with error after content received: {e}");
+        debug!("SSE driver error (content_len={}): {e}", content.len());
+        return Err(ProviderError::Network(e));
     }
 
     // Detect empty response: no content and no usage from provider

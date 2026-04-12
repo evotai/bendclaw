@@ -581,38 +581,46 @@ fn map_agent_event(
                 .iter()
                 .map(|d| (d.tool_name.clone(), d.tokens))
                 .collect();
-            vec![
-                RuntimeEvent::Compacted {
+
+            let result_stats = if stats.level > 0 {
+                crate::types::CompactionResultStats::LevelCompacted {
                     level: stats.level,
-                    transcripts: compacted_transcripts,
-                },
-                RuntimeEvent::Transcript(
-                    TranscriptStats::ContextCompactionCompleted(ContextCompactionCompletedStats {
-                        level: stats.level,
-                        before_message_count: stats.before_message_count,
-                        after_message_count: stats.after_message_count,
-                        before_estimated_tokens: stats.before_estimated_tokens,
-                        after_estimated_tokens: stats.after_estimated_tokens,
-                        tool_outputs_truncated: stats.tool_outputs_truncated,
-                        turns_summarized: stats.turns_summarized,
-                        messages_dropped: stats.messages_dropped,
-                        actions: stats
-                            .actions
-                            .iter()
-                            .map(|a| crate::types::CompactionActionStats {
-                                index: a.index,
-                                tool_name: a.tool_name.clone(),
-                                method: format!("{:?}", a.method),
-                                before_tokens: a.before_tokens,
-                                after_tokens: a.after_tokens,
-                                end_index: a.end_index,
-                                related_count: a.related_count,
-                            })
-                            .collect(),
-                    })
-                    .to_item(),
-                ),
-                RuntimeEvent::Public(RunEventPayload::ContextCompactionCompleted {
+                    before_message_count: stats.before_message_count,
+                    after_message_count: stats.after_message_count,
+                    before_estimated_tokens: stats.before_estimated_tokens,
+                    after_estimated_tokens: stats.after_estimated_tokens,
+                    tool_outputs_truncated: stats.tool_outputs_truncated,
+                    turns_summarized: stats.turns_summarized,
+                    messages_dropped: stats.messages_dropped,
+                    actions: stats
+                        .actions
+                        .iter()
+                        .map(|a| crate::types::CompactionActionStats {
+                            index: a.index,
+                            tool_name: a.tool_name.clone(),
+                            method: format!("{:?}", a.method),
+                            before_tokens: a.before_tokens,
+                            after_tokens: a.after_tokens,
+                            end_index: a.end_index,
+                            related_count: a.related_count,
+                        })
+                        .collect(),
+                }
+            } else if stats.current_run_cleared > 0 {
+                crate::types::CompactionResultStats::RunOnceCleared {
+                    cleared_count: stats.current_run_cleared,
+                    before_estimated_tokens: stats.before_estimated_tokens,
+                    after_estimated_tokens: stats.after_estimated_tokens,
+                    saved_tokens: stats
+                        .before_estimated_tokens
+                        .saturating_sub(stats.after_estimated_tokens),
+                }
+            } else {
+                crate::types::CompactionResultStats::NoOp
+            };
+
+            let result_public = if stats.level > 0 {
+                crate::agent::event::CompactionResult::LevelCompacted {
                     level: stats.level,
                     before_message_count: stats.before_message_count,
                     after_message_count: stats.after_message_count,
@@ -636,6 +644,33 @@ fn map_agent_event(
                             related_count: a.related_count,
                         })
                         .collect(),
+                }
+            } else if stats.current_run_cleared > 0 {
+                crate::agent::event::CompactionResult::RunOnceCleared {
+                    cleared_count: stats.current_run_cleared,
+                    before_estimated_tokens: stats.before_estimated_tokens,
+                    after_estimated_tokens: stats.after_estimated_tokens,
+                    saved_tokens: stats
+                        .before_estimated_tokens
+                        .saturating_sub(stats.after_estimated_tokens),
+                }
+            } else {
+                crate::agent::event::CompactionResult::NoOp
+            };
+
+            vec![
+                RuntimeEvent::Compacted {
+                    level: stats.level,
+                    transcripts: compacted_transcripts,
+                },
+                RuntimeEvent::Transcript(
+                    TranscriptStats::ContextCompactionCompleted(ContextCompactionCompletedStats {
+                        result: result_stats,
+                    })
+                    .to_item(),
+                ),
+                RuntimeEvent::Public(RunEventPayload::ContextCompactionCompleted {
+                    result: result_public,
                 }),
             ]
         }

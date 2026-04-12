@@ -248,14 +248,14 @@ pub fn format_event(payload: &RunEventPayload) -> Vec<String> {
             ]
         }
 
-        RunEventPayload::ContextCompactionCompleted {
-            level,
-            after_message_count,
-            after_estimated_tokens,
-            before_estimated_tokens,
-            ..
-        } => {
-            if *level > 0 {
+        RunEventPayload::ContextCompactionCompleted { result } => match result {
+            crate::agent::event::CompactionResult::LevelCompacted {
+                level,
+                after_message_count,
+                after_estimated_tokens,
+                before_estimated_tokens,
+                ..
+            } => {
                 let saved = before_estimated_tokens.saturating_sub(*after_estimated_tokens);
                 let h_after = human_tokens(*after_estimated_tokens);
                 let h_saved = human_tokens(saved);
@@ -265,13 +265,23 @@ pub fn format_event(payload: &RunEventPayload) -> Vec<String> {
                     ),
                     String::new(),
                 ]
-            } else {
-                vec![
-                    "[compact completed] no compaction needed".into(),
-                    String::new(),
-                ]
             }
-        }
+            crate::agent::event::CompactionResult::RunOnceCleared {
+                cleared_count,
+                saved_tokens,
+                ..
+            } => vec![
+                format!(
+                    "[compact completed] run-once cleared {cleared_count} tool result(s) · saved ~{}",
+                    human_tokens(*saved_tokens)
+                ),
+                String::new(),
+            ],
+            crate::agent::event::CompactionResult::NoOp => vec![
+                "[compact completed] no compaction needed".into(),
+                String::new(),
+            ],
+        },
 
         RunEventPayload::RunFinished {
             usage,

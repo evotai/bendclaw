@@ -592,15 +592,17 @@ async fn stats_after_compact_filtered_on_resume() -> TestResult {
     // Write compact + stats + new message
     let compact_stats = bendclaw::types::TranscriptStats::ContextCompactionCompleted(
         bendclaw::types::ContextCompactionCompletedStats {
-            level: 1,
-            before_message_count: 10,
-            after_message_count: 4,
-            before_estimated_tokens: 30000,
-            after_estimated_tokens: 12000,
-            tool_outputs_truncated: 2,
-            turns_summarized: 3,
-            messages_dropped: 1,
-            actions: vec![],
+            result: bendclaw::types::CompactionResultStats::LevelCompacted {
+                level: 1,
+                before_message_count: 10,
+                after_message_count: 4,
+                before_estimated_tokens: 30000,
+                after_estimated_tokens: 12000,
+                tool_outputs_truncated: 2,
+                turns_summarized: 3,
+                messages_dropped: 1,
+                actions: vec![],
+            },
         },
     )
     .to_item();

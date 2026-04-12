@@ -26,6 +26,34 @@ pub struct CompactionActionInfo {
     pub related_count: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CompactionResult {
+    NoOp,
+    RunOnceCleared {
+        cleared_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        saved_tokens: usize,
+    },
+    LevelCompacted {
+        level: u8,
+        before_message_count: usize,
+        after_message_count: usize,
+        before_estimated_tokens: usize,
+        after_estimated_tokens: usize,
+        tool_outputs_truncated: usize,
+        turns_summarized: usize,
+        messages_dropped: usize,
+        #[serde(default)]
+        before_tool_details: Vec<(String, usize)>,
+        #[serde(default)]
+        after_tool_details: Vec<(String, usize)>,
+        #[serde(default)]
+        actions: Vec<CompactionActionInfo>,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // RunEventPayload — strongly typed event payload
 // ---------------------------------------------------------------------------
@@ -107,20 +135,7 @@ pub enum RunEventPayload {
         context_window: usize,
     },
     ContextCompactionCompleted {
-        level: u8,
-        before_message_count: usize,
-        after_message_count: usize,
-        before_estimated_tokens: usize,
-        after_estimated_tokens: usize,
-        tool_outputs_truncated: usize,
-        turns_summarized: usize,
-        messages_dropped: usize,
-        #[serde(default)]
-        before_tool_details: Vec<(String, usize)>,
-        #[serde(default)]
-        after_tool_details: Vec<(String, usize)>,
-        #[serde(default)]
-        actions: Vec<CompactionActionInfo>,
+        result: CompactionResult,
     },
     RunFinished {
         text: String,

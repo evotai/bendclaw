@@ -449,24 +449,21 @@ impl ReplSink {
                     context_window: *context_window,
                 });
             }
-            RunEventPayload::ContextCompactionCompleted {
-                level,
-                before_message_count,
-                after_message_count,
-                before_estimated_tokens,
-                after_estimated_tokens,
-                tool_outputs_truncated,
-                turns_summarized,
-                messages_dropped,
-                before_tool_details: _,
-                after_tool_details: _,
-                actions,
-            } => {
-                // Ingest via aggregator
-                state
-                    .aggregator
-                    .ingest(&TranscriptStats::ContextCompactionCompleted(
-                        ContextCompactionCompletedStats {
+            RunEventPayload::ContextCompactionCompleted { result } => {
+                let stats = match result {
+                    crate::agent::event::CompactionResult::LevelCompacted {
+                        level,
+                        before_message_count,
+                        after_message_count,
+                        before_estimated_tokens,
+                        after_estimated_tokens,
+                        tool_outputs_truncated,
+                        turns_summarized,
+                        messages_dropped,
+                        actions,
+                        ..
+                    } => ContextCompactionCompletedStats {
+                        result: crate::types::CompactionResultStats::LevelCompacted {
                             level: *level,
                             before_message_count: *before_message_count,
                             after_message_count: *after_message_count,
@@ -488,141 +485,183 @@ impl ReplSink {
                                 })
                                 .collect(),
                         },
-                    ));
-
-                if *level > 0 {
-                    if let Some(budget) = state.pending_budget.take() {
-                        render_compact_started(&budget);
+                    },
+                    crate::agent::event::CompactionResult::RunOnceCleared {
+                        cleared_count,
+                        before_estimated_tokens,
+                        after_estimated_tokens,
+                        saved_tokens,
+                    } => ContextCompactionCompletedStats {
+                        result: crate::types::CompactionResultStats::RunOnceCleared {
+                            cleared_count: *cleared_count,
+                            before_estimated_tokens: *before_estimated_tokens,
+                            after_estimated_tokens: *after_estimated_tokens,
+                            saved_tokens: *saved_tokens,
+                        },
+                    },
+                    crate::agent::event::CompactionResult::NoOp => {
+                        ContextCompactionCompletedStats {
+                            result: crate::types::CompactionResultStats::NoOp,
+                        }
                     }
+                };
 
-                    let saved = before_estimated_tokens.saturating_sub(*after_estimated_tokens);
-                    let saved_pct = if *before_estimated_tokens > 0 {
-                        saved as f64 / *before_estimated_tokens as f64 * 100.0
-                    } else {
-                        0.0
-                    };
-                    let h_saved = super::render::human_tokens(saved);
-                    let h_before = super::render::human_tokens(*before_estimated_tokens);
-                    let h_after = super::render::human_tokens(*after_estimated_tokens);
+                state
+                    .aggregator
+                    .ingest(&TranscriptStats::ContextCompactionCompleted(stats));
 
-                    // Sort actions by saved tokens descending (exclude Skipped)
-                    let mut sorted: Vec<_> =
-                        actions.iter().filter(|a| a.method != "Skipped").collect();
-                    sorted.sort_by(|a, b| {
-                        let sa = a.before_tokens.saturating_sub(a.after_tokens);
-                        let sb = b.before_tokens.saturating_sub(b.after_tokens);
-                        sb.cmp(&sa)
-                    });
+                match result {
+                    crate::agent::event::CompactionResult::LevelCompacted {
+                        level,
+                        before_message_count,
+                        after_message_count,
+                        before_estimated_tokens,
+                        after_estimated_tokens,
+                        messages_dropped,
+                        actions,
+                        ..
+                    } => {
+                        if let Some(budget) = state.pending_budget.take() {
+                            render_compact_started(&budget);
+                        }
 
-                    // --- Title ---
-                    let title = format!("compact · L{level}");
-                    super::render::print_badge_line(&title, true, true);
-
-                    // --- Line 1: before ---
-                    terminal_writeln(&format!(
-                        "{GRAY}  {before_message_count} messages ~{h_before} tok{RESET}",
-                    ));
-
-                    // --- Line 2: position bar ---
-                    let bar = render_position_bar(*before_message_count, &sorted, *level);
-                    terminal_writeln(&format!("{GRAY}  {bar}{RESET}"));
-
-                    // --- Line 3: ↓ action summary ---
-                    let summary = format_action_summary(
-                        *level,
-                        &sorted,
-                        *messages_dropped,
-                        *after_message_count,
-                    );
-                    terminal_writeln(&format!("{GRAY}  {summary}{RESET}"));
-
-                    // --- Line 4: after + saved ---
-                    terminal_writeln(&format!(
-                        "{GREEN}  {after_message_count} messages ~{h_after} tok  (saved ~{h_saved}, {saved_pct:.1}%){RESET}",
-                    ));
-
-                    // --- Actions detail: top/tail with ellipsis ---
-                    if !sorted.is_empty() {
-                        let total_actions = actions.len();
-                        let changed = sorted.len();
-
-                        let header = match *level {
-                            1 => format!(
-                                "  actions: ({changed} of {total_actions} changed, sorted by savings)"
-                            ),
-                            2 => {
-                                let total_msgs: usize = sorted
-                                    .iter()
-                                    .map(|a| 1 + a.related_count.unwrap_or(0))
-                                    .sum();
-                                format!(
-                                    "  actions: ({changed} turns, {total_msgs} msgs → {changed} summaries)"
-                                )
-                            }
-                            3 => {
-                                let kept = after_message_count.saturating_sub(1);
-                                format!(
-                                    "  actions: ({} dropped, {} kept, 1 marker)",
-                                    messages_dropped, kept
-                                )
-                            }
-                            _ => format!("  actions: ({changed} changed)"),
+                        let saved = before_estimated_tokens.saturating_sub(*after_estimated_tokens);
+                        let saved_pct = if *before_estimated_tokens > 0 {
+                            saved as f64 / *before_estimated_tokens as f64 * 100.0
+                        } else {
+                            0.0
                         };
-                        terminal_writeln(&format!("{GRAY}{header}{RESET}"));
+                        let h_saved = super::render::human_tokens(saved);
+                        let h_before = super::render::human_tokens(*before_estimated_tokens);
+                        let h_after = super::render::human_tokens(*after_estimated_tokens);
 
-                        const TOP: usize = 3;
-                        const TAIL: usize = 2;
+                        let mut sorted: Vec<_> =
+                            actions.iter().filter(|a| a.method != "Skipped").collect();
+                        sorted.sort_by(|a, b| {
+                            let sa = a.before_tokens.saturating_sub(a.after_tokens);
+                            let sb = b.before_tokens.saturating_sub(b.after_tokens);
+                            sb.cmp(&sa)
+                        });
 
-                        let render_action = |a: &&crate::agent::event::CompactionActionInfo| {
-                            let hb = super::render::human_tokens(a.before_tokens);
-                            let ha = super::render::human_tokens(a.after_tokens);
-                            let saved_tok = a.before_tokens.saturating_sub(a.after_tokens);
-                            let hs = super::render::human_tokens(saved_tok);
-                            match a.method.as_str() {
-                                "Summarized" => {
-                                    let rc = a.related_count.unwrap_or(0);
-                                    terminal_writeln(&format!(
-                                        "{GRAY}    #{:<3} turn({} msgs)  {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                        a.index, 1 + rc, a.method, hb, ha, hs,
-                                    ));
+                        let title = format!("compact · L{level}");
+                        super::render::print_badge_line(&title, true, true);
+
+                        terminal_writeln(&format!(
+                            "{GRAY}  {before_message_count} messages ~{h_before} tok{RESET}",
+                        ));
+
+                        let bar = render_position_bar(*before_message_count, &sorted, *level);
+                        terminal_writeln(&format!("{GRAY}  {bar}{RESET}"));
+
+                        let summary = format_action_summary(
+                            *level,
+                            &sorted,
+                            *messages_dropped,
+                            *after_message_count,
+                        );
+                        terminal_writeln(&format!("{GRAY}  {summary}{RESET}"));
+
+                        terminal_writeln(&format!(
+                            "{GREEN}  {after_message_count} messages ~{h_after} tok  (saved ~{h_saved}, {saved_pct:.1}%){RESET}",
+                        ));
+
+                        if !sorted.is_empty() {
+                            let total_actions = actions.len();
+                            let changed = sorted.len();
+
+                            let header = match *level {
+                                1 => format!(
+                                    "  actions: ({changed} of {total_actions} changed, sorted by savings)"
+                                ),
+                                2 => {
+                                    let total_msgs: usize = sorted
+                                        .iter()
+                                        .map(|a| 1 + a.related_count.unwrap_or(0))
+                                        .sum();
+                                    format!(
+                                        "  actions: ({changed} turns, {total_msgs} msgs → {changed} summaries)"
+                                    )
                                 }
-                                "Dropped" => {
-                                    if let Some(end) = a.end_index {
+                                3 => {
+                                    let kept = after_message_count.saturating_sub(1);
+                                    format!(
+                                        "  actions: ({} dropped, {} kept, 1 marker)",
+                                        messages_dropped, kept
+                                    )
+                                }
+                                _ => format!("  actions: ({changed} changed)"),
+                            };
+                            terminal_writeln(&format!("{GRAY}{header}{RESET}"));
+
+                            const TOP: usize = 3;
+                            const TAIL: usize = 2;
+
+                            let render_action = |a: &&crate::agent::event::CompactionActionInfo| {
+                                let hb = super::render::human_tokens(a.before_tokens);
+                                let ha = super::render::human_tokens(a.after_tokens);
+                                let saved_tok = a.before_tokens.saturating_sub(a.after_tokens);
+                                let hs = super::render::human_tokens(saved_tok);
+                                match a.method.as_str() {
+                                    "Summarized" => {
+                                        let rc = a.related_count.unwrap_or(0);
                                         terminal_writeln(&format!(
-                                            "{GRAY}    #{}..#{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                            a.index, end, a.method, hb, ha, hs,
+                                            "{GRAY}    #{:<3} turn({} msgs)  {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, 1 + rc, a.method, hb, ha, hs,
                                         ));
-                                    } else {
+                                    }
+                                    "Dropped" => {
+                                        if let Some(end) = a.end_index {
+                                            terminal_writeln(&format!(
+                                                "{GRAY}    #{}..#{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                                a.index, end, a.method, hb, ha, hs,
+                                            ));
+                                        } else {
+                                            terminal_writeln(&format!(
+                                                "{GRAY}    #{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                                a.index, a.method, hb, ha, hs,
+                                            ));
+                                        }
+                                    }
+                                    _ => {
                                         terminal_writeln(&format!(
-                                            "{GRAY}    #{:<3} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                            a.index, a.method, hb, ha, hs,
+                                            "{GRAY}    #{:<3} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
+                                            a.index, a.tool_name, a.method, hb, ha, hs,
                                         ));
                                     }
                                 }
-                                _ => {
-                                    terminal_writeln(&format!(
-                                        "{GRAY}    #{:<3} {:<12} {:<12} ~{} → ~{}  (saved ~{}){RESET}",
-                                        a.index, a.tool_name, a.method, hb, ha, hs,
-                                    ));
-                                }
-                            }
-                        };
+                            };
 
-                        if sorted.len() <= TOP + TAIL {
-                            for a in &sorted {
-                                render_action(a);
-                            }
-                        } else {
-                            for a in &sorted[..TOP] {
-                                render_action(a);
-                            }
-                            let omitted = sorted.len() - TOP - TAIL;
-                            terminal_writeln(&format!("{GRAY}    ... {omitted} more ...{RESET}"));
-                            for a in &sorted[sorted.len() - TAIL..] {
-                                render_action(a);
+                            if sorted.len() <= TOP + TAIL {
+                                for a in &sorted {
+                                    render_action(a);
+                                }
+                            } else {
+                                for a in &sorted[..TOP] {
+                                    render_action(a);
+                                }
+                                let omitted = sorted.len() - TOP - TAIL;
+                                terminal_writeln(&format!(
+                                    "{GRAY}    ... {omitted} more ...{RESET}"
+                                ));
+                                for a in &sorted[sorted.len() - TAIL..] {
+                                    render_action(a);
+                                }
                             }
                         }
                     }
+                    crate::agent::event::CompactionResult::RunOnceCleared {
+                        cleared_count,
+                        saved_tokens,
+                        ..
+                    } => {
+                        let title = "compact · run-once";
+                        super::render::print_badge_line(title, true, true);
+                        let h_saved = super::render::human_tokens(*saved_tokens);
+                        terminal_writeln(&format!(
+                            "{GRAY}  cleared {cleared_count} run-once tool result(s) · saved ~{h_saved}{RESET}"
+                        ));
+                    }
+                    crate::agent::event::CompactionResult::NoOp => {}
                 }
                 terminal_writeln("");
             }

@@ -3,7 +3,6 @@ pub mod agent_loop;
 pub mod context;
 pub mod provider;
 pub mod retry;
-pub mod sub_agent;
 pub mod tools;
 pub mod types;
 
@@ -16,7 +15,6 @@ pub use context::CompactionStats;
 pub use context::CompactionStrategy;
 pub use context::DefaultCompaction;
 pub use retry::RetryPolicy;
-pub use sub_agent::SubAgentTool;
 pub use tools::skill::SkillSet;
 pub use tools::skill::SkillSpec;
 pub use tools::skill::SkillTool;

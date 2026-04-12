@@ -455,9 +455,14 @@ impl ReplSink {
                         },
                     ));
 
-                // Always render compact started info when available
-                if let Some(budget) = state.pending_budget.take() {
-                    render_compact_started(&budget);
+                // Only render compact started + completed for real compactions
+                let is_noop = matches!(result, crate::types::CompactionResult::NoOp);
+                if !is_noop {
+                    if let Some(budget) = state.pending_budget.take() {
+                        render_compact_started(&budget);
+                    }
+                } else {
+                    state.pending_budget = None;
                 }
 
                 match result {

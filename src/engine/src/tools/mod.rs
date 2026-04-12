@@ -3,6 +3,7 @@ pub mod bash;
 pub mod edit;
 pub mod file;
 pub mod list;
+pub mod memory;
 pub mod search;
 pub mod skill;
 pub mod web_fetch;

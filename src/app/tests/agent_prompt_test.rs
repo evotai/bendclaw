@@ -214,9 +214,13 @@ fn memory_loads_bendclaw_entrypoint() {
     );
     let home_str = home.path().to_string_lossy().to_string();
     let prompt = SystemPrompt::new(&cwd).with_memory_home(&home_str).build();
-    assert!(prompt.contains("## Bendclaw MEMORY.md"));
+    assert!(prompt.contains("## Project MEMORY.md"));
     assert!(prompt.contains("likes Rust"));
-    assert!(!prompt.contains("currently empty"));
+    // Global layer is empty, but project layer should not say "currently empty"
+    let project_pos = prompt.find("## Project MEMORY.md").unwrap();
+    let after_project = &prompt[project_pos..];
+    assert!(!after_project
+        .starts_with("## Project MEMORY.md\n\nYour project MEMORY.md is currently empty."));
 }
 
 #[test]
@@ -228,7 +232,10 @@ fn memory_loads_claude_readonly() {
         "- [Testing](feedback_testing.md) — no mocks",
     );
     let home_str = home.path().to_string_lossy().to_string();
-    let prompt = SystemPrompt::new(&cwd).with_memory_home(&home_str).build();
+    let prompt = SystemPrompt::new(&cwd)
+        .with_memory_home(&home_str)
+        .with_claude_memory_home(&home_str)
+        .build();
     assert!(prompt.contains("Claude Code Memory (read-only reference)"));
     assert!(prompt.contains("no mocks"));
     assert!(prompt.contains("Do not write to"));
@@ -240,16 +247,19 @@ fn memory_both_sources_ordered() {
     write_bendclaw_memory(home.path(), &cwd, "- bendclaw entry");
     write_claude_memory(home.path(), &cwd, "- claude entry");
     let home_str = home.path().to_string_lossy().to_string();
-    let prompt = SystemPrompt::new(&cwd).with_memory_home(&home_str).build();
+    let prompt = SystemPrompt::new(&cwd)
+        .with_memory_home(&home_str)
+        .with_claude_memory_home(&home_str)
+        .build();
     let bc_pos = prompt
-        .find("## Bendclaw MEMORY.md")
-        .expect("missing bendclaw section");
+        .find("## Project MEMORY.md")
+        .expect("missing project section");
     let cc_pos = prompt
         .find("## Claude Code Memory")
         .expect("missing claude section");
     assert!(
         bc_pos < cc_pos,
-        "Bendclaw MEMORY.md should come before Claude Code Memory"
+        "Project MEMORY.md should come before Claude Code Memory"
     );
     assert!(prompt.contains("bendclaw entry"));
     assert!(prompt.contains("claude entry"));

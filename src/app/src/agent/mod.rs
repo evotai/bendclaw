@@ -3,7 +3,6 @@ pub mod convert;
 pub mod event;
 pub mod prompt;
 pub mod runtime;
-pub mod skill_loader;
 #[allow(hidden_glob_reexports)]
 pub(crate) mod variables;
 

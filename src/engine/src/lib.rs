@@ -15,6 +15,7 @@ pub use context::CompactionStats;
 pub use context::CompactionStrategy;
 pub use context::DefaultCompaction;
 pub use retry::RetryPolicy;
+pub use tools::memory::MemoryTool;
 pub use tools::skill::SkillSet;
 pub use tools::skill::SkillSpec;
 pub use tools::skill::SkillTool;

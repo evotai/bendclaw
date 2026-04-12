@@ -369,9 +369,11 @@ impl AppAgent {
             .map(|v| v.all_env_pairs())
             .unwrap_or_default();
         let tools = if let Some(tools_fn) = self.tools_override {
+            // tools_override provides a fixed tool set (e.g. readonly for side
+            // conversations) — do not append extra tools like MemoryTool.
             tools_fn()
         } else {
-            match *self.tool_mode.read() {
+            let mut t = match *self.tool_mode.read() {
                 ToolMode::Planning => bend_engine::tools::planning_tools(
                     ask_fn,
                     "This tool is not allowed in planning mode. \
@@ -379,7 +381,21 @@ impl AppAgent {
                     env_pairs,
                 ),
                 ToolMode::Normal => bend_engine::tools::base_tools(env_pairs),
+            };
+
+            // Append MemoryTool (same pattern as SkillTool — constructed by app layer)
+            if let Some(memory_tool) = super::prompt::memory::load_memory_tool(&self.cwd) {
+                let memory_tool = match *self.tool_mode.read() {
+                    ToolMode::Planning => memory_tool.disallow_writes(
+                        "This tool is not allowed in planning mode. \
+                         Suggest the user to use /act to switch to execution mode.",
+                    ),
+                    ToolMode::Normal => memory_tool,
+                };
+                t.push(Box::new(memory_tool));
             }
+
+            t
         };
 
         let options = EngineOptions {

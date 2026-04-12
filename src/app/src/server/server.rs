@@ -127,6 +127,8 @@ pub async fn start(conf: Config) -> Result<()> {
         .with_git()
         .with_tools()
         .with_project_context()
+        .with_memory()
+        .with_claude_memory()
         .build();
 
     let mut skills_dirs = Vec::new();

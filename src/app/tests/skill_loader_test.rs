@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use bendclaw::agent::skill_loader::load_skills;
-use bendclaw::agent::skill_loader::SkillLoadError;
+use bendclaw::agent::prompt::skill::load_skills;
+use bendclaw::agent::prompt::skill::SkillLoadError;
 use tempfile::TempDir;
 
 fn create_skill(dir: &Path, name: &str, description: &str) {

@@ -12,6 +12,8 @@ mod edit;
 mod file;
 #[path = "tools/list.rs"]
 mod list;
+#[path = "tools/memory.rs"]
+mod memory;
 #[path = "tools/search.rs"]
 mod search;
 #[path = "tools/skill.rs"]

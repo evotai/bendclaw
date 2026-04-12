@@ -674,7 +674,7 @@ pub(crate) fn build_agent(
     let skills = if options.skills_dirs.is_empty() {
         bend_engine::SkillSet::empty()
     } else {
-        match crate::agent::skill_loader::load_skills(&options.skills_dirs) {
+        match crate::agent::prompt::skill::load_skills(&options.skills_dirs) {
             Ok(specs) => bend_engine::SkillSet::new(specs),
             Err(e) => {
                 tracing::warn!("failed to load skills: {e}");

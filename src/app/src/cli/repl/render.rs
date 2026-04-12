@@ -570,6 +570,9 @@ pub fn tool_result_lines(
     const HEAD_LINES: usize = 5;
     const TAIL_LINES: usize = 3;
     const COMPACT_THRESHOLD: usize = HEAD_LINES + TAIL_LINES + 2;
+    const MAX_LINE_WIDTH: usize = 256;
+
+    let cap_line = |l: &str| -> String { truncate_head_tail(l, MAX_LINE_WIDTH) };
 
     let normalized = content.replace("\r\n", "\n");
     if normalized.contains('\n') {
@@ -580,17 +583,17 @@ pub fn tool_result_lines(
         let all_lines: Vec<&str> = trimmed.split('\n').collect();
         if all_lines.len() > COMPACT_THRESHOLD {
             let mut result: Vec<String> = Vec::new();
-            result.extend(all_lines[..HEAD_LINES].iter().map(|l| l.to_string()));
+            result.extend(all_lines[..HEAD_LINES].iter().map(|l| cap_line(l)));
             let omitted = all_lines.len() - HEAD_LINES - TAIL_LINES;
             result.push(format!("... ({omitted} more lines)"));
             result.extend(
                 all_lines[all_lines.len() - TAIL_LINES..]
                     .iter()
-                    .map(|l| l.to_string()),
+                    .map(|l| cap_line(l)),
             );
             return result;
         }
-        return all_lines.into_iter().map(|l| l.to_string()).collect();
+        return all_lines.into_iter().map(cap_line).collect();
     }
     vec![summarize()]
 }

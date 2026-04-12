@@ -192,6 +192,37 @@ fn tool_result_lines_truncates_just_above_threshold() {
     assert_eq!(lines[8], "line 10");
 }
 
+#[test]
+fn tool_result_lines_truncates_long_lines() {
+    // Simulate a file where the last line is a very long base64 sourcemap
+    let short = "short line";
+    let long_line = "x".repeat(500);
+    let content = format!("{short}\n{long_line}");
+    let lines = tool_result_lines(&content, false, None);
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "short line");
+    // The long line should be truncated with head ... tail
+    assert!(lines[1].len() < 500, "long line should be truncated");
+    assert!(
+        lines[1].contains(" ... "),
+        "should use head_tail truncation"
+    );
+}
+
+#[test]
+fn tool_result_lines_truncates_long_lines_in_compacted_output() {
+    // Many lines where the tail contains a very long line
+    let mut parts: Vec<String> = (0..20).map(|i| format!("line {i}")).collect();
+    parts.push("y".repeat(500));
+    let content = parts.join("\n");
+    let lines = tool_result_lines(&content, false, None);
+    // head 5 + ellipsis + tail 3 = 9
+    assert_eq!(lines.len(), 9);
+    let last = &lines[8];
+    assert!(last.len() < 500, "tail long line should be truncated");
+    assert!(last.contains(" ... "), "should use head_tail truncation");
+}
+
 // ---------------------------------------------------------------------------
 // format_llm_completed_lines
 // ---------------------------------------------------------------------------

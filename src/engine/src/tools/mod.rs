@@ -8,8 +8,10 @@ pub mod search;
 pub mod skill;
 pub mod web_fetch;
 
+pub use ask_user::AskUserAnswer;
 pub use ask_user::AskUserFn;
 pub use ask_user::AskUserOption;
+pub use ask_user::AskUserQuestion;
 pub use ask_user::AskUserRequest;
 pub use ask_user::AskUserResponse;
 pub use ask_user::AskUserTool;

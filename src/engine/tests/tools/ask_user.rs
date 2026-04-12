@@ -34,45 +34,98 @@ fn make_error_tool(msg: &str) -> AskUserTool {
     AskUserTool::new(ask_fn)
 }
 
-fn valid_params() -> serde_json::Value {
+fn single_question_params() -> serde_json::Value {
     serde_json::json!({
-        "question": "Which cache strategy?",
-        "options": [
-            { "label": "In-memory (Recommended)", "description": "Zero deps, HashMap + TTL" },
-            { "label": "Redis", "description": "Shared across instances" }
+        "questions": [{
+            "question": "Which cache strategy?",
+            "header": "Cache",
+            "options": [
+                { "label": "In-memory (Recommended)", "description": "Zero deps, HashMap + TTL" },
+                { "label": "Redis", "description": "Shared across instances" }
+            ]
+        }]
+    })
+}
+
+fn two_question_params() -> serde_json::Value {
+    serde_json::json!({
+        "questions": [
+            {
+                "question": "Which cache strategy?",
+                "header": "Cache",
+                "options": [
+                    { "label": "In-memory", "description": "Zero deps" },
+                    { "label": "Redis", "description": "Shared" }
+                ]
+            },
+            {
+                "question": "Which auth method?",
+                "header": "Auth",
+                "options": [
+                    { "label": "OAuth", "description": "Delegated" },
+                    { "label": "JWT", "description": "Stateless" }
+                ]
+            }
         ]
     })
 }
 
+// ---------------------------------------------------------------------------
+// Response formatting
+// ---------------------------------------------------------------------------
+
 #[tokio::test]
-async fn selected_response() {
-    let tool = make_tool(AskUserResponse::Selected("Redis".into()));
-    let result = tool.execute(valid_params(), ctx()).await;
-    let result = result.unwrap_or_else(|e| panic!("unexpected error: {e}"));
+async fn answered_single_question() {
+    let tool = make_tool(AskUserResponse::Answered(vec![AskUserAnswer {
+        header: "Cache".into(),
+        question: "Which cache strategy?".into(),
+        answer: "Redis".into(),
+    }]));
+    let result = tool
+        .execute(single_question_params(), ctx())
+        .await
+        .unwrap_or_else(|e| panic!("unexpected error: {e}"));
     let text = match &result.content[0] {
         Content::Text { text } => text,
         _ => panic!("expected text content"),
     };
-    assert!(text.contains("User selected: Redis"));
+    assert!(text.contains("User answered your questions:"));
+    assert!(text.contains("Which cache strategy? → Redis"));
 }
 
 #[tokio::test]
-async fn custom_response() {
-    let tool = make_tool(AskUserResponse::Custom("Use SQLite instead".into()));
-    let result = tool.execute(valid_params(), ctx()).await;
-    let result = result.unwrap_or_else(|e| panic!("unexpected error: {e}"));
+async fn answered_multiple_questions() {
+    let tool = make_tool(AskUserResponse::Answered(vec![
+        AskUserAnswer {
+            header: "Cache".into(),
+            question: "Which cache strategy?".into(),
+            answer: "In-memory".into(),
+        },
+        AskUserAnswer {
+            header: "Auth".into(),
+            question: "Which auth method?".into(),
+            answer: "JWT".into(),
+        },
+    ]));
+    let result = tool
+        .execute(two_question_params(), ctx())
+        .await
+        .unwrap_or_else(|e| panic!("unexpected error: {e}"));
     let text = match &result.content[0] {
         Content::Text { text } => text,
         _ => panic!("expected text content"),
     };
-    assert!(text.contains("User provided custom input: Use SQLite instead"));
+    assert!(text.contains("Which cache strategy? → In-memory"));
+    assert!(text.contains("Which auth method? → JWT"));
 }
 
 #[tokio::test]
 async fn skipped_response() {
     let tool = make_tool(AskUserResponse::Skipped);
-    let result = tool.execute(valid_params(), ctx()).await;
-    let result = result.unwrap_or_else(|e| panic!("unexpected error: {e}"));
+    let result = tool
+        .execute(single_question_params(), ctx())
+        .await
+        .unwrap_or_else(|e| panic!("unexpected error: {e}"));
     let text = match &result.content[0] {
         Content::Text { text } => text,
         _ => panic!("expected text content"),
@@ -83,91 +136,92 @@ async fn skipped_response() {
 #[tokio::test]
 async fn callback_error_propagates() {
     let tool = make_error_tool("user disconnected");
-    let result = tool.execute(valid_params(), ctx()).await;
+    let result = tool.execute(single_question_params(), ctx()).await;
     assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.to_string().contains("user disconnected"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("user disconnected"));
+}
+
+// ---------------------------------------------------------------------------
+// Validation: questions count
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn zero_questions_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({ "questions": [] });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("1-4 items"));
 }
 
 #[tokio::test]
-async fn too_few_options_rejected() {
+async fn five_questions_rejected() {
     let tool = make_tool(AskUserResponse::Skipped);
     let params = serde_json::json!({
-        "question": "Pick one?",
-        "options": [
-            { "label": "Only one", "description": "Not enough" }
+        "questions": [
+            { "question": "Q1?", "header": "H1", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q2?", "header": "H2", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q3?", "header": "H3", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q4?", "header": "H4", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q5?", "header": "H5", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]}
         ]
     });
     let result = tool.execute(params, ctx()).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("2-4 items"));
+    assert!(result.unwrap_err().to_string().contains("1-4 items"));
 }
 
 #[tokio::test]
-async fn too_many_options_rejected() {
+async fn four_questions_accepted() {
     let tool = make_tool(AskUserResponse::Skipped);
     let params = serde_json::json!({
-        "question": "Pick one?",
-        "options": [
-            { "label": "A", "description": "a" },
-            { "label": "B", "description": "b" },
-            { "label": "C", "description": "c" },
-            { "label": "D", "description": "d" },
-            { "label": "E", "description": "e" }
-        ]
-    });
-    let result = tool.execute(params, ctx()).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("2-4 items"));
-}
-
-#[tokio::test]
-async fn invalid_json_rejected() {
-    let tool = make_tool(AskUserResponse::Skipped);
-    let params = serde_json::json!({ "wrong_field": true });
-    let result = tool.execute(params, ctx()).await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn exactly_four_options_accepted() {
-    let tool = make_tool(AskUserResponse::Selected("C".into()));
-    let params = serde_json::json!({
-        "question": "Pick one?",
-        "options": [
-            { "label": "A", "description": "a" },
-            { "label": "B", "description": "b" },
-            { "label": "C", "description": "c" },
-            { "label": "D", "description": "d" }
+        "questions": [
+            { "question": "Q1?", "header": "H1", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q2?", "header": "H2", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q3?", "header": "H3", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Q4?", "header": "H4", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]}
         ]
     });
     let result = tool.execute(params, ctx()).await;
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn tool_metadata() {
-    let tool = make_tool(AskUserResponse::Skipped);
-    assert_eq!(tool.name(), "ask_user");
-    assert_eq!(tool.label(), "Ask User");
-    assert!(!tool.description().is_empty());
-
-    let schema = tool.parameters_schema();
-    assert_eq!(
-        schema["required"],
-        serde_json::json!(["question", "options"])
-    );
-}
+// ---------------------------------------------------------------------------
+// Validation: field emptiness
+// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn empty_question_rejected() {
     let tool = make_tool(AskUserResponse::Skipped);
     let params = serde_json::json!({
-        "question": "   ",
-        "options": [
-            { "label": "A", "description": "a" },
-            { "label": "B", "description": "b" }
-        ]
+        "questions": [{
+            "question": "   ", "header": "H",
+            "options": [
+                { "label": "A", "description": "a" },
+                { "label": "B", "description": "b" }
+            ]
+        }]
     });
     let result = tool.execute(params, ctx()).await;
     assert!(result.is_err());
@@ -178,37 +232,148 @@ async fn empty_question_rejected() {
 }
 
 #[tokio::test]
-async fn empty_label_rejected() {
+async fn empty_header_rejected() {
     let tool = make_tool(AskUserResponse::Skipped);
     let params = serde_json::json!({
-        "question": "Pick one?",
-        "options": [
-            { "label": "", "description": "a" },
-            { "label": "B", "description": "b" }
-        ]
+        "questions": [{
+            "question": "Pick?", "header": "",
+            "options": [
+                { "label": "A", "description": "a" },
+                { "label": "B", "description": "b" }
+            ]
+        }]
     });
     let result = tool.execute(params, ctx()).await;
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("option[0].label must not be empty"));
+        .contains("header must not be empty"));
+}
+
+#[tokio::test]
+async fn empty_label_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({
+        "questions": [{
+            "question": "Pick?", "header": "H",
+            "options": [
+                { "label": "", "description": "a" },
+                { "label": "B", "description": "b" }
+            ]
+        }]
+    });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("label must not be empty"));
 }
 
 #[tokio::test]
 async fn empty_description_rejected() {
     let tool = make_tool(AskUserResponse::Skipped);
     let params = serde_json::json!({
-        "question": "Pick one?",
-        "options": [
-            { "label": "A", "description": "a" },
-            { "label": "B", "description": "  " }
-        ]
+        "questions": [{
+            "question": "Pick?", "header": "H",
+            "options": [
+                { "label": "A", "description": "a" },
+                { "label": "B", "description": "  " }
+            ]
+        }]
     });
     let result = tool.execute(params, ctx()).await;
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
         .to_string()
-        .contains("option[1].description must not be empty"));
+        .contains("description must not be empty"));
+}
+
+// ---------------------------------------------------------------------------
+// Validation: options count
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn too_few_options_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({
+        "questions": [{
+            "question": "Pick?", "header": "H",
+            "options": [{ "label": "Only", "description": "one" }]
+        }]
+    });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("2-4 items"));
+}
+
+#[tokio::test]
+async fn too_many_options_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({
+        "questions": [{
+            "question": "Pick?", "header": "H",
+            "options": [
+                { "label": "A", "description": "a" },
+                { "label": "B", "description": "b" },
+                { "label": "C", "description": "c" },
+                { "label": "D", "description": "d" },
+                { "label": "E", "description": "e" }
+            ]
+        }]
+    });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("2-4 items"));
+}
+
+// ---------------------------------------------------------------------------
+// Validation: duplicates
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn duplicate_question_text_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({
+        "questions": [
+            { "question": "Same?", "header": "H1", "options": [
+                { "label": "A", "description": "a" }, { "label": "B", "description": "b" }
+            ]},
+            { "question": "Same?", "header": "H2", "options": [
+                { "label": "C", "description": "c" }, { "label": "D", "description": "d" }
+            ]}
+        ]
+    });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate"));
+}
+
+// ---------------------------------------------------------------------------
+// Validation: invalid JSON
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn invalid_json_rejected() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    let params = serde_json::json!({ "wrong_field": true });
+    let result = tool.execute(params, ctx()).await;
+    assert!(result.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Metadata
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn tool_metadata() {
+    let tool = make_tool(AskUserResponse::Skipped);
+    assert_eq!(tool.name(), "ask_user");
+    assert_eq!(tool.label(), "Ask User");
+    assert!(!tool.description().is_empty());
+
+    let schema = tool.parameters_schema();
+    assert_eq!(schema["required"], serde_json::json!(["questions"]));
 }

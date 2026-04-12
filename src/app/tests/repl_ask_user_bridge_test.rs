@@ -4,8 +4,10 @@
 
 use std::sync::Arc;
 
+use bend_engine::tools::AskUserAnswer;
 use bend_engine::tools::AskUserFn;
 use bend_engine::tools::AskUserOption;
+use bend_engine::tools::AskUserQuestion;
 use bend_engine::tools::AskUserRequest;
 use bend_engine::tools::AskUserResponse;
 use tokio::sync::mpsc;
@@ -30,51 +32,45 @@ fn make_ask_bridge() -> (
 
 fn sample_request() -> AskUserRequest {
     AskUserRequest {
-        question: "Which approach?".into(),
-        options: vec![
-            AskUserOption {
-                label: "Option A (Recommended)".into(),
-                description: "First choice".into(),
-            },
-            AskUserOption {
-                label: "Option B".into(),
-                description: "Second choice".into(),
-            },
-        ],
+        questions: vec![AskUserQuestion {
+            header: "Approach".into(),
+            question: "Which approach?".into(),
+            options: vec![
+                AskUserOption {
+                    label: "Option A (Recommended)".into(),
+                    description: "First choice".into(),
+                },
+                AskUserOption {
+                    label: "Option B".into(),
+                    description: "Second choice".into(),
+                },
+            ],
+        }],
     }
 }
 
 #[tokio::test]
-async fn bridge_selected_roundtrip() {
+async fn bridge_answered_roundtrip() {
     let (ask_fn, mut ask_rx) = make_ask_bridge();
 
     let handle = tokio::spawn(async move { (ask_fn)(sample_request()).await });
 
     // Simulate the REPL side receiving and responding
     let (request, responder) = ask_rx.recv().await.expect("should receive request");
-    assert_eq!(request.question, "Which approach?");
-    assert_eq!(request.options.len(), 2);
+    assert_eq!(request.questions[0].question, "Which approach?");
+    assert_eq!(request.questions[0].options.len(), 2);
+
+    let response = AskUserResponse::Answered(vec![AskUserAnswer {
+        header: "Approach".into(),
+        question: "Which approach?".into(),
+        answer: "Option B".into(),
+    }]);
     responder
-        .send(AskUserResponse::Selected("Option B".into()))
+        .send(response.clone())
         .expect("send should succeed");
 
     let result = handle.await.expect("task should complete");
-    assert_eq!(result, Ok(AskUserResponse::Selected("Option B".into())));
-}
-
-#[tokio::test]
-async fn bridge_custom_roundtrip() {
-    let (ask_fn, mut ask_rx) = make_ask_bridge();
-
-    let handle = tokio::spawn(async move { (ask_fn)(sample_request()).await });
-
-    let (_request, responder) = ask_rx.recv().await.expect("should receive request");
-    responder
-        .send(AskUserResponse::Custom("Use SQLite".into()))
-        .expect("send should succeed");
-
-    let result = handle.await.expect("task should complete");
-    assert_eq!(result, Ok(AskUserResponse::Custom("Use SQLite".into())));
+    assert_eq!(result, Ok(response));
 }
 
 #[tokio::test]

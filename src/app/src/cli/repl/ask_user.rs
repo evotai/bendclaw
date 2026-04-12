@@ -1,5 +1,7 @@
 use std::io::Write;
 
+use bend_engine::tools::AskUserAnswer;
+use bend_engine::tools::AskUserQuestion;
 use bend_engine::tools::AskUserRequest;
 use bend_engine::tools::AskUserResponse;
 use crossterm::event::poll;
@@ -48,21 +50,55 @@ pub fn physical_row_count(line: &str, term_width: usize) -> usize {
 // State machine — pure logic, no IO
 // ---------------------------------------------------------------------------
 
-/// UI mode for the ask_user selector.
+/// Per-question UI state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AskUserMode {
-    /// Arrow-key / digit selection mode.
-    Selecting { selected: usize },
-    /// Free-text input mode.
-    Typing { selected: usize, input: String },
+pub struct QuestionState {
+    /// Currently highlighted option index (0..=options.len() where last = none).
+    pub selected: usize,
+    /// Confirmed answer, if any.
+    pub answer: Option<String>,
+    /// Draft text for custom input (preserved across mode switches).
+    pub draft: String,
+}
+
+/// Whether the user is selecting an option or typing custom text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    Selecting,
+    Typing,
+}
+
+/// Full UI state for the ask_user interaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AskUserState {
+    pub active_question: usize,
+    pub input_mode: InputMode,
+    pub states: Vec<QuestionState>,
+}
+
+impl AskUserState {
+    pub fn new(question_count: usize) -> Self {
+        Self {
+            active_question: 0,
+            input_mode: InputMode::Selecting,
+            states: vec![
+                QuestionState {
+                    selected: 0,
+                    answer: None,
+                    draft: String::new(),
+                };
+                question_count
+            ],
+        }
+    }
 }
 
 /// Action returned by the state machine after processing a key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AskUserAction {
-    /// Re-render the UI with the updated mode.
+    /// Re-render the UI with the updated state.
     Redraw,
-    /// Submit a final answer and exit.
+    /// Submit all answers and exit.
     Submit(AskUserResponse),
     /// User pressed Ctrl-C — abort the run.
     ExitRun,
@@ -72,178 +108,208 @@ pub enum AskUserAction {
     Noop,
 }
 
-/// Total visible items (options + "None of the above").
-pub fn total_items(request: &AskUserRequest) -> usize {
-    request.options.len() + 1
+/// Total visible items for a question (options + "None of the above").
+pub fn total_items_for(question: &AskUserQuestion) -> usize {
+    question.options.len() + 1
 }
 
-/// The display number for the "None of the above" item.
-pub fn none_number(request: &AskUserRequest) -> usize {
-    request.options.len() + 1
+/// The index of the "None of the above" item for a question.
+pub fn none_index_for(question: &AskUserQuestion) -> usize {
+    question.options.len()
 }
 
-/// Process a single key press and return the next mode + action.
+/// Process a single key press and return the next state + action.
 ///
 /// This is a pure function — no IO, no terminal access.
 pub fn handle_key(
     request: &AskUserRequest,
-    mode: AskUserMode,
+    mut state: AskUserState,
     code: KeyCode,
     modifiers: KeyModifiers,
-) -> (AskUserMode, AskUserAction) {
-    let total = total_items(request);
+) -> (AskUserState, AskUserAction) {
+    let q = &request.questions[state.active_question];
 
-    match mode {
-        AskUserMode::Selecting { selected } => {
-            handle_selecting(request, selected, total, code, modifiers)
-        }
-        AskUserMode::Typing {
-            selected,
-            mut input,
-        } => handle_typing(selected, &mut input, code, modifiers),
+    match state.input_mode {
+        InputMode::Selecting => handle_selecting(request, state, q, code, modifiers),
+        InputMode::Typing => handle_typing(request, &mut state, code, modifiers),
     }
 }
 
 fn handle_selecting(
     request: &AskUserRequest,
-    selected: usize,
-    total: usize,
+    mut state: AskUserState,
+    q: &AskUserQuestion,
     code: KeyCode,
     modifiers: KeyModifiers,
-) -> (AskUserMode, AskUserAction) {
+) -> (AskUserState, AskUserAction) {
+    let total = total_items_for(q);
+    let none_idx = none_index_for(q);
+    let qs = &mut state.states[state.active_question];
+    let selected = qs.selected;
+
     match code {
+        // -- vertical navigation --
         KeyCode::Up | KeyCode::Char('k') => {
-            let next = if selected > 0 {
+            qs.selected = if selected > 0 {
                 selected - 1
             } else {
                 total - 1
             };
-            (
-                AskUserMode::Selecting { selected: next },
-                AskUserAction::Redraw,
-            )
+            if qs.selected == none_idx {
+                state.input_mode = InputMode::Typing;
+            }
+            (state, AskUserAction::Redraw)
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            let next = (selected + 1) % total;
-            (
-                AskUserMode::Selecting { selected: next },
-                AskUserAction::Redraw,
-            )
+            qs.selected = (selected + 1) % total;
+            if qs.selected == none_idx {
+                state.input_mode = InputMode::Typing;
+            }
+            (state, AskUserAction::Redraw)
         }
 
-        KeyCode::Enter => {
-            if selected < request.options.len() {
-                let label = request.options[selected].label.clone();
-                (
-                    AskUserMode::Selecting { selected },
-                    AskUserAction::Submit(AskUserResponse::Selected(label)),
-                )
+        // -- horizontal navigation (switch question) --
+        KeyCode::Left | KeyCode::Char('h') if request.questions.len() > 1 => {
+            let n = request.questions.len();
+            state.active_question = if state.active_question > 0 {
+                state.active_question - 1
             } else {
-                (
-                    AskUserMode::Typing {
-                        selected,
-                        input: String::new(),
-                    },
-                    AskUserAction::Redraw,
-                )
+                n - 1
+            };
+            (state, AskUserAction::Redraw)
+        }
+        KeyCode::Right | KeyCode::Char('l') if request.questions.len() > 1 => {
+            state.active_question = (state.active_question + 1) % request.questions.len();
+            (state, AskUserAction::Redraw)
+        }
+
+        // -- confirm selection --
+        KeyCode::Enter => {
+            if selected < q.options.len() {
+                let label = q.options[selected].label.clone();
+                qs.answer = Some(label);
+                advance_or_submit(request, state)
+            } else {
+                state.input_mode = InputMode::Typing;
+                (state, AskUserAction::Redraw)
             }
         }
 
+        // -- digit shortcut --
         KeyCode::Char(ch @ '1'..='9') => {
             let idx = (ch as usize) - ('1' as usize);
-            if idx < request.options.len() {
-                let label = request.options[idx].label.clone();
-                (
-                    AskUserMode::Selecting { selected },
-                    AskUserAction::Submit(AskUserResponse::Selected(label)),
-                )
-            } else if idx == request.options.len() {
-                (
-                    AskUserMode::Typing {
-                        selected: idx,
-                        input: String::new(),
-                    },
-                    AskUserAction::Redraw,
-                )
+            if idx < q.options.len() {
+                let label = q.options[idx].label.clone();
+                qs.answer = Some(label);
+                advance_or_submit(request, state)
+            } else if idx == none_idx {
+                qs.selected = none_idx;
+                state.input_mode = InputMode::Typing;
+                (state, AskUserAction::Redraw)
             } else {
-                (AskUserMode::Selecting { selected }, AskUserAction::Noop)
+                (state, AskUserAction::Noop)
             }
         }
 
+        // -- cancel / exit --
         KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-            (AskUserMode::Selecting { selected }, AskUserAction::ExitRun)
+            (state, AskUserAction::ExitRun)
         }
+        KeyCode::Esc => (state, AskUserAction::CancelTurn),
 
-        KeyCode::Esc => (
-            AskUserMode::Selecting { selected },
-            AskUserAction::CancelTurn,
-        ),
-
-        _ => (AskUserMode::Selecting { selected }, AskUserAction::Noop),
+        _ => (state, AskUserAction::Noop),
     }
 }
 
 fn handle_typing(
-    selected: usize,
-    input: &mut String,
+    request: &AskUserRequest,
+    state: &mut AskUserState,
     code: KeyCode,
     modifiers: KeyModifiers,
-) -> (AskUserMode, AskUserAction) {
+) -> (AskUserState, AskUserAction) {
+    let qs = &mut state.states[state.active_question];
+
     match code {
         KeyCode::Enter => {
-            let trimmed = input.trim().to_string();
+            let trimmed = qs.draft.trim().to_string();
             if trimmed.is_empty() {
-                // Empty input — go back to selection
-                (AskUserMode::Selecting { selected }, AskUserAction::Redraw)
+                state.input_mode = InputMode::Selecting;
+                (state.clone(), AskUserAction::Redraw)
             } else {
-                (
-                    AskUserMode::Typing {
-                        selected,
-                        input: input.clone(),
-                    },
-                    AskUserAction::Submit(AskUserResponse::Custom(trimmed)),
-                )
+                qs.answer = Some(trimmed);
+                let s = state.clone();
+                advance_or_submit(request, s)
             }
         }
         KeyCode::Esc => {
-            // Back to selection mode
-            (AskUserMode::Selecting { selected }, AskUserAction::Redraw)
+            state.input_mode = InputMode::Selecting;
+            (state.clone(), AskUserAction::Redraw)
         }
         KeyCode::Backspace => {
-            input.pop();
-            (
-                AskUserMode::Typing {
-                    selected,
-                    input: input.clone(),
-                },
-                AskUserAction::Redraw,
-            )
+            qs.draft.pop();
+            (state.clone(), AskUserAction::Redraw)
         }
-        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => (
-            AskUserMode::Typing {
-                selected,
-                input: input.clone(),
-            },
-            AskUserAction::ExitRun,
-        ),
+
+        // -- horizontal navigation in typing mode --
+        KeyCode::Left if request.questions.len() > 1 => {
+            let n = request.questions.len();
+            state.active_question = if state.active_question > 0 {
+                state.active_question - 1
+            } else {
+                n - 1
+            };
+            state.input_mode = InputMode::Selecting;
+            (state.clone(), AskUserAction::Redraw)
+        }
+        KeyCode::Right if request.questions.len() > 1 => {
+            state.active_question = (state.active_question + 1) % request.questions.len();
+            state.input_mode = InputMode::Selecting;
+            (state.clone(), AskUserAction::Redraw)
+        }
+
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (state.clone(), AskUserAction::ExitRun)
+        }
         KeyCode::Char(ch) => {
-            input.push(ch);
-            (
-                AskUserMode::Typing {
-                    selected,
-                    input: input.clone(),
-                },
-                AskUserAction::Redraw,
-            )
+            qs.draft.push(ch);
+            (state.clone(), AskUserAction::Redraw)
         }
-        _ => (
-            AskUserMode::Typing {
-                selected,
-                input: input.clone(),
-            },
-            AskUserAction::Noop,
-        ),
+        _ => (state.clone(), AskUserAction::Noop),
     }
+}
+
+/// After confirming an answer, jump to the next unanswered question.
+/// If all answered, submit.
+fn advance_or_submit(
+    request: &AskUserRequest,
+    mut state: AskUserState,
+) -> (AskUserState, AskUserAction) {
+    let n = request.questions.len();
+
+    for offset in 1..=n {
+        let idx = (state.active_question + offset) % n;
+        if state.states[idx].answer.is_none() {
+            state.active_question = idx;
+            state.input_mode = InputMode::Selecting;
+            return (state, AskUserAction::Redraw);
+        }
+    }
+
+    let answers = request
+        .questions
+        .iter()
+        .zip(state.states.iter())
+        .map(|(q, qs)| AskUserAnswer {
+            header: q.header.clone(),
+            question: q.question.clone(),
+            answer: qs.answer.clone().unwrap_or_default(),
+        })
+        .collect();
+
+    (
+        state,
+        AskUserAction::Submit(AskUserResponse::Answered(answers)),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -252,31 +318,33 @@ fn handle_typing(
 
 pub fn build_question_block(
     request: &AskUserRequest,
-    selected: usize,
+    state: &AskUserState,
     term_width: usize,
-) -> (String, usize) {
-    build_question_block_inner(request, selected, term_width, None)
-}
-
-pub fn build_question_block_typing(
-    request: &AskUserRequest,
-    selected: usize,
-    term_width: usize,
-    input: &str,
-) -> (String, usize) {
-    build_question_block_inner(request, selected, term_width, Some(input))
-}
-
-fn build_question_block_inner(
-    request: &AskUserRequest,
-    selected: usize,
-    term_width: usize,
-    typing: Option<&str>,
 ) -> (String, usize) {
     let mut out = String::new();
     let mut rows: usize = 0;
 
-    let line = format!("\r{ERASE_LINE}  {CYAN}❓ {BOLD}{}{RESET}", request.question);
+    let q = &request.questions[state.active_question];
+    let qs = &state.states[state.active_question];
+    let typing = match state.input_mode {
+        InputMode::Typing => Some(qs.draft.as_str()),
+        InputMode::Selecting => None,
+    };
+
+    // Tab bar (only for multi-question)
+    if request.questions.len() > 1 {
+        let tab_line = build_tab_bar(request, state);
+        let full_line = format!("\r{ERASE_LINE}  {tab_line}");
+        out.push_str(&full_line);
+        out.push_str("\r\n");
+        rows += physical_row_count(&full_line, term_width);
+
+        out.push_str(&format!("{ERASE_LINE}\r\n"));
+        rows += 1;
+    }
+
+    // Question text
+    let line = format!("\r{ERASE_LINE}  {CYAN}❓ {BOLD}{}{RESET}", q.question);
     out.push_str(&line);
     out.push_str("\r\n");
     rows += physical_row_count(&line, term_width);
@@ -284,14 +352,23 @@ fn build_question_block_inner(
     out.push_str(&format!("{ERASE_LINE}\r\n"));
     rows += 1;
 
-    for (i, opt) in request.options.iter().enumerate() {
+    // Options
+    for (i, opt) in q.options.iter().enumerate() {
         let num = i + 1;
-        let is_selected = i == selected;
+        let is_selected = i == qs.selected;
+        let is_answered = qs.answer.as_deref() == Some(&opt.label);
         let marker = if is_selected { "›" } else { " " };
-        let highlight = if is_selected { YELLOW } else { DIM };
+        let check = if is_answered { " ✓" } else { "" };
+        let highlight = if is_selected {
+            YELLOW
+        } else if is_answered {
+            GREEN
+        } else {
+            DIM
+        };
 
         let label_line = format!(
-            "{ERASE_LINE}  {highlight}{marker} {num}. {}{RESET}",
+            "{ERASE_LINE}  {highlight}{marker} {num}. {}{check}{RESET}",
             opt.label
         );
         out.push_str(&label_line);
@@ -304,40 +381,86 @@ fn build_question_block_inner(
         rows += physical_row_count(&desc_line, term_width);
     }
 
-    let none_idx = request.options.len();
+    // None of the above / inline input
+    let none_idx = none_index_for(q);
     let none_num = none_idx + 1;
-    let is_none_selected = selected == none_idx;
+    let is_none_selected = qs.selected == none_idx;
     let marker = if is_none_selected { "›" } else { " " };
-    let highlight = if is_none_selected { YELLOW } else { DIM };
-    let none_line = format!(
-        "{ERASE_LINE}  {highlight}{marker} {none_num}. None of the above (type your own){RESET}",
-    );
-    out.push_str(&none_line);
-    out.push_str("\r\n");
-    rows += physical_row_count(&none_line, term_width);
-
-    out.push_str(&format!("{ERASE_LINE}\r\n"));
-    rows += 1;
+    // Check if the current answer is a custom input (not matching any option label)
+    let is_custom_answered = qs
+        .answer
+        .as_ref()
+        .is_some_and(|a| !q.options.iter().any(|o| o.label == *a));
 
     if let Some(input) = typing {
-        // Inline input mode: show input field instead of footer
-        let input_line = if input.is_empty() {
-            format!("{ERASE_LINE}  {YELLOW}> {DIM}Type something...{RESET}")
+        // Typing mode: cursor ready for input, no placeholder
+        let none_line = if input.is_empty() {
+            format!("{ERASE_LINE}  {YELLOW}{marker} {none_num}. {RESET}█",)
         } else {
-            format!("{ERASE_LINE}  {YELLOW}> {RESET}{input}█")
+            format!("{ERASE_LINE}  {YELLOW}{marker} {none_num}. {RESET}{input}█",)
         };
-        out.push_str(&input_line);
+        out.push_str(&none_line);
         out.push_str("\r\n");
-        rows += physical_row_count(&input_line, term_width);
+        rows += physical_row_count(&none_line, term_width);
+
+        out.push_str(&format!("{ERASE_LINE}\r\n"));
+        rows += 1;
 
         let hint_line = format!("{ERASE_LINE}  {DIM}[Enter submit  Esc back to list]{RESET}");
         out.push_str(&hint_line);
         out.push_str("\r\n");
         rows += physical_row_count(&hint_line, term_width);
+    } else if is_none_selected {
+        // Selecting mode, cursor on none: show placeholder with cursor
+        let none_line = if is_custom_answered {
+            // Show the custom answer
+            let ans = qs.answer.as_deref().unwrap_or("");
+            format!("{ERASE_LINE}  {YELLOW}{marker} {none_num}. {GREEN}{ans} ✓{RESET}█",)
+        } else {
+            format!("{ERASE_LINE}  {YELLOW}{marker} {none_num}. {DIM}Type something...{RESET}█",)
+        };
+        out.push_str(&none_line);
+        out.push_str("\r\n");
+        rows += physical_row_count(&none_line, term_width);
+
+        out.push_str(&format!("{ERASE_LINE}\r\n"));
+        rows += 1;
+
+        let nav = if request.questions.len() > 1 {
+            "←→ question  "
+        } else {
+            ""
+        };
+        let footer_line =
+            format!("{ERASE_LINE}  {DIM}[{nav}↑↓ select  Enter edit  Esc cancel]{RESET}",);
+        out.push_str(&footer_line);
+        out.push_str("\r\n");
+        rows += physical_row_count(&footer_line, term_width);
     } else {
+        // Selecting mode, cursor NOT on none
+        let highlight = if is_custom_answered { GREEN } else { DIM };
+        let check = if is_custom_answered { " ✓" } else { "" };
+        let label = if is_custom_answered {
+            qs.answer.as_deref().unwrap_or("None of the above")
+        } else {
+            "None of the above (type your own)"
+        };
+        let none_line =
+            format!("{ERASE_LINE}  {highlight}{marker} {none_num}. {label}{check}{RESET}",);
+        out.push_str(&none_line);
+        out.push_str("\r\n");
+        rows += physical_row_count(&none_line, term_width);
+
+        out.push_str(&format!("{ERASE_LINE}\r\n"));
+        rows += 1;
+
+        let nav = if request.questions.len() > 1 {
+            "←→ question  "
+        } else {
+            ""
+        };
         let footer_line = format!(
-            "{ERASE_LINE}  {DIM}[↑↓ select  Enter confirm  1-{} pick  {} custom  Esc skip]{RESET}",
-            request.options.len(),
+            "{ERASE_LINE}  {DIM}[{nav}↑↓ select  Enter confirm  1-{} pick  Esc cancel]{RESET}",
             none_num
         );
         out.push_str(&footer_line);
@@ -346,6 +469,26 @@ fn build_question_block_inner(
     }
 
     (out, rows)
+}
+
+fn build_tab_bar(request: &AskUserRequest, state: &AskUserState) -> String {
+    let mut tabs = Vec::new();
+    for (i, q) in request.questions.iter().enumerate() {
+        let qs = &state.states[i];
+        let is_active = i == state.active_question;
+        let is_answered = qs.answer.is_some();
+
+        let checkbox = if is_answered { "☑" } else { "☐" };
+        let tab = if is_active {
+            format!("{YELLOW}{checkbox} {}‹{RESET}", q.header)
+        } else if is_answered {
+            format!("{GREEN}{checkbox} {}{RESET}", q.header)
+        } else {
+            format!("{DIM}{checkbox} {}{RESET}", q.header)
+        };
+        tabs.push(tab);
+    }
+    tabs.join("  ")
 }
 
 pub fn build_confirmation(label: &str) -> String {
@@ -367,21 +510,14 @@ pub enum AskUserUiResult {
 }
 
 pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiResult> {
-    let mut mode = AskUserMode::Selecting { selected: 0 };
+    let mut state = AskUserState::new(request.questions.len());
     let mut prev_lines: usize = 0;
     let mut needs_redraw = true;
 
     loop {
         if needs_redraw {
             let term_width = terminal_width();
-            let (output, line_count) = match &mode {
-                AskUserMode::Typing { selected, input } => {
-                    build_question_block_typing(request, *selected, term_width, input)
-                }
-                AskUserMode::Selecting { selected } => {
-                    build_question_block(request, *selected, term_width)
-                }
-            };
+            let (output, line_count) = build_question_block(request, &state, term_width);
             with_terminal(|stdout| {
                 if prev_lines > 0 {
                     let _ = write!(stdout, "\r{}", cursor_up(prev_lines));
@@ -399,8 +535,8 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiR
 
         match read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                let (next_mode, action) = handle_key(request, mode, key.code, key.modifiers);
-                mode = next_mode;
+                let (next_state, action) = handle_key(request, state, key.code, key.modifiers);
+                state = next_state;
 
                 match action {
                     AskUserAction::Redraw => {
@@ -409,14 +545,16 @@ pub fn render_and_select(request: &AskUserRequest) -> std::io::Result<AskUserUiR
                     AskUserAction::Submit(response) => {
                         clear_block(prev_lines);
                         match &response {
+                            AskUserResponse::Answered(answers) => {
+                                for a in answers {
+                                    print_result(&build_confirmation(&format!(
+                                        "{}: {}",
+                                        a.header, a.answer
+                                    )));
+                                }
+                            }
                             AskUserResponse::Skipped => {
                                 print_result(&build_skipped());
-                            }
-                            AskUserResponse::Selected(label) => {
-                                print_result(&build_confirmation(label));
-                            }
-                            AskUserResponse::Custom(text) => {
-                                print_result(&build_confirmation(text));
                             }
                         }
                         return Ok(AskUserUiResult::Answer(response));

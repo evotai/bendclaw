@@ -71,3 +71,49 @@ fn normalize_quotes_no_change() {
     let input = "\"hello\" 'world'";
     assert_eq!(normalize_quotes(input), input);
 }
+
+// ---------------------------------------------------------------------------
+// preserve_quote_style
+// ---------------------------------------------------------------------------
+
+#[test]
+fn preserve_quote_style_no_normalization() {
+    // old_text == actual_old_text → passthrough
+    let result = preserve_quote_style("hello", "hello", "world");
+    assert_eq!(result, "world");
+}
+
+#[test]
+fn preserve_quote_style_double_curly() {
+    let old = "say \"hello\"";
+    let actual = "say \u{201C}hello\u{201D}";
+    let new = "say \"goodbye\"";
+    let result = preserve_quote_style(old, actual, new);
+    assert_eq!(result, "say \u{201C}goodbye\u{201D}");
+}
+
+#[test]
+fn preserve_quote_style_single_curly() {
+    let old = "it's a 'test'";
+    let actual = "it\u{2019}s a \u{2018}test\u{2019}";
+    let new = "it's a 'demo'";
+    let result = preserve_quote_style(old, actual, new);
+    // apostrophe in "it's" → right single curly; 'demo' → curly pair
+    assert_eq!(result, "it\u{2019}s a \u{2018}demo\u{2019}");
+}
+
+#[test]
+fn preserve_quote_style_mixed() {
+    let old = "\"hello\" and 'world'";
+    let actual = "\u{201C}hello\u{201D} and \u{2018}world\u{2019}";
+    let new = "\"goodbye\" and 'earth'";
+    let result = preserve_quote_style(old, actual, new);
+    assert_eq!(result, "\u{201C}goodbye\u{201D} and \u{2018}earth\u{2019}");
+}
+
+#[test]
+fn preserve_quote_style_no_curly_in_actual() {
+    // actual_old_text differs from old_text but has no curly quotes → passthrough
+    let result = preserve_quote_style("abc", "def", "ghi");
+    assert_eq!(result, "ghi");
+}

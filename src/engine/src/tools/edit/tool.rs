@@ -60,7 +60,11 @@ impl AgentTool for EditFileTool {
          - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless \
          explicitly required.\n\
          - The edit will FAIL if old_text is not unique in the file. Either provide a larger \
-         string with more surrounding context to make it unique.\n\
+         string with more surrounding context to make it unique, or use replace_all to change \
+         every instance of old_text.\n\
+         - Use replace_all for replacing and renaming exact strings across the file. This is useful \
+         for renaming a variable, for instance. Note: replace_all only supports exact matches \
+         and will not use fallback matching.\n\
          - Use this tool instead of shell sed/awk for file modifications."
     }
 
@@ -79,6 +83,10 @@ impl AgentTool for EditFileTool {
                 "new_text": {
                     "type": "string",
                     "description": "Text to replace it with"
+                },
+                "replace_all": {
+                    "type": "boolean",
+                    "description": "Replace all exact occurrences of old_text (default false)"
                 }
             },
             "required": ["path", "old_text", "new_text"]
@@ -87,7 +95,12 @@ impl AgentTool for EditFileTool {
 
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
         let path = params["path"].as_str()?;
-        Some(format!("sed -i 's/<old>/<new>/' {path}"))
+        let replace_all = params["replace_all"].as_bool().unwrap_or(false);
+        if replace_all {
+            Some(format!("sed -i 's/<old>/<new>/g' {path}"))
+        } else {
+            Some(format!("sed -i 's/<old>/<new>/' {path}"))
+        }
     }
 
     fn is_concurrency_safe(&self) -> bool {
@@ -112,6 +125,7 @@ impl AgentTool for EditFileTool {
         let new_text = params["new_text"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'new_text' parameter".into()))?;
+        let replace_all = params["replace_all"].as_bool().unwrap_or(false);
 
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
@@ -136,32 +150,62 @@ impl AgentTool for EditFileTool {
         let old_text_lf = normalize::normalize_to_lf(old_text);
         let new_text_lf = normalize::normalize_to_lf(new_text);
 
-        // Resolve unique match
-        let resolved =
-            matching::resolve_unique_match(&content_lf, &old_text_lf).map_err(|e| match e {
-                MatchError::EmptyOldText => ToolError::Failed("old_text must not be empty.".into()),
-                MatchError::NotFound => {
-                    let hint = matching::find_similar_text(&content_lf, &old_text_lf);
-                    let suffix = match hint {
-                        Some(similar) => format!(
-                            "\n\nDid you mean:\n```\n{similar}\n```\n\
-                         Make sure old_text matches the current file content, \
-                         including indentation."
-                        ),
-                        None => "\n\nTip: Use read_file to see the current file contents, \
-                             then copy the exact text you want to replace."
-                            .into(),
-                    };
-                    ToolError::Failed(format!("old_text not found in {path}.{suffix}"))
-                }
-                MatchError::NotUnique { count } => ToolError::Failed(format!(
-                    "old_text matches {count} locations in {path}. \
-                 Include more surrounding context to make the match unique."
-                )),
-            })?;
+        if old_text_lf.is_empty() {
+            return Err(ToolError::Failed("old_text must not be empty.".into()));
+        }
 
-        // Perform replacement
-        let new_content_lf = content_lf.replacen(&resolved.actual_old_text, &new_text_lf, 1);
+        // Branch: replace_all uses exact match only; single replace uses
+        // the tiered fallback in resolve_unique_match.
+        let (new_content_lf, match_kind, replacement_count) = if replace_all {
+            let count = content_lf.matches(&old_text_lf).count();
+            if count == 0 {
+                let hint = matching::find_similar_text(&content_lf, &old_text_lf);
+                let suffix = match hint {
+                    Some(similar) => format!(
+                        "\n\nDid you mean:\n```\n{similar}\n```\n\
+                         replace_all requires an exact match."
+                    ),
+                    None => "\n\nreplace_all requires an exact match. \
+                         Use read_file to see the current file contents."
+                        .into(),
+                };
+                return Err(ToolError::Failed(format!(
+                    "old_text not found in {path}.{suffix}"
+                )));
+            }
+            let replaced = content_lf.replace(&old_text_lf, &new_text_lf);
+            (replaced, "exact", count)
+        } else {
+            let resolved =
+                matching::resolve_unique_match(&content_lf, &old_text_lf).map_err(|e| match e {
+                    MatchError::EmptyOldText => {
+                        ToolError::Failed("old_text must not be empty.".into())
+                    }
+                    MatchError::NotFound => {
+                        let hint = matching::find_similar_text(&content_lf, &old_text_lf);
+                        let suffix = match hint {
+                            Some(similar) => format!(
+                                "\n\nDid you mean:\n```\n{similar}\n```\n\
+                                 Make sure old_text matches the current file content, \
+                                 including indentation."
+                            ),
+                            None => "\n\nTip: Use read_file to see the current file contents, \
+                                 then copy the exact text you want to replace."
+                                .into(),
+                        };
+                        ToolError::Failed(format!("old_text not found in {path}.{suffix}"))
+                    }
+                    MatchError::NotUnique { count } => ToolError::Failed(format!(
+                        "old_text matches {count} locations in {path}. \
+                         Include more surrounding context to make the match unique, \
+                         or set replace_all to true to replace all occurrences."
+                    )),
+                })?;
+
+            let replaced = content_lf.replacen(&resolved.actual_old_text, &new_text_lf, 1);
+            let kind = resolved.kind.as_str();
+            (replaced, kind, 1)
+        };
 
         // No-change detection
         if new_content_lf == content_lf {
@@ -189,7 +233,9 @@ impl AgentTool for EditFileTool {
             }],
             details: serde_json::json!({
                 "path": path,
-                "match_kind": resolved.kind.as_str(),
+                "match_kind": match_kind,
+                "replace_all": replace_all,
+                "replacement_count": replacement_count,
                 "diff": diff_result.unified,
                 "first_changed_line": diff_result.first_changed_line,
                 "added_lines": diff_result.added_lines,

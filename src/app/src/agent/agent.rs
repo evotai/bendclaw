@@ -49,17 +49,11 @@ impl Default for ExecutionLimits {
 
 pub enum ToolMode {
     /// REPL interactive: full tools + ask_user
-    Interactive {
-        ask_fn: AskUserFn,
-        envs: Vec<(String, String)>,
-    },
+    Interactive { ask_fn: AskUserFn },
     /// Oneshot / API / headless: full tools, no ask_user
-    Headless { envs: Vec<(String, String)> },
+    Headless,
     /// Plan mode: write tools degraded, optional ask_user
-    Planning {
-        ask_fn: Option<AskUserFn>,
-        envs: Vec<(String, String)>,
-    },
+    Planning { ask_fn: Option<AskUserFn> },
     /// Forked conversation: read-only
     Readonly,
 }
@@ -74,10 +68,13 @@ impl ToolMode {
     }
 }
 
-fn build_tools(mode: &ToolMode) -> Vec<Box<dyn bend_engine::AgentTool>> {
+fn build_tools(
+    mode: &ToolMode,
+    envs: Vec<(String, String)>,
+) -> Vec<Box<dyn bend_engine::AgentTool>> {
     match mode {
-        ToolMode::Interactive { ask_fn, envs } => vec![
-            Box::new(BashTool::default().with_envs(envs.clone())),
+        ToolMode::Interactive { ask_fn } => vec![
+            Box::new(BashTool::default().with_envs(envs)),
             Box::new(ReadFileTool::default()),
             Box::new(WriteFileTool::new()),
             Box::new(EditFileTool::new()),
@@ -86,8 +83,8 @@ fn build_tools(mode: &ToolMode) -> Vec<Box<dyn bend_engine::AgentTool>> {
             Box::new(WebFetchTool::new()),
             Box::new(AskUserTool::new(ask_fn.clone())),
         ],
-        ToolMode::Headless { envs } => vec![
-            Box::new(BashTool::default().with_envs(envs.clone())),
+        ToolMode::Headless => vec![
+            Box::new(BashTool::default().with_envs(envs)),
             Box::new(ReadFileTool::default()),
             Box::new(WriteFileTool::new()),
             Box::new(EditFileTool::new()),
@@ -95,10 +92,10 @@ fn build_tools(mode: &ToolMode) -> Vec<Box<dyn bend_engine::AgentTool>> {
             Box::new(SearchTool::default()),
             Box::new(WebFetchTool::new()),
         ],
-        ToolMode::Planning { ask_fn, envs } => {
+        ToolMode::Planning { ask_fn } => {
             let msg = "Not allowed in planning mode. Use /act to switch.";
             let mut t: Vec<Box<dyn bend_engine::AgentTool>> = vec![
-                Box::new(BashTool::default().with_envs(envs.clone())),
+                Box::new(BashTool::default().with_envs(envs)),
                 Box::new(ReadFileTool::default()),
                 Box::new(WriteFileTool::new().disallow(msg)),
                 Box::new(EditFileTool::new().disallow(msg)),
@@ -135,7 +132,7 @@ impl QueryRequest {
         Self {
             prompt: prompt.into(),
             session_id: None,
-            mode: ToolMode::Headless { envs: Vec::new() },
+            mode: ToolMode::Headless,
         }
     }
 
@@ -439,7 +436,11 @@ impl Agent {
     )> {
         let llm = self.llm.read().clone();
         let system_prompt = self.build_system_prompt(&mode);
-        let mut tools = build_tools(&mode);
+        let envs = self
+            .variables()
+            .map(|v| v.all_env_pairs())
+            .unwrap_or_default();
+        let mut tools = build_tools(&mode, envs);
 
         // MemoryTool
         if !mode.is_readonly() {

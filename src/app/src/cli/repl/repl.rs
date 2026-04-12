@@ -394,18 +394,12 @@ impl Repl {
             })
         });
 
-        let envs = self
-            .agent
-            .variables()
-            .map(|v| v.all_env_pairs())
-            .unwrap_or_default();
         let mode = if self.planning {
             crate::agent::ToolMode::Planning {
                 ask_fn: Some(ask_fn),
-                envs,
             }
         } else {
-            crate::agent::ToolMode::Interactive { ask_fn, envs }
+            crate::agent::ToolMode::Interactive { ask_fn }
         };
         let request = QueryRequest::text(input)
             .session_id(self.session_id.clone())

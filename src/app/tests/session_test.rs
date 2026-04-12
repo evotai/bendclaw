@@ -592,7 +592,7 @@ async fn stats_after_compact_filtered_on_resume() -> TestResult {
     // Write compact + stats + new message
     let compact_stats = bendclaw::types::TranscriptStats::ContextCompactionCompleted(
         bendclaw::types::ContextCompactionCompletedStats {
-            result: bendclaw::types::CompactionResultStats::LevelCompacted {
+            result: bendclaw::types::CompactionResult::LevelCompacted {
                 level: 1,
                 before_message_count: 10,
                 after_message_count: 4,

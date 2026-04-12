@@ -450,68 +450,17 @@ impl ReplSink {
                 });
             }
             RunEventPayload::ContextCompactionCompleted { result } => {
-                let stats = match result {
-                    crate::agent::event::CompactionResult::LevelCompacted {
-                        level,
-                        before_message_count,
-                        after_message_count,
-                        before_estimated_tokens,
-                        after_estimated_tokens,
-                        tool_outputs_truncated,
-                        turns_summarized,
-                        messages_dropped,
-                        actions,
-                        ..
-                    } => ContextCompactionCompletedStats {
-                        result: crate::types::CompactionResultStats::LevelCompacted {
-                            level: *level,
-                            before_message_count: *before_message_count,
-                            after_message_count: *after_message_count,
-                            before_estimated_tokens: *before_estimated_tokens,
-                            after_estimated_tokens: *after_estimated_tokens,
-                            tool_outputs_truncated: *tool_outputs_truncated,
-                            turns_summarized: *turns_summarized,
-                            messages_dropped: *messages_dropped,
-                            actions: actions
-                                .iter()
-                                .map(|a| crate::types::CompactionActionStats {
-                                    index: a.index,
-                                    tool_name: a.tool_name.clone(),
-                                    method: a.method.clone(),
-                                    before_tokens: a.before_tokens,
-                                    after_tokens: a.after_tokens,
-                                    end_index: a.end_index,
-                                    related_count: a.related_count,
-                                })
-                                .collect(),
-                        },
-                    },
-                    crate::agent::event::CompactionResult::RunOnceCleared {
-                        cleared_count,
-                        before_estimated_tokens,
-                        after_estimated_tokens,
-                        saved_tokens,
-                    } => ContextCompactionCompletedStats {
-                        result: crate::types::CompactionResultStats::RunOnceCleared {
-                            cleared_count: *cleared_count,
-                            before_estimated_tokens: *before_estimated_tokens,
-                            after_estimated_tokens: *after_estimated_tokens,
-                            saved_tokens: *saved_tokens,
-                        },
-                    },
-                    crate::agent::event::CompactionResult::NoOp => {
-                        ContextCompactionCompletedStats {
-                            result: crate::types::CompactionResultStats::NoOp,
-                        }
-                    }
-                };
-
+                // Ingest directly — result is already the unified type
                 state
                     .aggregator
-                    .ingest(&TranscriptStats::ContextCompactionCompleted(stats));
+                    .ingest(&TranscriptStats::ContextCompactionCompleted(
+                        ContextCompactionCompletedStats {
+                            result: result.clone(),
+                        },
+                    ));
 
                 match result {
-                    crate::agent::event::CompactionResult::LevelCompacted {
+                    crate::types::CompactionResult::LevelCompacted {
                         level,
                         before_message_count,
                         after_message_count,
@@ -596,7 +545,7 @@ impl ReplSink {
                             const TOP: usize = 3;
                             const TAIL: usize = 2;
 
-                            let render_action = |a: &&crate::agent::event::CompactionActionInfo| {
+                            let render_action = |a: &&crate::types::CompactionAction| {
                                 let hb = super::render::human_tokens(a.before_tokens);
                                 let ha = super::render::human_tokens(a.after_tokens);
                                 let saved_tok = a.before_tokens.saturating_sub(a.after_tokens);
@@ -649,7 +598,7 @@ impl ReplSink {
                             }
                         }
                     }
-                    crate::agent::event::CompactionResult::RunOnceCleared {
+                    crate::types::CompactionResult::RunOnceCleared {
                         cleared_count,
                         saved_tokens,
                         ..
@@ -661,7 +610,7 @@ impl ReplSink {
                             "{GRAY}  cleared {cleared_count} run-once tool result(s) · saved ~{h_saved}{RESET}"
                         ));
                     }
-                    crate::agent::event::CompactionResult::NoOp => {}
+                    crate::types::CompactionResult::NoOp => {}
                 }
                 terminal_writeln("");
             }
@@ -675,7 +624,7 @@ impl ReplSink {
 
 fn render_position_bar(
     before_count: usize,
-    sorted_actions: &[&crate::agent::event::CompactionActionInfo],
+    sorted_actions: &[&crate::types::CompactionAction],
     level: u8,
 ) -> String {
     const WIDTH: usize = 40;
@@ -725,7 +674,7 @@ fn render_position_bar(
 
 fn format_action_summary(
     level: u8,
-    sorted_actions: &[&crate::agent::event::CompactionActionInfo],
+    sorted_actions: &[&crate::types::CompactionAction],
     messages_dropped: usize,
     after_message_count: usize,
 ) -> String {

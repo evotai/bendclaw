@@ -105,7 +105,7 @@ fn aggregator_ingests_compaction_completed() {
     let mut agg = StatsAggregator::new();
     agg.ingest(&TranscriptStats::ContextCompactionCompleted(
         ContextCompactionCompletedStats {
-            result: bendclaw::types::CompactionResultStats::LevelCompacted {
+            result: bendclaw::types::CompactionResult::LevelCompacted {
                 level: 1,
                 before_message_count: 20,
                 after_message_count: 10,

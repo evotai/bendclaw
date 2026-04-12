@@ -249,7 +249,7 @@ pub fn format_event(payload: &RunEventPayload) -> Vec<String> {
         }
 
         RunEventPayload::ContextCompactionCompleted { result } => match result {
-            crate::agent::event::CompactionResult::LevelCompacted {
+            crate::types::CompactionResult::LevelCompacted {
                 level,
                 after_message_count,
                 after_estimated_tokens,
@@ -266,7 +266,7 @@ pub fn format_event(payload: &RunEventPayload) -> Vec<String> {
                     String::new(),
                 ]
             }
-            crate::agent::event::CompactionResult::RunOnceCleared {
+            crate::types::CompactionResult::RunOnceCleared {
                 cleared_count,
                 saved_tokens,
                 ..
@@ -277,7 +277,7 @@ pub fn format_event(payload: &RunEventPayload) -> Vec<String> {
                 ),
                 String::new(),
             ],
-            crate::agent::event::CompactionResult::NoOp => vec![
+            crate::types::CompactionResult::NoOp => vec![
                 "[compact completed] no compaction needed".into(),
                 String::new(),
             ],

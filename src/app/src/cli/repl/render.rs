@@ -170,7 +170,7 @@ pub fn human_tokens(tokens: usize) -> String {
 }
 
 /// Render a simple bar: `████░░░░` of given width based on ratio (0.0–1.0).
-fn render_ratio_bar(ratio: f64, width: usize) -> String {
+pub fn render_bar(ratio: f64, width: usize) -> String {
     let capped = ratio.clamp(0.0, 1.0);
     let filled = (capped * width as f64).round() as usize;
     (0..width)
@@ -186,14 +186,21 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
 
     // Header
     lines.push("─── This Run Summary ──────────────────────────────────".into());
-    lines.push(format!(
+    let header = format!(
         "{} · {} turns · {} llm calls · {} tool calls · {} tokens",
         human_duration(data.duration_ms),
         data.turn_count,
         data.llm_call_count,
         data.tool_call_count,
         total_input + data.usage.output as usize,
-    ));
+    );
+    lines.push(header);
+    if let Some((estimated, budget)) = data.last_context_budget {
+        if budget > 0 {
+            let bar = format_budget_bar(estimated, budget, bar_width);
+            lines.push(format!("  context   {bar}"));
+        }
+    }
     lines.push(String::new());
 
     // --- tokens block ---
@@ -242,7 +249,7 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
             } else {
                 0.0
             };
-            let bar = render_ratio_bar(pct / 100.0, bar_width);
+            let bar = render_bar(pct / 100.0, bar_width);
             lines.push(format!(
                 "            {:<width_l$} {:>width_v$}  {bar} {pct:>5.1}%",
                 label,
@@ -283,7 +290,7 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
                 } else {
                     0.0
                 };
-                let bar = render_ratio_bar(pct / 100.0, bar_width);
+                let bar = render_bar(pct / 100.0, bar_width);
                 let call_word = if agg.calls == 1 { "call" } else { "calls" };
                 let left = format!(
                     "{}  {} {}  {}",
@@ -305,21 +312,38 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
     lines.push(String::new());
 
     // --- compact block ---
-    let real_compacts: Vec<&CompactRecord> = data
-        .compact_history
-        .iter()
-        .filter(|c| c.level > 0)
-        .collect();
-    if !real_compacts.is_empty() {
-        let total_saved: usize = real_compacts
+    if !data.compact_history.is_empty() {
+        let real_compacts: Vec<&CompactRecord> = data
+            .compact_history
+            .iter()
+            .filter(|c| c.level > 0)
+            .collect();
+        let run_once_compacts: Vec<&CompactRecord> = data
+            .compact_history
+            .iter()
+            .filter(|c| c.level == 0)
+            .collect();
+
+        let total_saved: usize = data
+            .compact_history
             .iter()
             .map(|c| c.before_tokens.saturating_sub(c.after_tokens))
             .sum();
+
         lines.push(format!(
             "  compact   {} compactions · saved {} tokens",
-            real_compacts.len(),
+            data.compact_history.len(),
             human_tokens(total_saved),
         ));
+        for c in &run_once_compacts {
+            let saved = c.before_tokens.saturating_sub(c.after_tokens);
+            lines.push(format!(
+                "            run-once  {}→{}  saved {}",
+                human_tokens(c.before_tokens),
+                human_tokens(c.after_tokens),
+                human_tokens(saved),
+            ));
+        }
         for (i, c) in real_compacts.iter().enumerate() {
             let saved = c.before_tokens.saturating_sub(c.after_tokens);
             let pct = if c.before_tokens > 0 {
@@ -327,7 +351,7 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
             } else {
                 0.0
             };
-            let bar = render_ratio_bar(pct / 100.0, 12);
+            let bar = render_bar(pct / 100.0, 12);
             lines.push(format!(
                 "            #{}  lv{}  {}→{}  saved {}  {bar} {pct:.0}%",
                 i + 1,
@@ -400,7 +424,7 @@ pub fn format_run_summary(data: &RunSummaryData) -> Vec<String> {
             .unwrap_or(4);
 
         for &(idx, dur) in &indexed[..show] {
-            let bar = render_ratio_bar(dur as f64 / max_dur as f64, bar_width);
+            let bar = render_bar(dur as f64 / max_dur as f64, bar_width);
             let pct = if total_llm_ms > 0 {
                 dur as f64 / total_llm_ms as f64 * 100.0
             } else {
@@ -649,13 +673,6 @@ pub fn format_llm_call_lines(
     lines
 }
 
-/// Render a mini bar chart.
-fn render_bar(ratio: f64, width: usize) -> String {
-    let filled = (ratio * width as f64).round() as usize;
-    let empty = width.saturating_sub(filled);
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
-}
-
 /// Aggregate same-name tools and sort by tokens descending.
 fn aggregate_tool_details(details: &[(String, usize)]) -> Vec<(String, usize)> {
     use std::collections::BTreeMap;
@@ -695,16 +712,18 @@ pub fn format_tool_breakdown(details: &[(String, usize)], total: usize) -> Vec<S
 }
 
 /// Render a budget usage bar with percentage.
+///
+/// Output: `███░░░  38%(62k) of budget(156k)`
 pub fn format_budget_bar(used: usize, budget: usize, width: usize) -> String {
     if budget == 0 {
         return String::new();
     }
     let ratio = used as f64 / budget as f64;
-    let capped = ratio.clamp(0.0, 1.0);
-    let filled = (capped * width as f64).round() as usize;
-    let bar: String = (0..width)
-        .map(|i| if i < filled { '█' } else { '░' })
-        .collect();
+    let bar = render_bar(ratio, width);
+    let h_used = human_tokens(used);
     let h_budget = human_tokens(budget);
-    format!("{bar}  {:.0}% of budget({h_budget})", ratio * 100.0)
+    format!(
+        "{bar}  {:.0}%({h_used}) of budget({h_budget})",
+        ratio * 100.0
+    )
 }

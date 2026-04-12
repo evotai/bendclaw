@@ -104,7 +104,7 @@ fn stats_context_compaction_started_round_trip() {
 #[test]
 fn stats_context_compaction_completed_round_trip() {
     let stats = TranscriptStats::ContextCompactionCompleted(ContextCompactionCompletedStats {
-        result: bendclaw::types::CompactionResultStats::LevelCompacted {
+        result: bendclaw::types::CompactionResult::LevelCompacted {
             level: 2,
             before_message_count: 20,
             after_message_count: 8,
@@ -120,7 +120,7 @@ fn stats_context_compaction_completed_round_trip() {
     let decoded = TranscriptStats::try_from_item(&item);
     if let Some(TranscriptStats::ContextCompactionCompleted(s)) = decoded {
         match s.result {
-            bendclaw::types::CompactionResultStats::LevelCompacted {
+            bendclaw::types::CompactionResult::LevelCompacted {
                 level,
                 before_estimated_tokens,
                 after_estimated_tokens,

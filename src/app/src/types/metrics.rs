@@ -95,6 +95,9 @@ pub struct RunSummaryData {
     pub llm_output_tokens: Vec<u64>,
     pub tool_stats: Vec<(String, ToolAggStats)>,
     pub compact_history: Vec<CompactRecord>,
+    /// Latest context budget snapshot (estimated tokens, budget tokens).
+    /// Used to render budget usage in the run summary.
+    pub last_context_budget: Option<(usize, usize)>,
 }
 
 // ---------------------------------------------------------------------------

@@ -571,19 +571,9 @@ fn map_agent_event(
 
         bend_engine::AgentEvent::ContextCompactionEnd { stats, messages } => {
             let compacted_transcripts = from_agent_messages(messages);
-            let before_tool_details: Vec<(String, usize)> = stats
-                .before_tool_details
-                .iter()
-                .map(|d| (d.tool_name.clone(), d.tokens))
-                .collect();
-            let after_tool_details: Vec<(String, usize)> = stats
-                .after_tool_details
-                .iter()
-                .map(|d| (d.tool_name.clone(), d.tokens))
-                .collect();
 
-            let result_stats = if stats.level > 0 {
-                crate::types::CompactionResultStats::LevelCompacted {
+            let result = if stats.level > 0 {
+                crate::types::CompactionResult::LevelCompacted {
                     level: stats.level,
                     before_message_count: stats.before_message_count,
                     after_message_count: stats.after_message_count,
@@ -595,7 +585,7 @@ fn map_agent_event(
                     actions: stats
                         .actions
                         .iter()
-                        .map(|a| crate::types::CompactionActionStats {
+                        .map(|a| crate::types::CompactionAction {
                             index: a.index,
                             tool_name: a.tool_name.clone(),
                             method: format!("{:?}", a.method),
@@ -607,7 +597,7 @@ fn map_agent_event(
                         .collect(),
                 }
             } else if stats.current_run_cleared > 0 {
-                crate::types::CompactionResultStats::RunOnceCleared {
+                crate::types::CompactionResult::RunOnceCleared {
                     cleared_count: stats.current_run_cleared,
                     before_estimated_tokens: stats.before_estimated_tokens,
                     after_estimated_tokens: stats.after_estimated_tokens,
@@ -616,46 +606,7 @@ fn map_agent_event(
                         .saturating_sub(stats.after_estimated_tokens),
                 }
             } else {
-                crate::types::CompactionResultStats::NoOp
-            };
-
-            let result_public = if stats.level > 0 {
-                crate::agent::event::CompactionResult::LevelCompacted {
-                    level: stats.level,
-                    before_message_count: stats.before_message_count,
-                    after_message_count: stats.after_message_count,
-                    before_estimated_tokens: stats.before_estimated_tokens,
-                    after_estimated_tokens: stats.after_estimated_tokens,
-                    tool_outputs_truncated: stats.tool_outputs_truncated,
-                    turns_summarized: stats.turns_summarized,
-                    messages_dropped: stats.messages_dropped,
-                    before_tool_details,
-                    after_tool_details,
-                    actions: stats
-                        .actions
-                        .iter()
-                        .map(|a| crate::agent::event::CompactionActionInfo {
-                            index: a.index,
-                            tool_name: a.tool_name.clone(),
-                            method: format!("{:?}", a.method),
-                            before_tokens: a.before_tokens,
-                            after_tokens: a.after_tokens,
-                            end_index: a.end_index,
-                            related_count: a.related_count,
-                        })
-                        .collect(),
-                }
-            } else if stats.current_run_cleared > 0 {
-                crate::agent::event::CompactionResult::RunOnceCleared {
-                    cleared_count: stats.current_run_cleared,
-                    before_estimated_tokens: stats.before_estimated_tokens,
-                    after_estimated_tokens: stats.after_estimated_tokens,
-                    saved_tokens: stats
-                        .before_estimated_tokens
-                        .saturating_sub(stats.after_estimated_tokens),
-                }
-            } else {
-                crate::agent::event::CompactionResult::NoOp
+                crate::types::CompactionResult::NoOp
             };
 
             vec![
@@ -665,13 +616,11 @@ fn map_agent_event(
                 },
                 RuntimeEvent::Transcript(
                     TranscriptStats::ContextCompactionCompleted(ContextCompactionCompletedStats {
-                        result: result_stats,
+                        result: result.clone(),
                     })
                     .to_item(),
                 ),
-                RuntimeEvent::Public(RunEventPayload::ContextCompactionCompleted {
-                    result: result_public,
-                }),
+                RuntimeEvent::Public(RunEventPayload::ContextCompactionCompleted { result }),
             ]
         }
     }

@@ -11,16 +11,6 @@ use super::matching::MatchError;
 use super::normalize;
 use crate::types::*;
 
-/// Truncate a string for preview display, collapsing newlines.
-fn truncate_preview(s: &str, max: usize) -> String {
-    let collapsed: String = s.chars().map(|c| if c == '\n' { ' ' } else { c }).collect();
-    if collapsed.len() <= max {
-        collapsed
-    } else {
-        format!("{}…", &collapsed[..max])
-    }
-}
-
 /// Surgical file editing via exact text search/replace.
 pub struct EditFileTool {
     disallow_message: Option<String>,
@@ -97,11 +87,7 @@ impl AgentTool for EditFileTool {
 
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
         let path = params["path"].as_str()?;
-        let old_text = params["old_text"].as_str().unwrap_or("");
-        let new_text = params["new_text"].as_str().unwrap_or("");
-        let old_short = truncate_preview(old_text, 40);
-        let new_short = truncate_preview(new_text, 40);
-        Some(format!("sed -i 's/{old_short}/{new_short}/' {path}"))
+        Some(format!("sed -i 's/<old>/<new>/' {path}"))
     }
 
     fn is_concurrency_safe(&self) -> bool {

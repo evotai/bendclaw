@@ -5,54 +5,9 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::types::AssistantBlock;
+use crate::types::CompactionResult;
 use crate::types::LlmCallMetrics;
 use crate::types::UsageSummary;
-
-// ---------------------------------------------------------------------------
-// Compaction action info for REPL display
-// ---------------------------------------------------------------------------
-
-/// Per-action compaction detail.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompactionActionInfo {
-    pub index: usize,
-    pub tool_name: String,
-    pub method: String,
-    pub before_tokens: usize,
-    pub after_tokens: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub related_count: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum CompactionResult {
-    NoOp,
-    RunOnceCleared {
-        cleared_count: usize,
-        before_estimated_tokens: usize,
-        after_estimated_tokens: usize,
-        saved_tokens: usize,
-    },
-    LevelCompacted {
-        level: u8,
-        before_message_count: usize,
-        after_message_count: usize,
-        before_estimated_tokens: usize,
-        after_estimated_tokens: usize,
-        tool_outputs_truncated: usize,
-        turns_summarized: usize,
-        messages_dropped: usize,
-        #[serde(default)]
-        before_tool_details: Vec<(String, usize)>,
-        #[serde(default)]
-        after_tool_details: Vec<(String, usize)>,
-        #[serde(default)]
-        actions: Vec<CompactionActionInfo>,
-    },
-}
 
 // ---------------------------------------------------------------------------
 // RunEventPayload — strongly typed event payload

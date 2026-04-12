@@ -329,6 +329,7 @@ fn make_summary_data() -> RunSummaryData {
             before_tokens: 320000,
             after_tokens: 180000,
         }],
+        last_context_budget: Some((180000, 200000)),
     }
 }
 
@@ -504,4 +505,81 @@ fn format_run_summary_tool_bars_align_with_parent_rows() {
             "sub-tool bar at col {pos} is before parent bar at col {parent_bar_pos}"
         );
     }
+}
+
+#[test]
+fn format_run_summary_shows_level0_compact() {
+    let mut data = make_summary_data();
+    data.compact_history = vec![
+        CompactRecord {
+            level: 0,
+            before_tokens: 50000,
+            after_tokens: 45000,
+        },
+        CompactRecord {
+            level: 1,
+            before_tokens: 320000,
+            after_tokens: 180000,
+        },
+    ];
+    let lines = format_run_summary(&data);
+    let all = lines.join("\n");
+    assert!(
+        all.contains("2 compactions"),
+        "should count both compactions"
+    );
+    assert!(
+        all.contains("run-once"),
+        "should show run-once label for level 0"
+    );
+    assert!(all.contains("lv1"), "should still show level 1");
+}
+
+#[test]
+fn format_run_summary_shows_only_level0_compact() {
+    let mut data = make_summary_data();
+    data.compact_history = vec![CompactRecord {
+        level: 0,
+        before_tokens: 60000,
+        after_tokens: 55000,
+    }];
+    let lines = format_run_summary(&data);
+    let all = lines.join("\n");
+    assert!(
+        all.contains("compact"),
+        "should show compact block for level 0"
+    );
+    assert!(all.contains("run-once"), "should show run-once label");
+    assert!(all.contains("saved 5k"), "should show saved tokens");
+}
+
+#[test]
+fn format_run_summary_contains_budget_usage() {
+    let data = make_summary_data();
+    let lines = format_run_summary(&data);
+    let all = lines.join("\n");
+    assert!(
+        all.contains("context"),
+        "should contain context budget line, got:\n{all}"
+    );
+    assert!(
+        all.contains("90%"),
+        "should contain budget percentage, got:\n{all}"
+    );
+    assert!(
+        all.contains("200k"),
+        "should contain budget size, got:\n{all}"
+    );
+}
+
+#[test]
+fn format_run_summary_no_budget_when_none() {
+    let mut data = make_summary_data();
+    data.last_context_budget = None;
+    let lines = format_run_summary(&data);
+    let all = lines.join("\n");
+    assert!(
+        !all.contains("context"),
+        "should not contain context when budget is None, got:\n{all}"
+    );
 }

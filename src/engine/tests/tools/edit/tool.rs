@@ -48,8 +48,7 @@ fn test_edit_file_preview_command() {
     let cmd = tool.preview_command(&params).unwrap();
     assert!(cmd.starts_with("sed -i"));
     assert!(cmd.contains("/tmp/foo.rs"));
-    assert!(cmd.contains("old_code"));
-    assert!(cmd.contains("new_code"));
+    assert!(cmd.contains("<old>/<new>"));
 }
 
 #[test]

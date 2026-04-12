@@ -28,6 +28,8 @@ pub struct StatsAggregator {
     pub llm_output_tokens: Vec<u64>,
     pub tool_stats: HashMap<String, ToolAggStats>,
     pub compact_history: Vec<CompactRecord>,
+    /// Latest context budget snapshot (estimated_tokens, budget_tokens).
+    pub last_context_budget: Option<(usize, usize)>,
     // Run-level summary (from RunFinished stats)
     pub run_duration_ms: Option<u64>,
     pub run_usage: Option<UsageSummary>,
@@ -68,11 +70,11 @@ impl StatsAggregator {
                     entry.errors += 1;
                 }
             }
-            TranscriptStats::ContextCompactionStarted(_) => {
-                // No aggregation needed for started events.
+            TranscriptStats::ContextCompactionStarted(s) => {
+                self.last_context_budget = Some((s.estimated_tokens, s.budget_tokens));
             }
             TranscriptStats::ContextCompactionCompleted(s) => match &s.result {
-                crate::types::CompactionResultStats::LevelCompacted {
+                crate::types::CompactionResult::LevelCompacted {
                     level,
                     before_estimated_tokens,
                     after_estimated_tokens,
@@ -84,7 +86,7 @@ impl StatsAggregator {
                         after_tokens: *after_estimated_tokens,
                     });
                 }
-                crate::types::CompactionResultStats::RunOnceCleared {
+                crate::types::CompactionResult::RunOnceCleared {
                     before_estimated_tokens,
                     after_estimated_tokens,
                     ..
@@ -95,7 +97,7 @@ impl StatsAggregator {
                         after_tokens: *after_estimated_tokens,
                     });
                 }
-                crate::types::CompactionResultStats::NoOp => {}
+                crate::types::CompactionResult::NoOp => {}
             },
             TranscriptStats::RunFinished(s) => {
                 self.run_duration_ms = Some(s.duration_ms);
@@ -130,6 +132,7 @@ impl StatsAggregator {
             llm_output_tokens: std::mem::take(&mut self.llm_output_tokens),
             tool_stats,
             compact_history: std::mem::take(&mut self.compact_history),
+            last_context_budget: self.last_context_budget.take(),
         }
     }
 

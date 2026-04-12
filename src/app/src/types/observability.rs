@@ -56,7 +56,7 @@ pub struct ContextCompactionStartedStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompactionActionStats {
+pub struct CompactionAction {
     pub index: usize,
     pub tool_name: String,
     pub method: String,
@@ -70,7 +70,7 @@ pub struct CompactionActionStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum CompactionResultStats {
+pub enum CompactionResult {
     NoOp,
     RunOnceCleared {
         cleared_count: usize,
@@ -88,13 +88,13 @@ pub enum CompactionResultStats {
         turns_summarized: usize,
         messages_dropped: usize,
         #[serde(default)]
-        actions: Vec<CompactionActionStats>,
+        actions: Vec<CompactionAction>,
     },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextCompactionCompletedStats {
-    pub result: CompactionResultStats,
+    pub result: CompactionResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

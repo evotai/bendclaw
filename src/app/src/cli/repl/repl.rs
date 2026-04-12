@@ -561,6 +561,12 @@ impl Repl {
             .iter()
             .map(|session| {
                 let scope_marker = if session.cwd == self.cwd { "*" } else { " " };
+                let context_info = if session.context_budget > 0 {
+                    let pct = session.context_tokens as f64 / session.context_budget as f64 * 100.0;
+                    format!("  ctx {pct:.0}%")
+                } else {
+                    String::new()
+                };
                 SelectorOption {
                     id: session.session_id.clone(),
                     primary: format!(
@@ -568,10 +574,12 @@ impl Repl {
                         summarize_title(session.title.as_deref().unwrap_or("Untitled session"))
                     ),
                     secondary: format!(
-                        "{}  {}  {} turns  {}",
+                        "{}  {}  {} turns  {} msgs{}  {}",
                         short_id(&session.session_id),
                         relative_time(&session.updated_at),
                         session.turns,
+                        session.message_count,
+                        context_info,
                         session.model
                     ),
                 }

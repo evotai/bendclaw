@@ -15,6 +15,15 @@ pub struct SessionMeta {
     pub model: String,
     pub title: Option<String>,
     pub turns: u32,
+    /// Number of context messages at last save.
+    #[serde(default)]
+    pub message_count: u32,
+    /// Estimated context tokens at last save.
+    #[serde(default)]
+    pub context_tokens: usize,
+    /// Context budget (window − system prompt) at last save.
+    #[serde(default)]
+    pub context_budget: usize,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -28,6 +37,9 @@ impl SessionMeta {
             model,
             title: None,
             turns: 0,
+            message_count: 0,
+            context_tokens: 0,
+            context_budget: 0,
             created_at: now.clone(),
             updated_at: now,
         }

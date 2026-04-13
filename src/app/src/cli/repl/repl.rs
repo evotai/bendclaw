@@ -276,6 +276,9 @@ impl Repl {
                     self.run_log_side_conversation(query).await?;
                 }
             }
+            s if s.starts_with("/skill") => {
+                super::skill_cmd::handle_skill_command(s)?;
+            }
             _ => {
                 eprintln!("{RED}  unknown command: {input}{RESET}");
                 eprintln!("{DIM}  type /help for available commands{RESET}\n");

@@ -16,6 +16,8 @@ export interface UIMessage {
   text: string
   timestamp: number
   toolCalls?: UIToolCall[]
+  /** Run stats attached to the final assistant message of a run */
+  runStats?: RunStats
 }
 
 export interface UIToolCall {
@@ -29,6 +31,49 @@ export interface UIToolCall {
 }
 
 // ---------------------------------------------------------------------------
+// Run stats — accumulated during a run, shown in verbose mode
+// ---------------------------------------------------------------------------
+
+export interface RunStats {
+  durationMs: number
+  turnCount: number
+  toolCallCount: number
+  toolErrorCount: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  llmCalls: number
+  contextTokens: number
+  contextWindow: number
+  toolBreakdown: ToolBreakdownEntry[]
+}
+
+export interface ToolBreakdownEntry {
+  name: string
+  count: number
+  totalDurationMs: number
+  errors: number
+}
+
+function emptyRunStats(): RunStats {
+  return {
+    durationMs: 0,
+    turnCount: 0,
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    llmCalls: 0,
+    contextTokens: 0,
+    contextWindow: 0,
+    toolBreakdown: [],
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
 
@@ -39,11 +84,16 @@ export interface AppState {
   model: string
   cwd: string
   error: string | null
+  verbose: boolean
   currentStreamText: string
   currentThinkingText: string
   activeToolCalls: Map<string, UIToolCall>
   /** Accumulated tool calls for the current turn, merged into assistant_completed */
   turnToolCalls: UIToolCall[]
+  /** Stats accumulated during the current run */
+  currentRunStats: RunStats
+  /** Start time of the current run */
+  runStartTime: number
 }
 
 export function createInitialState(model: string, cwd: string): AppState {
@@ -54,10 +104,13 @@ export function createInitialState(model: string, cwd: string): AppState {
     model,
     cwd,
     error: null,
+    verbose: false,
     currentStreamText: '',
     currentThinkingText: '',
     activeToolCalls: new Map(),
     turnToolCalls: [],
+    currentRunStats: emptyRunStats(),
+    runStartTime: 0,
   }
 }
 
@@ -80,6 +133,8 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         currentThinkingText: '',
         activeToolCalls: new Map(),
         turnToolCalls: [],
+        currentRunStats: emptyRunStats(),
+        runStartTime: Date.now(),
       }
 
     case 'turn_started':
@@ -88,6 +143,10 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         currentStreamText: '',
         currentThinkingText: '',
         turnToolCalls: [],
+        currentRunStats: {
+          ...state.currentRunStats,
+          turnCount: state.currentRunStats.turnCount + 1,
+        },
       }
 
     case 'assistant_delta': {
@@ -107,7 +166,6 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         .map((b: any) => b.text)
       const text = textParts.join('') || state.currentStreamText
 
-      // Merge accumulated tool calls from this turn
       const toolCalls = state.turnToolCalls.length > 0
         ? state.turnToolCalls
         : undefined
@@ -146,28 +204,53 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     case 'tool_finished': {
       const id = p.tool_call_id as string
       const isError = !!p.is_error
+      const toolName = p.tool_name ?? state.activeToolCalls.get(id)?.name ?? 'unknown'
+      const durationMs = (p.duration_ms as number) ?? 0
+
       const finished: UIToolCall = {
         id,
-        name: p.tool_name ?? state.activeToolCalls.get(id)?.name ?? 'unknown',
+        name: toolName,
         args: state.activeToolCalls.get(id)?.args ?? {},
         status: isError ? 'error' : 'done',
         result: p.content,
         previewCommand: state.activeToolCalls.get(id)?.previewCommand,
-        durationMs: p.duration_ms,
+        durationMs,
       }
 
       const newMap = new Map(state.activeToolCalls)
       newMap.delete(id)
 
+      // Update run stats
+      const stats = { ...state.currentRunStats }
+      stats.toolCallCount++
+      if (isError) stats.toolErrorCount++
+
+      // Update tool breakdown
+      const breakdown = [...stats.toolBreakdown]
+      const existing = breakdown.find((e) => e.name === toolName)
+      if (existing) {
+        existing.count++
+        existing.totalDurationMs += durationMs
+        if (isError) existing.errors++
+      } else {
+        breakdown.push({
+          name: toolName,
+          count: 1,
+          totalDurationMs: durationMs,
+          errors: isError ? 1 : 0,
+        })
+      }
+      stats.toolBreakdown = breakdown
+
       return {
         ...state,
         activeToolCalls: newMap,
         turnToolCalls: [...state.turnToolCalls, finished],
+        currentRunStats: stats,
       }
     }
 
     case 'tool_progress': {
-      // Update the preview text for a running tool
       const id = p.tool_call_id as string
       const existing = state.activeToolCalls.get(id)
       if (!existing) return state
@@ -176,12 +259,43 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       return { ...state, activeToolCalls: newMap }
     }
 
-    case 'run_finished':
+    case 'llm_call_completed': {
+      const usage = p.usage as Record<string, any> | undefined
+      const stats = { ...state.currentRunStats }
+      stats.llmCalls++
+      if (usage) {
+        stats.inputTokens += (usage.input_tokens as number) ?? 0
+        stats.outputTokens += (usage.output_tokens as number) ?? 0
+        stats.cacheReadTokens += (usage.cache_read as number) ?? 0
+        stats.cacheWriteTokens += (usage.cache_write as number) ?? 0
+      }
+      return { ...state, currentRunStats: stats }
+    }
+
+    case 'run_finished': {
+      const stats = {
+        ...state.currentRunStats,
+        durationMs: Date.now() - state.runStartTime,
+        turnCount: (p.turn_count as number) ?? state.currentRunStats.turnCount,
+      }
+
+      // Attach stats to the last assistant message
+      const messages = [...state.messages]
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i]!.role === 'assistant') {
+          messages[i] = { ...messages[i]!, runStats: stats }
+          break
+        }
+      }
+
       return {
         ...state,
+        messages,
         isLoading: false,
         activeToolCalls: new Map(),
+        currentRunStats: stats,
       }
+    }
 
     case 'error':
       return {

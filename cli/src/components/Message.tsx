@@ -1,5 +1,6 @@
 /**
  * Message display component — renders a single message in the conversation.
+ * In verbose mode, shows additional detail for tool calls.
  */
 
 import React from 'react'
@@ -8,32 +9,33 @@ import type { UIMessage, UIToolCall } from '../state/AppState.js'
 
 interface MessageProps {
   message: UIMessage
+  verbose?: boolean
 }
 
-export function Message({ message }: MessageProps) {
+export function Message({ message, verbose = false }: MessageProps) {
   if (message.role === 'user') {
     return <UserMessage message={message} />
   }
-  return <AssistantMessage message={message} />
+  return <AssistantMessage message={message} verbose={verbose} />
 }
 
-function UserMessage({ message }: MessageProps) {
+function UserMessage({ message }: { message: UIMessage }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text bold color="yellow">{'> '}</Text>
+        <Text bold color="yellow">{'❯ '}</Text>
         <Text bold>{message.text}</Text>
       </Box>
     </Box>
   )
 }
 
-function AssistantMessage({ message }: MessageProps) {
+function AssistantMessage({ message, verbose }: { message: UIMessage; verbose: boolean }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       {/* Tool call results */}
       {message.toolCalls?.map((tc) => (
-        <ToolCallResult key={tc.id} tool={tc} />
+        <ToolCallResult key={tc.id} tool={tc} verbose={verbose} />
       ))}
 
       {/* Assistant text */}
@@ -46,27 +48,37 @@ function AssistantMessage({ message }: MessageProps) {
   )
 }
 
-function ToolCallResult({ tool }: { tool: UIToolCall }) {
+function ToolCallResult({ tool, verbose }: { tool: UIToolCall; verbose: boolean }) {
   const icon = tool.status === 'error' ? '✗' : '✓'
   const color = tool.status === 'error' ? 'red' : 'green'
   const detail = formatToolSummary(tool)
 
   return (
-    <Box>
-      <Text color={color}>{icon} </Text>
-      <Text color={color}>{tool.name}</Text>
-      {detail && <Text dimColor> {detail}</Text>}
-      {tool.durationMs !== undefined && (
-        <Text dimColor> ({tool.durationMs}ms)</Text>
+    <Box flexDirection="column">
+      <Box>
+        <Text color={color}>{icon} </Text>
+        <Text color={color} bold>{tool.name}</Text>
+        {detail && <Text dimColor> {detail}</Text>}
+        {tool.durationMs !== undefined && (
+          <Text dimColor> ({tool.durationMs}ms)</Text>
+        )}
+      </Box>
+
+      {/* Verbose: show tool result preview */}
+      {verbose && tool.result && (
+        <Box marginLeft={2} marginBottom={0}>
+          <Text dimColor>
+            {truncateResult(tool.result, tool.status === 'error' ? 200 : 120)}
+          </Text>
+        </Box>
       )}
     </Box>
   )
 }
 
 function formatToolSummary(tool: UIToolCall): string {
-  // Show a compact summary of what the tool did
   if (tool.result && tool.status === 'error') {
-    return truncate(tool.result, 100)
+    return truncate(tool.result.split('\n')[0] ?? '', 100)
   }
 
   const args = tool.args
@@ -82,8 +94,21 @@ function formatToolSummary(tool: UIToolCall): string {
 }
 
 function truncate(s: string, max: number): string {
-  // Collapse to single line and truncate
   const oneLine = s.replace(/\n/g, ' ').trim()
   if (oneLine.length <= max) return oneLine
   return oneLine.slice(0, max - 1) + '…'
+}
+
+function truncateResult(s: string, maxChars: number): string {
+  const lines = s.split('\n')
+  let result = ''
+  for (const line of lines) {
+    if (result.length + line.length > maxChars) {
+      result += '…'
+      break
+    }
+    if (result.length > 0) result += '\n'
+    result += line
+  }
+  return result
 }

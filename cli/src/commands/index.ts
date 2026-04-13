@@ -18,6 +18,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/plan', description: 'Enter planning mode (read-only tools)', handler: 'builtin' },
   { name: '/act', description: 'Exit planning mode (full tools)', handler: 'builtin' },
   { name: '/clear', description: 'Clear message display', handler: 'builtin' },
+  { name: '/verbose', aliases: ['/v'], description: 'Toggle verbose mode (run stats)', handler: 'builtin' },
   { name: '/exit', aliases: ['/quit', '/q'], description: 'Exit the REPL', handler: 'builtin' },
 ]
 

@@ -11,8 +11,8 @@ import { Message } from '../components/Message.js'
 import { Spinner } from '../components/Spinner.js'
 import { PromptInput } from '../components/PromptInput.js'
 import { StreamingText } from '../components/StreamingText.js'
-import { StatusLine } from '../components/StatusLine.js'
 import { ToolCallDisplay } from '../components/ToolCallDisplay.js'
+import { RunSummary } from '../components/RunSummary.js'
 import { isSlashCommand, resolveCommand, formatHelp } from '../commands/index.js'
 
 interface REPLProps {
@@ -52,16 +52,13 @@ export function REPL({ agent }: REPLProps) {
 
   const handleSubmit = useCallback(
     (text: string) => {
-      // Clear system messages on new input
       setSystemMessages([])
 
-      // Handle slash commands
       if (isSlashCommand(text)) {
         handleSlashCommand(text, agent, state, setState, setSystemMessages, exit)
         return
       }
 
-      // Add user message
       const userMsg: UIMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
@@ -100,9 +97,18 @@ export function REPL({ agent }: REPLProps) {
     }
   }, [exit])
 
+  const handleToggleVerbose = useCallback(() => {
+    setState((prev) => ({ ...prev, verbose: !prev.verbose }))
+  }, [])
+
   const hasStreamText = state.currentStreamText.length > 0
   const hasThinkingText = state.currentThinkingText.length > 0
   const hasActiveTools = state.activeToolCalls.size > 0
+
+  // Find the last run stats for display
+  const lastRunStats = state.verbose
+    ? [...state.messages].reverse().find((m) => m.runStats)?.runStats
+    : undefined
 
   return (
     <Box flexDirection="column" padding={0}>
@@ -110,7 +116,13 @@ export function REPL({ agent }: REPLProps) {
 
       {/* Message history */}
       {state.messages.map((msg) => (
-        <Message key={msg.id} message={msg} />
+        <React.Fragment key={msg.id}>
+          <Message message={msg} verbose={state.verbose} />
+          {/* Show run summary after the last assistant message of each run */}
+          {state.verbose && msg.runStats && (
+            <RunSummary stats={msg.runStats} />
+          )}
+        </React.Fragment>
       ))}
 
       {/* Streaming response */}
@@ -138,30 +150,27 @@ export function REPL({ agent }: REPLProps) {
         </Box>
       )}
 
-      {/* System messages (from slash commands) */}
+      {/* System messages */}
       {systemMessages.map((msg, i) => (
-        <Box key={i} marginBottom={0}>
-          <Text color={msg.level === 'error' ? 'red' : msg.level === 'warn' ? 'yellow' : undefined} dimColor={msg.level === 'info'}>
+        <Box key={i}>
+          <Text
+            color={msg.level === 'error' ? 'red' : msg.level === 'warn' ? 'yellow' : undefined}
+            dimColor={msg.level === 'info'}
+          >
             {msg.text}
           </Text>
         </Box>
       ))}
       {systemMessages.length > 0 && <Text>{''}</Text>}
 
-      {/* Prompt input */}
+      {/* Prompt input with bordered box + footer */}
       <PromptInput
         model={state.model}
         isLoading={state.isLoading}
+        verbose={state.verbose}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
-      />
-
-      {/* Status line */}
-      <StatusLine
-        sessionId={state.sessionId}
-        model={state.model}
-        cwd={state.cwd}
-        messageCount={state.messages.length}
+        onToggleVerbose={handleToggleVerbose}
       />
     </Box>
   )
@@ -247,6 +256,13 @@ async function handleSlashCommand(
       break
     }
 
+    case '/verbose': {
+      setState((prev) => ({ ...prev, verbose: !prev.verbose }))
+      const newVerbose = !state.verbose
+      pushSystem(setSystem, 'info', `Verbose mode ${newVerbose ? 'on' : 'off'}`)
+      break
+    }
+
     case '/resume': {
       try {
         const sessions = await agent.listSessions(20)
@@ -256,7 +272,6 @@ async function handleSlashCommand(
         }
 
         if (args.trim()) {
-          // Resume specific session by prefix
           const prefix = args.trim()
           const matches = sessions.filter(
             (s) => s.session_id === prefix || s.session_id.startsWith(prefix)
@@ -275,7 +290,6 @@ async function handleSlashCommand(
             pushSystem(setSystem, 'info', `Resumed session ${session.session_id.slice(0, 8)} — ${session.title || '(untitled)'}`)
           }
         } else {
-          // List recent sessions
           const lines = sessions.slice(0, 10).map((s) => {
             const id = s.session_id.slice(0, 8)
             const title = s.title || '(untitled)'
@@ -355,7 +369,7 @@ function Banner({ model, cwd }: { model: string; cwd: string }) {
       </Box>
       <Box>
         <Text dimColor>
-          Type a message to start. /help for commands. Ctrl+C to exit.
+          /help for commands · Ctrl+L toggle verbose · Ctrl+C exit
         </Text>
       </Box>
     </Box>

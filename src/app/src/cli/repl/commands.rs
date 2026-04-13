@@ -1,7 +1,7 @@
 use super::completion::CompletionState;
 
 pub const KNOWN_COMMANDS: &[&str] = &[
-    "/help", "/resume", "/new", "/model", "/plan", "/act", "/env", "/log",
+    "/help", "/resume", "/new", "/model", "/plan", "/act", "/env", "/log", "/skill",
 ];
 
 // ---------------------------------------------------------------------------
@@ -84,6 +84,7 @@ pub fn command_short_description(cmd: &str) -> Option<&'static str> {
         "act" => Some("return to normal action mode"),
         "env" => Some("manage variables"),
         "log" => Some("analyze session log in a side conversation"),
+        "skill" => Some("manage skills"),
         _ => None,
     }
 }
@@ -113,6 +114,9 @@ pub fn command_help(cmd: &str) -> Option<&'static str> {
         ),
         "log" => Some(
             "/log [question] - Analyze the current session log.\n\nWithout an argument it shows the log file path.\nWith a question it opens a side conversation for log analysis.\nType /done to return to the main session.",
+        ),
+        "skill" => Some(
+            "/skill - Manage skills.\n\nUsage:\n  /skill              List installed skills\n  /skill list          Same as /skill\n  /skill install <src> Install from GitHub (owner/repo or full URL)\n  /skill remove <name> Remove an installed skill\n\nExamples:\n  /skill install databendlabs/bendskills\n  /skill install https://github.com/databendlabs/bendskills/tree/main/skills/feishu\n  /skill remove feishu",
         ),
         _ => None,
     }
@@ -159,6 +163,14 @@ pub fn command_arg_completions(cmd: &str, arg_part: &str, state: &CompletionStat
             .filter(|session_id| session_id.starts_with(arg_part))
             .cloned()
             .collect(),
+        "/skill" => {
+            let subcmds = ["install", "list", "remove"];
+            subcmds
+                .iter()
+                .filter(|s| s.starts_with(&partial))
+                .map(|s| s.to_string())
+                .collect()
+        }
         _ => Vec::new(),
     }
 }

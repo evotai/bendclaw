@@ -181,7 +181,7 @@ fn preview_command_shows_skill_name() {
     let params = serde_json::json!({ "skill_name": "weather" });
     assert_eq!(
         tool.preview_command(&params),
-        Some("loading skill: weather".into())
+        Some("loading skill: weather (/test/skills/weather)".into())
     );
 }
 

@@ -64,7 +64,14 @@ impl AgentTool for SkillTool {
 
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
         let name = normalize_name(params.get("skill_name").and_then(|v| v.as_str())?);
-        Some(format!("loading skill: {name}"))
+        match self.skills.find(name) {
+            Some(skill) => Some(format!(
+                "loading skill: {} ({})",
+                name,
+                skill.base_dir.display()
+            )),
+            None => Some(format!("loading skill: {name}")),
+        }
     }
 
     async fn execute(

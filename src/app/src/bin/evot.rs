@@ -1,4 +1,3 @@
-use bend_base::logx;
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
@@ -20,14 +19,13 @@ fn main() -> anyhow::Result<()> {
 
         tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
-        logx!(
-            info,
-            "app",
-            "started",
-            msg = "build info",
+        tracing::info!(
+            stage = "app",
+            status = "started",
             git_sha = env!("EVOT_GIT_SHA"),
             git_branch = env!("EVOT_GIT_BRANCH"),
             build_timestamp = env!("EVOT_BUILD_TIMESTAMP"),
+            "build info",
         );
     }
 

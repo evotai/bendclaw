@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bend_base::logx;
 use bend_engine::tools::*;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
@@ -292,10 +291,9 @@ impl Agent {
         let run_id = crate::types::new_id();
         let llm = self.llm.read().clone();
 
-        logx!(
-            info,
-            "run",
-            "started",
+        tracing::info!(
+            stage = "run",
+            status = "started",
             run_id = %run_id,
             session_id = %session_id,
             provider = ?llm.provider,

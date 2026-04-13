@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use bend_base::logx;
 use tokio::sync::mpsc;
 
 use super::convert::assistant_blocks_from_content;
@@ -181,10 +180,9 @@ pub(super) async fn run_loop(
             }
             RuntimeEvent::TurnEnded => {
                 if let Err(e) = flush(&session, &run_transcripts, &mut saved_count).await {
-                    logx!(
-                        error,
-                        "run",
-                        "incremental_save_failed",
+                    tracing::error!(
+                        stage = "run",
+                        status = "incremental_save_failed",
                         run_id = %run_id,
                         session_id = %session_id,
                         error = %e,
@@ -209,10 +207,9 @@ pub(super) async fn run_loop(
                 run_transcripts.push(stats.to_item());
 
                 if let Err(e) = flush(&session, &run_transcripts, &mut saved_count).await {
-                    logx!(
-                        error,
-                        "run",
-                        "transcript_save_failed",
+                    tracing::error!(
+                        stage = "run",
+                        status = "transcript_save_failed",
                         run_id = %run_id,
                         session_id = %session_id,
                         error = %e,
@@ -244,10 +241,9 @@ pub(super) async fn run_loop(
 
     let _ = session.save().await;
 
-    logx!(
-        info,
-        "run",
-        "finished",
+    tracing::info!(
+        stage = "run",
+        status = "finished",
         run_id = %run_id,
         session_id = %session_id,
         elapsed_ms = started_at.elapsed().as_millis() as u64,

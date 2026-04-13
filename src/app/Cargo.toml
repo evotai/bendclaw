@@ -9,7 +9,6 @@ name = "evot"
 path = "src/bin/evot.rs"
 
 [dependencies]
-bend-base.workspace = true
 bend-engine.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true

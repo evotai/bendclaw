@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/base", "src/engine", "src/app"]
+members = ["src/engine", "src/app"]
 resolver = "2"
 
 [workspace.package]
@@ -7,7 +7,6 @@ edition = "2021"
 version = "0.1.0"
 
 [workspace.dependencies]
-bend-base = { path = "src/base" }
 bend-engine = { path = "src/engine", package = "bendengine" }
 anyhow = "1"
 async-trait = "0.1"

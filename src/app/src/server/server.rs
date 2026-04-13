@@ -8,7 +8,6 @@ use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
 use axum::Router;
-use bend_base::logx;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 
@@ -40,7 +39,7 @@ impl Server {
 
     pub async fn start(self: Arc<Self>, host: String, port: u16) -> Result<()> {
         let addr = format!("{host}:{port}");
-        logx!(info, "server", "listening", addr = %addr,);
+        tracing::info!(stage = "server", status = "listening", addr = %addr);
 
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
@@ -156,10 +155,9 @@ pub async fn start(conf: Config) -> Result<()> {
     let server = Server::new(agent);
 
     let addr = format!("{}:{}", conf.server.host, conf.server.port);
-    logx!(
-        info,
-        "server",
-        "configured",
+    tracing::info!(
+        stage = "server",
+        status = "configured",
         addr = %addr,
         provider = ?provider,
         model = %model,

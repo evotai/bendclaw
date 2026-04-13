@@ -29,6 +29,7 @@
 
 ## 📢 News
 
+- **2026-04-13** 🔌 [Skills] Auto-load Claude Code skills.
 - **2026-04-11** 🧠 [Memory] Auto-load Claude Code memories for the current project.
 - **2026-04-10** 🎯 [Plan Mode] Add `ask_user` tool for interactive option selection.
 - **2026-04-10** 🌐 [Web Fetch] SPA support via headless Chrome fallback.
@@ -75,11 +76,13 @@ BENDCLAW_LLM_PROVIDER=anthropic
 
 # Anthropic
 BENDCLAW_ANTHROPIC_API_KEY=sk-ant-...
-BENDCLAW_ANTHROPIC_MODEL=claude-sonnet-4-20250514
+BENDCLAW_ANTHROPIC_BASE_URL=https://your-api-endpoint.com
+BENDCLAW_ANTHROPIC_MODEL=claude-opus-4-6
 
 # OpenAI
 BENDCLAW_OPENAI_API_KEY=sk-...
-BENDCLAW_OPENAI_MODEL=gpt-4o
+BENDCLAW_OPENAI_BASE_URL=https://your-api-endpoint.com/v1
+BENDCLAW_OPENAI_MODEL=gpt-5.4
 ```
 
 Only the active provider's keys are required. Set `BENDCLAW_LLM_PROVIDER` to switch.

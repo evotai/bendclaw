@@ -45,8 +45,15 @@ function main() {
     process.exit(1)
   }
 
-  // Launch Ink REPL
-  const { waitUntilExit } = render(React.createElement(REPL, { agent }))
+  // Prevent SIGINT from killing the process — we handle Ctrl+C in the REPL
+  process.on('SIGINT', () => {
+    // Intentionally empty — Ink's useInput handles Ctrl+C
+  })
+
+  // Launch Ink REPL — we handle Ctrl+C ourselves for interrupt support
+  const { waitUntilExit } = render(React.createElement(REPL, { agent }), {
+    exitOnCtrlC: false,
+  })
   waitUntilExit().then(() => {
     process.exit(0)
   })

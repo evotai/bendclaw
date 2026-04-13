@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use napi::bindgen_prelude::*;
@@ -87,8 +89,12 @@ impl NapiAgent {
             .await
             .map_err(|e| Error::from_reason(format!("query failed: {e}")))?;
 
+        let sid = stream.session_id.clone();
+
         Ok(NapiQueryStream {
             inner: Mutex::new(stream),
+            cached_session_id: sid,
+            aborted: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -124,23 +130,24 @@ impl NapiAgent {
 #[napi]
 pub struct NapiQueryStream {
     inner: Mutex<bendclaw::agent::QueryStream>,
+    cached_session_id: String,
+    aborted: Arc<AtomicBool>,
 }
 
 #[napi]
 impl NapiQueryStream {
     /// Get the session ID for this query.
     #[napi(getter)]
-    pub fn session_id(&self) -> Result<String> {
-        let stream = self
-            .inner
-            .try_lock()
-            .map_err(|_| Error::from_reason("stream locked"))?;
-        Ok(stream.session_id.clone())
+    pub fn session_id(&self) -> String {
+        self.cached_session_id.clone()
     }
 
     /// Get the next event as JSON. Returns null when the stream is done.
     #[napi]
     pub async fn next(&self) -> Result<Option<String>> {
+        if self.aborted.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
         let mut stream = self.inner.lock().await;
         match stream.next().await {
             Some(event) => {
@@ -152,15 +159,15 @@ impl NapiQueryStream {
         }
     }
 
-    /// Abort the running query.
+    /// Abort the running query. Safe to call while next() is awaiting.
     #[napi]
-    pub fn abort(&self) -> Result<()> {
-        let stream = self
-            .inner
-            .try_lock()
-            .map_err(|_| Error::from_reason("stream locked"))?;
-        stream.abort();
-        Ok(())
+    pub fn abort(&self) {
+        self.aborted.store(true, Ordering::Relaxed);
+        // If we can grab the lock, abort the engine immediately.
+        // Otherwise, the next() call will see the aborted flag and return None.
+        if let Ok(stream) = self.inner.try_lock() {
+            stream.abort();
+        }
     }
 }
 

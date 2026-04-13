@@ -32,21 +32,20 @@ export function REPL({ agent }: REPLProps) {
     sessionIdRef.current = state.sessionId
   }, [state.sessionId])
 
-  // Global Ctrl+C handler during loading
+  // Interrupt handler during loading — Ctrl+C or Escape
   useInput((_ch, key) => {
-    if (key.ctrl && _ch === 'c') {
-      if (streamRef.current) {
-        streamRef.current.abort()
-        streamRef.current = null
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          currentStreamText: '',
-          currentThinkingText: '',
-          activeToolCalls: new Map(),
-        }))
-        pushSystem(setSystemMessages, 'info', 'Interrupted.')
-      }
+    const isInterrupt = (key.ctrl && _ch === 'c') || key.escape
+    if (isInterrupt && streamRef.current) {
+      streamRef.current.abort()
+      streamRef.current = null
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        currentStreamText: '',
+        currentThinkingText: '',
+        activeToolCalls: new Map(),
+      }))
+      pushSystem(setSystemMessages, 'info', 'Interrupted.')
     }
   }, { isActive: state.isLoading })
 

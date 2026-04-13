@@ -166,16 +166,33 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         .map((b: any) => b.text)
       const text = textParts.join('') || state.currentStreamText
 
-      const toolCalls = state.turnToolCalls.length > 0
-        ? state.turnToolCalls
-        : undefined
+      // Extract tool calls from content blocks (these are the LLM's requests)
+      // and merge with any already-finished tool results from turnToolCalls
+      const contentToolCalls = (content ?? [])
+        .filter((b: any) => b.type === 'tool_call')
+        .map((b: any) => {
+          // Check if we already have a finished result for this tool call
+          const finished = state.turnToolCalls.find((tc) => tc.id === b.id)
+          if (finished) return finished
+          return {
+            id: b.id as string,
+            name: b.name as string,
+            args: (b.input ?? {}) as Record<string, unknown>,
+            status: 'running' as const,
+          }
+        })
+
+      // Merge: content tool calls + any turnToolCalls not in content
+      const contentIds = new Set(contentToolCalls.map((tc) => tc.id))
+      const extraToolCalls = state.turnToolCalls.filter((tc) => !contentIds.has(tc.id))
+      const allToolCalls = [...contentToolCalls, ...extraToolCalls]
 
       const msg: UIMessage = {
         id: event.event_id,
         role: 'assistant',
         text,
         timestamp: Date.now(),
-        toolCalls,
+        toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
       }
 
       return {
@@ -246,6 +263,8 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         ...state,
         activeToolCalls: newMap,
         turnToolCalls: [...state.turnToolCalls, finished],
+        // Update tool call status in existing messages (tool_finished fires after assistant_completed)
+        messages: updateToolCallInMessages(state.messages, id, finished),
         currentRunStats: stats,
       }
     }
@@ -307,4 +326,29 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     default:
       return state
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Update a tool call's status in the message history (search from the end). */
+function updateToolCallInMessages(
+  messages: UIMessage[],
+  toolCallId: string,
+  finished: UIToolCall,
+): UIMessage[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!
+    if (!msg.toolCalls) continue
+    const idx = msg.toolCalls.findIndex((tc) => tc.id === toolCallId)
+    if (idx >= 0) {
+      const newMessages = [...messages]
+      const newToolCalls = [...msg.toolCalls]
+      newToolCalls[idx] = finished
+      newMessages[i] = { ...msg, toolCalls: newToolCalls }
+      return newMessages
+    }
+  }
+  return messages
 }

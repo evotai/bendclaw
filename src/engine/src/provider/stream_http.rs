@@ -11,7 +11,13 @@ use tracing::debug;
 
 use super::error::is_context_overflow_message;
 use super::error::ProviderError;
-use super::sse::SseEvent;
+
+/// A parsed SSE event with event type and data.
+#[derive(Debug, Clone)]
+pub struct SseEvent {
+    pub event: String,
+    pub data: String,
+}
 
 // ---------------------------------------------------------------------------
 // Response classification

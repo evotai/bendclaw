@@ -73,8 +73,8 @@ fn api_protocol_display() {
         "openai_completions"
     );
     assert_eq!(
-        ApiProtocol::GoogleGenerativeAi.to_string(),
-        "google_generative_ai"
+        ApiProtocol::BedrockConverseStream.to_string(),
+        "bedrock_converse_stream"
     );
 }
 

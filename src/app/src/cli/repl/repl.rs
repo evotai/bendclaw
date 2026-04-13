@@ -237,7 +237,12 @@ impl Repl {
             "/new" => self.start_new_session().await?,
             "/model" => self.choose_model().await?,
             s if s.starts_with("/model ") => {
-                self.set_model(s.trim_start_matches("/model ").trim())?
+                let arg = s.trim_start_matches("/model ").trim();
+                if arg == "n" {
+                    self.cycle_next_model()?;
+                } else {
+                    self.set_model(arg)?;
+                }
             }
             "/plan" => {
                 self.planning = true;
@@ -850,6 +855,18 @@ impl Repl {
             self.config.llm.provider
         );
         Ok(())
+    }
+
+    fn cycle_next_model(&mut self) -> Result<()> {
+        let models = available_models(&self.config);
+        if models.len() <= 1 {
+            println!("{DIM}  only one model available{RESET}\n");
+            return Ok(());
+        }
+        let current = self.config.active_llm().model;
+        let index = models.iter().position(|m| *m == current).unwrap_or(0);
+        let next = &models[(index + 1) % models.len()];
+        self.set_model(next)
     }
 
     async fn resolve_session_id(&self, value: &str) -> Result<String> {

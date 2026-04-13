@@ -43,7 +43,7 @@ impl StreamProvider for AnthropicProvider {
             config.model, is_oauth, url
         );
 
-        let client = crate::provider::http_client::new_client()?;
+        let client = crate::provider::error::new_client()?;
         let mut builder = client.post(&url).header("content-type", "application/json");
 
         if is_custom {

@@ -49,7 +49,7 @@ impl StreamProvider for BedrockProvider {
             ));
         }
 
-        let client = crate::provider::http_client::new_client()?;
+        let client = crate::provider::error::new_client()?;
         let mut request = client.post(&url).header("content-type", "application/json");
 
         // Add AWS auth headers. In a real implementation, this would use SigV4.

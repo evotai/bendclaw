@@ -11,10 +11,6 @@ use serde::Serialize;
 pub enum ApiProtocol {
     AnthropicMessages,
     OpenAiCompletions,
-    OpenAiResponses,
-    AzureOpenAiResponses,
-    GoogleGenerativeAi,
-    GoogleVertex,
     BedrockConverseStream,
 }
 
@@ -23,10 +19,6 @@ impl std::fmt::Display for ApiProtocol {
         match self {
             Self::AnthropicMessages => write!(f, "anthropic_messages"),
             Self::OpenAiCompletions => write!(f, "openai_completions"),
-            Self::OpenAiResponses => write!(f, "openai_responses"),
-            Self::AzureOpenAiResponses => write!(f, "azure_openai_responses"),
-            Self::GoogleGenerativeAi => write!(f, "google_generative_ai"),
-            Self::GoogleVertex => write!(f, "google_vertex"),
             Self::BedrockConverseStream => write!(f, "bedrock_converse_stream"),
         }
     }
@@ -383,23 +375,6 @@ impl ModelConfig {
             cost: CostConfig::default(),
             headers: HashMap::new(),
             compat: Some(OpenAiCompat::mistral()),
-        }
-    }
-
-    /// Create a new Google Generative AI (Gemini) model config.
-    pub fn google(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            name: name.into(),
-            api: ApiProtocol::GoogleGenerativeAi,
-            provider: "google".into(),
-            base_url: "https://generativelanguage.googleapis.com".into(),
-            reasoning: false,
-            context_window: 1_000_000,
-            max_tokens: 8192,
-            cost: CostConfig::default(),
-            headers: HashMap::new(),
-            compat: None,
         }
     }
 }

@@ -63,24 +63,15 @@ impl ProviderRegistry {
 }
 
 impl Default for ProviderRegistry {
-    /// Create a registry with all built-in providers registered.
     fn default() -> Self {
         use crate::provider::AnthropicProvider;
-        use crate::provider::AzureOpenAiProvider;
         use crate::provider::BedrockProvider;
-        use crate::provider::GoogleProvider;
-        use crate::provider::GoogleVertexProvider;
         use crate::provider::OpenAiCompatProvider;
-        use crate::provider::OpenAiResponsesProvider;
 
         let mut registry = Self::new();
         registry.register(ApiProtocol::AnthropicMessages, AnthropicProvider);
         registry.register(ApiProtocol::OpenAiCompletions, OpenAiCompatProvider);
-        registry.register(ApiProtocol::OpenAiResponses, OpenAiResponsesProvider);
-        registry.register(ApiProtocol::GoogleGenerativeAi, GoogleProvider);
-        registry.register(ApiProtocol::GoogleVertex, GoogleVertexProvider);
         registry.register(ApiProtocol::BedrockConverseStream, BedrockProvider);
-        registry.register(ApiProtocol::AzureOpenAiResponses, AzureOpenAiProvider);
 
         registry
     }

@@ -4,8 +4,6 @@ mod anthropic;
 mod bedrock;
 #[path = "provider/error.rs"]
 mod error;
-#[path = "provider/google.rs"]
-mod google;
 #[path = "provider/json_repair.rs"]
 mod json_repair;
 #[path = "provider/model.rs"]

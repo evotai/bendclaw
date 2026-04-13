@@ -149,3 +149,16 @@ fn is_overloaded_message(message: &str) -> bool {
     let lower = message.to_lowercase();
     lower.contains("overloaded_error") || lower.contains("service is overloaded")
 }
+
+// ---------------------------------------------------------------------------
+// HTTP client
+// ---------------------------------------------------------------------------
+
+const USER_AGENT: &str = "bendclaw/0.1.0";
+
+pub fn new_client() -> Result<reqwest::Client, ProviderError> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|e| ProviderError::Other(format!("Failed to build HTTP client: {e}")))
+}

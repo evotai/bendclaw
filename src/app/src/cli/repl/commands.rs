@@ -100,7 +100,7 @@ pub fn command_help(cmd: &str) -> Option<&'static str> {
             "/new - Start a fresh session without deleting stored history.",
         ),
         "model" => Some(
-            "/model [name] - Show or change the active model for the current provider.\n\nWithout an argument it opens the model selector.",
+            "/model [name|n] - Show or change the active model.\n\nWithout an argument it opens the model selector.\nUse /model n (or /m n) to cycle to the next model.",
         ),
         "plan" => Some(
             "/plan - Enter planning mode. Uses only read-only tools. Use /act to return to normal mode.",

@@ -6,6 +6,7 @@ pub mod list;
 pub mod memory;
 pub mod search;
 pub mod skill;
+pub mod validation;
 pub mod web_fetch;
 
 pub use ask_user::AskUserAnswer;

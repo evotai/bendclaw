@@ -1049,19 +1049,39 @@ async fn execute_single_tool(
     };
 
     let (result, is_error) = match tool {
-        Some(tool) => match tool.execute(args.clone(), ctx).await {
-            Ok(r) => (r, false),
-            Err(e) => (
-                ToolResult {
-                    content: vec![Content::Text {
-                        text: e.to_string(),
-                    }],
-                    details: serde_json::Value::Null,
-                    retention: Retention::Normal,
+        Some(tool) => {
+            // Schema pre-validation + type coercion (à la Claude Code / Forge Code).
+            let validated_args = crate::tools::validation::validate_and_coerce(
+                name,
+                &tool.parameters_schema(),
+                args,
+            );
+            match validated_args {
+                Err(validation_error) => (
+                    ToolResult {
+                        content: vec![Content::Text {
+                            text: crate::tools::validation::truncate_error(&validation_error),
+                        }],
+                        details: serde_json::Value::Null,
+                        retention: Retention::Normal,
+                    },
+                    true,
+                ),
+                Ok(coerced_args) => match tool.execute(coerced_args, ctx).await {
+                    Ok(r) => (r, false),
+                    Err(e) => (
+                        ToolResult {
+                            content: vec![Content::Text {
+                                text: e.to_string(),
+                            }],
+                            details: serde_json::Value::Null,
+                            retention: Retention::Normal,
+                        },
+                        true,
+                    ),
                 },
-                true,
-            ),
-        },
+            }
+        }
         None => (
             ToolResult {
                 content: vec![Content::Text {

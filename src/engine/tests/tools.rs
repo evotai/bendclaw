@@ -20,6 +20,8 @@ mod search;
 mod skill;
 #[path = "tools/tool_sets.rs"]
 mod tool_sets;
+#[path = "tools/validation.rs"]
+mod validation;
 #[path = "tools/web_fetch.rs"]
 mod web_fetch;
 

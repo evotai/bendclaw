@@ -3,8 +3,8 @@
  * Orchestrates Agent queries, event streaming, and UI rendering.
  */
 
-import React, { useState, useCallback, useRef } from 'react'
-import { Box, Text, useApp } from 'ink'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { Box, Text, useApp, useInput } from 'ink'
 import { Agent, type RunEvent, QueryStream } from '../native/index.js'
 import { type AppState, createInitialState, applyEvent, type UIMessage } from '../state/AppState.js'
 import { Message } from '../components/Message.js'
@@ -12,6 +12,7 @@ import { Spinner } from '../components/Spinner.js'
 import { PromptInput } from '../components/PromptInput.js'
 import { StreamingText } from '../components/StreamingText.js'
 import { StatusLine } from '../components/StatusLine.js'
+import { ToolCallDisplay } from '../components/ToolCallDisplay.js'
 
 interface REPLProps {
   agent: Agent
@@ -23,10 +24,35 @@ export function REPL({ agent }: REPLProps) {
     createInitialState(agent.model, agent.cwd)
   )
   const streamRef = useRef<QueryStream | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
+
+  // Keep sessionId ref in sync for use in async callbacks
+  useEffect(() => {
+    sessionIdRef.current = state.sessionId
+  }, [state.sessionId])
+
+  // Global Ctrl+C handler during loading
+  useInput((_ch, key) => {
+    if (key.ctrl && _ch === 'c') {
+      if (streamRef.current) {
+        streamRef.current.abort()
+        streamRef.current = null
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          currentStreamText: '',
+          currentThinkingText: '',
+          activeToolCalls: new Map(),
+        }))
+      } else if (!state.isLoading) {
+        exit()
+      }
+    }
+  }, { isActive: state.isLoading })
 
   const handleSubmit = useCallback(
-    async (text: string) => {
-      // Add user message
+    (text: string) => {
+      // Add user message immediately
       const userMsg: UIMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
@@ -40,26 +66,13 @@ export function REPL({ agent }: REPLProps) {
         error: null,
         currentStreamText: '',
         currentThinkingText: '',
+        activeToolCalls: new Map(),
       }))
 
-      try {
-        const stream = await agent.query(text, state.sessionId ?? undefined)
-        streamRef.current = stream
-
-        for await (const event of stream) {
-          setState((prev) => applyEvent(prev, event))
-        }
-      } catch (err: any) {
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: err?.message ?? String(err),
-        }))
-      } finally {
-        streamRef.current = null
-      }
+      // Fire-and-forget async query — state updates via setState
+      runQuery(agent, text, sessionIdRef.current, streamRef, setState)
     },
-    [agent, state.sessionId]
+    [agent]
   )
 
   const handleInterrupt = useCallback(() => {
@@ -78,6 +91,10 @@ export function REPL({ agent }: REPLProps) {
     }
   }, [exit])
 
+  const hasStreamText = state.currentStreamText.length > 0
+  const hasThinkingText = state.currentThinkingText.length > 0
+  const hasActiveTools = state.activeToolCalls.size > 0
+
   return (
     <Box flexDirection="column" padding={0}>
       {/* Banner */}
@@ -89,24 +106,21 @@ export function REPL({ agent }: REPLProps) {
       ))}
 
       {/* Streaming response */}
-      {state.isLoading && (
+      {state.isLoading && (hasStreamText || hasThinkingText) && (
         <StreamingText
           text={state.currentStreamText}
           thinkingText={state.currentThinkingText}
         />
       )}
 
-      {/* Spinner */}
-      {state.isLoading && state.currentStreamText.length === 0 && (
-        <Spinner
-          text="Thinking..."
-          activeTools={state.activeToolCalls}
-        />
+      {/* Active tool calls */}
+      {state.isLoading && hasActiveTools && (
+        <ToolCallDisplay tools={state.activeToolCalls} />
       )}
 
-      {/* Active tool calls during streaming */}
-      {state.isLoading && state.currentStreamText.length > 0 && state.activeToolCalls.size > 0 && (
-        <Spinner activeTools={state.activeToolCalls} />
+      {/* Spinner — only when waiting with no output yet */}
+      {state.isLoading && !hasStreamText && !hasThinkingText && !hasActiveTools && (
+        <Spinner text="Thinking..." />
       )}
 
       {/* Error */}
@@ -133,6 +147,35 @@ export function REPL({ agent }: REPLProps) {
       />
     </Box>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Async query runner (outside component to avoid closure issues)
+// ---------------------------------------------------------------------------
+
+async function runQuery(
+  agent: Agent,
+  text: string,
+  sessionId: string | null,
+  streamRef: React.MutableRefObject<QueryStream | null>,
+  setState: React.Dispatch<React.SetStateAction<AppState>>,
+) {
+  try {
+    const stream = await agent.query(text, sessionId ?? undefined)
+    streamRef.current = stream
+
+    for await (const event of stream) {
+      setState((prev) => applyEvent(prev, event))
+    }
+  } catch (err: any) {
+    setState((prev) => ({
+      ...prev,
+      isLoading: false,
+      error: err?.message ?? String(err),
+    }))
+  } finally {
+    streamRef.current = null
+  }
 }
 
 // ---------------------------------------------------------------------------

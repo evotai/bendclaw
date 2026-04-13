@@ -16,7 +16,6 @@ export interface UIMessage {
   text: string
   timestamp: number
   toolCalls?: UIToolCall[]
-  isStreaming?: boolean
 }
 
 export interface UIToolCall {
@@ -43,6 +42,8 @@ export interface AppState {
   currentStreamText: string
   currentThinkingText: string
   activeToolCalls: Map<string, UIToolCall>
+  /** Accumulated tool calls for the current turn, merged into assistant_completed */
+  turnToolCalls: UIToolCall[]
 }
 
 export function createInitialState(model: string, cwd: string): AppState {
@@ -56,6 +57,7 @@ export function createInitialState(model: string, cwd: string): AppState {
     currentStreamText: '',
     currentThinkingText: '',
     activeToolCalls: new Map(),
+    turnToolCalls: [],
   }
 }
 
@@ -65,7 +67,7 @@ export function createInitialState(model: string, cwd: string): AppState {
 
 export function applyEvent(state: AppState, event: RunEvent): AppState {
   const kind = event.kind
-  const p = event.payload
+  const p = event.payload as Record<string, any>
 
   switch (kind) {
     case 'run_started':
@@ -77,11 +79,20 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         currentStreamText: '',
         currentThinkingText: '',
         activeToolCalls: new Map(),
+        turnToolCalls: [],
+      }
+
+    case 'turn_started':
+      return {
+        ...state,
+        currentStreamText: '',
+        currentThinkingText: '',
+        turnToolCalls: [],
       }
 
     case 'assistant_delta': {
-      const delta = (p as any).delta as string | undefined
-      const thinkingDelta = (p as any).thinking_delta as string | undefined
+      const delta = p.delta as string | undefined
+      const thinkingDelta = p.thinking_delta as string | undefined
       return {
         ...state,
         currentStreamText: state.currentStreamText + (delta ?? ''),
@@ -90,27 +101,23 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     }
 
     case 'assistant_completed': {
-      const content = (p as any).content as any[] | undefined
+      const content = p.content as any[] | undefined
       const textParts = (content ?? [])
         .filter((b: any) => b.type === 'text')
         .map((b: any) => b.text)
       const text = textParts.join('') || state.currentStreamText
 
-      const toolCalls = (content ?? [])
-        .filter((b: any) => b.type === 'tool_call')
-        .map((b: any) => ({
-          id: b.id,
-          name: b.name,
-          args: b.input ?? {},
-          status: 'done' as const,
-        }))
+      // Merge accumulated tool calls from this turn
+      const toolCalls = state.turnToolCalls.length > 0
+        ? state.turnToolCalls
+        : undefined
 
       const msg: UIMessage = {
         id: event.event_id,
         role: 'assistant',
         text,
         timestamp: Date.now(),
-        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        toolCalls,
       }
 
       return {
@@ -118,16 +125,18 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         messages: [...state.messages, msg],
         currentStreamText: '',
         currentThinkingText: '',
+        activeToolCalls: new Map(),
+        turnToolCalls: [],
       }
     }
 
     case 'tool_started': {
       const tc: UIToolCall = {
-        id: (p as any).tool_call_id,
-        name: (p as any).tool_name,
-        args: (p as any).args ?? {},
+        id: p.tool_call_id,
+        name: p.tool_name,
+        args: p.args ?? {},
         status: 'running',
-        previewCommand: (p as any).preview_command,
+        previewCommand: p.preview_command,
       }
       const newMap = new Map(state.activeToolCalls)
       newMap.set(tc.id, tc)
@@ -135,17 +144,35 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     }
 
     case 'tool_finished': {
-      const id = (p as any).tool_call_id as string
-      const newMap = new Map(state.activeToolCalls)
-      const existing = newMap.get(id)
-      if (existing) {
-        newMap.set(id, {
-          ...existing,
-          status: (p as any).is_error ? 'error' : 'done',
-          result: (p as any).content,
-          durationMs: (p as any).duration_ms,
-        })
+      const id = p.tool_call_id as string
+      const isError = !!p.is_error
+      const finished: UIToolCall = {
+        id,
+        name: p.tool_name ?? state.activeToolCalls.get(id)?.name ?? 'unknown',
+        args: state.activeToolCalls.get(id)?.args ?? {},
+        status: isError ? 'error' : 'done',
+        result: p.content,
+        previewCommand: state.activeToolCalls.get(id)?.previewCommand,
+        durationMs: p.duration_ms,
       }
+
+      const newMap = new Map(state.activeToolCalls)
+      newMap.delete(id)
+
+      return {
+        ...state,
+        activeToolCalls: newMap,
+        turnToolCalls: [...state.turnToolCalls, finished],
+      }
+    }
+
+    case 'tool_progress': {
+      // Update the preview text for a running tool
+      const id = p.tool_call_id as string
+      const existing = state.activeToolCalls.get(id)
+      if (!existing) return state
+      const newMap = new Map(state.activeToolCalls)
+      newMap.set(id, { ...existing, previewCommand: p.text })
       return { ...state, activeToolCalls: newMap }
     }
 
@@ -160,7 +187,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       return {
         ...state,
         isLoading: false,
-        error: (p as any).message ?? 'Unknown error',
+        error: p.message ?? 'Unknown error',
       }
 
     default:

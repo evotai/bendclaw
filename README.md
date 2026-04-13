@@ -122,7 +122,7 @@ make test       # unit + integration tests
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="https://github.com/EvotAI/evot/issues"><b>GitHub Issues</b></a><br>
+      <a href="https://github.com/evotai/evot/issues"><b>GitHub Issues</b></a><br>
       <sub>Bug reports / Feature</sub>
     </td>
     <td align="center" width="33%">

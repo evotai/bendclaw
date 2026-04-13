@@ -92,6 +92,19 @@ fn parse_http_url() {
     assert_eq!(src.repo, "owner/repo");
 }
 
+#[test]
+fn parse_github_blob_url_rejected() {
+    assert!(
+        parse_github_source("https://github.com/owner/repo/blob/main/skills/feishu/SKILL.md")
+            .is_err()
+    );
+}
+
+#[test]
+fn parse_github_commit_url_rejected() {
+    assert!(parse_github_source("https://github.com/owner/repo/commit/abc123").is_err());
+}
+
 // ---------------------------------------------------------------------------
 // is_valid_skill_name
 // ---------------------------------------------------------------------------

@@ -2,12 +2,16 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 
 use super::render::DIM;
 use super::render::GREEN;
 use super::render::RED;
 use super::render::RESET;
 use super::render::YELLOW;
+use crate::agent::Agent;
+use crate::agent::ForkRequest;
+use crate::agent::RunEventPayload;
 use crate::conf::paths;
 use crate::error::BendclawError;
 use crate::error::Result;
@@ -16,7 +20,7 @@ use crate::error::Result;
 // Public entry point
 // ---------------------------------------------------------------------------
 
-pub fn handle_skill_command(input: &str) -> Result<()> {
+pub async fn handle_skill_command(input: &str, agent: &Arc<Agent>) -> Result<()> {
     let args = input.strip_prefix("/skill").unwrap_or("").trim();
 
     if args.is_empty() || args == "list" {
@@ -29,7 +33,7 @@ pub fn handle_skill_command(input: &str) -> Result<()> {
             eprintln!("{RED}  usage: /skill install <owner/repo or github-url>{RESET}\n");
             return Ok(());
         }
-        return skill_install(source);
+        return skill_install(source, agent).await;
     }
 
     if let Some(name) = args.strip_prefix("remove ") {
@@ -95,14 +99,16 @@ fn skill_list() -> Result<()> {
 // /skill install
 // ---------------------------------------------------------------------------
 
-fn skill_install(source: &str) -> Result<()> {
+async fn skill_install(source: &str, agent: &Arc<Agent>) -> Result<()> {
     check_gh_available()?;
 
     let src = parse_github_source(source)?;
-    let tmp_dir = tempdir()?;
-    let clone_dir = tmp_dir.join("repo");
+    let tmp_dir = tempfile::tempdir()
+        .map_err(|e| BendclawError::Cli(format!("failed to create temp dir: {e}")))?;
+    let clone_dir = tmp_dir.path().join("repo");
 
-    // Clone
+    // Clone with progress hint
+    println!("{DIM}  cloning {}{RESET}", src.repo);
     clone_repo(&src.repo, src.git_ref.as_deref(), &clone_dir)?;
 
     let skills_dir = paths::skills_dir()?;
@@ -113,7 +119,6 @@ fn skill_install(source: &str) -> Result<()> {
     let installed = if let Some(ref subpath) = src.subpath {
         let sub_dir = clone_dir.join(subpath);
         if !sub_dir.is_dir() {
-            cleanup_tmp(&tmp_dir);
             return Err(BendclawError::Cli(format!(
                 "subpath \"{}\" not found in repository",
                 subpath.display()
@@ -121,7 +126,6 @@ fn skill_install(source: &str) -> Result<()> {
         }
         let skill_md = sub_dir.join("SKILL.md");
         if !skill_md.exists() {
-            cleanup_tmp(&tmp_dir);
             return Err(BendclawError::Cli(format!(
                 "no SKILL.md found in {}",
                 subpath.display()
@@ -161,7 +165,6 @@ fn skill_install(source: &str) -> Result<()> {
             names.push(name);
         }
         if names.is_empty() {
-            cleanup_tmp(&tmp_dir);
             return Err(BendclawError::Cli(
                 "no skills found in repository (no SKILL.md in root or subdirectories)".into(),
             ));
@@ -170,29 +173,20 @@ fn skill_install(source: &str) -> Result<()> {
         names
     };
 
-    cleanup_tmp(&tmp_dir);
+    // tmp_dir is automatically cleaned up on drop
 
-    // Print results
+    // Print results and show setup + safety guide via LLM (single skill only)
     for name in &installed {
         println!("{GREEN}  ✓ installed skill: {name}{RESET}");
-        let skill_md = skills_dir.join(name).join("SKILL.md");
-        let vars = read_skill_variables(&skill_md);
-        if !vars.is_empty() {
-            println!();
-            println!("{DIM}  required variables:{RESET}");
-            for v in &vars {
-                if v.description.is_empty() {
-                    println!("    {}", v.name);
-                } else {
-                    println!("    {}{DIM}  — {}{RESET}", v.name, v.description);
-                }
-            }
-            println!();
-            let names: Vec<&str> = vars.iter().map(|v| v.name.as_str()).collect();
-            for n in &names {
-                println!("{DIM}  use /env set {n}=<value> to configure{RESET}");
-            }
-        }
+    }
+    if installed.len() == 1 {
+        let skill_dir = skills_dir.join(&installed[0]);
+        print_setup_guide(agent, &installed[0], &skill_dir).await;
+    } else if installed.len() > 1 {
+        println!(
+            "{DIM}  installed {} skills; use the skill tool to explore each one{RESET}",
+            installed.len()
+        );
     }
     println!();
     Ok(())
@@ -243,6 +237,120 @@ pub fn copy_dir_excluding_git(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Post-install setup + safety guide via LLM
+// ---------------------------------------------------------------------------
+
+async fn print_setup_guide(agent: &Arc<Agent>, skill_name: &str, skill_dir: &Path) {
+    let content = collect_skill_context(skill_dir);
+    if content.is_empty() {
+        return;
+    }
+
+    // Truncate to avoid blowing up context (safe char boundary)
+    let limit = 12000.min(content.len());
+    let content = &content[..content.floor_char_boundary(limit)];
+
+    let system_prompt = format!(
+        "A skill named \"{skill_name}\" was just installed.\n\
+         Analyze the provided files and output TWO short sections:\n\n\
+         ## Configuration\n\
+         What does the user need to configure before using this skill?\n\
+         - List every required config item: env vars, config files, API tokens, CLI tools\n\
+         - For each item, show the exact key/file name and where to get the value\n\
+         - If there is an env template, list every key with a one-line explanation\n\
+         - If nothing to configure, say \"None.\"\n\n\
+         ## Security\n\
+         What should the user be aware of?\n\
+         - Scripts that will be executed\n\
+         - External network access (APIs, endpoints)\n\
+         - Sensitive data accessed (tokens, credentials)\n\
+         - Potentially destructive operations\n\
+         - If nothing notable, say \"None.\"\n\n\
+         Rules:\n\
+         - Bullet points only, be concise\n\
+         - Focus on what needs to be configured and what to watch out for\n\
+         - Do NOT explain what the skill does or how to use it\n\
+         - Do NOT read any files or execute any commands\n\
+         - Reply in the same language as the skill definition\n\n\
+         {content}"
+    );
+
+    let request = ForkRequest { system_prompt };
+    let mut side = match agent.fork(request) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("{DIM}  could not analyze setup/safety notes{RESET}");
+            return;
+        }
+    };
+
+    let prompt = format!(
+        "List the configuration requirements and security notes for the \"{skill_name}\" skill."
+    );
+    let mut stream = match side.query(&prompt).await {
+        Ok(s) => s,
+        Err(_) => {
+            println!("{DIM}  could not analyze setup/safety notes{RESET}");
+            return;
+        }
+    };
+
+    println!();
+    println!("{DIM}  analyzing skill...{RESET}");
+    let mut has_output = false;
+    while let Some(event) = stream.next().await {
+        if let RunEventPayload::AssistantDelta {
+            delta: Some(text), ..
+        } = &event.payload
+        {
+            if !has_output {
+                has_output = true;
+            }
+            print!("{DIM}{text}{RESET}");
+        }
+    }
+    if has_output {
+        println!();
+    }
+}
+
+/// Collect context files from a skill directory for LLM analysis.
+///
+/// Reads SKILL.md, .env / .env.example / .env.local.example, and README.md
+/// (if they exist), and formats them as labeled XML blocks.
+fn collect_skill_context(skill_dir: &Path) -> String {
+    let candidates: &[(&str, &str)] = &[
+        ("SKILL.md", "skill_definition"),
+        (".env", "env_template"),
+        (".env.example", "env_template"),
+        (".env.local.example", "env_template"),
+        ("README.md", "readme"),
+    ];
+
+    let mut parts = Vec::new();
+    let mut seen_tags = std::collections::HashSet::new();
+
+    for (filename, tag) in candidates {
+        let path = skill_dir.join(filename);
+        if let Ok(content) = fs::read_to_string(&path) {
+            if content.trim().is_empty() {
+                continue;
+            }
+            // Avoid duplicate tags (e.g. if both .env and .env.example exist)
+            let label = if seen_tags.contains(*tag) {
+                format!("{tag}_{filename}")
+            } else {
+                seen_tags.insert(*tag);
+                tag.to_string()
+            };
+            parts.push(format!("<{label}>\n{content}\n</{label}>"));
+        }
+    }
+
+    parts.join("\n\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -361,12 +469,10 @@ fn parse_github_url(url: &str) -> Result<GitHubSource> {
         });
     }
 
-    // Unrecognized URL structure — treat as plain repo
-    Ok(GitHubSource {
-        repo,
-        git_ref: None,
-        subpath: None,
-    })
+    // Reject unknown URL structures (e.g. /blob/..., /commit/..., etc.)
+    Err(BendclawError::Cli(format!(
+        "unsupported GitHub URL: \"{url}\"\n  only /tree/<ref>/<path> URLs are supported; use owner/repo to install the whole repository"
+    )))
 }
 
 fn repo_name(repo: &str) -> String {
@@ -433,18 +539,6 @@ fn read_skill_description(skill_md: &Path) -> Option<String> {
 pub struct SkillVariable {
     pub name: String,
     pub description: String,
-}
-
-fn read_skill_variables(skill_md: &Path) -> Vec<SkillVariable> {
-    let content = match fs::read_to_string(skill_md) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let fm = match extract_frontmatter(&content) {
-        Some(fm) => fm,
-        None => return Vec::new(),
-    };
-    parse_variables_from_frontmatter(fm)
 }
 
 /// Extract the YAML frontmatter block (between `---` markers).
@@ -526,22 +620,4 @@ fn unquote(s: &str) -> String {
     } else {
         s.to_string()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Temp directory helpers
-// ---------------------------------------------------------------------------
-
-fn tempdir() -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("bendclaw-skill-{}", std::process::id()));
-    if dir.exists() {
-        let _ = fs::remove_dir_all(&dir);
-    }
-    fs::create_dir_all(&dir)
-        .map_err(|e| BendclawError::Cli(format!("failed to create temp dir: {e}")))?;
-    Ok(dir)
-}
-
-fn cleanup_tmp(dir: &Path) {
-    let _ = fs::remove_dir_all(dir);
 }

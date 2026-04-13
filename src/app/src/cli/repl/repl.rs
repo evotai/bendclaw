@@ -277,7 +277,7 @@ impl Repl {
                 }
             }
             s if s.starts_with("/skill") => {
-                super::skill_cmd::handle_skill_command(s)?;
+                super::skill_cmd::handle_skill_command(s, &self.agent).await?;
             }
             _ => {
                 eprintln!("{RED}  unknown command: {input}{RESET}");

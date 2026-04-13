@@ -11,3 +11,4 @@ workspace/
 coverage/
 .idea/
 .vscode/
+*.node

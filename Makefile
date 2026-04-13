@@ -6,7 +6,7 @@ NEXTEST := $(CARGO) nextest run --no-tests=pass
 COVERAGE_TARGETS := --lib --test unit --test it --test contract
 COVERAGE_CMD := $(CARGO) llvm-cov nextest $(COVERAGE_TARGETS)
 
-.PHONY: setup check build run test test-fast test-unit test-it test-contract coverage coverage-report snapshot-review dev-env ci
+.PHONY: setup check build run test test-fast test-unit test-it test-contract coverage coverage-report snapshot-review dev-env ci build-napi build-ui
 
 setup:
 	@set -e; \
@@ -95,3 +95,11 @@ run: dev-env
 	cargo run -p bendclaw -- repl
 
 ci: check test
+
+# -- TS CLI (Ink UI) ---------------------------------------------------------
+
+build-napi:
+	cd cli && napi build --manifest-path ../src/napi/Cargo.toml --release --platform
+
+build-ui: build-napi
+	cd cli && bun install

@@ -1,0 +1,19 @@
+[package]
+name = "bendclaw-napi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bendclaw = { path = "../app" }
+bend-engine = { workspace = true }
+napi = { version = "2", features = ["async", "serde-json", "napi9"] }
+napi-derive = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[build-dependencies]
+napi-build = "2"

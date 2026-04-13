@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/base", "src/engine", "src/app"]
+members = ["src/base", "src/engine", "src/app", "src/napi"]
 resolver = "2"
 
 [workspace.package]

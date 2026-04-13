@@ -1094,6 +1094,19 @@ async fn execute_single_tool(
         ),
     };
 
+    // System-level tool result size cap.  Prevents any single tool from
+    // blowing up the context window and triggering aggressive compaction
+    // that drops the entire conversation history.
+    // Cap is applied to the TOTAL bytes across all Content::Text blocks,
+    // not per-block, to prevent multi-block results from slipping through.
+    let result = ToolResult {
+        content: crate::tools::validation::cap_tool_result_content(
+            result.content,
+            crate::tools::validation::MAX_TOOL_RESULT_BYTES,
+        ),
+        ..result
+    };
+
     let result_tokens = context::content_tokens(&result.content);
     let tool_duration_ms = tool_start.elapsed().as_millis() as u64;
 

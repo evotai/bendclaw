@@ -1,4 +1,5 @@
 use bendengine::context::*;
+use bendengine::types::*;
 use helpers::message_pattern::*;
 use proptest::prelude::*;
 
@@ -211,4 +212,214 @@ proptest! {
             action_saved, overall_saved,
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic tests for keep_within_budget priority retention
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keep_within_budget_preserves_first_user_message() {
+    // Build: user(small) → tool_call → tool_result(huge) → user(small)
+    // With a tight budget, the first user message must survive.
+    let messages = pat("u tr u").pad(10).tool_output(50_000).build();
+    let config = ContextConfig {
+        max_context_tokens: 200, // very tight
+        system_prompt_tokens: 0,
+        keep_recent: 100,
+        keep_first: 2,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+
+    // First message in result should be a user message containing "msg-0"
+    let first = result
+        .messages
+        .first()
+        .expect("should have at least one message");
+    if let AgentMessage::Llm(Message::User { content, .. }) = first {
+        let text = content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(
+            text.contains("msg-0"),
+            "first user message (task goal) should be preserved, got: {text}"
+        );
+    } else {
+        panic!("first message should be a user message");
+    }
+}
+
+#[test]
+fn keep_within_budget_prefers_user_over_tool_result() {
+    // Build: user → tool_call → tool_result(big) → user → tool_call → tool_result(big) → user
+    // With tight budget, user messages should survive while tool results get dropped.
+    let messages = pat("u tr u tr u").pad(10).tool_output(10_000).build();
+    let config = ContextConfig {
+        max_context_tokens: 300, // tight: enough for user msgs, not for tool results
+        system_prompt_tokens: 0,
+        keep_recent: 100,
+        keep_first: 2,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+
+    // Count surviving user messages vs tool results
+    let user_count = result
+        .messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::Llm(Message::User { .. })))
+        .count();
+    let tool_result_count = result
+        .messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::Llm(Message::ToolResult { .. })))
+        .count();
+
+    // User messages should outnumber tool results when budget is tight
+    assert!(
+        user_count > tool_result_count,
+        "user messages ({user_count}) should be prioritized over tool results ({tool_result_count})"
+    );
+}
+
+/// Reproduce the exact scenario from the bug report: a single search tool
+/// returns ~1.25M tokens, far exceeding the 156K budget.  Before the fix
+/// the first user message (task goal) was dropped entirely.
+#[test]
+fn huge_tool_result_does_not_erase_task_goal() {
+    // Simulate: user(small) → search_call → search_result(1.25M chars) → user(small)
+    // tool_output of 1_250_000 chars ≈ the 1,251,126 tokens from the bug.
+    let messages = pat("u tr u").pad(10).tool_output(1_250_000).build();
+    let config = ContextConfig {
+        max_context_tokens: 40_000, // ~156K / 4 (token estimate ratio)
+        system_prompt_tokens: 1_000,
+        keep_recent: 10,
+        keep_first: 2,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+
+    // The first user message (task goal) must survive.
+    let has_first_user = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::User { content, .. }) = m {
+            content.iter().any(|c| match c {
+                Content::Text { text } => text.contains("msg-0"),
+                _ => false,
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_first_user,
+        "first user message (task goal) must survive even with 1.25M token tool result"
+    );
+
+    // The last user message should also survive (it's recent + small).
+    let has_last_user = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::User { content, .. }) = m {
+            content.iter().any(|c| match c {
+                Content::Text { text } => text.contains("msg-3"),
+                _ => false,
+            })
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_last_user,
+        "last user message should survive (small + recent)"
+    );
+}
+
+/// When keep_first=3, the first 3 messages should all survive even under
+/// extreme budget pressure, not just the first one.
+#[test]
+fn keep_first_preserves_multiple_leading_messages() {
+    // Pattern: u u a tr tr u  (6 logical units = 8 messages)
+    // keep_first=3 means msg-0(user), msg-1(user), msg-2(assistant) are protected.
+    let messages = pat("u u a tr tr u").pad(10).tool_output(50_000).build();
+    let config = ContextConfig {
+        max_context_tokens: 300, // very tight — forces level 3 + keep_within_budget
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 3,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+
+    // msg-0 (first user) must survive
+    let has_msg0 = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::User { content, .. }) = m {
+            content
+                .iter()
+                .any(|c| matches!(c, Content::Text { text } if text.contains("msg-0")))
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_msg0,
+        "msg-0 (first user) must survive with keep_first=3"
+    );
+
+    // msg-1 (second user) must survive
+    let has_msg1 = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::User { content, .. }) = m {
+            content
+                .iter()
+                .any(|c| matches!(c, Content::Text { text } if text.contains("msg-1")))
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_msg1,
+        "msg-1 (second user) must survive with keep_first=3"
+    );
+
+    // msg-2 (assistant text) must survive
+    let has_msg2 = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::Assistant { content, .. }) = m {
+            content
+                .iter()
+                .any(|c| matches!(c, Content::Text { text } if text.contains("msg-2")))
+        } else {
+            false
+        }
+    });
+    assert!(has_msg2, "msg-2 (assistant) must survive with keep_first=3");
+}
+
+/// With keep_first=1 (default-like), only the very first message is protected.
+/// The second user message may be dropped if budget is extremely tight.
+#[test]
+fn keep_first_one_only_protects_first_message() {
+    // Pattern: u u tr u — 5 messages, huge tool output
+    let messages = pat("u u tr u").pad(10).tool_output(100_000).build();
+    let config = ContextConfig {
+        max_context_tokens: 100, // absurdly tight
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 1,
+        tool_output_max_lines: 50,
+    };
+    let result = compact_messages(messages, &config);
+
+    // msg-0 must survive (protected by keep_first=1)
+    let has_msg0 = result.messages.iter().any(|m| {
+        if let AgentMessage::Llm(Message::User { content, .. }) = m {
+            content
+                .iter()
+                .any(|c| matches!(c, Content::Text { text } if text.contains("msg-0")))
+        } else {
+            false
+        }
+    });
+    assert!(has_msg0, "msg-0 must survive with keep_first=1");
 }

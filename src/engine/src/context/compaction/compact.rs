@@ -12,6 +12,11 @@ use crate::context::tokens::total_tokens;
 use crate::context::tracking::ContextConfig;
 use crate::types::*;
 
+/// Byte limit for tool result text during compaction (Level 1).
+/// More aggressive than the execution-time limit since we're actively
+/// trying to reclaim space.
+const COMPACTION_MAX_BYTES: usize = 15_000;
+
 // ---------------------------------------------------------------------------
 // Compaction types
 // ---------------------------------------------------------------------------
@@ -350,6 +355,12 @@ pub fn level1_truncate_tool_outputs(
                             } else {
                                 truncate_text_head_tail(text, max_lines)
                             };
+                            // Second pass: byte cap (line truncation alone may
+                            // not be enough when individual lines are very long).
+                            let result = crate::tools::validation::truncate_tool_text(
+                                &result,
+                                COMPACTION_MAX_BYTES,
+                            );
                             if result.len() < text.len() {
                                 method = if result.contains("Structural outline") {
                                     CompactionMethod::Outline
@@ -589,7 +600,7 @@ fn level3_drop_middle(
     let recent_start = len.saturating_sub(config.keep_recent);
 
     if first_end >= recent_start {
-        let result = keep_within_budget(messages, budget);
+        let result = keep_within_budget(messages, first_end, budget);
         let dropped = len.saturating_sub(result.len());
         let actions = if dropped > 0 {
             vec![CompactionAction {
@@ -633,7 +644,7 @@ fn level3_drop_middle(
     result.extend_from_slice(recent_msgs);
 
     if total_tokens(&result) > budget {
-        let result = keep_within_budget(&result, budget);
+        let result = keep_within_budget(&result, first_end, budget);
         let dropped = len.saturating_sub(result.len());
         let actions = if dropped > 0 {
             vec![CompactionAction {
@@ -664,34 +675,109 @@ fn level3_drop_middle(
     (result, removed, actions)
 }
 
-/// Keep as many recent messages as fit within budget.
-fn keep_within_budget(messages: &[AgentMessage], budget: usize) -> Vec<AgentMessage> {
-    let mut result = Vec::new();
-    let mut remaining = budget;
+/// Keep messages within budget using priority-based retention.
+///
+/// Priority order:
+/// 1. First `keep_first` messages (task goal / context) — always kept
+/// 2. Recent messages (from tail)
+/// 3. Older user messages preferred over tool results
+///
+/// Tool results are the first to be dropped since they are the largest
+/// and least critical for maintaining task context.
+fn keep_within_budget(
+    messages: &[AgentMessage],
+    keep_first: usize,
+    budget: usize,
+) -> Vec<AgentMessage> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
 
-    for msg in messages.iter().rev() {
+    // Always reserve the first `keep_first` messages (typically the user's
+    // task goal and early context).
+    let protected_end = keep_first.max(1).min(messages.len());
+    let protected = &messages[..protected_end];
+    let protected_tokens: usize = protected
+        .iter()
+        .map(crate::context::tokens::message_tokens)
+        .sum();
+
+    if protected_tokens >= budget {
+        // Protected prefix alone exceeds budget — degrade to first message
+        // only, and truncate it if even that exceeds budget.
+        let first = messages[0].clone();
+        let first_tokens = crate::context::tokens::message_tokens(&first);
+        if first_tokens > budget {
+            // Truncate the first message's text content to fit.
+            if let AgentMessage::Llm(Message::User { content, timestamp }) = first {
+                let capped = crate::tools::validation::cap_tool_result_content(content, budget * 4);
+                return vec![AgentMessage::Llm(Message::User {
+                    content: capped,
+                    timestamp,
+                })];
+            }
+        }
+        return vec![first];
+    }
+
+    let mut remaining = budget - protected_tokens;
+    let rest = &messages[protected_end..];
+
+    // Fill from the tail, but prioritize user messages over tool results.
+    // Two passes: first pass picks user + assistant messages, second pass
+    // fills remaining budget with tool results.
+
+    // Pass 1: user and assistant messages (high priority)
+    let mut included = vec![false; rest.len()];
+    for (i, msg) in rest.iter().enumerate().rev() {
+        let is_user_or_assistant = matches!(
+            msg,
+            AgentMessage::Llm(Message::User { .. }) | AgentMessage::Llm(Message::Assistant { .. })
+        );
+        if !is_user_or_assistant {
+            continue;
+        }
         let tokens = crate::context::tokens::message_tokens(msg);
         if tokens > remaining {
-            break;
+            continue;
         }
         remaining -= tokens;
-        result.push(msg.clone());
+        included[i] = true;
     }
 
-    result.reverse();
-
-    if result.len() < messages.len() {
-        let removed = messages.len() - result.len();
-        result.insert(
-            0,
-            AgentMessage::Llm(Message::User {
-                content: vec![Content::Text {
-                    text: format!("[Context compacted: {} messages removed]", removed),
-                }],
-                timestamp: now_ms(),
-            }),
-        );
+    // Pass 2: tool results (low priority, fill remaining budget)
+    for (i, msg) in rest.iter().enumerate().rev() {
+        if included[i] {
+            continue;
+        }
+        let tokens = crate::context::tokens::message_tokens(msg);
+        if tokens > remaining {
+            continue;
+        }
+        remaining -= tokens;
+        included[i] = true;
     }
 
+    // Collect in order
+    let mut tail: Vec<AgentMessage> = Vec::new();
+    for (i, msg) in rest.iter().enumerate() {
+        if included[i] {
+            tail.push(msg.clone());
+        }
+    }
+
+    let kept = protected_end + tail.len();
+    let removed = messages.len() - kept;
+
+    let mut result: Vec<AgentMessage> = protected.to_vec();
+    if removed > 0 {
+        result.push(AgentMessage::Llm(Message::User {
+            content: vec![Content::Text {
+                text: format!("[Context compacted: {} messages removed]", removed),
+            }],
+            timestamp: now_ms(),
+        }));
+    }
+    result.extend(tail);
     result
 }

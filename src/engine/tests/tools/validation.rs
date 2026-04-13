@@ -265,3 +265,126 @@ fn extra_fields_preserved() {
     let result = validate_and_coerce("read_file", &read_file_schema(), &input).unwrap();
     assert_eq!(result["unknown_field"], json!(42));
 }
+
+// ── tool result truncation ──────────────────────────────────────────────
+
+use bendengine::tools::validation::truncate_tool_text;
+use bendengine::tools::validation::MAX_TOOL_RESULT_BYTES;
+
+#[test]
+fn tool_text_within_limit_unchanged() {
+    let text = "short output";
+    assert_eq!(truncate_tool_text(text, MAX_TOOL_RESULT_BYTES), text);
+}
+
+#[test]
+fn tool_text_exceeding_limit_truncated() {
+    let big = "x".repeat(60_000);
+    let result = truncate_tool_text(&big, MAX_TOOL_RESULT_BYTES);
+    assert!(result.len() < big.len());
+    assert!(result.contains("bytes truncated"));
+}
+
+#[test]
+fn tool_text_truncation_utf8_safe() {
+    let big: String = "中".repeat(20_000); // 60_000 bytes
+    let result = truncate_tool_text(&big, MAX_TOOL_RESULT_BYTES);
+    assert!(result.contains("bytes truncated"));
+    assert!(result.starts_with("中"));
+    assert!(result.ends_with("中"));
+}
+
+// ── multi-block tool result capping ─────────────────────────────────────
+
+use bendengine::tools::validation::cap_tool_result_content;
+use bendengine::types::Content;
+
+#[test]
+fn cap_single_block_within_limit_unchanged() {
+    let content = vec![Content::Text {
+        text: "short".into(),
+    }];
+    let result = cap_tool_result_content(content.clone(), MAX_TOOL_RESULT_BYTES);
+    assert_eq!(result.len(), 1);
+    if let Content::Text { text } = &result[0] {
+        assert_eq!(text, "short");
+    }
+}
+
+#[test]
+fn cap_multi_block_within_limit_unchanged() {
+    let content = vec![
+        Content::Text {
+            text: "block1".into(),
+        },
+        Content::Text {
+            text: "block2".into(),
+        },
+    ];
+    let result = cap_tool_result_content(content.clone(), MAX_TOOL_RESULT_BYTES);
+    // Under limit — blocks preserved as-is
+    assert_eq!(result.len(), 2);
+}
+
+#[test]
+fn cap_multi_block_exceeding_limit_merged_and_truncated() {
+    // 10 blocks × 29KB each = 290KB total, well over 30KB limit
+    let block = "x".repeat(29_000);
+    let content: Vec<Content> = (0..10)
+        .map(|_| Content::Text {
+            text: block.clone(),
+        })
+        .collect();
+    let result = cap_tool_result_content(content, MAX_TOOL_RESULT_BYTES);
+
+    // Should be merged into a single text block + truncated
+    let text_blocks: Vec<&str> = result
+        .iter()
+        .filter_map(|c| match c {
+            Content::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text_blocks.len(), 1, "should merge into one text block");
+    assert!(
+        text_blocks[0].len() <= MAX_TOOL_RESULT_BYTES + 200, // allow for truncation note
+        "merged block should be capped near MAX_TOOL_RESULT_BYTES"
+    );
+    assert!(text_blocks[0].contains("bytes truncated"));
+}
+
+#[test]
+fn cap_preserves_non_text_content() {
+    // Mix of text (oversized) and non-text — order must be preserved.
+    // Original: [Text(big), Image, Text(big)]
+    let big_text = Content::Text {
+        text: "x".repeat(60_000),
+    };
+    let image = Content::Image {
+        data: "base64data".into(),
+        mime_type: "image/png".into(),
+    };
+    let big_text2 = Content::Text {
+        text: "y".repeat(60_000),
+    };
+    let content = vec![big_text, image, big_text2];
+    let result = cap_tool_result_content(content, MAX_TOOL_RESULT_BYTES);
+
+    // Merged text block should appear first (position of first text block),
+    // then image stays in its original relative position.
+    assert!(
+        matches!(&result[0], Content::Text { .. }),
+        "first element should be the merged text block"
+    );
+    assert!(
+        matches!(&result[1], Content::Image { .. }),
+        "image should stay in its original position after the first text"
+    );
+    // Only 2 elements: merged text + image (second text block was merged in)
+    assert_eq!(result.len(), 2, "should have merged text + image");
+
+    // Text should be truncated
+    if let Content::Text { text } = &result[0] {
+        assert!(text.contains("bytes truncated"));
+    }
+}

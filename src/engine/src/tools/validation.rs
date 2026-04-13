@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 /// Lightweight tool-input validation and type coercion.
 ///
 /// Inspired by Claude Code's `toolErrors.ts` (structured error messages) and
@@ -13,7 +15,7 @@
 /// Not supported (and silently ignored): nested/recursive schemas, `anyOf`,
 /// `oneOf`, `$ref`, `additionalProperties`.  Unknown `type` values are
 /// treated as valid to avoid false rejections.
-use serde_json::Value;
+use crate::types::Content;
 
 // ── public API ──────────────────────────────────────────────────────────
 
@@ -228,4 +230,96 @@ fn format_error(tool_name: &str, issues: &[String]) -> String {
     let label = if issues.len() == 1 { "issue" } else { "issues" };
     let body = issues.join("\n");
     format!("InputValidationError: {tool_name} failed due to the following {label}:\n{body}")
+}
+
+// ── tool result size limiting ───────────────────────────────────────────
+
+/// Maximum bytes for a single tool result text block.
+/// Prevents oversized outputs from blowing up the context window.
+/// Aligned with Claude Code's `maxResultSizeChars: 20_000` (GrepTool)
+/// and `DEFAULT_MAX_RESULT_SIZE_CHARS = 50_000`.
+pub const MAX_TOOL_RESULT_BYTES: usize = 30_000;
+
+/// Truncate a tool result text to `max_bytes`, keeping head + tail with a
+/// note in the middle.  UTF-8 safe.  Returns the original string unchanged
+/// if it fits.
+pub fn truncate_tool_text(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let half = max_bytes / 2;
+    let head_end = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .take_while(|&i| i <= half)
+        .last()
+        .unwrap_or(0);
+    let tail_start = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= text.len() - half)
+        .unwrap_or(text.len());
+    let omitted = tail_start - head_end;
+    format!(
+        "{}\n\n... [{omitted} bytes truncated] ...\n\n{}",
+        &text[..head_end],
+        &text[tail_start..]
+    )
+}
+
+/// Cap the total text size of a tool result's content blocks.
+///
+/// If the combined byte length of all `Content::Text` blocks exceeds
+/// `max_bytes`, all text blocks are merged into a single truncated block
+/// placed at the position of the first original text block.  The text
+/// block structure is lost (multiple blocks become one), but non-text
+/// blocks (e.g. images) are preserved in their original relative order.
+pub fn cap_tool_result_content(content: Vec<Content>, max_bytes: usize) -> Vec<Content> {
+    let total_bytes: usize = content
+        .iter()
+        .map(|c| match c {
+            Content::Text { text } => text.len(),
+            _ => 0,
+        })
+        .sum();
+
+    if total_bytes <= max_bytes {
+        return content;
+    }
+
+    // Merge all text, truncate, then splice back at the first text position.
+    let mut merged = String::with_capacity(total_bytes);
+    let mut first_text_idx: Option<usize> = None;
+    for (i, c) in content.iter().enumerate() {
+        if let Content::Text { text } = c {
+            if first_text_idx.is_none() {
+                first_text_idx = Some(i);
+            }
+            if !merged.is_empty() {
+                merged.push('\n');
+            }
+            merged.push_str(text);
+        }
+    }
+    let truncated = truncate_tool_text(&merged, max_bytes);
+
+    // Rebuild: replace all text blocks with a single truncated block at the
+    // position of the first text block; keep non-text blocks in place.
+    let mut result = Vec::with_capacity(content.len());
+    let mut text_emitted = false;
+    for (i, c) in content.into_iter().enumerate() {
+        match c {
+            Content::Text { .. } => {
+                if Some(i) == first_text_idx && !text_emitted {
+                    result.push(Content::Text {
+                        text: truncated.clone(),
+                    });
+                    text_emitted = true;
+                }
+                // Skip other text blocks — already merged.
+            }
+            other => result.push(other),
+        }
+    }
+    result
 }

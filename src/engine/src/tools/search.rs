@@ -198,18 +198,35 @@ impl AgentTool for SearchTool {
         }
 
         let match_count = stdout.lines().count();
-        let text = if match_count >= self.max_results {
-            format!(
-                "{}\n... (showing first {} matches)",
-                stdout.trim(),
-                self.max_results
+        // Cap output size to avoid blowing up the context window.
+        // A single search returning 100K+ tokens can trigger aggressive
+        // compaction that drops the entire conversation history.
+        const MAX_OUTPUT_BYTES: usize = 30_000;
+        let truncated =
+            if stdout.len() > MAX_OUTPUT_BYTES {
+                let cut = stdout
+                    .char_indices()
+                    .map(|(i, _)| i)
+                    .take_while(|&i| i <= MAX_OUTPUT_BYTES)
+                    .last()
+                    .unwrap_or(0);
+                let shown = stdout[..cut].lines().count();
+                format!(
+                "{}\n... (truncated: showing first {} of {} matches, output exceeded size limit)",
+                &stdout[..cut], shown, match_count
             )
-        } else {
-            format!("{}\n({} matches)", stdout.trim(), match_count)
-        };
+            } else if match_count >= self.max_results {
+                format!(
+                    "{}\n... (showing first {} matches)",
+                    stdout.trim(),
+                    self.max_results
+                )
+            } else {
+                format!("{}\n({} matches)", stdout.trim(), match_count)
+            };
 
         Ok(ToolResult {
-            content: vec![Content::Text { text }],
+            content: vec![Content::Text { text: truncated }],
             details: serde_json::json!({ "matches": match_count }),
             retention: Retention::Normal,
         })

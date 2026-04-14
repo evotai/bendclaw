@@ -68,8 +68,8 @@ npx @evotai/evot
 ```bash
 git clone https://github.com/evotai/evot.git
 cd evot
-make setup && make build-napi && make build-ui
-cd cli && bun run src/index.tsx
+make setup && make install
+evot
 ```
 
 ## Quickstart
@@ -121,8 +121,9 @@ evot -p "summarize today's PRs"   # one-shot task
 make setup      # install Rust toolchain, git hooks
 make check      # fmt + clippy
 make test       # unit + integration tests (Rust engine)
-make test-ui    # CLI tests (TypeScript)
-make dev-ui     # build NAPI + run CLI in dev mode
+make test-cli   # CLI tests (TypeScript)
+make dev        # build NAPI + run CLI in dev mode
+make install    # compile standalone binary to ~/.evotai/bin/evot
 ```
 
 ## Community

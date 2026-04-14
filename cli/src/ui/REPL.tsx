@@ -22,6 +22,7 @@ import {
   type OutputLine,
   buildUserMessage,
   buildAssistantLines,
+  buildToolCall,
   buildToolResult,
   buildVerboseEvent,
   buildError,
@@ -714,39 +715,33 @@ async function runQuery(
     for await (const event of stream) {
       if (gen !== streamGenRef.current) break  // stale — stop processing
 
-      // Emit verbose events BEFORE processing — so [LLM] badges appear
-      // before the content they describe (matching the old MessageHistory order).
-      if (localState.verbose) {
-        // llm_call_started → commit pending text, then show badge
-        if (event.kind === 'llm_call_started' || event.kind === 'context_compaction_started') {
-          commitStreamingText()
-          const nextState = applyEvent(localState, event)
-          const newEvents = nextState.verboseEvents.slice(localState.verboseEvents.length)
-          for (const evt of newEvents) {
-            appendLines(buildVerboseEvent(evt.text))
-          }
+      const p = event.payload as Record<string, any>
+
+      // Compute next state synchronously for accurate verbose/stats data
+      const nextState = applyEvent(localState, event)
+
+      // --- Verbose events that appear BEFORE content ---
+      if (localState.verbose
+        && (event.kind === 'llm_call_started' || event.kind === 'context_compaction_started')) {
+        commitStreamingText()
+        const newEvents = nextState.verboseEvents.slice(localState.verboseEvents.length)
+        for (const evt of newEvents) {
+          appendLines(buildVerboseEvent(evt.text))
         }
       }
 
-      // Accumulate streaming text in dynamic zone (pendingText)
+      // --- Streaming assistant text (dynamic zone) ---
       if (event.kind === 'assistant_delta') {
-        const p = event.payload as Record<string, any>
         const delta = p.delta as string | undefined
         if (delta) {
           streamingText += delta
-          // Strip leading whitespace on first content
           if (!prefixEmitted) {
             const trimmed = streamingText.replace(/^[\n\r]+/, '')
-            if (trimmed.length > 0) {
-              streamingText = trimmed
-            }
+            if (trimmed.length > 0) streamingText = trimmed
           }
-          // When streaming text gets long, commit completed paragraphs to
-          // Static so the dynamic zone stays small and the spinner/input
-          // remain pinned at the bottom.
+          // Auto-commit when dynamic zone gets too tall
           const termRows = process.stdout.rows ?? 24
-          const lineCount = streamingText.split('\n').length
-          if (lineCount > termRows - 8) {
+          if (streamingText.split('\n').length > termRows - 8) {
             const splitAt = findSafeSplitPoint(streamingText)
             if (splitAt > 0 && splitAt < streamingText.length) {
               const completed = streamingText.slice(0, splitAt)
@@ -761,45 +756,49 @@ async function runQuery(
         }
       }
 
-      // Commit text to Static at turn boundaries
+      // --- Turn boundaries: commit pending text to Static ---
       if (event.kind === 'assistant_completed' || event.kind === 'turn_started') {
         commitStreamingText()
       }
 
-      // Emit verbose events AFTER content — llm_call_completed and
-      // context_compaction_completed appear after the assistant message.
-      if (localState.verbose) {
-        if (event.kind === 'llm_call_completed' || event.kind === 'context_compaction_completed') {
-          commitStreamingText()
-          const nextState = applyEvent(localState, event)
-          const newEvents = nextState.verboseEvents.slice(localState.verboseEvents.length)
-          for (const evt of newEvents) {
-            appendLines(buildVerboseEvent(evt.text))
-          }
+      // --- Verbose events that appear AFTER content ---
+      if (localState.verbose
+        && (event.kind === 'llm_call_completed' || event.kind === 'context_compaction_completed')) {
+        commitStreamingText()
+        const newEvents = nextState.verboseEvents.slice(localState.verboseEvents.length)
+        for (const evt of newEvents) {
+          appendLines(buildVerboseEvent(evt.text))
         }
       }
 
-      // Emit tool results — commit any pending text first
-      if (event.kind === 'tool_finished') {
+      // --- Tool started: show tool call badge with preview command ---
+      if (event.kind === 'tool_started') {
         commitStreamingText()
-        const p = event.payload as Record<string, any>
+        const toolName = p.tool_name ?? 'unknown'
+        const args = p.args ?? {}
+        const previewCommand = p.preview_command as string | undefined
+        appendLines(buildToolCall(toolName, args, previewCommand))
+      }
+
+      // --- Tool finished: show result ---
+      if (event.kind === 'tool_finished') {
         const toolName = p.tool_name ?? 'unknown'
         const args = p.args ?? {}
         const details = p.details as Record<string, any> | undefined
         const mergedArgs = details?.diff ? { ...args, diff: details.diff } : args
         const status = p.is_error ? 'error' as const : 'done' as const
-        const lines = buildToolResult(toolName, mergedArgs, status, p.content, p.duration_ms)
-        appendLines(lines)
+        appendLines(buildToolResult(toolName, mergedArgs, status, p.content, p.duration_ms))
       }
 
-      // Emit run summary on finish
+      // --- Run summary on finish ---
       if (event.kind === 'run_finished' && localState.verbose) {
         commitStreamingText()
-        const nextState = applyEvent(localState, event)
-        appendLines(buildRunSummary(nextState.currentRunStats))
+        const stats = nextState.currentRunStats
+        appendLines(buildRunSummary(stats))
       }
 
-      localState = applyEvent(localState, event)
+      // Advance local state and push to React
+      localState = nextState
       setState(() => localState)
     }
 

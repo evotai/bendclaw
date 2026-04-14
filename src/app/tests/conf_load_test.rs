@@ -263,7 +263,7 @@ fn thinking_level_from_str_rejects_invalid() {
 #[test]
 fn default_thinking_level_is_off() {
     let config = Config::new(std::path::PathBuf::from("/tmp"));
-    assert_eq!(config.thinking_level, ThinkingLevel::Off);
+    assert_eq!(config.llm.thinking_level, ThinkingLevel::Off);
     assert_eq!(config.active_llm().thinking_level, ThinkingLevel::Off);
 }
 
@@ -297,7 +297,7 @@ api_key = "test-key"
     restore_env_var("HOME", original_home);
 
     let config = result?;
-    assert_eq!(config.thinking_level, ThinkingLevel::Medium);
+    assert_eq!(config.llm.thinking_level, ThinkingLevel::Medium);
     assert_eq!(config.active_llm().thinking_level, ThinkingLevel::Medium);
     Ok(())
 }
@@ -324,7 +324,7 @@ fn load_config_thinking_level_from_env_file() -> TestResult {
     restore_env_var("HOME", original_home);
 
     let config = result?;
-    assert_eq!(config.thinking_level, ThinkingLevel::High);
+    assert_eq!(config.llm.thinking_level, ThinkingLevel::High);
     Ok(())
 }
 
@@ -362,6 +362,6 @@ api_key = "test-key"
     restore_env_var("HOME", original_home);
 
     let config = result?;
-    assert_eq!(config.thinking_level, ThinkingLevel::High);
+    assert_eq!(config.llm.thinking_level, ThinkingLevel::High);
     Ok(())
 }

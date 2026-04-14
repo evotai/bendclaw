@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::Path;
 
+use crate::channel::feishu::FeishuChannelConfig;
 use crate::conf::default_config;
 use crate::conf::paths;
 use crate::conf::thinking_level_from_str;
+use crate::conf::ChannelsConfig;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::conf::StorageBackend;
@@ -46,6 +48,13 @@ struct ConfigSource {
     server: ServerSource,
     storage: StorageSource,
     thinking_level: Option<String>,
+    channel: ChannelSource,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+struct ChannelSource {
+    feishu: Option<FeishuChannelConfig>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -141,7 +150,13 @@ impl ConfigSource {
         }
 
         if let Some(level) = self.thinking_level {
-            config.thinking_level = thinking_level_from_str(&level)?;
+            config.llm.thinking_level = thinking_level_from_str(&level)?;
+        }
+
+        if self.channel.feishu.is_some() {
+            config.channels = ChannelsConfig {
+                feishu: self.channel.feishu,
+            };
         }
 
         Ok(())
@@ -250,7 +265,7 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     if let Some(level) = vars.get("EVOT_THINKING_LEVEL") {
-        config.thinking_level = thinking_level_from_str(level)?;
+        config.llm.thinking_level = thinking_level_from_str(level)?;
     }
 
     apply_provider_env(config, ProviderKind::Anthropic, vars);

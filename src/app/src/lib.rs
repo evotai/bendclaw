@@ -1,8 +1,9 @@
 pub mod agent;
+pub mod channel;
 pub mod conf;
 pub mod error;
 pub mod log;
-pub mod server;
+pub mod runtime;
 pub mod session;
 pub mod storage;
 pub mod types;

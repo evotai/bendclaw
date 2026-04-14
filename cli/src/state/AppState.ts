@@ -3,7 +3,16 @@
  */
 
 import { type RunEvent } from '../native/index.js'
-import { humanTokens as humanTokensInline, renderBar } from '../utils/format.js'
+import { humanTokens as humanTokensInline, renderBar, formatMsDynamic } from '../utils/format.js'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function padToolName(name: string, width = 18): string {
+  if (name.length >= width) return name + ' '
+  return name + ' '.repeat(width - name.length)
+}
 
 // ---------------------------------------------------------------------------
 // Message types for the UI
@@ -37,6 +46,14 @@ export interface UIToolCall {
 // Run stats — accumulated during a run, shown in verbose mode
 // ---------------------------------------------------------------------------
 
+export interface CompactionEntry {
+  kind: 'run_once' | 'level'
+  level?: number
+  beforeTokens: number
+  afterTokens: number
+  savedTokens: number
+}
+
 export interface RunStats {
   durationMs: number
   turnCount: number
@@ -49,8 +66,10 @@ export interface RunStats {
   llmCalls: number
   contextTokens: number
   contextWindow: number
+  systemPromptTokens: number
   toolBreakdown: ToolBreakdownEntry[]
   llmCallDetails: LlmCallDetail[]
+  compactionHistory: CompactionEntry[]
 }
 
 export interface LlmCallDetail {
@@ -60,6 +79,7 @@ export interface LlmCallDetail {
   outputTokens: number
   ttfbMs: number
   ttftMs: number
+  streamingMs: number
   tokPerSec: number
 }
 
@@ -67,6 +87,7 @@ export interface ToolBreakdownEntry {
   name: string
   count: number
   totalDurationMs: number
+  totalResultTokens: number
   errors: number
 }
 
@@ -83,8 +104,10 @@ function emptyRunStats(): RunStats {
     llmCalls: 0,
     contextTokens: 0,
     contextWindow: 0,
+    systemPromptTokens: 0,
     toolBreakdown: [],
     llmCallDetails: [],
+    compactionHistory: [],
   }
 }
 
@@ -274,10 +297,12 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       stats.toolCallCount++
       if (isError) stats.toolErrorCount++
 
+      const resultTokens = (p.result_tokens as number) ?? 0
+
       // Update tool breakdown (immutable)
       const breakdown = stats.toolBreakdown.map((e) =>
         e.name === toolName
-          ? { ...e, count: e.count + 1, totalDurationMs: e.totalDurationMs + durationMs, errors: e.errors + (isError ? 1 : 0) }
+          ? { ...e, count: e.count + 1, totalDurationMs: e.totalDurationMs + durationMs, totalResultTokens: e.totalResultTokens + resultTokens, errors: e.errors + (isError ? 1 : 0) }
           : e
       )
       if (!breakdown.some((e) => e.name === toolName)) {
@@ -285,6 +310,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
           name: toolName,
           count: 1,
           totalDurationMs: durationMs,
+          totalResultTokens: resultTokens,
           errors: isError ? 1 : 0,
         })
       }
@@ -316,10 +342,45 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const tools = p.tools as any[] | undefined
       const toolCount = tools?.length ?? 0
       const sysTok = (p.system_prompt_tokens as number) ?? 0
-      const text = `[LLM] call · ${model} · turn ${turn}\n  ${msgCount} messages · ${toolCount} tools\n  ~${humanTokensInline(sysTok)} sys tokens`
+      const msgBytes = (p.message_bytes as number) ?? 0
+      const estMsgTokens = Math.floor(msgBytes / 4)
+      const estTotal = sysTok + estMsgTokens
+
+      // Build per-role message counts from message_role_counts if available
+      const roleCounts = p.message_role_counts as Record<string, number> | undefined
+      let roleStr = ''
+      if (roleCounts) {
+        const parts: string[] = []
+        for (const [role, count] of Object.entries(roleCounts)) {
+          parts.push(`${role} ${count}`)
+        }
+        roleStr = ` (${parts.join(' · ')})`
+      }
+
+      const lines = [
+        `[LLM] call · ${model} · turn ${turn}`,
+        `  ${msgCount} messages${roleStr} · ${toolCount} tools`,
+        `  ~${humanTokensInline(estTotal)} est tokens (sys ~${humanTokensInline(sysTok)} · msgs ~${humanTokensInline(estMsgTokens)})`,
+      ]
+
+      // Per-tool token breakdown from accumulated tool results
+      const toolTokens = state.currentRunStats.toolBreakdown
+        .filter((t) => t.totalResultTokens > 0)
+        .sort((a, b) => b.totalResultTokens - a.totalResultTokens)
+      if (toolTokens.length > 0) {
+        const totalToolTok = toolTokens.reduce((s, t) => s + t.totalResultTokens, 0)
+        lines.push('  tool results:')
+        for (const t of toolTokens) {
+          const pctVal = totalToolTok > 0 ? ((t.totalResultTokens / totalToolTok) * 100) : 0
+          const bar = renderBar(t.totalResultTokens, totalToolTok, 20)
+          lines.push(`    ${padToolName(t.name)}~${humanTokensInline(t.totalResultTokens).padStart(5)}     (${pctVal.toFixed(1).padStart(5)}%)  ${bar}`)
+        }
+      }
+
       return {
         ...state,
-        verboseEvents: [...state.verboseEvents, { kind: 'llm_call', text }],
+        currentRunStats: { ...state.currentRunStats, systemPromptTokens: sysTok },
+        verboseEvents: [...state.verboseEvents, { kind: 'llm_call', text: lines.join('\n') }],
       }
     }
 
@@ -334,7 +395,11 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const ttfbMs = (metrics?.ttfb_ms as number) ?? 0
       const ttftMs = (metrics?.ttft_ms as number) ?? 0
       const streamingMs = (metrics?.streaming_ms as number) ?? 0
-      const tokPerSec = durationMs > 0 ? (outputTok / (durationMs / 1000)) : 0
+      const tokPerSec = streamingMs > 0 ? (outputTok / (streamingMs / 1000)) : 0
+      const model = (p.model as string) ?? state.model
+
+      // Check for error
+      const error = p.error as string | undefined
 
       if (usage) {
         stats.inputTokens += inputTok
@@ -344,17 +409,28 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       }
 
       stats.llmCallDetails = [...stats.llmCallDetails, {
-        model: (p.model as string) ?? state.model,
+        model,
         durationMs,
         inputTokens: inputTok,
         outputTokens: outputTok,
         ttfbMs,
         ttftMs,
+        streamingMs,
         tokPerSec,
       }]
 
+      // Timing percentages
+      const ttfbPct = durationMs > 0 ? ((ttfbMs / durationMs) * 100).toFixed(0) : '0'
+      const ttftPct = durationMs > 0 ? ((ttftMs / durationMs) * 100).toFixed(0) : '0'
+      const streamPct = durationMs > 0 ? ((streamingMs / durationMs) * 100).toFixed(0) : '0'
       const durSec = (durationMs / 1000).toFixed(1)
-      const text = `[LLM] completed\n  tokens   ${humanTokensInline(inputTok)} in · ${outputTok} out · ${tokPerSec.toFixed(0)} tok/s\n  timing   ${durSec}s · ttfb ${(ttfbMs / 1000).toFixed(1)}s · ttft ${(ttftMs / 1000).toFixed(1)}s · stream ${(streamingMs / 1000).toFixed(1)}s`
+
+      let text: string
+      if (error) {
+        text = `[LLM] error · ${model}\n  ${error}`
+      } else {
+        text = `[LLM] completed · ${model}\n  tokens   ${humanTokensInline(inputTok)} in · ${outputTok} out · ${tokPerSec.toFixed(0)} tok/s\n  timing   ${durSec}s · ttfb ${formatMsDynamic(ttfbMs)} (${ttfbPct}%) · ttft ${formatMsDynamic(ttftMs)} (${ttftPct}%) · stream ${(streamingMs / 1000).toFixed(1)}s (${streamPct}%)`
+      }
 
       return {
         ...state,
@@ -374,7 +450,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const text = `[COMPACT] call\n  ${msgCount} messages · ~${humanTokensInline(estTokens)} tokens\n  ${bar}  ${pct}%(${humanTokensInline(estTokens)}) of budget(${humanTokensInline(budget)})\n  budget ${humanTokensInline(budget)} (window ${humanTokensInline(window)} − sys ${humanTokensInline(sysTok)})`
       return {
         ...state,
-        currentRunStats: { ...state.currentRunStats, contextTokens: estTokens, contextWindow: window },
+        currentRunStats: { ...state.currentRunStats, contextTokens: estTokens, contextWindow: window, systemPromptTokens: sysTok },
         verboseEvents: [...state.verboseEvents, { kind: 'compact_call', text }],
       }
     }
@@ -382,20 +458,39 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     case 'context_compaction_completed': {
       const result = p.result as Record<string, any> | undefined
       const type = (result?.type as string) ?? 'done'
+      const stats = { ...state.currentRunStats }
       let action = type
       if (type === 'no_op') {
         action = 'no-op'
       } else if (type === 'run_once_cleared') {
         const saved = (result?.saved_tokens as number) ?? 0
-        action = `cleared · saved ${humanTokensInline(saved)} tokens`
+        const before = (result?.before_estimated_tokens as number) ?? stats.contextTokens
+        const after = before - saved
+        action = `run-once · ${humanTokensInline(before)} → ${humanTokensInline(after)} · saved ${humanTokensInline(saved)} tokens`
+        stats.compactionHistory = [...stats.compactionHistory, {
+          kind: 'run_once',
+          beforeTokens: before,
+          afterTokens: after,
+          savedTokens: saved,
+        }]
       } else if (type === 'level_compacted') {
         const level = (result?.level as number) ?? 0
         const before = (result?.before_estimated_tokens as number) ?? 0
         const after = (result?.after_estimated_tokens as number) ?? 0
-        action = `L${level} · ${humanTokensInline(before)} → ${humanTokensInline(after)} tokens`
+        const saved = before - after
+        const savedPct = before > 0 ? ((saved / before) * 100).toFixed(1) : '0'
+        action = `L${level} · ${humanTokensInline(before)} → ${humanTokensInline(after)} · saved ${humanTokensInline(saved)} (${savedPct}%)`
+        stats.compactionHistory = [...stats.compactionHistory, {
+          kind: 'level',
+          level,
+          beforeTokens: before,
+          afterTokens: after,
+          savedTokens: saved,
+        }]
       }
       return {
         ...state,
+        currentRunStats: stats,
         verboseEvents: [...state.verboseEvents, { kind: 'compact_done', text: `[COMPACT] · ${action}` }],
       }
     }

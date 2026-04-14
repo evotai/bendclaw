@@ -35,6 +35,12 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/** Format ms dynamically: <1s shows as ms, ≥1s shows as seconds */
+export function formatMsDynamic(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
 export function renderBar(value: number, max: number, width: number): string {
   if (max <= 0) return '░'.repeat(width)
   const filled = Math.round((value / max) * width)

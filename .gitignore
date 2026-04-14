@@ -1,6 +1,5 @@
 /target
 .env
-.agents
 *.swp
 *.swo
 .DS_Store

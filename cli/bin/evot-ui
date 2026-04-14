@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bendclaw-ui — launch the TypeScript Ink REPL
+# evot-ui — launch the TypeScript Ink REPL
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

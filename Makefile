@@ -114,6 +114,10 @@ install: build-cli
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
 		xattr -cr $(HOME)/.evotai/bin/evot; \
 		codesign --force --sign - $(HOME)/.evotai/bin/evot; \
+		for f in $(HOME)/.evotai/lib/evot-napi.*.node; do \
+			xattr -cr "$$f"; \
+			codesign --force --sign - "$$f"; \
+		done; \
 	fi
 	@echo ""
 	@echo "  ✓ Installed evot to $(HOME)/.evotai/bin/evot"

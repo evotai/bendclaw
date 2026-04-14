@@ -51,6 +51,12 @@ function OutputLineView({ line }: { line: OutputLine }) {
       )
     case 'tool':
       return <ToolLineView text={line.text} />
+    case 'tool_result':
+      return (
+        <Box>
+          <Text color="green">{line.text}</Text>
+        </Box>
+      )
     case 'verbose':
       return <VerboseLineView text={line.text} />
     case 'error':

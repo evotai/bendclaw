@@ -60,3 +60,58 @@ export function truncateResult(s: string, maxChars: number): string {
   }
   return result
 }
+
+/** Truncate a long line keeping head and tail with " ... " in between. */
+export function truncateHeadTail(s: string, max: number): string {
+  const SEP = ' ... '
+  if (s.length <= max || max < SEP.length + 6) return truncate(s, max)
+  const budget = max - SEP.length
+  const headLen = Math.floor(budget / 2)
+  const tailLen = budget - headLen
+  return s.slice(0, headLen).trimEnd() + SEP + s.slice(s.length - tailLen).trimStart()
+}
+
+/** Collapse whitespace and truncate to a single line summary. */
+export function summarizeInline(value: string, maxChars: number): string {
+  const collapsed = value.split(/\s+/).join(' ')
+  return truncate(collapsed, maxChars)
+}
+
+/**
+ * Format tool result content for display, matching Rust REPL style:
+ * - Multi-line: head 5 lines + "... (N more lines)" + tail 3 lines
+ * - Each line truncated at 256 chars
+ * - Single-line: "Result: <summary>"
+ */
+export function toolResultLines(content: string, isError: boolean): string[] {
+  const HEAD_LINES = 5
+  const TAIL_LINES = 3
+  const COMPACT_THRESHOLD = HEAD_LINES + TAIL_LINES + 2
+  const MAX_LINE_WIDTH = 256
+
+  const capLine = (l: string) => truncateHeadTail(l, MAX_LINE_WIDTH)
+
+  const summarize = (): string => {
+    if (!content.trim()) {
+      return isError ? 'Result: tool returned an error' : 'Result: completed'
+    }
+    return `Result: ${summarizeInline(content, 160)}`
+  }
+
+  const normalized = content.replace(/\r\n/g, '\n')
+  if (normalized.includes('\n')) {
+    const trimmed = normalized.replace(/\n+$/, '')
+    if (!trimmed) return [summarize()]
+    const allLines = trimmed.split('\n')
+    if (allLines.length > COMPACT_THRESHOLD) {
+      const result: string[] = []
+      result.push(...allLines.slice(0, HEAD_LINES).map(capLine))
+      const omitted = allLines.length - HEAD_LINES - TAIL_LINES
+      result.push(`... (${omitted} more lines)`)
+      result.push(...allLines.slice(-TAIL_LINES).map(capLine))
+      return result
+    }
+    return allLines.map(capLine)
+  }
+  return [summarize()]
+}

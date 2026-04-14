@@ -722,10 +722,15 @@ async function runLogTurn(
           break
         }
         case 'tool_completed': {
-          const toolName = (event.payload?.tool_name as string) ?? 'tool'
-          const ok = event.payload?.error == null
-          const durationMs = (event.payload?.duration_ms as number) ?? 0
-          appendLines(buildToolResult(toolName, ok, durationMs))
+          const p = event.payload ?? {}
+          const toolName = (p.tool_name as string) ?? 'tool'
+          const args = (p.args as Record<string, unknown>) ?? {}
+          const details = p.details as Record<string, any> | undefined
+          const mergedArgs = details?.diff ? { ...args, diff: details.diff } : args
+          const status = p.error != null ? 'error' as const : 'done' as const
+          const content = p.content as string | undefined
+          const durationMs = p.duration_ms as number | undefined
+          appendLines(buildToolResult(toolName, mergedArgs, status, content, durationMs))
           break
         }
         default:

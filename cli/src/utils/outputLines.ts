@@ -10,7 +10,7 @@
 
 import { renderMarkdown } from './markdown.js'
 import { colorizeUnifiedDiff } from './diff.js'
-import { truncate, truncateResult, humanTokens, formatDuration, renderBar } from './format.js'
+import { truncate, truncateResult, humanTokens, formatDuration, renderBar, toolResultLines } from './format.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,7 +18,7 @@ import { truncate, truncateResult, humanTokens, formatDuration, renderBar } from
 
 export interface OutputLine {
   id: string
-  kind: 'user' | 'assistant' | 'tool' | 'verbose' | 'error' | 'system' | 'run_summary'
+  kind: 'user' | 'assistant' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system' | 'run_summary'
   text: string
 }
 
@@ -88,17 +88,18 @@ export function buildToolResult(
   durationMs?: number,
 ): OutputLine[] {
   const lines: OutputLine[] = []
+  const isError = status === 'error'
 
   const dur = durationMs !== undefined ? ` · ${durationMs}ms` : ''
   const badge = name.toUpperCase()
-  const label = status === 'error' ? `[${badge}] failed${dur}` : `[${badge}] completed${dur}`
+  const label = isError ? `[${badge}] failed${dur}` : `[${badge}] completed${dur}`
   lines.push({
     id: genId('tool'),
     kind: 'tool',
     text: label,
   })
 
-  // Diff
+  // Diff (for write/edit tools)
   const diff = args?.diff as string | undefined
   if (diff && typeof diff === 'string' && diff.length > 0) {
     lines.push({
@@ -108,13 +109,16 @@ export function buildToolResult(
     })
   }
 
-  // Error preview
-  if (status === 'error' && result) {
-    lines.push({
-      id: genId('tool-err'),
-      kind: 'error',
-      text: truncateResult(result, 200),
-    })
+  // Tool result content (head/tail truncated, matching Rust REPL style)
+  if (result) {
+    const resultLines = toolResultLines(result, isError)
+    for (const rl of resultLines) {
+      lines.push({
+        id: genId('tool-res'),
+        kind: isError ? 'error' : 'tool_result',
+        text: `  ${rl}`,
+      })
+    }
   }
 
   return lines

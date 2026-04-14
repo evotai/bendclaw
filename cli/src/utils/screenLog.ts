@@ -54,6 +54,7 @@ function formatPrefix(kind: OutputLine['kind']): string {
     case 'user': return '❯ '
     case 'assistant': return '  '
     case 'tool': return ''
+    case 'tool_result': return '  '
     case 'verbose': return '  '
     case 'error': return 'ERROR: '
     case 'system': return '  '

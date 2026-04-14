@@ -6,7 +6,7 @@ NEXTEST := $(CARGO) nextest run --no-tests=pass
 COVERAGE_TARGETS := --lib --test unit --test it --test contract
 COVERAGE_CMD := $(CARGO) llvm-cov nextest $(COVERAGE_TARGETS)
 
-.PHONY: setup check build run test test-fast test-unit test-it test-contract test-cli coverage coverage-report snapshot-review dev-env ci build-napi build-cli install
+.PHONY: setup check build run test test-engine test-cli test-unit test-it test-contract coverage coverage-report snapshot-review dev-env ci build-napi build-cli install
 
 setup:
 	@set -e; \
@@ -52,9 +52,9 @@ check:
 
 build: build-napi build-cli
 
-test: test-fast
+test: test-engine test-cli
 
-test-fast: test-unit test-it test-contract
+test-engine: test-unit test-it test-contract
 
 test-unit:
 	$(NEXTEST) --lib --test unit --no-fail-fast

@@ -118,12 +118,13 @@ evot -p "summarize today's PRs"   # one-shot task
 ## Development
 
 ```bash
-make setup      # install Rust toolchain, git hooks
-make check      # fmt + clippy
-make test       # unit + integration tests (Rust engine)
-make test-cli   # CLI tests (TypeScript)
-make dev        # build NAPI + run CLI in dev mode
-make install    # compile standalone binary to ~/.evotai/bin/evot
+make setup        # install Rust toolchain, git hooks
+make check        # fmt + clippy
+make test         # all tests (engine + CLI)
+make test-engine  # Rust engine tests only
+make test-cli     # CLI tests only (TypeScript)
+make dev          # build NAPI + run CLI in dev mode
+make install      # compile standalone binary to ~/.evotai/bin/evot
 ```
 
 ## Community

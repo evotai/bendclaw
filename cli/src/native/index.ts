@@ -6,7 +6,7 @@
 
 // @ts-ignore — binding.js is generated
 import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer } from './binding.js'
-import type { NapiAgent as RawAgentType, NapiQueryStream as RawStreamType } from './binding.d.ts'
+import type { NapiAgent as RawAgentType, NapiQueryStream as RawStreamType, NapiForkedAgent as RawForkedType } from './binding.d.ts'
 
 // ---------------------------------------------------------------------------
 // Event types (mirrors Rust RunEvent / RunEventPayload)
@@ -34,6 +34,19 @@ export interface SessionMeta {
 
 export interface TranscriptItem {
   [key: string]: unknown
+}
+
+export interface VariableInfo {
+  key: string
+  value: string
+}
+
+export interface ConfigInfo {
+  provider: string
+  envPath: string
+  baseUrl: string | null
+  anthropicModel: string
+  openaiModel: string
 }
 
 // ---------------------------------------------------------------------------
@@ -98,8 +111,8 @@ export class Agent {
     return this.raw.cwd
   }
 
-  async query(prompt: string, sessionId?: string): Promise<QueryStream> {
-    const raw = await this.raw.query(prompt, sessionId ?? null)
+  async query(prompt: string, sessionId?: string, toolMode?: string): Promise<QueryStream> {
+    const raw = await this.raw.query(prompt, sessionId ?? null, toolMode ?? null)
     return new QueryStream(raw)
   }
 
@@ -111,6 +124,48 @@ export class Agent {
   async loadTranscript(sessionId: string): Promise<TranscriptItem[]> {
     const json = await this.raw.loadTranscript(sessionId)
     return JSON.parse(json) as TranscriptItem[]
+  }
+
+  fork(systemPrompt: string): ForkedAgent {
+    const raw = this.raw.fork(systemPrompt)
+    return new ForkedAgent(raw)
+  }
+
+  listVariables(): VariableInfo[] {
+    return JSON.parse(this.raw.listVariables()) as VariableInfo[]
+  }
+
+  async setVariable(key: string, value: string): Promise<void> {
+    await this.raw.setVariable(key, value)
+  }
+
+  async deleteVariable(key: string): Promise<boolean> {
+    return this.raw.deleteVariable(key)
+  }
+
+  configInfo(): ConfigInfo {
+    return JSON.parse(this.raw.configInfo()) as ConfigInfo
+  }
+
+  setProvider(provider: string): void {
+    this.raw.setProvider(provider)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ForkedAgent — ephemeral readonly side conversation
+// ---------------------------------------------------------------------------
+
+export class ForkedAgent {
+  private raw: RawForkedType
+
+  constructor(raw: RawForkedType) {
+    this.raw = raw
+  }
+
+  async query(prompt: string): Promise<QueryStream> {
+    const raw = await this.raw.query(prompt)
+    return new QueryStream(raw)
   }
 }
 

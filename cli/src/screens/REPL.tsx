@@ -20,6 +20,7 @@ import { HistoryManager } from '../utils/history.js'
 import { TranscriptLog } from '../utils/transcriptLog.js'
 import { transcriptToMessages, type TranscriptItem } from '../utils/transcript.js'
 import { isSlashCommand, resolveCommand } from '../commands/index.js'
+import { skillList, skillInstall, skillRemove } from '../commands/skill.js'
 
 interface REPLProps {
   agent: Agent
@@ -39,6 +40,22 @@ export function REPL({ agent }: REPLProps) {
   const streamRef = useRef<QueryStream | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const [historyManager] = useState(() => new HistoryManager())
+  const [cachedConfigInfo] = useState(() => {
+    try { return agent.configInfo() } catch { return undefined }
+  })
+
+  // Startup: show resume hint for most recent CWD-matching session
+  useEffect(() => {
+    (async () => {
+      try {
+        const sessions = await agent.listSessions(20)
+        const match = sessions.find((s) => s.cwd === agent.cwd)
+        if (match) {
+          pushSystem(setSystemMessages, 'info', `  previous session found. Use /resume ${match.session_id.slice(0, 8)} to continue.`)
+        }
+      } catch { /* ignore */ }
+    })()
+  }, [])
 
   useEffect(() => {
     sessionIdRef.current = state.sessionId
@@ -92,9 +109,9 @@ export function REPL({ agent }: REPLProps) {
         activeToolCalls: new Map(),
       }))
 
-      runQuery(agent, text, sessionIdRef.current, streamRef, setState)
+      runQuery(agent, text, sessionIdRef.current, streamRef, setState, planning ? 'planning' : undefined)
     },
-    [agent, state, exit]
+    [agent, state, exit, planning]
   )
 
   // Auto-drain queue when response finishes (skip if last run errored)
@@ -117,7 +134,7 @@ export function REPL({ agent }: REPLProps) {
         currentThinkingText: '',
         activeToolCalls: new Map(),
       }))
-      runQuery(agent, next!, sessionIdRef.current, streamRef, setState)
+      runQuery(agent, next!, sessionIdRef.current, streamRef, setState, planning ? 'planning' : undefined)
     }
   }, [state.isLoading, messageQueue, agent])
 
@@ -134,6 +151,11 @@ export function REPL({ agent }: REPLProps) {
       }))
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     } else {
+      // Show resume hint on exit
+      if (sessionIdRef.current) {
+        console.log(`\n${'─'.repeat(80)}`)
+        console.log(`Resume this session with:\n  evot --resume ${sessionIdRef.current}\n`)
+      }
       exit()
     }
   }, [exit])
@@ -148,7 +170,7 @@ export function REPL({ agent }: REPLProps) {
 
   return (
     <Box flexDirection="column" padding={0}>
-      <Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} />
+      <Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={cachedConfigInfo} />
 
       {/* Message history with interleaved verbose events */}
       {state.messages.map((msg) => (
@@ -223,20 +245,10 @@ export function REPL({ agent }: REPLProps) {
       {resumeSessions !== null && (
         <SessionSelector
           sessions={resumeSessions}
+          currentCwd={agent.cwd}
           onSelect={async (session) => {
             setResumeSessions(null)
-            // Load transcript and replay as messages
-            let messages: UIMessage[] = []
-            try {
-              const transcript = await agent.loadTranscript(session.session_id)
-              messages = transcriptToMessages(transcript as TranscriptItem[])
-            } catch { /* ignore — show empty conversation */ }
-            setState((prev) => ({
-              ...prev,
-              sessionId: session.session_id,
-              messages,
-            }))
-            pushSystem(setSystemMessages, 'info', `Resumed session ${session.session_id.slice(0, 8)} — ${session.title || '(untitled)'}`)
+            await resumeSession(agent, session, setState, setSystemMessages)
           }}
           onCancel={() => setResumeSessions(null)}
         />
@@ -245,7 +257,7 @@ export function REPL({ agent }: REPLProps) {
       {/* Model selector for /model */}
       {showModelSelector && (
         <ModelSelector
-          models={AVAILABLE_MODELS}
+          models={[...getAvailableModels(agent), ...FALLBACK_MODELS.filter((m) => !getAvailableModels(agent).includes(m))]}
           currentModel={state.model}
           onSelect={(model) => {
             setShowModelSelector(false)
@@ -348,10 +360,30 @@ async function handleSlashCommand(
       break
 
     case '/model': {
-      if (args.trim()) {
-        agent.model = args.trim()
-        setState((prev) => ({ ...prev, model: args.trim() }))
-        pushSystem(setSystem, 'info', `Model → ${args.trim()}`)
+      const arg = args.trim()
+      if (arg === 'n') {
+        // Cycle to next model
+        const models = getAvailableModels(agent)
+        if (models.length <= 1) {
+          pushSystem(setSystem, 'info', 'Only one model available.')
+        } else {
+          const idx = models.indexOf(state.model)
+          const next = models[(idx + 1) % models.length]!
+          agent.model = next
+          // Auto-switch provider if needed
+          const config = agent.configInfo()
+          if (next === config.anthropicModel && next !== config.openaiModel) {
+            try { agent.setProvider('anthropic') } catch {}
+          } else if (next === config.openaiModel && next !== config.anthropicModel) {
+            try { agent.setProvider('openai') } catch {}
+          }
+          setState((prev) => ({ ...prev, model: next }))
+          pushSystem(setSystem, 'info', `Model → ${next}`)
+        }
+      } else if (arg) {
+        agent.model = arg
+        setState((prev) => ({ ...prev, model: arg }))
+        pushSystem(setSystem, 'info', `Model → ${arg}`)
       } else {
         setShowModelSelector(true)
       }
@@ -365,15 +397,19 @@ async function handleSlashCommand(
 
     case '/resume': {
       try {
-        const sessions = await agent.listSessions(20)
-        if (sessions.length === 0) {
+        const allSessions = await agent.listSessions(20)
+        if (allSessions.length === 0) {
           pushSystem(setSystem, 'info', 'No sessions found.')
           break
         }
 
+        // Prefer sessions from current CWD
+        const cwdSessions = allSessions.filter((s) => s.cwd === agent.cwd)
+        const sessions = cwdSessions.length > 0 ? cwdSessions : allSessions
+
         if (args.trim()) {
           const prefix = args.trim()
-          const matches = sessions.filter(
+          const matches = allSessions.filter(
             (s) => s.session_id === prefix || s.session_id.startsWith(prefix)
           )
           if (matches.length === 0) {
@@ -382,22 +418,11 @@ async function handleSlashCommand(
             pushSystem(setSystem, 'error', `Ambiguous session id: ${prefix}`)
           } else {
             const session = matches[0]!
-            let messages: UIMessage[] = []
-            try {
-              const transcript = await agent.loadTranscript(session.session_id)
-              messages = transcriptToMessages(transcript as TranscriptItem[])
-            } catch { /* ignore */ }
-            setState((prev) => ({
-              ...prev,
-              sessionId: session.session_id,
-              messages,
-            }))
-            pushSystem(setSystem, 'info', `Resumed session ${session.session_id.slice(0, 8)} — ${session.title || '(untitled)'}`)
+            await resumeSession(agent, session, setState, setSystem)
           }
         } else {
           // Show interactive session selector
-          const displaySessions = sessions.slice(0, 20)
-          setResumeSessions(displaySessions)
+          setResumeSessions(sessions.slice(0, 20))
         }
       } catch (err: any) {
         pushSystem(setSystem, 'error', `Failed to list sessions: ${err?.message ?? err}`)
@@ -418,14 +443,13 @@ async function handleSlashCommand(
     case '/env': {
       const sub = args.trim()
       if (!sub) {
-        // List env vars
-        const entries = Object.entries(process.env)
-          .filter(([k]) => k.startsWith('EVOT_') || k.startsWith('ANTHROPIC_') || k.startsWith('OPENAI_'))
-          .map(([k, v]) => `  ${k}=${v ? v.slice(0, 4) + '****' : '(unset)'}`)
-        if (entries.length === 0) {
-          pushSystem(setSystem, 'info', 'No EVOT_/ANTHROPIC_/OPENAI_ env vars set.')
+        // List agent variables + relevant process env
+        const vars = agent.listVariables()
+        if (vars.length > 0) {
+          const lines = vars.map((v) => `  ${v.key.padEnd(28)} ${v.value.slice(0, 2)}****${v.value.slice(-2)}`)
+          pushSystem(setSystem, 'info', `Agent variables:\n${lines.join('\n')}`)
         } else {
-          pushSystem(setSystem, 'info', `Environment:\n${entries.join('\n')}`)
+          pushSystem(setSystem, 'info', 'No agent variables set.')
         }
       } else if (sub.startsWith('set ')) {
         const kv = sub.slice(4).trim()
@@ -435,16 +459,24 @@ async function handleSlashCommand(
         } else {
           const key = kv.slice(0, eqIdx)
           const val = kv.slice(eqIdx + 1)
-          process.env[key] = val
-          pushSystem(setSystem, 'info', `Set ${key}`)
+          try {
+            await agent.setVariable(key, val)
+            pushSystem(setSystem, 'info', `Set ${key}`)
+          } catch (err: any) {
+            pushSystem(setSystem, 'error', `Failed: ${err?.message ?? err}`)
+          }
         }
       } else if (sub.startsWith('del ')) {
         const key = sub.slice(4).trim()
         if (!key) {
           pushSystem(setSystem, 'error', 'Usage: /env del KEY')
         } else {
-          delete process.env[key]
-          pushSystem(setSystem, 'info', `Deleted ${key}`)
+          try {
+            const removed = await agent.deleteVariable(key)
+            pushSystem(setSystem, 'info', removed ? `Deleted ${key}` : `${key} not found`)
+          } catch (err: any) {
+            pushSystem(setSystem, 'error', `Failed: ${err?.message ?? err}`)
+          }
         }
       } else if (sub.startsWith('load ')) {
         const filePath = sub.slice(5).trim()
@@ -460,11 +492,10 @@ async function handleSlashCommand(
             if (eq > 0) {
               const k = clean.slice(0, eq)
               let v = clean.slice(eq + 1)
-              // Strip surrounding quotes
               if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
                 v = v.slice(1, -1)
               }
-              process.env[k] = v
+              await agent.setVariable(k, v)
               count++
             }
           }
@@ -483,10 +514,78 @@ async function handleSlashCommand(
       const { homedir } = await import('os')
       const logDir = join(homedir(), '.evotai', 'logs')
       const sid = state.sessionId
-      if (sid) {
-        pushSystem(setSystem, 'info', `Log: ${join(logDir, `${sid}.log`)}`)
+      const query = args.trim()
+
+      if (!query) {
+        // Just show log path
+        if (sid) {
+          pushSystem(setSystem, 'info', `Log: ${join(logDir, `${sid}.log`)}`)
+        } else {
+          pushSystem(setSystem, 'info', `Log dir: ${logDir} (no active session)`)
+        }
+      } else if (!sid) {
+        pushSystem(setSystem, 'error', 'No active session to analyze.')
       } else {
-        pushSystem(setSystem, 'info', `Log dir: ${logDir} (no active session)`)
+        // Side conversation: fork agent to analyze the log
+        const logPath = join(logDir, `${sid}.log`)
+        const systemPrompt = [
+          'You are in a temporary log analysis session.',
+          `The session log file is at: ${logPath}`,
+          'Read the log file before answering any questions.',
+          'Do not modify any files. Only read and analyze.',
+          'Keep answers concise and focused on the log content.',
+        ].join('\n')
+
+        try {
+          const forked = agent.fork(systemPrompt)
+          pushSystem(setSystem, 'info', `Analyzing log... (type /done to exit)`)
+
+          // Run first turn
+          const stream = await forked.query(query)
+          let text = ''
+          for await (const event of stream) {
+            if (event.kind === 'assistant_delta' && event.payload?.delta) {
+              text += event.payload.delta as string
+            }
+          }
+          if (text) pushSystem(setSystem, 'info', text)
+
+          // Enter mini-REPL loop via state — store forked agent for subsequent turns
+          setState((prev) => ({ ...prev, forkedAgent: forked } as any))
+        } catch (err: any) {
+          pushSystem(setSystem, 'error', `Fork failed: ${err?.message ?? err}`)
+        }
+      }
+      break
+    }
+
+    case '/skill': {
+      const sub = args.trim()
+      if (!sub || sub === 'list') {
+        pushSystem(setSystem, 'info', skillList())
+      } else if (sub.startsWith('install ')) {
+        const source = sub.slice(8).trim()
+        if (!source) {
+          pushSystem(setSystem, 'error', 'Usage: /skill install <owner/repo>')
+          break
+        }
+        pushSystem(setSystem, 'info', `Installing skill from ${source}...`)
+        try {
+          const forked = agent.fork('You analyze skills and provide setup guides.')
+          const result = await skillInstall(source, forked)
+          pushSystem(setSystem, 'info', result)
+        } catch (err: any) {
+          pushSystem(setSystem, 'error', `Install failed: ${err?.message ?? err}`)
+        }
+      } else if (sub.startsWith('remove ')) {
+        const name = sub.slice(7).trim()
+        if (!name) {
+          pushSystem(setSystem, 'error', 'Usage: /skill remove <name>')
+        } else {
+          pushSystem(setSystem, 'info', skillRemove(name))
+        }
+      } else {
+        pushSystem(setSystem, 'error', 'Usage: /skill [list | install <source> | remove <name>]')
       }
       break
     }
@@ -530,6 +629,68 @@ function VerboseEventLine({ event }: { event: import('../state/AppState.js').Ver
 }
 
 // ---------------------------------------------------------------------------
+// Resume session helper
+// ---------------------------------------------------------------------------
+
+async function resumeSession(
+  agent: Agent,
+  session: import('../native/index.js').SessionMeta,
+  setState: React.Dispatch<React.SetStateAction<AppState>>,
+  setSystem: React.Dispatch<React.SetStateAction<SystemMsg[]>>,
+) {
+  let messages: UIMessage[] = []
+  try {
+    const transcript = await agent.loadTranscript(session.session_id)
+    messages = transcriptToMessages(transcript as TranscriptItem[])
+  } catch { /* ignore */ }
+
+  // Restore model from session
+  if (session.model) {
+    agent.model = session.model
+    // Auto-switch provider
+    const config = agent.configInfo()
+    if (session.model === config.anthropicModel) {
+      try { agent.setProvider('anthropic') } catch {}
+    } else if (session.model === config.openaiModel) {
+      try { agent.setProvider('openai') } catch {}
+    }
+  }
+
+  setState((prev) => ({
+    ...prev,
+    sessionId: session.session_id,
+    model: session.model || prev.model,
+    messages,
+  }))
+  pushSystem(setSystem, 'info', `Resumed session ${session.session_id.slice(0, 8)} — ${session.title || '(untitled)'}`)
+}
+
+// ---------------------------------------------------------------------------
+// Available models (from config + fallback list)
+// ---------------------------------------------------------------------------
+
+function getAvailableModels(agent: Agent): string[] {
+  const config = agent.configInfo()
+  const models: string[] = []
+  for (const m of [config.anthropicModel, config.openaiModel, agent.model]) {
+    if (m && m.trim() && !models.includes(m)) models.push(m)
+  }
+  return models
+}
+
+const FALLBACK_MODELS = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
+  'gpt-4o',
+  'gpt-4o-mini',
+  'o3',
+  'o3-mini',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+]
+
+// ---------------------------------------------------------------------------
 // Async query runner
 // ---------------------------------------------------------------------------
 
@@ -539,9 +700,10 @@ async function runQuery(
   sessionId: string | null,
   streamRef: React.MutableRefObject<QueryStream | null>,
   setState: React.Dispatch<React.SetStateAction<AppState>>,
+  toolMode?: string,
 ) {
   try {
-    const stream = await agent.query(text, sessionId ?? undefined)
+    const stream = await agent.query(text, sessionId ?? undefined, toolMode)
     streamRef.current = stream
 
     // Start transcript log for this session
@@ -567,31 +729,19 @@ async function runQuery(
 }
 
 // ---------------------------------------------------------------------------
-// Available models
-// ---------------------------------------------------------------------------
-
-const AVAILABLE_MODELS = [
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-20250514',
-  'claude-3-5-haiku-20241022',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'o3',
-  'o3-mini',
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-]
-
-// ---------------------------------------------------------------------------
 // Banner
 // ---------------------------------------------------------------------------
 
-function Banner({ model, cwd, sessionId }: { model: string; cwd: string; sessionId: string | null }) {
+function Banner({ model, cwd, sessionId, configInfo }: {
+  model: string
+  cwd: string
+  sessionId: string | null
+  configInfo?: import('../native/index.js').ConfigInfo
+}) {
   const shortCwd = cwd.replace(process.env.HOME ?? '', '~')
   const gitBranch = getGitBranch(cwd)
   const sessionLabel = sessionId ? sessionId.slice(0, 8) : '(new)'
+  const envPath = configInfo?.envPath?.replace(process.env.HOME ?? '', '~') ?? ''
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -601,14 +751,14 @@ function Banner({ model, cwd, sessionId }: { model: string; cwd: string; session
         </Text>
         <Text dimColor> v0.1.0</Text>
       </Box>
-      <Box>
-        <Text dimColor>
-          {shortCwd} · {model}
-          {gitBranch ? ` · ${gitBranch}` : ''}
-          {' · '}
-        </Text>
-        <Text dimColor italic>{sessionLabel}</Text>
-      </Box>
+      {envPath ? <Text dimColor>  env:      {envPath}</Text> : null}
+      {configInfo && <Text dimColor>  provider: {configInfo.provider}</Text>}
+      <Text dimColor>  model:    {model}</Text>
+      {configInfo?.baseUrl && <Text dimColor>  base_url: {configInfo.baseUrl}</Text>}
+      <Text dimColor>  session:  {sessionLabel}</Text>
+      {gitBranch && <Text dimColor>  git:      {gitBranch}</Text>}
+      <Text dimColor>  cwd:      {shortCwd}</Text>
+      <Text dimColor>  /help commands  ·  Tab complete  ·  ↑↓ history  ·  Ctrl+C×2 exit</Text>
     </Box>
   )
 }

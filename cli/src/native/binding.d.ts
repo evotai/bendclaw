@@ -3,9 +3,19 @@
 export interface NapiAgent {
   model: string
   readonly cwd: string
-  query(prompt: string, sessionId?: string | null): Promise<NapiQueryStream>
+  query(prompt: string, sessionId?: string | null, toolMode?: string | null): Promise<NapiQueryStream>
   listSessions(limit?: number | null): Promise<string>
   loadTranscript(sessionId: string): Promise<string>
+  fork(systemPrompt: string): NapiForkedAgent
+  listVariables(): string
+  setVariable(key: string, value: string): Promise<void>
+  deleteVariable(key: string): Promise<boolean>
+  configInfo(): string
+  setProvider(provider: string): void
+}
+
+export interface NapiForkedAgent {
+  query(prompt: string): Promise<NapiQueryStream>
 }
 
 export interface NapiQueryStream {

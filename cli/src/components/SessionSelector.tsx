@@ -10,11 +10,12 @@ import { relativeTime, padRight } from '../utils/format.js'
 
 interface SessionSelectorProps {
   sessions: SessionMeta[]
+  currentCwd?: string
   onSelect: (session: SessionMeta) => void
   onCancel: () => void
 }
 
-export function SessionSelector({ sessions, onSelect, onCancel }: SessionSelectorProps) {
+export function SessionSelector({ sessions, currentCwd, onSelect, onCancel }: SessionSelectorProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [filter, setFilter] = useState('')
 
@@ -83,11 +84,14 @@ export function SessionSelector({ sessions, onSelect, onCancel }: SessionSelecto
           const displayTitle = title.length > 50 ? title.slice(0, 49) + '…' : title
           const time = relativeTime(s.updated_at)
 
+          const cwdMarker = currentCwd && s.cwd === currentCwd ? '*' : ' '
+
           return (
             <Box key={s.session_id}>
               <Text color={isSelected ? 'cyan' : undefined} bold={isSelected}>
                 {isSelected ? '❯ ' : '  '}
               </Text>
+              <Text dimColor>{cwdMarker}</Text>
               <Text color={isSelected ? 'cyan' : undefined} bold={isSelected}>
                 {id}
               </Text>

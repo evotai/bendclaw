@@ -20,7 +20,8 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/clear', description: 'Clear message display', handler: 'builtin' },
   { name: '/verbose', aliases: ['/v'], description: 'Toggle verbose mode (run stats)', handler: 'builtin' },
   { name: '/env', description: 'Manage environment variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
-  { name: '/log', description: 'Show session log path', handler: 'builtin' },
+  { name: '/log', description: 'Show log path or analyze log', usage: '/log [query]', handler: 'builtin' },
+  { name: '/skill', description: 'Manage skills', usage: '/skill [list | install <source> | remove <name>]', handler: 'builtin' },
   { name: '/exit', aliases: ['/quit', '/q'], description: 'Exit the REPL', handler: 'builtin' },
 ]
 

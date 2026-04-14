@@ -34,6 +34,7 @@
     "@types/bun": "^1.2.0",
     "@types/diff": "^8.0.0",
     "@types/react": "^18.3.0",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^5.8.0"
   }
 }

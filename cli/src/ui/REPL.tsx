@@ -840,7 +840,7 @@ function Banner({ model, cwd, sessionId, configInfo }: {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text backgroundColor="#5a2d82" color="white" bold>
+        <Text backgroundColor="blue" color="white" bold>
           {' ◆ evot '}
         </Text>
         <Text dimColor> v0.1.0</Text>

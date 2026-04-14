@@ -13,9 +13,13 @@ chrono.workspace = true
 clap.workspace = true
 crossterm = "0.28"
 futures.workspace = true
+native-tls = "0.2"
 parking_lot.workspace = true
+prost = "0.13"
+regex = "1"
 ratatui = "0.29"
 reedline = "0.47.0"
+reqwest.workspace = true
 similar = { workspace = true }
 serde.workspace = true
 serde_ignored.workspace = true
@@ -23,6 +27,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 toml.workspace = true
 tower-http.workspace = true
 tracing.workspace = true

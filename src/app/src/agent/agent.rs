@@ -165,6 +165,21 @@ impl QueryStream {
     pub fn abort(&self) {
         self.engine_handle.abort();
     }
+
+    /// Test-only constructor: create a QueryStream from a raw receiver.
+    #[doc(hidden)]
+    pub fn from_receiver(
+        rx: mpsc::UnboundedReceiver<RunEvent>,
+        session_id: String,
+        run_id: String,
+    ) -> Self {
+        Self {
+            rx,
+            session_id,
+            run_id,
+            engine_handle: EngineHandle::noop(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

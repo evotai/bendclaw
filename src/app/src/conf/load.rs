@@ -4,11 +4,13 @@ use std::path::Path;
 
 use crate::conf::default_config;
 use crate::conf::paths;
+use crate::conf::ChannelsConfig;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::conf::StorageBackend;
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::gateway::channels::feishu::FeishuChannelConfig;
 
 const RELEVANT_KEYS: &[&str] = &[
     "EVOT_LLM_PROVIDER",
@@ -26,6 +28,9 @@ const RELEVANT_KEYS: &[&str] = &[
     "EVOT_STORAGE_CLOUD_ENDPOINT",
     "EVOT_STORAGE_CLOUD_API_KEY",
     "EVOT_STORAGE_CLOUD_WORKSPACE",
+    "EVOT_FEISHU_APP_ID",
+    "EVOT_FEISHU_APP_SECRET",
+    "EVOT_FEISHU_MENTION_ONLY",
 ];
 
 fn optional_string(value: String) -> Option<String> {
@@ -47,6 +52,13 @@ struct ConfigSource {
     server: ServerSource,
     storage: StorageSource,
     thinking_level: Option<ThinkingLevel>,
+    channel: ChannelSource,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+struct ChannelSource {
+    feishu: Option<FeishuChannelConfig>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -142,7 +154,13 @@ impl ConfigSource {
         }
 
         if let Some(level) = self.thinking_level {
-            config.thinking_level = level;
+            config.llm.thinking_level = level;
+        }
+
+        if self.channel.feishu.is_some() {
+            config.channels = ChannelsConfig {
+                feishu: self.channel.feishu,
+            };
         }
 
         Ok(())
@@ -251,7 +269,7 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     if let Some(level) = vars.get("EVOT_THINKING_LEVEL") {
-        config.thinking_level = level.parse::<ThinkingLevel>().map_err(EvotError::Conf)?;
+        config.llm.thinking_level = level.parse::<ThinkingLevel>().map_err(EvotError::Conf)?;
     }
 
     apply_provider_env(config, ProviderKind::Anthropic, vars);
@@ -288,6 +306,24 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
     if let Some(workspace) = vars.get("EVOT_STORAGE_CLOUD_WORKSPACE") {
         config.storage.cloud.workspace = Some(workspace.clone());
+    }
+
+    // Feishu channel from env
+    if let Some(app_id) = vars.get("EVOT_FEISHU_APP_ID") {
+        let app_secret = vars
+            .get("EVOT_FEISHU_APP_SECRET")
+            .cloned()
+            .unwrap_or_default();
+        let mention_only = vars
+            .get("EVOT_FEISHU_MENTION_ONLY")
+            .map(|v| v != "0" && v.to_lowercase() != "false")
+            .unwrap_or(true);
+        config.channels.feishu = Some(FeishuChannelConfig {
+            app_id: app_id.clone(),
+            app_secret,
+            mention_only,
+            allow_from: Vec::new(),
+        });
     }
 
     Ok(())

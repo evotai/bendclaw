@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::conf::paths;
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::gateway::channels::feishu::FeishuChannelConfig;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -15,7 +16,7 @@ pub struct Config {
     pub openai: ProviderConfig,
     pub server: ServerConfig,
     pub storage: StorageConfig,
-    pub thinking_level: ThinkingLevel,
+    pub channels: ChannelsConfig,
 }
 
 impl Config {
@@ -26,7 +27,7 @@ impl Config {
             openai: ProviderConfig::openai(),
             server: ServerConfig::default(),
             storage: StorageConfig::fs(state_root),
-            thinking_level: ThinkingLevel::Off,
+            channels: ChannelsConfig::default(),
         }
     }
 
@@ -39,7 +40,7 @@ impl Config {
             api_key: config.api_key,
             base_url: config.base_url,
             model: config.model,
-            thinking_level: self.thinking_level,
+            thinking_level: self.llm.thinking_level,
         }
     }
 
@@ -100,9 +101,19 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct LlmSelection {
     pub provider: ProviderKind,
+    pub thinking_level: ThinkingLevel,
+}
+
+impl Default for LlmSelection {
+    fn default() -> Self {
+        Self {
+            provider: ProviderKind::default(),
+            thinking_level: ThinkingLevel::Off,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -227,4 +238,9 @@ pub fn default_model(provider: &ProviderKind) -> &'static str {
 
 pub fn default_config() -> Result<Config> {
     Ok(Config::new(paths::state_root_dir()?))
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChannelsConfig {
+    pub feishu: Option<FeishuChannelConfig>,
 }

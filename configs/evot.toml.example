@@ -31,3 +31,9 @@ root_dir = "~/.evotai"
 endpoint = ""
 api_key = ""
 workspace = ""
+
+# [channel.feishu]
+# app_id = ""
+# app_secret = ""
+# mention_only = true
+# allow_from = []

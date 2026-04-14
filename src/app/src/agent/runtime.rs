@@ -60,6 +60,11 @@ impl EngineHandle {
             agent.abort();
         }
     }
+
+    /// Create a no-op handle (for tests).
+    pub(crate) fn noop() -> Self {
+        Self { agent: None }
+    }
 }
 
 // ---------------------------------------------------------------------------

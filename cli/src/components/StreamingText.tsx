@@ -1,9 +1,11 @@
 /**
  * StreamingText component — renders the current streaming assistant response.
+ * Applies markdown rendering during streaming for code blocks, tables, etc.
  */
 
 import React from 'react'
 import { Text, Box } from 'ink'
+import { renderMarkdown } from '../utils/markdown.js'
 
 interface StreamingTextProps {
   text: string
@@ -15,6 +17,8 @@ export function StreamingText({ text, thinkingText }: StreamingTextProps) {
     return null
   }
 
+  const rendered = text.length > 0 ? renderMarkdown(text) : ''
+
   return (
     <Box flexDirection="column" marginBottom={1}>
       {thinkingText.length > 0 && (
@@ -24,10 +28,13 @@ export function StreamingText({ text, thinkingText }: StreamingTextProps) {
           </Text>
         </Box>
       )}
-      {text.length > 0 && (
-        <Box>
-          <Text>{text}</Text>
-          <Text color="gray">▍</Text>
+      {rendered.length > 0 && (
+        <Box marginTop={1}>
+          <Text color="magenta" bold>{'⏺ '}</Text>
+          <Box flexDirection="column" flexShrink={1}>
+            <Text>{rendered.replace(/^\n+/, '')}</Text>
+            <Text color="gray">▍</Text>
+          </Box>
         </Box>
       )}
     </Box>

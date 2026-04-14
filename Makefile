@@ -6,7 +6,7 @@ NEXTEST := $(CARGO) nextest run --no-tests=pass
 COVERAGE_TARGETS := --lib --test unit --test it --test contract
 COVERAGE_CMD := $(CARGO) llvm-cov nextest $(COVERAGE_TARGETS)
 
-.PHONY: setup check build run test test-fast test-unit test-it test-contract coverage coverage-report snapshot-review dev-env ci build-napi build-ui
+.PHONY: setup check build run test test-fast test-unit test-it test-contract test-ui coverage coverage-report snapshot-review dev-env ci build-napi build-ui
 
 setup:
 	@set -e; \
@@ -66,6 +66,9 @@ test-it:
 test-contract:
 	$(NEXTEST) --test contract --no-fail-fast
 
+test-ui:
+	cd cli && bun test tests/
+
 coverage: coverage-core-check
 
 coverage-report:
@@ -102,7 +105,7 @@ build-napi:
 	cd cli && napi build --manifest-path ../src/napi/Cargo.toml --release --platform
 
 build-napi-dev:
-	cd cli && napi build --manifest-path ../src/napi/Cargo.toml --platform
+	cd cli && napi build --manifest-path ../src/napi/Cargo.toml --platform -o .
 
 build-ui: build-napi
 	cd cli && bun install

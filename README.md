@@ -47,7 +47,9 @@ Evot doesn't waste a single token — and proves it.
 - **Blazing fast.** Fewer wasted tokens → fewer turns → complex tasks done in half the time.
 - **Fully observable.** Every LLM call, tool execution, and compaction tracked end-to-end. This data feeds back into the engine — Evot evolves its strategy so the next prompt is always leaner than the last.
 
-Not a CLI wrapper. The agent engine you build on — ships with REPL, CLI, and server.
+Not a CLI wrapper. The agent engine you build on — ships with interactive REPL, CLI, and server.
+
+Built on a Rust engine with a TypeScript CLI powered by Ink.
 
 <p align="center">
   <img width="815" height="768" alt="Evot in action" src="https://github.com/user-attachments/assets/f0f14c8c-37f2-4aff-a91a-c30768488b3d" />
@@ -58,13 +60,16 @@ Not a CLI wrapper. The agent engine you build on — ships with REPL, CLI, and s
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/evotai/evot/main/install.sh | bash
+npx @evotai/evot
 ```
 
-### Build from source
+### From source
 
 ```bash
-cargo install --git https://github.com/evotai/evot.git
+git clone https://github.com/evotai/evot.git
+cd evot
+make setup && make build-napi && make build-ui
+cd cli && bun run src/index.tsx
 ```
 
 ## Quickstart
@@ -115,7 +120,9 @@ evot -p "summarize today's PRs"   # one-shot task
 ```bash
 make setup      # install Rust toolchain, git hooks
 make check      # fmt + clippy
-make test       # unit + integration tests
+make test       # unit + integration tests (Rust engine)
+make test-ui    # CLI tests (TypeScript)
+make dev-ui     # build NAPI + run CLI in dev mode
 ```
 
 ## Community
@@ -144,5 +151,5 @@ Apache-2.0
 ---
 
 <p align="center">
-  Built with 🦀 by <a href="https://evot.ai">Evot AI</a>
+  Built with 🦀 + TypeScript by <a href="https://evot.ai">Evot AI</a>
 </p>

@@ -5,7 +5,7 @@
  */
 
 // @ts-ignore — binding.js is generated
-import { NapiAgent as RawAgent, version as rawVersion } from './binding.js'
+import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer } from './binding.js'
 import type { NapiAgent as RawAgentType, NapiQueryStream as RawStreamType } from './binding.d.ts'
 
 // ---------------------------------------------------------------------------
@@ -120,4 +120,8 @@ export class Agent {
 
 export function version(): string {
   return rawVersion()
+}
+
+export async function startServer(port?: number, model?: string): Promise<void> {
+  return rawStartServer(port ?? null, model ?? null)
 }

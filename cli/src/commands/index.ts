@@ -19,6 +19,8 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/act', description: 'Exit planning mode (full tools)', handler: 'builtin' },
   { name: '/clear', description: 'Clear message display', handler: 'builtin' },
   { name: '/verbose', aliases: ['/v'], description: 'Toggle verbose mode (run stats)', handler: 'builtin' },
+  { name: '/env', description: 'Manage environment variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
+  { name: '/log', description: 'Show session log path', handler: 'builtin' },
   { name: '/exit', aliases: ['/quit', '/q'], description: 'Exit the REPL', handler: 'builtin' },
 ]
 
@@ -55,24 +57,6 @@ export function resolveCommand(input: string): ResolvedCommand {
   }
 
   return { kind: 'unknown' }
-}
-
-/**
- * Format the help text for all commands.
- */
-export function formatHelp(): string {
-  const lines: string[] = ['Available commands:', '']
-  for (const cmd of COMMANDS) {
-    const usage = cmd.usage ?? cmd.name
-    lines.push(`  ${padRight(usage, 24)} ${cmd.description}`)
-  }
-  lines.push('')
-  lines.push('  Tip: commands can be abbreviated (e.g. /h for /help)')
-  return lines.join('\n')
-}
-
-function padRight(s: string, n: number): string {
-  return s + ' '.repeat(Math.max(0, n - s.length))
 }
 
 /**

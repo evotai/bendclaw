@@ -10,12 +10,19 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { Text, Box, useInput, useStdout } from 'ink'
-import { complete } from '../commands/completion.js'
+import { complete, getGhostHint, getCommandHints, type CommandHint } from '../commands/completion.js'
+import type { HistoryManager } from '../utils/history.js'
+import { InterruptHandler } from '../utils/interrupt.js'
+import { needsContinuation } from '../utils/continuation.js'
 
 interface PromptInputProps {
   model: string
   isLoading: boolean
+  isActive: boolean
   verbose: boolean
+  planning: boolean
+  queuedMessages: string[]
+  history: HistoryManager
   onSubmit: (text: string) => void
   onInterrupt: () => void
   onToggleVerbose: () => void
@@ -24,7 +31,11 @@ interface PromptInputProps {
 export function PromptInput({
   model,
   isLoading,
+  isActive,
   verbose,
+  planning,
+  queuedMessages,
+  history,
   onSubmit,
   onInterrupt,
   onToggleVerbose,
@@ -33,11 +44,18 @@ export function PromptInput({
   const [cursorLine, setCursorLine] = useState(0)
   const [cursorCol, setCursorCol] = useState(0)
   const [completionCandidates, setCompletionCandidates] = useState<string[]>([])
+  const [exitHint, setExitHint] = useState(false)
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(-1)
   const savedInputRef = useRef('')
+  const interruptRef = useRef(new InterruptHandler())
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
+
+  // Load persistent history on mount
+  useEffect(() => {
+    historyRef.current = history.load()
+  }, [history])
 
   const currentText = () => lines.join('\n')
   const setInputText = (text: string) => {
@@ -56,26 +74,38 @@ export function PromptInput({
   }
 
   useInput((ch, key) => {
+    // During loading, only allow Ctrl+C to interrupt and Enter to queue
     if (isLoading) {
       if (key.ctrl && ch === 'c') {
         onInterrupt()
+        return
       }
-      return
+      // Allow typing into the input while loading — fall through
     }
 
-    // Ctrl+C — clear input or exit
+    // Ctrl+C — clear input, show exit hint, or exit
     if (key.ctrl && ch === 'c') {
-      if (currentText().length === 0) {
+      const action = interruptRef.current.onInterrupt(currentText().length === 0)
+      if (action === 'exit') {
+        setExitHint(false)
         onInterrupt()
+      } else if (action === 'show_hint') {
+        setExitHint(true)
+        setTimeout(() => setExitHint(false), 1500)
       } else {
         clearInput()
+        setExitHint(false)
       }
       return
     }
 
-    // Ctrl+L — toggle verbose
-    if (key.ctrl && ch === 'l') {
-      onToggleVerbose()
+    // Any normal input cancels pending exit hint
+    interruptRef.current.onInput()
+    if (exitHint) setExitHint(false)
+
+    // Ctrl+L — clear all input (form feed \x0c)
+    if ((key.ctrl && ch === 'l') || ch === '\f') {
+      clearInput()
       return
     }
 
@@ -97,6 +127,12 @@ export function PromptInput({
         newLines[cursorLine] = newLines[cursorLine]!.slice(0, cursorCol)
         return newLines
       })
+      return
+    }
+
+    // Ctrl+O — toggle verbose output
+    if (key.ctrl && ch === 'o') {
+      onToggleVerbose()
       return
     }
 
@@ -137,15 +173,18 @@ export function PromptInput({
       return
     }
 
-    // Ctrl+W — delete word before cursor
+    // Ctrl+W — delete word before cursor (standard bash unix-word-rubout)
     if (key.ctrl && ch === 'w') {
       const line = lines[cursorLine]!
-      const before = line.slice(0, cursorCol)
-      const trimmed = before.replace(/\s+\S*$/, '')
-      const newCol = trimmed.length
+      let i = cursorCol
+      // skip trailing whitespace backward
+      while (i > 0 && line[i - 1] === ' ') i--
+      // skip word backward
+      while (i > 0 && line[i - 1] !== ' ') i--
+      const newCol = i
       setLines((prev) => {
         const newLines = [...prev]
-        newLines[cursorLine] = trimmed + line.slice(cursorCol)
+        newLines[cursorLine] = line.slice(0, newCol) + line.slice(cursorCol)
         return newLines
       })
       setCursorCol(newCol)
@@ -169,11 +208,25 @@ export function PromptInput({
 
       const text = currentText().trim()
       if (text.length > 0) {
-        // Add to history
-        const history = historyRef.current
-        if (history.length === 0 || history[history.length - 1] !== text) {
-          history.push(text)
+        // Check for continuation (unclosed fences, trailing backslash)
+        if (needsContinuation(text)) {
+          // Auto-insert newline instead of submitting
+          setLines((prev) => {
+            const line = prev[cursorLine]!
+            const newLines = [...prev]
+            newLines.splice(cursorLine, 1, line.slice(0, cursorCol), line.slice(cursorCol))
+            return newLines
+          })
+          setCursorLine((prev) => prev + 1)
+          setCursorCol(0)
+          return
         }
+        // Add to in-memory + persistent history
+        const hist = historyRef.current
+        if (hist.length === 0 || hist[hist.length - 1] !== text) {
+          hist.push(text)
+        }
+        history.append(text)
         historyIndexRef.current = -1
         onSubmit(text)
         clearInput()
@@ -310,11 +363,7 @@ export function PromptInput({
       })
       setCursorCol((prev) => prev + ch.length)
     }
-  })
-
-  if (isLoading) {
-    return null
-  }
+  }, { isActive })
 
   const borderLine = '─'.repeat(columns)
 
@@ -335,7 +384,7 @@ export function PromptInput({
                 <Text dimColor>Type a message...</Text>
               </Text>
             ) : (
-              <CursorLine text={line} cursorCol={cursorCol} />
+              <CursorLine text={line} cursorCol={cursorCol} ghostHint={getGhostHint(line, cursorCol)} />
             )
           ) : (
             <Text>{line || ' '}</Text>
@@ -343,8 +392,8 @@ export function PromptInput({
         </Box>
       ))}
 
-      {/* Completion candidates */}
-      {completionCandidates.length > 1 && (
+      {/* Completion candidates (file paths) */}
+      {completionCandidates.length > 1 && !lines[cursorLine]?.startsWith('/') && (
         <Box>
           <Text dimColor>  </Text>
           <Text dimColor>{completionCandidates.join('  ')}</Text>
@@ -354,10 +403,49 @@ export function PromptInput({
       {/* Bottom border */}
       <Text dimColor>{borderLine}</Text>
 
+      {/* Command hints dropdown */}
+      {(() => {
+        const line = lines[cursorLine] ?? ''
+        const hints = getCommandHints(line, cursorCol)
+        if (hints.length === 0 || !line.startsWith('/')) return null
+        // Find max command name length for alignment
+        const maxLen = Math.max(...hints.map(h => h.name.length))
+        return (
+          <Box flexDirection="column">
+            {hints.map((h) => (
+              <Box key={h.name}>
+                <Text dimColor>  </Text>
+                <Text color="cyan">{h.name.padEnd(maxLen + 2)}</Text>
+                <Text dimColor>{h.description.length > 80 ? h.description.slice(0, 79) + '…' : h.description}</Text>
+              </Box>
+            ))}
+          </Box>
+        )
+      })()}
+
+      {/* Exit hint */}
+      {exitHint && (
+        <Box>
+          <Text dimColor italic>  Press Ctrl+C again to exit</Text>
+        </Box>
+      )}
+
+      {/* Queued messages */}
+      {queuedMessages.length > 0 && (
+        <Box flexDirection="column" marginBottom={0}>
+          {queuedMessages.map((msg, i) => (
+            <Box key={i}>
+              <Text dimColor>  ❯ </Text>
+              <Text dimColor>{msg}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
       {/* Footer */}
       <Footer
         model={model}
-        verbose={verbose}
+        planning={planning}
         columns={columns}
       />
     </Box>
@@ -368,7 +456,7 @@ export function PromptInput({
 // CursorLine — renders a line with an inverse cursor at the right position
 // ---------------------------------------------------------------------------
 
-function CursorLine({ text, cursorCol }: { text: string; cursorCol: number }) {
+function CursorLine({ text, cursorCol, ghostHint }: { text: string; cursorCol: number; ghostHint?: string }) {
   const before = text.slice(0, cursorCol)
   const cursorChar = text[cursorCol] ?? ' '
   const after = text.slice(cursorCol + 1)
@@ -378,6 +466,7 @@ function CursorLine({ text, cursorCol }: { text: string; cursorCol: number }) {
       {before}
       <Text inverse>{cursorChar}</Text>
       {after}
+      {ghostHint ? <Text dimColor>{ghostHint}</Text> : null}
     </Text>
   )
 }
@@ -388,20 +477,22 @@ function CursorLine({ text, cursorCol }: { text: string; cursorCol: number }) {
 
 function Footer({
   model,
-  verbose,
+  planning,
   columns,
 }: {
   model: string
-  verbose: boolean
+  planning: boolean
   columns: number
 }) {
-  const left = `Ctrl+L ${verbose ? 'brief' : 'verbose'} · /help`
+  const modeTag = planning ? ' [plan]' : ''
+  const left = `/help${modeTag}`
   const right = model
   const gap = Math.max(1, columns - left.length - right.length)
 
   return (
     <Box>
-      <Text dimColor>{left}</Text>
+      <Text dimColor>/help</Text>
+      {planning && <Text color="yellow" bold>{' [plan]'}</Text>}
       <Text>{' '.repeat(gap)}</Text>
       <Text dimColor>{right}</Text>
     </Box>

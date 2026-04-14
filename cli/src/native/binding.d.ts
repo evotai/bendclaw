@@ -19,3 +19,5 @@ export declare const NapiAgent: {
 }
 
 export declare function version(): string
+
+export declare function startServer(port?: number | null, model?: string | null): Promise<void>

@@ -1,11 +1,13 @@
 /**
  * Message display component — renders a single message in the conversation.
- * In verbose mode, shows additional detail for tool calls.
+ * Assistant messages are rendered with markdown (tables, code blocks, etc).
  */
 
 import React from 'react'
 import { Text, Box } from 'ink'
 import type { UIMessage, UIToolCall } from '../state/AppState.js'
+import { renderMarkdown } from '../utils/markdown.js'
+import { colorizeUnifiedDiff } from '../utils/diff.js'
 
 interface MessageProps {
   message: UIMessage
@@ -31,6 +33,8 @@ function UserMessage({ message }: { message: UIMessage }) {
 }
 
 function AssistantMessage({ message, verbose }: { message: UIMessage; verbose: boolean }) {
+  const rendered = message.text.length > 0 ? renderMarkdown(message.text) : ''
+
   return (
     <Box flexDirection="column" marginBottom={1}>
       {/* Tool call results */}
@@ -38,10 +42,13 @@ function AssistantMessage({ message, verbose }: { message: UIMessage; verbose: b
         <ToolCallResult key={tc.id} tool={tc} verbose={verbose} />
       ))}
 
-      {/* Assistant text */}
-      {message.text.length > 0 && (
-        <Box>
-          <Text>{message.text}</Text>
+      {/* Assistant text — rendered as markdown */}
+      {rendered.length > 0 && (
+        <Box marginTop={1}>
+          <Text color="magenta" bold>{'⏺ '}</Text>
+          <Box flexDirection="column" flexShrink={1}>
+            <Text>{rendered.replace(/^\n+/, '')}</Text>
+          </Box>
         </Box>
       )}
     </Box>
@@ -52,6 +59,10 @@ function ToolCallResult({ tool, verbose }: { tool: UIToolCall; verbose: boolean 
   const icon = tool.status === 'error' ? '✗' : '✓'
   const color = tool.status === 'error' ? 'red' : 'green'
   const detail = formatToolSummary(tool)
+
+  // Check for diff in tool result (file_edit, write, etc.)
+  const diffText = tool.args?.diff as string | undefined
+  const hasDiff = diffText && typeof diffText === 'string' && diffText.length > 0
 
   return (
     <Box flexDirection="column">
@@ -64,8 +75,15 @@ function ToolCallResult({ tool, verbose }: { tool: UIToolCall; verbose: boolean 
         )}
       </Box>
 
+      {/* Diff display for file edit tools */}
+      {hasDiff && (
+        <Box marginLeft={2} marginBottom={0}>
+          <Text>{colorizeUnifiedDiff(diffText)}</Text>
+        </Box>
+      )}
+
       {/* Verbose: show tool result preview */}
-      {verbose && tool.result && (
+      {verbose && tool.result && !hasDiff && (
         <Box marginLeft={2} marginBottom={0}>
           <Text dimColor>
             {truncateResult(tool.result, tool.status === 'error' ? 200 : 120)}

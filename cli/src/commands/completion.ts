@@ -36,6 +36,56 @@ export function complete(line: string, cursorCol: number): CompletionResult | nu
   return null
 }
 
+export interface CommandHint {
+  name: string
+  description: string
+}
+
+/**
+ * Get matching command hints for dropdown display below input.
+ */
+export function getCommandHints(line: string, cursorCol: number): CommandHint[] {
+  const beforeCursor = line.slice(0, cursorCol)
+  if (!beforeCursor.startsWith('/')) return []
+
+  const parts = beforeCursor.split(/\s+/)
+  if (parts.length > 1) return [] // already past command name
+
+  const cmd = parts[0]!.toLowerCase()
+
+  return COMMANDS
+    .filter(c => c.name.startsWith(cmd) || (c.aliases?.some(a => a.startsWith(cmd)) ?? false))
+    .map(c => ({ name: c.name, description: c.description }))
+}
+
+/**
+ * Compute inline ghost hint for the current input.
+ * Returns gray text to show after the cursor.
+ */
+export function getGhostHint(line: string, cursorCol: number): string {
+  const beforeCursor = line.slice(0, cursorCol)
+  const afterCursor = line.slice(cursorCol)
+
+  // Only show hints when cursor is at end of line
+  if (afterCursor.trim().length > 0) return ''
+  if (!beforeCursor.startsWith('/')) return ''
+
+  const parts = beforeCursor.split(/\s+/)
+  const cmd = parts[0]!.toLowerCase()
+
+  if (parts.length > 1) return ''
+
+  // Single match — show completion suffix only
+  const allCmds = COMMANDS.flatMap(c => [c, ...(c.aliases ?? []).map(a => ({ ...c, name: a }))])
+  const matches = allCmds.filter(c => c.name.startsWith(cmd))
+
+  if (matches.length === 1 && cmd !== matches[0]!.name) {
+    return matches[0]!.name.slice(cmd.length)
+  }
+
+  return ''
+}
+
 // ---------------------------------------------------------------------------
 // Slash command completion
 // ---------------------------------------------------------------------------

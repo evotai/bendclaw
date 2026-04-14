@@ -18,6 +18,8 @@ export interface UIMessage {
   toolCalls?: UIToolCall[]
   /** Run stats attached to the final assistant message of a run */
   runStats?: RunStats
+  /** Verbose events that occurred before this message */
+  verboseEvents?: VerboseEvent[]
 }
 
 export interface UIToolCall {
@@ -47,6 +49,17 @@ export interface RunStats {
   contextTokens: number
   contextWindow: number
   toolBreakdown: ToolBreakdownEntry[]
+  llmCallDetails: LlmCallDetail[]
+}
+
+export interface LlmCallDetail {
+  model: string
+  durationMs: number
+  inputTokens: number
+  outputTokens: number
+  ttfbMs: number
+  ttftMs: number
+  tokPerSec: number
 }
 
 export interface ToolBreakdownEntry {
@@ -70,12 +83,18 @@ function emptyRunStats(): RunStats {
     contextTokens: 0,
     contextWindow: 0,
     toolBreakdown: [],
+    llmCallDetails: [],
   }
 }
 
 // ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
+
+export interface VerboseEvent {
+  kind: 'llm_call' | 'llm_completed' | 'compact_call' | 'compact_done'
+  text: string
+}
 
 export interface AppState {
   messages: UIMessage[]
@@ -94,6 +113,8 @@ export interface AppState {
   currentRunStats: RunStats
   /** Start time of the current run */
   runStartTime: number
+  /** Verbose inline events (LLM calls, compaction) shown during streaming */
+  verboseEvents: VerboseEvent[]
 }
 
 export function createInitialState(model: string, cwd: string): AppState {
@@ -111,6 +132,7 @@ export function createInitialState(model: string, cwd: string): AppState {
     turnToolCalls: [],
     currentRunStats: emptyRunStats(),
     runStartTime: 0,
+    verboseEvents: [],
   }
 }
 
@@ -135,6 +157,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         turnToolCalls: [],
         currentRunStats: emptyRunStats(),
         runStartTime: Date.now(),
+        verboseEvents: [],
       }
 
     case 'turn_started':
@@ -193,6 +216,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         text,
         timestamp: Date.now(),
         toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+        verboseEvents: state.verboseEvents.length > 0 ? [...state.verboseEvents] : undefined,
       }
 
       return {
@@ -202,6 +226,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         currentThinkingText: '',
         activeToolCalls: new Map(),
         turnToolCalls: [],
+        verboseEvents: [],
       }
     }
 
@@ -232,6 +257,12 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         result: p.content,
         previewCommand: state.activeToolCalls.get(id)?.previewCommand,
         durationMs,
+      }
+
+      // Extract diff from details if present (file edit tools)
+      const details = p.details as Record<string, any> | undefined
+      if (details?.diff && typeof details.diff === 'string') {
+        finished.args = { ...finished.args, diff: details.diff }
       }
 
       const newMap = new Map(state.activeToolCalls)
@@ -278,23 +309,102 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       return { ...state, activeToolCalls: newMap }
     }
 
+    case 'llm_call_started': {
+      const model = (p.model as string) ?? state.model
+      const turn = event.turn
+      const msgCount = (p.message_count as number) ?? 0
+      const tools = p.tools as any[] | undefined
+      const toolCount = tools?.length ?? 0
+      const sysTok = (p.system_prompt_tokens as number) ?? 0
+      const text = `[LLM] call · ${model} · turn ${turn}\n  ${msgCount} messages · ${toolCount} tools\n  ~${humanTokensInline(sysTok)} sys tokens`
+      return {
+        ...state,
+        verboseEvents: [...state.verboseEvents, { kind: 'llm_call', text }],
+      }
+    }
+
     case 'llm_call_completed': {
       const usage = p.usage as Record<string, any> | undefined
+      const metrics = p.metrics as Record<string, any> | undefined
       const stats = { ...state.currentRunStats }
       stats.llmCalls++
+      const inputTok = (usage?.input as number) ?? 0
+      const outputTok = (usage?.output as number) ?? 0
+      const durationMs = (metrics?.duration_ms as number) ?? 0
+      const ttfbMs = (metrics?.ttfb_ms as number) ?? 0
+      const ttftMs = (metrics?.ttft_ms as number) ?? 0
+      const streamingMs = (metrics?.streaming_ms as number) ?? 0
+      const tokPerSec = durationMs > 0 ? (outputTok / (durationMs / 1000)) : 0
+
       if (usage) {
-        stats.inputTokens += (usage.input as number) ?? 0
-        stats.outputTokens += (usage.output as number) ?? 0
+        stats.inputTokens += inputTok
+        stats.outputTokens += outputTok
         stats.cacheReadTokens += (usage.cache_read as number) ?? 0
         stats.cacheWriteTokens += (usage.cache_write as number) ?? 0
       }
-      return { ...state, currentRunStats: stats }
+
+      stats.llmCallDetails = [...stats.llmCallDetails, {
+        model: (p.model as string) ?? state.model,
+        durationMs,
+        inputTokens: inputTok,
+        outputTokens: outputTok,
+        ttfbMs,
+        ttftMs,
+        tokPerSec,
+      }]
+
+      const durSec = (durationMs / 1000).toFixed(1)
+      const text = `[LLM] completed\n  tokens   ${humanTokensInline(inputTok)} in · ${outputTok} out · ${tokPerSec.toFixed(0)} tok/s\n  timing   ${durSec}s · ttfb ${(ttfbMs / 1000).toFixed(1)}s · ttft ${(ttftMs / 1000).toFixed(1)}s · stream ${(streamingMs / 1000).toFixed(1)}s`
+
+      return {
+        ...state,
+        currentRunStats: stats,
+        verboseEvents: [...state.verboseEvents, { kind: 'llm_completed', text }],
+      }
+    }
+
+    case 'context_compaction_started': {
+      const msgCount = (p.message_count as number) ?? 0
+      const estTokens = (p.estimated_tokens as number) ?? 0
+      const budget = (p.budget_tokens as number) ?? 0
+      const window = (p.context_window as number) ?? 0
+      const sysTok = (p.system_prompt_tokens as number) ?? 0
+      const pct = budget > 0 ? ((estTokens / budget) * 100).toFixed(0) : '0'
+      const bar = renderBar(estTokens, budget, 40)
+      const text = `[COMPACT] call\n  ${msgCount} messages · ~${humanTokensInline(estTokens)} tokens\n  ${bar}  ${pct}%(${humanTokensInline(estTokens)}) of budget(${humanTokensInline(budget)})\n  budget ${humanTokensInline(budget)} (window ${humanTokensInline(window)} − sys ${humanTokensInline(sysTok)})`
+      return {
+        ...state,
+        currentRunStats: { ...state.currentRunStats, contextTokens: estTokens, contextWindow: window },
+        verboseEvents: [...state.verboseEvents, { kind: 'compact_call', text }],
+      }
+    }
+
+    case 'context_compaction_completed': {
+      const result = p.result as Record<string, any> | undefined
+      const type = (result?.type as string) ?? 'done'
+      let action = type
+      if (type === 'no_op') {
+        action = 'no-op'
+      } else if (type === 'run_once_cleared') {
+        const saved = (result?.saved_tokens as number) ?? 0
+        action = `cleared · saved ${humanTokensInline(saved)} tokens`
+      } else if (type === 'level_compacted') {
+        const level = (result?.level as number) ?? 0
+        const before = (result?.before_estimated_tokens as number) ?? 0
+        const after = (result?.after_estimated_tokens as number) ?? 0
+        action = `L${level} · ${humanTokensInline(before)} → ${humanTokensInline(after)} tokens`
+      }
+      return {
+        ...state,
+        verboseEvents: [...state.verboseEvents, { kind: 'compact_done', text: `[COMPACT] · ${action}` }],
+      }
     }
 
     case 'run_finished': {
+      const serverDuration = (p.duration_ms as number) ?? 0
       const stats = {
         ...state.currentRunStats,
-        durationMs: Date.now() - state.runStartTime,
+        durationMs: serverDuration || (Date.now() - state.runStartTime),
         turnCount: (p.turn_count as number) ?? state.currentRunStats.turnCount,
       }
 
@@ -351,4 +461,16 @@ function updateToolCallInMessages(
     }
   }
   return messages
+}
+
+function humanTokensInline(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`
+  return `${n}`
+}
+
+function renderBar(value: number, max: number, width: number): string {
+  if (max <= 0) return '░'.repeat(width)
+  const filled = Math.round((value / max) * width)
+  return '█'.repeat(Math.min(filled, width)) + '░'.repeat(Math.max(0, width - filled))
 }

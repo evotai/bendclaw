@@ -31,7 +31,7 @@ impl NapiAgent {
             .to_string_lossy()
             .to_string();
 
-        let system_prompt = bendclaw::cli::SystemPrompt::new(&cwd)
+        let system_prompt = bendclaw::agent::prompt::SystemPrompt::new(&cwd)
             .with_system()
             .with_git()
             .with_tools()
@@ -187,4 +187,18 @@ fn build_skills_dirs() -> Vec<PathBuf> {
 #[napi]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Start the HTTP server. Blocks until the server shuts down.
+#[napi]
+pub async fn start_server(port: Option<u16>, model: Option<String>) -> Result<()> {
+    let mut config = bendclaw::conf::Config::load()
+        .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
+        .with_model(model);
+    if let Some(p) = port {
+        config = config.with_port(p);
+    }
+    bendclaw::server::start(config)
+        .await
+        .map_err(|e| Error::from_reason(format!("server error: {e}")))
 }

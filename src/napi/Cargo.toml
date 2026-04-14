@@ -7,7 +7,7 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-bendclaw = { path = "../app" }
+bendclaw = { path = "../app", package = "evot" }
 bend-engine = { workspace = true }
 napi = { version = "2", features = ["async", "serde-json", "napi9"] }
 napi-derive = "2"

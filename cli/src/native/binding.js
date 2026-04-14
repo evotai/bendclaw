@@ -31,3 +31,4 @@ const binding = loadBinding()
 
 export const NapiAgent = binding.NapiAgent
 export const version = binding.version
+export const startServer = binding.startServer

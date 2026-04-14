@@ -113,10 +113,10 @@ describe('buildRunSummary', () => {
     // Header line
     expect(lines[0]!.text).toContain('Run Summary')
     // Stats line
-    const statsLine = lines.find((l) => l.text.includes('turns'))!
+    const statsLine = lines.find((l) => l.text.includes('turn'))!
     expect(statsLine.text).toContain('2.5s')
     expect(statsLine.text).toContain('3 turns')
-    expect(statsLine.text).toContain('5 tool calls')
+    expect(statsLine.text).toContain('5 tools')
     expect(statsLine.text).toContain('1200 tokens')
     // Footer
     expect(lines[lines.length - 1]!.text).toContain('───')

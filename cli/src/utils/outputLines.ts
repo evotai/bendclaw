@@ -131,55 +131,52 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
   const lines: OutputLine[] = []
   const dur = formatDuration(stats.durationMs)
   const totalTokens = stats.inputTokens + stats.outputTokens
+  const pl = (n: number, s: string) => n === 1 ? s : `${s}s`
 
   // Header
   lines.push({ id: genId('summary'), kind: 'run_summary', text: '─── Run Summary ──────────────────────────────────' })
   lines.push({
     id: genId('summary'), kind: 'run_summary',
-    text: `${dur} · ${stats.turnCount} turns · ${stats.llmCalls} llm calls · ${stats.toolCallCount} tool calls · ${totalTokens} tokens`,
+    text: `${dur} · ${stats.turnCount} ${pl(stats.turnCount, 'turn')} · ${stats.llmCalls} llm · ${stats.toolCallCount} ${pl(stats.toolCallCount, 'tool')} · ${totalTokens} tokens`,
   })
 
-  // Context budget bar
+  // Context budget bar (only if meaningful)
   if (stats.contextWindow > 0 && stats.contextTokens > 0) {
     const budget = stats.contextWindow
-    const bar = renderBar(stats.contextTokens, budget, 20)
     const pct = ((stats.contextTokens / budget) * 100).toFixed(0)
-    lines.push({
-      id: genId('summary'), kind: 'run_summary',
-      text: `  context   ${bar}  ${pct}%(${humanTokens(stats.contextTokens)}) of budget(${humanTokens(budget)})`,
-    })
+    if (Number(pct) > 0) {
+      const bar = renderBar(stats.contextTokens, budget, 20)
+      lines.push({
+        id: genId('summary'), kind: 'run_summary',
+        text: `  context   ${bar}  ${pct}%(${humanTokens(stats.contextTokens)}) of budget(${humanTokens(budget)})`,
+      })
+    }
   }
 
   // Tokens
-  const tokLine = `  tokens    ${humanTokens(stats.inputTokens)} input · ${stats.outputTokens} output`
-  lines.push({ id: genId('summary'), kind: 'run_summary', text: tokLine })
-
+  let tokLine = `  tokens    ${humanTokens(stats.inputTokens)} in · ${stats.outputTokens} out`
   if (stats.cacheReadTokens > 0 || stats.cacheWriteTokens > 0) {
-    const cacheHitRate = stats.inputTokens > 0
+    const hitRate = stats.inputTokens > 0
       ? (stats.cacheReadTokens / stats.inputTokens * 100).toFixed(0)
       : '0'
-    lines.push({
-      id: genId('summary'), kind: 'run_summary',
-      text: `            cache read ${humanTokens(stats.cacheReadTokens)} · write ${humanTokens(stats.cacheWriteTokens)} · hit ${cacheHitRate}%`,
-    })
+    tokLine += ` · cache ${hitRate}%`
   }
+  lines.push({ id: genId('summary'), kind: 'run_summary', text: tokLine })
 
   // Tool breakdown
   if (stats.toolBreakdown.length > 0) {
-    lines.push({ id: genId('summary'), kind: 'run_summary', text: '' })
     lines.push({ id: genId('summary'), kind: 'run_summary', text: '  tools' })
     for (const tb of stats.toolBreakdown) {
-      const errStr = tb.errors > 0 ? ` · ${tb.errors} errors` : ''
+      const errStr = tb.errors > 0 ? ` · ${tb.errors} err` : ''
       lines.push({
         id: genId('summary'), kind: 'run_summary',
-        text: `            ${tb.name.padEnd(20)} ${tb.count} calls · ${formatDuration(tb.totalDurationMs)}${errStr}`,
+        text: `            ${tb.name.padEnd(20)} ${tb.count}× · ${formatDuration(tb.totalDurationMs)}${errStr}`,
       })
     }
   }
 
   // LLM call details
   if (stats.llmCallDetails.length > 0) {
-    lines.push({ id: genId('summary'), kind: 'run_summary', text: '' })
     const totalLlmMs = stats.llmCallDetails.reduce((s, c) => s + c.durationMs, 0)
     const llmPct = stats.durationMs > 0 ? (totalLlmMs / stats.durationMs * 100).toFixed(0) : '0'
     const avgTps = stats.llmCallDetails.length > 0
@@ -187,13 +184,14 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
       : '0'
     lines.push({
       id: genId('summary'), kind: 'run_summary',
-      text: `  llm       ${stats.llmCallDetails.length} calls · ${formatDuration(totalLlmMs)} (${llmPct}% of run) · ${avgTps} tok/s avg`,
+      text: `  llm       ${stats.llmCallDetails.length} ${pl(stats.llmCallDetails.length, 'call')} · ${formatDuration(totalLlmMs)} (${llmPct}% of run) · ${avgTps} tok/s`,
     })
 
     const avgTtft = stats.llmCallDetails.reduce((s, c) => s + c.ttftMs, 0) / stats.llmCallDetails.length
+    const avgStream = stats.llmCallDetails.reduce((s, c) => s + (c.durationMs - c.ttftMs), 0) / stats.llmCallDetails.length
     lines.push({
       id: genId('summary'), kind: 'run_summary',
-      text: `            ttft avg ${formatDuration(Math.round(avgTtft))}`,
+      text: `            ttft avg ${formatDuration(Math.round(avgTtft))} · stream avg ${formatDuration(Math.round(avgStream))}`,
     })
 
     // Top 3 by duration
@@ -213,7 +211,7 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
       const restMs = sorted.slice(3).reduce((s, c) => s + c.durationMs, 0)
       lines.push({
         id: genId('summary'), kind: 'run_summary',
-        text: `            ... ${sorted.length - 3} more calls · ${formatDuration(restMs)} total`,
+        text: `            ... ${sorted.length - 3} more · ${formatDuration(restMs)} total`,
       })
     }
   }

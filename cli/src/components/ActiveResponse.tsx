@@ -22,11 +22,12 @@ interface Props {
   outputTokens: number
   verbose: boolean
   verboseEvents: VerboseEvent[]
+  onFreezeBlocks?: (blocks: string[]) => void
 }
 
 export function ActiveResponse({
   isLoading, tailMessage, streamText, thinkingText,
-  activeToolCalls, outputTokens, verbose, verboseEvents,
+  activeToolCalls, outputTokens, verbose, verboseEvents, onFreezeBlocks,
 }: Props) {
   if (!isLoading && !tailMessage) return null
 
@@ -54,7 +55,7 @@ export function ActiveResponse({
 
       {/* Streaming text */}
       {isLoading && (hasStream || hasThinking) && (
-        <StreamingText text={streamText} thinkingText={thinkingText} />
+        <StreamingText text={streamText} thinkingText={thinkingText} onFreezeBlocks={onFreezeBlocks} />
       )}
 
       {/* Active tool calls */}
@@ -62,8 +63,8 @@ export function ActiveResponse({
         <ToolCallDisplay tools={activeToolCalls} />
       )}
 
-      {/* Spinner */}
-      {isLoading && !hasStream && !hasThinking && (
+      {/* Spinner — always visible during loading */}
+      {isLoading && (
         <Spinner
           toolName={hasTools ? [...activeToolCalls.values()][0]?.name : undefined}
           progressText={hasTools ? [...activeToolCalls.values()][0]?.previewCommand : undefined}

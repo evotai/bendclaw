@@ -68,13 +68,7 @@ export const StreamingText = React.memo(function StreamingText({ text, thinkingT
           <Box flexDirection="column" flexShrink={1}>
             {truncated && <Text dimColor>{'  ···'}</Text>}
             <Text>{displayText}</Text>
-            <Text color="gray">▍</Text>
           </Box>
-        </Box>
-      )}
-      {displayText.length === 0 && (
-        <Box>
-          <Text color="gray">▍</Text>
         </Box>
       )}
     </Box>

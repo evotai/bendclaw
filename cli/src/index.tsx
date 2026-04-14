@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * bendclaw CLI — TypeScript entry point.
+ * evot CLI — TypeScript entry point.
  * Unified entry: repl (default), serve, prompt (-p).
  */
 
@@ -72,7 +72,7 @@ function parseArgs(argv: string[]): CliOptions {
 
     // Info flags
     if (arg === '--version' || arg === '-v') {
-      console.log(`bendclaw v${version()}`)
+      console.log(`evot v${version()}`)
       process.exit(0)
     }
     if (arg === '--help' || arg === '-h') {
@@ -85,9 +85,9 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function printHelp() {
-  console.log(`bendclaw v${version()} — AI coding assistant`)
+  console.log(`evot v${version()} — AI coding assistant`)
   console.log()
-  console.log('Usage: bendclaw [command] [options]')
+  console.log('Usage: evot [command] [options]')
   console.log()
   console.log('Commands:')
   console.log('  (default)              Interactive REPL')

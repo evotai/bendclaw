@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 
 #[napi]
 pub struct NapiAgent {
-    agent: Arc<bendclaw::agent::Agent>,
+    agent: Arc<evot::agent::Agent>,
 }
 
 #[napi]
@@ -22,7 +22,7 @@ impl NapiAgent {
     /// Optional `model` override.
     #[napi(factory)]
     pub fn create(model: Option<String>) -> Result<Self> {
-        let config = bendclaw::conf::Config::load()
+        let config = evot::conf::Config::load()
             .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
             .with_model(model);
 
@@ -31,7 +31,7 @@ impl NapiAgent {
             .to_string_lossy()
             .to_string();
 
-        let system_prompt = bendclaw::agent::prompt::SystemPrompt::new(&cwd)
+        let system_prompt = evot::agent::prompt::SystemPrompt::new(&cwd)
             .with_system()
             .with_git()
             .with_tools()
@@ -40,7 +40,7 @@ impl NapiAgent {
             .with_claude_memory()
             .build();
 
-        let agent = bendclaw::agent::Agent::new(&config, &cwd)
+        let agent = evot::agent::Agent::new(&config, &cwd)
             .map_err(|e| Error::from_reason(format!("agent init: {e}")))?
             .with_system_prompt(system_prompt)
             .with_skills_dirs(build_skills_dirs());
@@ -49,7 +49,7 @@ impl NapiAgent {
         let rt = tokio::runtime::Handle::current();
         let storage = agent.storage();
         let records = rt.block_on(storage.load_variables()).unwrap_or_default();
-        let variables = Arc::new(bendclaw::agent::Variables::new(storage, records));
+        let variables = Arc::new(evot::agent::Variables::new(storage, records));
         agent.with_variables(variables);
 
         Ok(Self { agent })
@@ -81,7 +81,7 @@ impl NapiAgent {
         prompt: String,
         session_id: Option<String>,
     ) -> Result<NapiQueryStream> {
-        let request = bendclaw::agent::QueryRequest::text(prompt).session_id(session_id);
+        let request = evot::agent::QueryRequest::text(prompt).session_id(session_id);
 
         let stream = self
             .agent
@@ -129,7 +129,7 @@ impl NapiAgent {
 
 #[napi]
 pub struct NapiQueryStream {
-    inner: Mutex<bendclaw::agent::QueryStream>,
+    inner: Mutex<evot::agent::QueryStream>,
     cached_session_id: String,
     aborted: Arc<AtomicBool>,
 }
@@ -177,7 +177,7 @@ impl NapiQueryStream {
 
 fn build_skills_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Ok(global) = bendclaw::conf::paths::skills_dir() {
+    if let Ok(global) = evot::conf::paths::skills_dir() {
         dirs.push(global);
     }
     dirs
@@ -192,13 +192,13 @@ pub fn version() -> String {
 /// Start the HTTP server. Blocks until the server shuts down.
 #[napi]
 pub async fn start_server(port: Option<u16>, model: Option<String>) -> Result<()> {
-    let mut config = bendclaw::conf::Config::load()
+    let mut config = evot::conf::Config::load()
         .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
         .with_model(model);
     if let Some(p) = port {
         config = config.with_port(p);
     }
-    bendclaw::server::start(config)
+    evot::server::start(config)
         .await
         .map_err(|e| Error::from_reason(format!("server error: {e}")))
 }

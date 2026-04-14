@@ -1,5 +1,5 @@
 /**
- * Persistent command history backed by ~/.evotai/bendclaw_history.
+ * Persistent command history backed by ~/.evotai/evot_history.
  * One entry per line. Multi-line entries are escaped (\\n for newlines).
  */
 
@@ -8,7 +8,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 
 const STATE_DIR = join(homedir(), '.evotai')
-const HISTORY_FILE = join(STATE_DIR, 'bendclaw_history')
+const HISTORY_FILE = join(STATE_DIR, 'evot_history')
 const DEFAULT_LIMIT = 200
 
 function escape(s: string): string {

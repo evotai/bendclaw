@@ -420,10 +420,10 @@ async function handleSlashCommand(
       if (!sub) {
         // List env vars
         const entries = Object.entries(process.env)
-          .filter(([k]) => k.startsWith('BENDCLAW_') || k.startsWith('ANTHROPIC_') || k.startsWith('OPENAI_'))
+          .filter(([k]) => k.startsWith('EVOT_') || k.startsWith('ANTHROPIC_') || k.startsWith('OPENAI_'))
           .map(([k, v]) => `  ${k}=${v ? v.slice(0, 4) + '****' : '(unset)'}`)
         if (entries.length === 0) {
-          pushSystem(setSystem, 'info', 'No BENDCLAW_/ANTHROPIC_/OPENAI_ env vars set.')
+          pushSystem(setSystem, 'info', 'No EVOT_/ANTHROPIC_/OPENAI_ env vars set.')
         } else {
           pushSystem(setSystem, 'info', `Environment:\n${entries.join('\n')}`)
         }
@@ -597,7 +597,7 @@ function Banner({ model, cwd, sessionId }: { model: string; cwd: string; session
     <Box flexDirection="column" marginBottom={1}>
       <Box>
         <Text backgroundColor="#5a2d82" color="white" bold>
-          {' ◆ bendclaw '}
+          {' ◆ evot '}
         </Text>
         <Text dimColor> v0.1.0</Text>
       </Box>

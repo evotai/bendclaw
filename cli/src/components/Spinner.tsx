@@ -65,8 +65,8 @@ export function Spinner({ toolName, progressText, tokenCount = 0, lastTokenAt }:
   // Terminal tab title
   useEffect(() => {
     const titleGlyph = TITLE_GLYPHS[frame % TITLE_GLYPHS.length]
-    process.stdout.write(`\x1b]0;${titleGlyph} bendclaw\x07`)
-    return () => { process.stdout.write('\x1b]0;bendclaw\x07') }
+    process.stdout.write(`\x1b]0;${titleGlyph} evot\x07`)
+    return () => { process.stdout.write('\x1b]0;evot\x07') }
   }, [frame])
 
   const stalled = lastTokenAt != null && (Date.now() - lastTokenAt) > STALLED_THRESHOLD_MS

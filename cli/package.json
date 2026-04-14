@@ -1,13 +1,13 @@
 {
-  "name": "@bendclaw/cli",
+  "name": "@evotai/evot",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "bendclaw-ui": "./bin/bendclaw-ui"
+    "evot-ui": "./bin/evot-ui"
   },
   "napi": {
-    "binaryName": "bendclaw-napi",
+    "binaryName": "evot-napi",
     "targets": [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",

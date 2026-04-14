@@ -8,7 +8,7 @@ let tempDir: string
 let historyPath: string
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), 'bendclaw-history-test-'))
+  tempDir = mkdtempSync(join(tmpdir(), 'evot-history-test-'))
   historyPath = join(tempDir, 'history')
 })
 

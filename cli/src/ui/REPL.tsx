@@ -48,6 +48,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const [messageQueue, setMessageQueue] = useState<string[]>([])
   const [outputLines, setOutputLines] = useState<OutputLine[]>([])
   const [pendingText, setPendingText] = useState('')
+  const [logMode, setLogMode] = useState<import('../native/index.js').ForkedAgent | null>(null)
   const [resumeSessions, setResumeSessions] = useState<import('../native/index.js').SessionMeta[] | null>(null)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [planning, setPlanning] = useState(false)
@@ -165,8 +166,20 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
     (text: string) => {
       setSystemMessages([])
 
+      // Log mode: /done exits, everything else goes to the forked agent
+      if (logMode) {
+        if (text.trim() === '/done') {
+          setLogMode(null)
+          pushSystem(setSystemMessages, 'info', '  [log mode ended]')
+          return
+        }
+        // Run side conversation turn
+        runLogTurn(logMode, text, setOutputLines, setPendingText, setState)
+        return
+      }
+
       if (isSlashCommand(text)) {
-        handleSlashCommand(text, { agent, state: stateRef.current, setState, setSystem: setSystemMessages, setOutputLines, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, configInfo: configInfoState, abortCurrentStream, exit })
+        handleSlashCommand(text, { agent, state: stateRef.current, setState, setSystem: setSystemMessages, setOutputLines, setPendingText, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, setLogMode, configInfo: configInfoState, abortCurrentStream, exit })
         return
       }
 
@@ -177,7 +190,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
 
       dispatchQuery(text)
     },
-    [agent, exit, configInfoState, dispatchQuery, abortCurrentStream]
+    [agent, exit, configInfoState, dispatchQuery, abortCurrentStream, logMode]
   )
 
   // Auto-drain queue when response finishes (skip if last run errored)
@@ -273,6 +286,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
         isActive={!showHelp && resumeSessions === null && !showModelSelector}
         verbose={state.verbose}
         planning={planning}
+        logMode={logMode !== null}
         queuedMessages={messageQueue}
         history={historyManager}
         onSubmit={handleSubmit}
@@ -310,17 +324,19 @@ interface CommandContext {
   setState: React.Dispatch<React.SetStateAction<AppState>>
   setSystem: React.Dispatch<React.SetStateAction<SystemMsg[]>>
   setOutputLines: React.Dispatch<React.SetStateAction<OutputLine[]>>
+  setPendingText: React.Dispatch<React.SetStateAction<string>>
   setShowHelp: React.Dispatch<React.SetStateAction<boolean>>
   setResumeSessions: React.Dispatch<React.SetStateAction<import('../native/index.js').SessionMeta[] | null>>
   setPlanning: React.Dispatch<React.SetStateAction<boolean>>
   setShowModelSelector: React.Dispatch<React.SetStateAction<boolean>>
+  setLogMode: React.Dispatch<React.SetStateAction<import('../native/index.js').ForkedAgent | null>>
   configInfo: import('../native/index.js').ConfigInfo | undefined
   abortCurrentStream: () => void
   exit: () => void
 }
 
 async function handleSlashCommand(input: string, ctx: CommandContext) {
-  const { agent, state, setState, setSystem, setOutputLines, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, configInfo, abortCurrentStream, exit } = ctx
+  const { agent, state, setState, setSystem, setOutputLines, setPendingText, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, setLogMode, configInfo, abortCurrentStream, exit } = ctx
   const resolved = resolveCommand(input)
 
   if (resolved.kind === 'unknown') {
@@ -531,25 +547,23 @@ async function handleSlashCommand(input: string, ctx: CommandContext) {
         const logPath = join(logDir, `${sid}.screen.log`)
         const systemPrompt = [
           'You are in a temporary log analysis session.',
-          `The session log file is at: ${logPath}`,
-          'Read the log file before answering any questions.',
-          'Do not modify any files. Only read and analyze.',
-          'Keep answers concise and focused on the log content.',
+          'This session is not persisted and does not affect the main session context.',
+          '',
+          `Log file to analyze:\n${logPath}`,
+          '',
+          'Rules:',
+          '- Read relevant log sections before answering; do not guess',
+          '- Prefer partial reads; avoid loading the entire file at once',
+          '- Use search to locate key information when needed',
+          '- Do not modify any files',
         ].join('\n')
 
         try {
           const forked = agent.fork(systemPrompt)
-          pushSystem(setSystem, 'info', `Analyzing log...`)
-
-          // Run single-turn analysis (no multi-turn mini-REPL)
-          const stream = await forked.query(query)
-          let text = ''
-          for await (const event of stream) {
-            if (event.kind === 'assistant_delta' && event.payload?.delta) {
-              text += event.payload.delta as string
-            }
-          }
-          if (text) pushSystem(setSystem, 'info', text)
+          setLogMode(forked)
+          pushSystem(setSystem, 'info', `  [log mode] analyzing: ${logPath}\n  not persisted. type /done to return.`)
+          // Run first turn
+          runLogTurn(forked, query, setOutputLines, setPendingText, setState)
         } catch (err: any) {
           pushSystem(setSystem, 'error', `Fork failed: ${err?.message ?? err}`)
         }
@@ -653,6 +667,44 @@ function syncProvider(
       agent.setProvider('openai')
     }
   } catch { /* ignore — provider may not support the model */ }
+}
+
+// ---------------------------------------------------------------------------
+// Log mode side conversation turn
+// ---------------------------------------------------------------------------
+
+async function runLogTurn(
+  forked: import('../native/index.js').ForkedAgent,
+  prompt: string,
+  setOutputLines: React.Dispatch<React.SetStateAction<OutputLine[]>>,
+  setPendingText: React.Dispatch<React.SetStateAction<string>>,
+  setState: React.Dispatch<React.SetStateAction<AppState>>,
+) {
+  setState(prev => ({ ...prev, isLoading: true }))
+  const appendLines = (lines: OutputLine[]) => {
+    if (lines.length > 0) setOutputLines(prev => [...prev, ...lines])
+  }
+  appendLines(buildUserMessage(prompt))
+
+  try {
+    const stream = await forked.query(prompt)
+    let text = ''
+    for await (const event of stream) {
+      if (event.kind === 'assistant_delta' && event.payload?.delta) {
+        text += event.payload.delta as string
+        setPendingText(text)
+      }
+    }
+    // Commit final text to static
+    if (text.trim()) {
+      appendLines(buildAssistantLines(text))
+    }
+    setPendingText('')
+  } catch (err: any) {
+    appendLines(buildError(`Log query failed: ${err?.message ?? err}`))
+    setPendingText('')
+  }
+  setState(prev => ({ ...prev, isLoading: false }))
 }
 
 // ---------------------------------------------------------------------------

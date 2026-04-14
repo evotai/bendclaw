@@ -21,6 +21,7 @@ interface PromptInputProps {
   isActive: boolean
   verbose: boolean
   planning: boolean
+  logMode: boolean
   queuedMessages: string[]
   history: HistoryManager
   onSubmit: (text: string) => void
@@ -34,6 +35,7 @@ export const PromptInput = React.memo(function PromptInput({
   isActive,
   verbose,
   planning,
+  logMode,
   queuedMessages,
   history,
   onSubmit,
@@ -449,6 +451,7 @@ export const PromptInput = React.memo(function PromptInput({
       <Footer
         model={model}
         planning={planning}
+        logMode={logMode}
         verbose={verbose}
         columns={columns}
       />
@@ -482,23 +485,28 @@ function CursorLine({ text, cursorCol, ghostHint }: { text: string; cursorCol: n
 function Footer({
   model,
   planning,
+  logMode,
   verbose,
   columns,
 }: {
   model: string
   planning: boolean
+  logMode: boolean
   verbose: boolean
   columns: number
 }) {
   // Compute actual rendered width for gap calculation
-  let leftLen = 5 // "/help"
+  const leftLabel = logMode ? '/done to exit' : '/help'
+  let leftLen = leftLabel.length
+  if (logMode) leftLen += 6 // " [log]"
   if (planning) leftLen += 7 // " [plan]"
   if (verbose) leftLen += 10 // " [verbose]"
   const gap = Math.max(1, columns - leftLen - model.length)
 
   return (
     <Box>
-      <Text dimColor>/help</Text>
+      <Text dimColor>{leftLabel}</Text>
+      {logMode && <Text color="magenta" bold>{' [log]'}</Text>}
       {planning && <Text color="yellow" bold>{' [plan]'}</Text>}
       {verbose && <Text color="cyan">{' [verbose]'}</Text>}
       <Text>{' '.repeat(gap)}</Text>

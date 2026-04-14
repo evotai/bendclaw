@@ -5,7 +5,7 @@
 
 import { readdirSync, statSync } from 'fs'
 import { join, dirname, basename } from 'path'
-import { COMMANDS } from './index.js'
+import { COMMANDS, HIDDEN_COMMANDS } from './index.js'
 
 export interface CompletionResult {
   /** The completed text to replace the current word */
@@ -36,35 +36,13 @@ export function complete(line: string, cursorCol: number): CompletionResult | nu
   return null
 }
 
-export interface CommandHint {
-  name: string
-  description: string
-}
-
-/**
- * Get matching command hints for dropdown display below input.
- */
-export function getCommandHints(line: string, cursorCol: number): CommandHint[] {
-  const beforeCursor = line.slice(0, cursorCol)
-  if (!beforeCursor.startsWith('/')) return []
-
-  const parts = beforeCursor.split(/\s+/)
-  if (parts.length > 1) return [] // already past command name
-
-  const cmd = parts[0]!.toLowerCase()
-
-  return COMMANDS
-    .filter(c => c.name.startsWith(cmd) || (c.aliases?.some(a => a.startsWith(cmd)) ?? false))
-    .map(c => ({ name: c.name, description: c.description }))
-}
-
 /**
  * Compute inline ghost hint for the current input.
  * Returns gray text to show after the cursor (Rust REPL style).
  *
- * - Bare `/` → compact list of all commands
+ * - Bare `/` → compact list of all visible commands
  * - `/he` → `lp — Show help` (single match: completion + description)
- * - `/m` → `odel | /model /memory` (ambiguous: completion + candidates)
+ * - `/skill ` → `[install  list  remove]` (sub-command hints)
  */
 export function getGhostHint(line: string, cursorCol: number): string {
   const beforeCursor = line.slice(0, cursorCol)
@@ -77,15 +55,19 @@ export function getGhostHint(line: string, cursorCol: number): string {
   const parts = beforeCursor.split(/\s+/)
   const cmd = parts[0]!.toLowerCase()
 
-  if (parts.length > 1) return ''
-
-  // Bare `/` → show all command names
-  if (cmd === '/') {
-    return COMMANDS.map(c => c.name.slice(1)).join('  ')
+  // Sub-command hints (after space)
+  if (parts.length >= 2) {
+    const partial = parts.slice(1).join(' ').toLowerCase()
+    return getSubCommandHint(cmd, partial)
   }
 
-  const allCmds = COMMANDS.flatMap(c => [c, ...(c.aliases ?? []).map(a => ({ ...c, name: a }))])
-  const matches = allCmds.filter(c => c.name.startsWith(cmd))
+  // Bare `/` → show all visible command names
+  if (cmd === '/') {
+    return `  [${COMMANDS.map(c => c.name.slice(1)).join('  ')}]`
+  }
+
+  // Only match visible commands for ghost hints
+  const matches = COMMANDS.filter(c => c.name.startsWith(cmd))
 
   if (matches.length === 0) return ''
 
@@ -93,7 +75,7 @@ export function getGhostHint(line: string, cursorCol: number): string {
   if (matches.length === 1) {
     const m = matches[0]!
     const suffix = m.name.slice(cmd.length)
-    return `${suffix} — ${m.description}`
+    return `${suffix}  ${m.description}`
   }
 
   // Multiple matches — show common suffix + candidate names
@@ -101,6 +83,34 @@ export function getGhostHint(line: string, cursorCol: number): string {
   const suffix = common.slice(cmd.length)
   const names = matches.map(m => m.name).join('  ')
   return suffix ? `${suffix}  [${names}]` : `  [${names}]`
+}
+
+function getSubCommandHint(cmd: string, partial: string): string {
+  // Resolve the command first
+  const resolved = COMMANDS.find(c => c.name === cmd || c.name.startsWith(cmd))
+  if (!resolved) return ''
+
+  const subcmds = SUB_COMMANDS[resolved.name] ?? []
+  if (subcmds.length === 0) return ''
+
+  if (!partial) {
+    return `  [${subcmds.join('  ')}]`
+  }
+
+  const matches = subcmds.filter(s => s.startsWith(partial))
+  if (matches.length === 0) return ''
+  if (matches.length === 1) {
+    return matches[0]!.slice(partial.length)
+  }
+  const common = commonPrefix(matches)
+  const suffix = common.slice(partial.length)
+  return suffix ? `${suffix}  [${matches.join('  ')}]` : `  [${matches.join('  ')}]`
+}
+
+const SUB_COMMANDS: Record<string, string[]> = {
+  '/help': COMMANDS.map(c => c.name.slice(1)),
+  '/skill': ['install', 'list', 'remove'],
+  '/env': ['set', 'del', 'load'],
 }
 
 // ---------------------------------------------------------------------------
@@ -114,8 +124,9 @@ function completeSlashCommand(input: string): CompletionResult | null {
   // Only complete the command name itself (first word)
   if (parts.length > 1) return null
 
+  const allCmds = [...COMMANDS, ...HIDDEN_COMMANDS]
   const allNames: string[] = []
-  for (const c of COMMANDS) {
+  for (const c of allCmds) {
     allNames.push(c.name)
     if (c.aliases) allNames.push(...c.aliases)
   }

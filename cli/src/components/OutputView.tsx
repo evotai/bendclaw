@@ -38,14 +38,14 @@ function OutputLineView({ line }: { line: OutputLine }) {
   switch (line.kind) {
     case 'user':
       return (
-        <Box>
+        <Box marginTop={1}>
           <Text bold color="yellow">{'❯ '}</Text>
           <Text bold>{line.text}</Text>
         </Box>
       )
     case 'assistant':
       return (
-        <Box>
+        <Box marginTop={1}>
           <Text>{'  '}{line.text}</Text>
         </Box>
       )

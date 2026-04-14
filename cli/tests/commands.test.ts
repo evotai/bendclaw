@@ -17,6 +17,11 @@ describe('isSlashCommand', () => {
   test('rejects double-slash paths', () => {
     expect(isSlashCommand('//some/path')).toBe(false)
   })
+
+  test('rejects pasted file paths', () => {
+    expect(isSlashCommand('/some/path.rs')).toBe(false)
+    expect(isSlashCommand('/usr/local/bin')).toBe(false)
+  })
 })
 
 describe('resolveCommand', () => {

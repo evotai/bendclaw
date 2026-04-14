@@ -251,9 +251,7 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     if let Some(level) = vars.get("EVOT_THINKING_LEVEL") {
-        config.thinking_level = level
-            .parse::<ThinkingLevel>()
-            .map_err(|e| EvotError::Conf(e))?;
+        config.thinking_level = level.parse::<ThinkingLevel>().map_err(EvotError::Conf)?;
     }
 
     apply_provider_env(config, ProviderKind::Anthropic, vars);

@@ -8,7 +8,7 @@ import React from 'react'
 import { render } from 'ink'
 import { Agent, version, startServer } from './native/index.js'
 import { REPL } from './screens/REPL.js'
-import { resolveFullscreenEnabled } from './utils/fullscreen.js'
+import { installTerminalRestore, restoreTerminalNow } from './utils/terminalRestore.js'
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -131,6 +131,7 @@ function printHelp() {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  installTerminalRestore()
   const opts = parseArgs(process.argv.slice(2))
 
   switch (opts.command) {
@@ -212,16 +213,15 @@ function runRepl(opts: CliOptions) {
 
   process.on('SIGINT', () => {})
 
-  const fullscreenEnabled = resolveFullscreenEnabled(process.env.EVOT_FULLSCREEN, process.stdout.isTTY === true)
   const { waitUntilExit } = render(React.createElement(REPL, {
     agent,
     initialVerbose: opts.verbose,
     initialResume: opts.resume,
-    fullscreenEnabled,
   }), {
     exitOnCtrlC: false,
   })
   waitUntilExit().then(() => {
+    restoreTerminalNow()
     process.exit(0)
   })
 }

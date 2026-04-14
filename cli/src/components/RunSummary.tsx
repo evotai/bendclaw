@@ -25,12 +25,8 @@ export function RunSummary({ stats }: RunSummaryProps) {
   const ctxPct = budget > 0 ? ((stats.contextTokens / budget) * 100).toFixed(0) : '0'
   const ctxBar = renderBar(stats.contextTokens, budget, 20)
 
-  // Token breakdown by role — estimate from tool breakdown
-  const totalToolResultTokens = stats.toolBreakdown.reduce((s, t) => s + t.totalResultTokens, 0)
-
   // Cache hit rate
-  const totalCacheTokens = stats.cacheReadTokens + stats.cacheWriteTokens
-  const cacheHitRate = totalCacheTokens > 0
+  const cacheHitRate = (stats.cacheReadTokens > 0 || stats.cacheWriteTokens > 0)
     ? ((stats.cacheReadTokens / stats.inputTokens) * 100).toFixed(1)
     : null
 
@@ -67,20 +63,23 @@ export function RunSummary({ stats }: RunSummaryProps) {
         {'  tokens    '}{humanTokens(stats.inputTokens)} total input · {humanTokens(stats.outputTokens)} output · {avgTokPerSec} tok/s
       </Text>
 
-      {/* Per-role token estimates */}
-      {stats.inputTokens > 0 && (
+      {/* Per-role token breakdown from last LLM call's message stats */}
+      {stats.lastMessageStats && stats.inputTokens > 0 && (
         <>
-          <Text dimColor>
-            {'            system          ~'}{humanTokens(sysTok)}  {renderBar(sysTok, stats.inputTokens, 20)}  {pct(sysTok, stats.inputTokens)}
-          </Text>
-          {totalToolResultTokens > 0 && (
-            <Text dimColor>
-              {'            tool_result    ~'}{humanTokens(totalToolResultTokens)}  {renderBar(totalToolResultTokens, stats.inputTokens, 20)}  {pct(totalToolResultTokens, stats.inputTokens)}
-            </Text>
-          )}
-          {totalToolResultTokens > 0 && sortedTools.filter((t) => t.totalResultTokens > 0).map((tc, i) => (
+          {[
+            { label: 'system', tokens: sysTok },
+            { label: 'user', tokens: stats.lastMessageStats.userTokens },
+            { label: 'assistant', tokens: stats.lastMessageStats.assistantTokens },
+            { label: 'tool_result', tokens: stats.lastMessageStats.toolResultTokens },
+          ].filter((r) => r.tokens > 0).map((r, i) => (
             <Text key={i} dimColor>
-              {'              '}{padName(tc.name, 16)}{tc.count} calls  ~{humanTokens(tc.totalResultTokens).padStart(5)}  {renderBar(tc.totalResultTokens, totalToolResultTokens, 17)} {pct(tc.totalResultTokens, totalToolResultTokens)}
+              {'            '}{padName(r.label, 16)}{humanTokens(r.tokens).padStart(8)}  {renderBar(r.tokens, stats.inputTokens, 20)} {pct(r.tokens, stats.inputTokens)}
+            </Text>
+          ))}
+          {/* Per-tool breakdown under tool_result */}
+          {sortedTools.filter((t) => t.totalResultTokens > 0).map((tc, i) => (
+            <Text key={`tool-${i}`} dimColor>
+              {'              '}{padName(tc.name, 14)}{tc.count} calls  {humanTokens(tc.totalResultTokens).padStart(6)}  {renderBar(tc.totalResultTokens, stats.inputTokens, 17)} {pct(tc.totalResultTokens, stats.inputTokens)}
             </Text>
           ))}
         </>

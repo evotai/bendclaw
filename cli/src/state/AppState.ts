@@ -14,6 +14,45 @@ function padToolName(name: string, width = 18): string {
   return name + ' '.repeat(width - name.length)
 }
 
+/** Count messages by role and estimate tokens from JSON byte size (mirrors Rust count_messages_by_role). */
+function countMessagesByRole(messages: any[]): MessageStats {
+  const stats: MessageStats = {
+    userCount: 0, assistantCount: 0, toolResultCount: 0,
+    userTokens: 0, assistantTokens: 0, toolResultTokens: 0,
+    toolDetails: [],
+  }
+  for (const msg of messages) {
+    const role = (msg.role as string) ?? 'unknown'
+    const est = Math.floor(JSON.stringify(msg).length / 4)
+    switch (role) {
+      case 'user':
+        stats.userCount++
+        stats.userTokens += est
+        break
+      case 'assistant':
+        stats.assistantCount++
+        stats.assistantTokens += est
+        break
+      case 'toolResult':
+      case 'tool_result':
+      case 'tool':
+        stats.toolResultCount++
+        stats.toolResultTokens += est
+        stats.toolDetails.push({
+          name: (msg.toolName ?? msg.tool_name ?? msg.name ?? 'unknown') as string,
+          tokens: est,
+        })
+        break
+      default:
+        stats.userCount++
+        stats.userTokens += est
+        break
+    }
+  }
+  stats.toolDetails.sort((a, b) => b.tokens - a.tokens)
+  return stats
+}
+
 // ---------------------------------------------------------------------------
 // Message types for the UI
 // ---------------------------------------------------------------------------
@@ -63,6 +102,17 @@ export interface CompactionEntry {
   actions?: CompactionActionDetail[]
 }
 
+export interface MessageStats {
+  userCount: number
+  assistantCount: number
+  toolResultCount: number
+  userTokens: number
+  assistantTokens: number
+  toolResultTokens: number
+  /** Per-tool token breakdown (name, tokens), sorted by tokens desc. */
+  toolDetails: Array<{ name: string; tokens: number }>
+}
+
 export interface RunStats {
   durationMs: number
   turnCount: number
@@ -79,6 +129,8 @@ export interface RunStats {
   toolBreakdown: ToolBreakdownEntry[]
   llmCallDetails: LlmCallDetail[]
   compactionHistory: CompactionEntry[]
+  /** Per-role message stats from the last LLM call (for run summary breakdown). */
+  lastMessageStats: MessageStats | null
 }
 
 export interface LlmCallDetail {
@@ -117,6 +169,7 @@ function emptyRunStats(): RunStats {
     toolBreakdown: [],
     llmCallDetails: [],
     compactionHistory: [],
+    lastMessageStats: null,
   }
 }
 
@@ -351,44 +404,74 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const tools = p.tools as any[] | undefined
       const toolCount = tools?.length ?? 0
       const sysTok = (p.system_prompt_tokens as number) ?? 0
-      const msgBytes = (p.message_bytes as number) ?? 0
-      const estMsgTokens = Math.floor(msgBytes / 4)
-      const estTotal = sysTok + estMsgTokens
+      const messages = p.messages as any[] | undefined
 
-      // Build per-role message counts from message_role_counts if available
-      const roleCounts = p.message_role_counts as Record<string, number> | undefined
+      // Compute per-role stats from messages array (mirrors Rust count_messages_by_role)
+      const msgStats = messages && messages.length > 0
+        ? countMessagesByRole(messages)
+        : null
+
+      const estTotal = msgStats
+        ? msgStats.userTokens + msgStats.assistantTokens + msgStats.toolResultTokens + sysTok
+        : sysTok + Math.floor(((p.message_bytes as number) ?? 0) / 4)
+
+      // Build role count string
       let roleStr = ''
-      if (roleCounts) {
+      if (msgStats) {
         const parts: string[] = []
-        for (const [role, count] of Object.entries(roleCounts)) {
-          parts.push(`${role} ${count}`)
+        if (msgStats.userCount > 0) parts.push(`user ${msgStats.userCount}`)
+        if (msgStats.assistantCount > 0) parts.push(`assistant ${msgStats.assistantCount}`)
+        if (msgStats.toolResultCount > 0) parts.push(`tool_result ${msgStats.toolResultCount}`)
+        if (parts.length > 0) roleStr = ` (${parts.join(' · ')})`
+      } else {
+        // Fallback to message_role_counts from Rust
+        const roleCounts = p.message_role_counts as Record<string, number> | undefined
+        if (roleCounts) {
+          const parts: string[] = []
+          for (const [role, count] of Object.entries(roleCounts)) {
+            parts.push(`${role} ${count}`)
+          }
+          roleStr = ` (${parts.join(' · ')})`
         }
-        roleStr = ` (${parts.join(' · ')})`
       }
 
       const lines = [
         `[LLM] call · ${model} · turn ${turn}`,
         `  ${msgCount} messages${roleStr} · ${toolCount} tools`,
-        `  ~${humanTokensInline(estTotal)} est tokens (sys ~${humanTokensInline(sysTok)} · msgs ~${humanTokensInline(estMsgTokens)})`,
       ]
 
-      // Per-tool token breakdown from accumulated tool results
-      const toolTokens = state.currentRunStats.toolBreakdown
-        .filter((t) => t.totalResultTokens > 0)
-        .sort((a, b) => b.totalResultTokens - a.totalResultTokens)
-      if (toolTokens.length > 0) {
-        const totalToolTok = toolTokens.reduce((s, t) => s + t.totalResultTokens, 0)
+      // Token estimates by role
+      if (msgStats) {
+        const tokenParts = [`sys ~${humanTokensInline(sysTok)}`]
+        if (msgStats.userTokens > 0) tokenParts.push(`user ~${humanTokensInline(msgStats.userTokens)}`)
+        if (msgStats.assistantTokens > 0) tokenParts.push(`assistant ~${humanTokensInline(msgStats.assistantTokens)}`)
+        if (msgStats.toolResultTokens > 0) tokenParts.push(`tool_result ~${humanTokensInline(msgStats.toolResultTokens)}`)
+        lines.push(`  ~${humanTokensInline(estTotal)} est tokens (${tokenParts.join(' · ')})`)
+      } else {
+        lines.push(`  ~${humanTokensInline(estTotal)} est tokens (sys ~${humanTokensInline(sysTok)})`)
+      }
+
+      // Per-tool token breakdown from message stats (like Rust, only if >= 2 tool results)
+      if (msgStats && msgStats.toolDetails.length >= 2) {
+        // Aggregate same-name tools
+        const aggMap = new Map<string, number>()
+        for (const d of msgStats.toolDetails) {
+          aggMap.set(d.name, (aggMap.get(d.name) ?? 0) + d.tokens)
+        }
+        const agg = [...aggMap.entries()].sort((a, b) => b[1] - a[1])
+        const totalToolTok = msgStats.toolResultTokens
+
         lines.push('  tool results:')
-        for (const t of toolTokens) {
-          const pctVal = totalToolTok > 0 ? ((t.totalResultTokens / totalToolTok) * 100) : 0
-          const bar = renderBar(t.totalResultTokens, totalToolTok, 20)
-          lines.push(`    ${padToolName(t.name)}~${humanTokensInline(t.totalResultTokens).padStart(5)}     (${pctVal.toFixed(1).padStart(5)}%)  ${bar}`)
+        for (const [name, tokens] of agg) {
+          const pctVal = totalToolTok > 0 ? ((tokens / totalToolTok) * 100) : 0
+          const bar = renderBar(tokens, totalToolTok, 20)
+          lines.push(`    ${padToolName(name)}~${humanTokensInline(tokens).padStart(5)}     (${pctVal.toFixed(1).padStart(5)}%)  ${bar}`)
         }
       }
 
       return {
         ...state,
-        currentRunStats: { ...state.currentRunStats, systemPromptTokens: sysTok },
+        currentRunStats: { ...state.currentRunStats, systemPromptTokens: sysTok, lastMessageStats: msgStats },
         verboseEvents: [...state.verboseEvents, { kind: 'llm_call', text: lines.join('\n') }],
       }
     }

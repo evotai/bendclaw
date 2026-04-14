@@ -15,13 +15,19 @@ import type { HistoryManager } from '../utils/history.js'
 import { InterruptHandler } from '../utils/interrupt.js'
 import { needsContinuation } from '../utils/continuation.js'
 import { getFreezeInputMode } from '../utils/freezeMode.js'
+import {
+  getHistoryCursorPlacement,
+  isHistoryDownShortcut,
+  isHistoryUpShortcut,
+  resolveDownArrowAction,
+  resolveUpArrowAction,
+} from '../utils/promptHistory.js'
 
 interface PromptInputProps {
   model: string
   isLoading: boolean
   isActive: boolean
   isFrozen: boolean
-  fullscreenEnabled?: boolean
   verbose: boolean
   planning: boolean
   queuedMessages: string[]
@@ -30,10 +36,6 @@ interface PromptInputProps {
   onInterrupt: () => void
   onToggleFreeze: () => void
   onToggleVerbose: () => void
-  onPageUp?: () => void
-  onPageDown?: () => void
-  onHome?: () => void
-  onEnd?: () => void
 }
 
 export function PromptInput({
@@ -41,7 +43,6 @@ export function PromptInput({
   isLoading,
   isActive,
   isFrozen,
-  fullscreenEnabled = false,
   verbose,
   planning,
   queuedMessages,
@@ -50,10 +51,6 @@ export function PromptInput({
   onInterrupt,
   onToggleFreeze,
   onToggleVerbose,
-  onPageUp,
-  onPageDown,
-  onHome,
-  onEnd,
 }: PromptInputProps) {
   const [lines, setLines] = useState<string[]>([''])
   const [cursorLine, setCursorLine] = useState(0)
@@ -75,9 +72,14 @@ export function PromptInput({
   }, [history])
 
   const currentText = () => lines.join('\n')
-  const setInputText = (text: string) => {
+  const setInputText = (text: string, cursorPlacement: 'start' | 'end' = 'end') => {
     const newLines = text.split('\n')
     setLines(newLines)
+    if (cursorPlacement === 'start') {
+      setCursorLine(0)
+      setCursorCol(0)
+      return
+    }
     const lastLine = newLines.length - 1
     setCursorLine(lastLine)
     setCursorCol(newLines[lastLine]!.length)
@@ -305,62 +307,76 @@ export function PromptInput({
       return
     }
 
-    // Arrow up — history or move cursor up
+    const applyHistoryUp = () => {
+      const history = historyRef.current
+      if (history.length === 0) return
+      if (historyIndexRef.current === -1) {
+        savedInputRef.current = currentText()
+        historyIndexRef.current = history.length - 1
+      } else if (historyIndexRef.current > 0) {
+        historyIndexRef.current--
+      }
+      setInputText(history[historyIndexRef.current] ?? '', getHistoryCursorPlacement('history_up'))
+    }
+
+    const applyHistoryDown = () => {
+      const history = historyRef.current
+      if (historyIndexRef.current === -1) return
+      if (historyIndexRef.current < history.length - 1) {
+        historyIndexRef.current++
+        setInputText(history[historyIndexRef.current] ?? '', getHistoryCursorPlacement('history_down'))
+      } else {
+        historyIndexRef.current = -1
+        setInputText(savedInputRef.current, getHistoryCursorPlacement('history_down'))
+      }
+    }
+
+    // Ctrl+P — history up
+    if (isHistoryUpShortcut(ch, key)) {
+      applyHistoryUp()
+      return
+    }
+
+    // Ctrl+N — history down
+    if (isHistoryDownShortcut(ch, key)) {
+      applyHistoryDown()
+      return
+    }
+
     if (key.upArrow) {
-      if (lines.length === 1) {
-        // Single line → navigate history
-        const history = historyRef.current
-        if (history.length === 0) return
-        if (historyIndexRef.current === -1) {
-          savedInputRef.current = currentText()
-          historyIndexRef.current = history.length - 1
-        } else if (historyIndexRef.current > 0) {
-          historyIndexRef.current--
-        }
-        setInputText(history[historyIndexRef.current] ?? '')
-      } else if (cursorLine > 0) {
-        setCursorLine((prev) => prev - 1)
-        setCursorCol((prev) => Math.min(prev, lines[cursorLine - 1]!.length))
+      switch (resolveUpArrowAction({ linesLength: lines.length, cursorLine, cursorCol })) {
+        case 'move_up_line':
+          setCursorLine((prev) => prev - 1)
+          setCursorCol((prev) => Math.min(prev, lines[cursorLine - 1]!.length))
+          break
+        case 'move_to_line_start':
+          setCursorCol(0)
+          break
+        case 'history_up':
+          applyHistoryUp()
+          break
       }
       return
     }
 
-    // Arrow down — history or move cursor down
     if (key.downArrow) {
-      if (lines.length === 1) {
-        const history = historyRef.current
-        if (historyIndexRef.current === -1) return
-        if (historyIndexRef.current < history.length - 1) {
-          historyIndexRef.current++
-          setInputText(history[historyIndexRef.current] ?? '')
-        } else {
-          historyIndexRef.current = -1
-          setInputText(savedInputRef.current)
-        }
-      } else if (cursorLine < lines.length - 1) {
-        setCursorLine((prev) => prev + 1)
-        setCursorCol((prev) => Math.min(prev, lines[cursorLine + 1]!.length))
+      switch (resolveDownArrowAction({
+        linesLength: lines.length,
+        cursorLine,
+        cursorCol,
+        lineLength: lines[cursorLine]!.length,
+      })) {
+        case 'move_down_line':
+          setCursorLine((prev) => prev + 1)
+          setCursorCol((prev) => Math.min(prev, lines[cursorLine + 1]!.length))
+          break
+        case 'move_to_line_end':
+          setCursorCol(lines[cursorLine]!.length)
+          break
+        case 'history_down':
+          applyHistoryDown()
+          break
       }
-      return
-    }
-
-    if (fullscreenEnabled && key.pageUp) {
-      onPageUp?.()
-      return
-    }
-
-    if (fullscreenEnabled && key.pageDown) {
-      onPageDown?.()
-      return
-    }
-
-    if (fullscreenEnabled && (ch === '\x1b[H' || ch === '\x1b[1~')) {
-      onHome?.()
-      return
-    }
-
-    if (fullscreenEnabled && (ch === '\x1b[F' || ch === '\x1b[4~')) {
-      onEnd?.()
       return
     }
 

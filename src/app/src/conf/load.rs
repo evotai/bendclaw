@@ -29,9 +29,9 @@ const RELEVANT_KEYS: &[&str] = &[
     "EVOT_STORAGE_CLOUD_ENDPOINT",
     "EVOT_STORAGE_CLOUD_API_KEY",
     "EVOT_STORAGE_CLOUD_WORKSPACE",
-    "EVOT_FEISHU_APP_ID",
-    "EVOT_FEISHU_APP_SECRET",
-    "EVOT_FEISHU_MENTION_ONLY",
+    "EVOT_CHANNEL_FEISHU_APP_ID",
+    "EVOT_CHANNEL_FEISHU_APP_SECRET",
+    "EVOT_CHANNEL_FEISHU_MENTION_ONLY",
 ];
 
 fn optional_string(value: String) -> Option<String> {
@@ -308,13 +308,13 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     // Feishu channel from env
-    if let Some(app_id) = vars.get("EVOT_FEISHU_APP_ID") {
+    if let Some(app_id) = vars.get("EVOT_CHANNEL_FEISHU_APP_ID") {
         let app_secret = vars
-            .get("EVOT_FEISHU_APP_SECRET")
+            .get("EVOT_CHANNEL_FEISHU_APP_SECRET")
             .cloned()
             .unwrap_or_default();
         let mention_only = vars
-            .get("EVOT_FEISHU_MENTION_ONLY")
+            .get("EVOT_CHANNEL_FEISHU_MENTION_ONLY")
             .map(|v| v != "0" && v.to_lowercase() != "false")
             .unwrap_or(true);
         config.channels.feishu = Some(FeishuChannelConfig {

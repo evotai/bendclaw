@@ -218,8 +218,6 @@ impl std::fmt::Display for ProviderKind {
     }
 }
 
-
-
 pub fn default_model(provider: &ProviderKind) -> &'static str {
     match provider {
         ProviderKind::Anthropic => "claude-sonnet-4-20250514",

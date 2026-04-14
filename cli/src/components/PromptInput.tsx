@@ -352,16 +352,39 @@ export const PromptInput = React.memo(function PromptInput({
     // Ignore other control sequences
     if (key.ctrl || key.escape) return
 
-    // Regular character input
+    // Regular character input (including multi-line paste)
     if (ch) {
       setCompletionCandidates([])
-      setLines((prev) => {
-        const newLines = [...prev]
-        const line = newLines[cursorLine]!
-        newLines[cursorLine] = line.slice(0, cursorCol) + ch + line.slice(cursorCol)
-        return newLines
-      })
-      setCursorCol((prev) => prev + ch.length)
+      const normalized = ch.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      const pastedLines = normalized.split('\n')
+
+      if (pastedLines.length > 1) {
+        // Multi-line paste
+        setLines((prev) => {
+          const newLines = [...prev]
+          const line = newLines[cursorLine]!
+          const before = line.slice(0, cursorCol)
+          const after = line.slice(cursorCol)
+          const spliced: string[] = [
+            before + pastedLines[0]!,
+            ...pastedLines.slice(1, -1),
+            pastedLines[pastedLines.length - 1]! + after,
+          ]
+          newLines.splice(cursorLine, 1, ...spliced)
+          return newLines
+        })
+        const lastPasted = pastedLines[pastedLines.length - 1]!
+        setCursorLine((prev) => prev + pastedLines.length - 1)
+        setCursorCol(lastPasted.length)
+      } else {
+        setLines((prev) => {
+          const newLines = [...prev]
+          const line = newLines[cursorLine]!
+          newLines[cursorLine] = line.slice(0, cursorCol) + ch + line.slice(cursorCol)
+          return newLines
+        })
+        setCursorCol((prev) => prev + ch.length)
+      }
     }
   }, { isActive })
 

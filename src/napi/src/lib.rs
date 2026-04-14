@@ -320,8 +320,21 @@ impl NapiQueryStream {
         let mut stream = self.inner.lock().await;
         match stream.next().await {
             Some(event) => {
-                let json = serde_json::to_string(&event)
+                // Serialize to JSON, then strip heavy fields from llm_call_started
+                // to avoid blocking the JS main thread with multi-MB payloads.
+                // The TS side uses pre-computed message_stats instead.
+                let mut json_value = serde_json::to_value(&event)
                     .map_err(|e| Error::from_reason(format!("serialize event: {e}")))?;
+                if let Some(payload) = json_value.get_mut("payload") {
+                    if event.kind_str() == "llm_call_started" {
+                        if let Some(obj) = payload.as_object_mut() {
+                            obj.remove("messages");
+                            obj.remove("system_prompt");
+                            obj.remove("tools");
+                        }
+                    }
+                }
+                let json = json_value.to_string();
                 Ok(Some(json))
             }
             None => Ok(None),

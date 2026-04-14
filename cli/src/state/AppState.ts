@@ -404,12 +404,21 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const tools = p.tools as any[] | undefined
       const toolCount = tools?.length ?? 0
       const sysTok = (p.system_prompt_tokens as number) ?? 0
-      const messages = p.messages as any[] | undefined
 
-      // Compute per-role stats from messages array (mirrors Rust count_messages_by_role)
-      const msgStats = messages && messages.length > 0
-        ? countMessagesByRole(messages)
-        : null
+      // Use pre-computed message_stats from Rust (avoids re-stringifying huge messages on JS main thread)
+      const rawStats = p.message_stats as Record<string, any> | undefined
+      const msgStats: MessageStats | null = rawStats ? {
+        userCount: (rawStats.user_count as number) ?? 0,
+        assistantCount: (rawStats.assistant_count as number) ?? 0,
+        toolResultCount: (rawStats.tool_result_count as number) ?? 0,
+        userTokens: (rawStats.user_tokens as number) ?? 0,
+        assistantTokens: (rawStats.assistant_tokens as number) ?? 0,
+        toolResultTokens: (rawStats.tool_result_tokens as number) ?? 0,
+        toolDetails: ((rawStats.tool_details as any[]) ?? []).map((d: any) => ({
+          name: (d.name as string) ?? 'unknown',
+          tokens: (d.tokens as number) ?? 0,
+        })),
+      } : null
 
       const estTotal = msgStats
         ? msgStats.userTokens + msgStats.assistantTokens + msgStats.toolResultTokens + sysTok
@@ -424,7 +433,6 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         if (msgStats.toolResultCount > 0) parts.push(`tool_result ${msgStats.toolResultCount}`)
         if (parts.length > 0) roleStr = ` (${parts.join(' · ')})`
       } else {
-        // Fallback to message_role_counts from Rust
         const roleCounts = p.message_role_counts as Record<string, number> | undefined
         if (roleCounts) {
           const parts: string[] = []
@@ -451,7 +459,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         lines.push(`  ~${humanTokensInline(estTotal)} est tokens (sys ~${humanTokensInline(sysTok)})`)
       }
 
-      // Per-tool token breakdown from message stats (like Rust, only if >= 2 tool results)
+      // Per-tool token breakdown (like Rust, only if >= 2 tool results)
       if (msgStats && msgStats.toolDetails.length >= 2) {
         // Aggregate same-name tools
         const aggMap = new Map<string, number>()

@@ -485,6 +485,50 @@ fn map_agent_event(
                     .or_insert(0usize) += 1;
             }
 
+            // Compute per-role token estimates from serialized messages (mirrors count_messages_by_role)
+            let message_stats = {
+                use crate::agent::event::MessageStatsPayload;
+                use crate::agent::event::ToolTokenEntry;
+                let mut stats = MessageStatsPayload::default();
+                for msg_val in &messages {
+                    let role = msg_val
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let est = msg_val.to_string().len() / 4;
+                    match role {
+                        "user" => {
+                            stats.user_count += 1;
+                            stats.user_tokens += est;
+                        }
+                        "assistant" => {
+                            stats.assistant_count += 1;
+                            stats.assistant_tokens += est;
+                        }
+                        "toolResult" | "tool_result" | "tool" => {
+                            stats.tool_result_count += 1;
+                            stats.tool_result_tokens += est;
+                            let name = msg_val
+                                .get("toolName")
+                                .or_else(|| msg_val.get("tool_name"))
+                                .or_else(|| msg_val.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            stats
+                                .tool_details
+                                .push(ToolTokenEntry { name, tokens: est });
+                        }
+                        _ => {
+                            stats.user_count += 1;
+                            stats.user_tokens += est;
+                        }
+                    }
+                }
+                stats.tool_details.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+                Some(stats)
+            };
+
             vec![
                 RuntimeEvent::Transcript(
                     TranscriptStats::LlmCallStarted(LlmCallStartedStats {
@@ -508,6 +552,7 @@ fn map_agent_event(
                     message_bytes,
                     system_prompt_tokens,
                     message_role_counts,
+                    message_stats,
                 }),
             ]
         }

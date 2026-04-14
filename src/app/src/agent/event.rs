@@ -10,6 +10,29 @@ use crate::types::LlmCallMetrics;
 use crate::types::UsageSummary;
 
 // ---------------------------------------------------------------------------
+// MessageStatsPayload — pre-computed per-role token estimates
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolTokenEntry {
+    pub name: String,
+    pub tokens: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MessageStatsPayload {
+    pub user_count: usize,
+    pub assistant_count: usize,
+    pub tool_result_count: usize,
+    pub user_tokens: usize,
+    pub assistant_tokens: usize,
+    pub tool_result_tokens: usize,
+    /// Per-tool token breakdown (sorted by tokens desc).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_details: Vec<ToolTokenEntry>,
+}
+
+// ---------------------------------------------------------------------------
 // RunEventPayload — strongly typed event payload
 // ---------------------------------------------------------------------------
 
@@ -71,6 +94,9 @@ pub enum RunEventPayload {
         /// Per-role message counts (e.g. {"user": 3, "assistant": 5, "tool_result": 8}).
         #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
         message_role_counts: std::collections::HashMap<String, usize>,
+        /// Pre-computed per-role token estimates and per-tool breakdown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message_stats: Option<MessageStatsPayload>,
     },
     LlmCallCompleted {
         turn: usize,

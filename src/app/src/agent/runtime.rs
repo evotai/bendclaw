@@ -471,6 +471,20 @@ fn map_agent_event(
                 .map(|t| serialize_or_placeholder(t, "tool"))
                 .collect();
             let message_bytes: usize = messages.iter().map(|m| m.to_string().len()).sum();
+
+            // Compute per-role message counts
+            let mut message_role_counts = std::collections::HashMap::new();
+            for msg in &request.messages {
+                let role = match msg {
+                    evot_engine::Message::User { .. } => "user",
+                    evot_engine::Message::Assistant { .. } => "assistant",
+                    evot_engine::Message::ToolResult { .. } => "tool_result",
+                };
+                *message_role_counts
+                    .entry(role.to_string())
+                    .or_insert(0usize) += 1;
+            }
+
             vec![
                 RuntimeEvent::Transcript(
                     TranscriptStats::LlmCallStarted(LlmCallStartedStats {
@@ -493,6 +507,7 @@ fn map_agent_event(
                     message_count,
                     message_bytes,
                     system_prompt_tokens,
+                    message_role_counts,
                 }),
             ]
         }

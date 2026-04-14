@@ -8,6 +8,7 @@ import React from 'react'
 import { render } from 'ink'
 import { Agent, version, startServer } from './native/index.js'
 import { REPL } from './screens/REPL.js'
+import { resolveFullscreenEnabled } from './utils/fullscreen.js'
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -211,10 +212,12 @@ function runRepl(opts: CliOptions) {
 
   process.on('SIGINT', () => {})
 
+  const fullscreenEnabled = resolveFullscreenEnabled(process.env.EVOT_FULLSCREEN, process.stdout.isTTY === true)
   const { waitUntilExit } = render(React.createElement(REPL, {
     agent,
     initialVerbose: opts.verbose,
     initialResume: opts.resume,
+    fullscreenEnabled,
   }), {
     exitOnCtrlC: false,
   })

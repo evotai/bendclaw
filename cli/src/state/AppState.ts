@@ -46,12 +46,21 @@ export interface UIToolCall {
 // Run stats — accumulated during a run, shown in verbose mode
 // ---------------------------------------------------------------------------
 
+export interface CompactionActionDetail {
+  index: number
+  toolName: string
+  method: string
+  beforeTokens: number
+  afterTokens: number
+}
+
 export interface CompactionEntry {
   kind: 'run_once' | 'level'
   level?: number
   beforeTokens: number
   afterTokens: number
   savedTokens: number
+  actions?: CompactionActionDetail[]
 }
 
 export interface RunStats {
@@ -459,14 +468,15 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const result = p.result as Record<string, any> | undefined
       const type = (result?.type as string) ?? 'done'
       const stats = { ...state.currentRunStats }
-      let action = type
+      const lines: string[] = []
+
       if (type === 'no_op') {
-        action = 'no-op'
+        lines.push('[COMPACT] · no-op')
       } else if (type === 'run_once_cleared') {
         const saved = (result?.saved_tokens as number) ?? 0
         const before = (result?.before_estimated_tokens as number) ?? stats.contextTokens
         const after = before - saved
-        action = `run-once · ${humanTokensInline(before)} → ${humanTokensInline(after)} · saved ${humanTokensInline(saved)} tokens`
+        lines.push(`[COMPACT] · run-once · ${humanTokensInline(before)} → ${humanTokensInline(after)} · saved ${humanTokensInline(saved)} tokens`)
         stats.compactionHistory = [...stats.compactionHistory, {
           kind: 'run_once',
           beforeTokens: before,
@@ -477,21 +487,84 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         const level = (result?.level as number) ?? 0
         const before = (result?.before_estimated_tokens as number) ?? 0
         const after = (result?.after_estimated_tokens as number) ?? 0
+        const beforeMsgCount = (result?.before_message_count as number) ?? 0
+        const afterMsgCount = (result?.after_message_count as number) ?? 0
         const saved = before - after
         const savedPct = before > 0 ? ((saved / before) * 100).toFixed(1) : '0'
-        action = `L${level} · ${humanTokensInline(before)} → ${humanTokensInline(after)} · saved ${humanTokensInline(saved)} (${savedPct}%)`
+
+        // Parse per-message actions
+        const rawActions = (result?.actions as any[]) ?? []
+        const actions: CompactionActionDetail[] = rawActions.map((a: any) => ({
+          index: (a.index as number) ?? 0,
+          toolName: (a.tool_name as string) ?? '',
+          method: (a.method as string) ?? '',
+          beforeTokens: (a.before_tokens as number) ?? 0,
+          afterTokens: (a.after_tokens as number) ?? 0,
+        }))
+
+        // Build position bar: show which messages were affected
+        // · = untouched, O = Outline, H = HeadTail, S = Summarized, D = Dropped, X = LifecycleCleared
+        const actionMap = new Map<number, string>()
+        for (const a of actions) {
+          const ch = a.method === 'Outline' ? 'O'
+            : a.method === 'HeadTail' ? 'H'
+            : a.method === 'Summarized' ? 'S'
+            : a.method === 'Dropped' ? 'D'
+            : a.method === 'LifecycleCleared' ? 'X'
+            : a.method === 'Skipped' ? '·'
+            : '?'
+          actionMap.set(a.index, ch)
+        }
+        const barChars: string[] = []
+        for (let i = 0; i < beforeMsgCount; i++) {
+          barChars.push(actionMap.get(i) ?? '·')
+        }
+        const positionBar = barChars.join('')
+
+        const changedCount = actions.filter((a) => a.method !== 'Skipped').length
+
+        lines.push(`[COMPACT] · L${level}`)
+        lines.push(`  ${beforeMsgCount} messages ~${humanTokensInline(before)} tok`)
+        if (positionBar.length > 0) {
+          lines.push(`  [${positionBar}]`)
+        }
+        lines.push(`  ↓ ${afterMsgCount} messages ~${humanTokensInline(after)} tok`)
+        lines.push(`  (saved ~${humanTokensInline(saved)}, ${savedPct}%)`)
+
+        // Per-action breakdown: sorted by savings desc, show top actions
+        const significantActions = actions
+          .filter((a) => a.method !== 'Skipped' && a.beforeTokens > a.afterTokens)
+          .sort((a, b) => (b.beforeTokens - b.afterTokens) - (a.beforeTokens - a.afterTokens))
+
+        if (significantActions.length > 0) {
+          lines.push(`  actions: (${changedCount} of ${beforeMsgCount} changed, sorted by savings)`)
+          const showCount = Math.min(significantActions.length, 5)
+          for (let i = 0; i < showCount; i++) {
+            const a = significantActions[i]!
+            const aSaved = a.beforeTokens - a.afterTokens
+            lines.push(`    #${String(a.index).padStart(3)}  ${padToolName(a.toolName, 14)}${a.method.padEnd(10)} ~${humanTokensInline(a.beforeTokens)} → ~${humanTokensInline(a.afterTokens)}  (saved ~${humanTokensInline(aSaved)})`)
+          }
+          if (significantActions.length > showCount) {
+            const restCount = significantActions.length - showCount
+            const restSaved = significantActions.slice(showCount).reduce((s, a) => s + (a.beforeTokens - a.afterTokens), 0)
+            lines.push(`    ... ${restCount} more · saved ~${humanTokensInline(restSaved)}`)
+          }
+        }
+
         stats.compactionHistory = [...stats.compactionHistory, {
           kind: 'level',
           level,
           beforeTokens: before,
           afterTokens: after,
           savedTokens: saved,
+          actions,
         }]
       }
+
       return {
         ...state,
         currentRunStats: stats,
-        verboseEvents: [...state.verboseEvents, { kind: 'compact_done', text: `[COMPACT] · ${action}` }],
+        verboseEvents: [...state.verboseEvents, { kind: 'compact_done', text: lines.join('\n') }],
       }
     }
 

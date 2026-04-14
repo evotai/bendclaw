@@ -21,6 +21,7 @@ interface PromptInputProps {
   isLoading: boolean
   isActive: boolean
   isFrozen: boolean
+  fullscreenEnabled?: boolean
   verbose: boolean
   planning: boolean
   queuedMessages: string[]
@@ -29,6 +30,10 @@ interface PromptInputProps {
   onInterrupt: () => void
   onToggleFreeze: () => void
   onToggleVerbose: () => void
+  onPageUp?: () => void
+  onPageDown?: () => void
+  onHome?: () => void
+  onEnd?: () => void
 }
 
 export function PromptInput({
@@ -36,6 +41,7 @@ export function PromptInput({
   isLoading,
   isActive,
   isFrozen,
+  fullscreenEnabled = false,
   verbose,
   planning,
   queuedMessages,
@@ -44,6 +50,10 @@ export function PromptInput({
   onInterrupt,
   onToggleFreeze,
   onToggleVerbose,
+  onPageUp,
+  onPageDown,
+  onHome,
+  onEnd,
 }: PromptInputProps) {
   const [lines, setLines] = useState<string[]>([''])
   const [cursorLine, setCursorLine] = useState(0)
@@ -331,6 +341,26 @@ export function PromptInput({
         setCursorLine((prev) => prev + 1)
         setCursorCol((prev) => Math.min(prev, lines[cursorLine + 1]!.length))
       }
+      return
+    }
+
+    if (fullscreenEnabled && key.pageUp) {
+      onPageUp?.()
+      return
+    }
+
+    if (fullscreenEnabled && key.pageDown) {
+      onPageDown?.()
+      return
+    }
+
+    if (fullscreenEnabled && (ch === '\x1b[H' || ch === '\x1b[1~')) {
+      onHome?.()
+      return
+    }
+
+    if (fullscreenEnabled && (ch === '\x1b[F' || ch === '\x1b[4~')) {
+      onEnd?.()
       return
     }
 

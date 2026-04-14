@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { Box, Text, useApp, useInput } from 'ink'
+import { Box, Text, useApp, useInput, useStdout } from 'ink'
 import { Agent, type RunEvent, QueryStream } from '../native/index.js'
 import { type AppState, createInitialState, applyEvent, type UIMessage } from '../state/AppState.js'
 import { Message } from '../components/Message.js'
@@ -17,6 +17,7 @@ import { MessageList } from '../components/MessageList.js'
 import { HelpPane } from '../components/HelpPane.js'
 import { ModelSelector } from '../components/ModelSelector.js'
 import { SessionSelector } from '../components/SessionSelector.js'
+import { AlternateScreen } from '../components/AlternateScreen.js'
 import { HistoryManager } from '../utils/history.js'
 import { TranscriptLog } from '../utils/transcriptLog.js'
 import { transcriptToMessages, type TranscriptItem } from '../utils/transcript.js'
@@ -30,6 +31,15 @@ import {
 import { logDirPath, sessionLogPath, sessionTranscriptPath } from '../utils/logPaths.js'
 import { partitionMessagesForRender } from '../utils/renderPartition.js'
 import { appendFrozenEvents } from '../utils/frozenUpdates.js'
+import {
+  createViewportState,
+  getVisibleMessageRange,
+  scrollViewportPageDown,
+  scrollViewportPageUp,
+  scrollViewportToBottom,
+  scrollViewportToTop,
+  syncViewportAfterContentChange,
+} from '../utils/viewport.js'
 
 const LIVE_MESSAGE_WINDOW = 12
 const MAX_RENDERED_MESSAGES = 40
@@ -38,10 +48,12 @@ interface REPLProps {
   agent: Agent
   initialVerbose?: boolean
   initialResume?: string
+  fullscreenEnabled?: boolean
 }
 
-export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps) {
+export function REPL({ agent, initialVerbose = false, initialResume, fullscreenEnabled = false }: REPLProps) {
   const { exit } = useApp()
+  const { stdout } = useStdout()
   const [state, setState] = useState<AppState>(() => ({
     ...createInitialState(agent.model, agent.cwd),
     verbose: initialVerbose,
@@ -53,6 +65,7 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [planning, setPlanning] = useState(false)
   const [isFrozen, setIsFrozen] = useState(false)
+  const [viewport, setViewport] = useState(() => createViewportState())
   const streamRef = useRef<QueryStream | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const isLoadingRef = useRef(false)
@@ -229,21 +242,98 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
   const hasStreamText = state.currentStreamText.length > 0
   const hasThinkingText = state.currentThinkingText.length > 0
   const hasActiveTools = state.activeToolCalls.size > 0
-  const { hiddenCount, frozen: frozenMessages, live: liveMessages } = React.useMemo(
-    () => partitionMessagesForRender(state.messages, LIVE_MESSAGE_WINDOW, MAX_RENDERED_MESSAGES),
-    [state.messages],
+  const terminalRows = stdout?.rows ?? 24
+  const viewportPageSize = React.useMemo(
+    () => Math.max(8, Math.min(MAX_RENDERED_MESSAGES, terminalRows - 10)),
+    [terminalRows],
   )
+  const { hiddenCount, frozen: frozenMessages, live: liveMessages } = React.useMemo(() => {
+    if (!fullscreenEnabled) {
+      return partitionMessagesForRender(state.messages, LIVE_MESSAGE_WINDOW, MAX_RENDERED_MESSAGES)
+    }
+
+    const range = getVisibleMessageRange(state.messages.length, viewportPageSize, viewport)
+    return {
+      hiddenCount: range.start,
+      frozen: [],
+      live: state.messages.slice(range.start, range.end),
+    }
+  }, [fullscreenEnabled, state.messages, viewport, viewportPageSize])
+  const visibleRange = React.useMemo(
+    () => getVisibleMessageRange(state.messages.length, viewportPageSize, viewport),
+    [state.messages.length, viewport, viewportPageSize],
+  )
+  const newerHiddenCount = fullscreenEnabled ? Math.max(0, state.messages.length - visibleRange.end) : 0
   const renderVerboseEvent = React.useCallback((evt: import('../state/AppState.js').VerboseEvent, key: string) => (
     <VerboseEventLine key={key} event={evt} />
   ), [])
 
-  return (
-    <Box flexDirection="column" padding={0}>
+  useEffect(() => {
+    if (!fullscreenEnabled) {
+      return
+    }
+
+    setViewport((prev) => {
+      const next = syncViewportAfterContentChange(prev, state.messages.length, viewportPageSize)
+      return next.offset === prev.offset && next.sticky === prev.sticky ? prev : next
+    })
+  }, [fullscreenEnabled, state.messages.length, viewportPageSize])
+
+  const scrollViewportUp = useCallback(() => {
+    if (!fullscreenEnabled) return
+    setViewport((prev) => scrollViewportPageUp(prev, state.messages.length, viewportPageSize))
+  }, [fullscreenEnabled, state.messages.length, viewportPageSize])
+
+  const scrollViewportDown = useCallback(() => {
+    if (!fullscreenEnabled) return
+    setViewport((prev) => scrollViewportPageDown(prev, state.messages.length, viewportPageSize))
+  }, [fullscreenEnabled, state.messages.length, viewportPageSize])
+
+  const scrollViewportHome = useCallback(() => {
+    if (!fullscreenEnabled) return
+    setViewport((prev) => scrollViewportToTop(prev, state.messages.length, viewportPageSize))
+  }, [fullscreenEnabled, state.messages.length, viewportPageSize])
+
+  const scrollViewportEnd = useCallback(() => {
+    if (!fullscreenEnabled) return
+    setViewport((prev) => scrollViewportToBottom(prev, state.messages.length, viewportPageSize))
+  }, [fullscreenEnabled, state.messages.length, viewportPageSize])
+  const prompt = (
+    <PromptInput
+      model={state.model}
+      isLoading={state.isLoading}
+      isActive={!showHelp && resumeSessions === null && !showModelSelector}
+      isFrozen={isFrozen}
+      fullscreenEnabled={fullscreenEnabled}
+      verbose={state.verbose}
+      planning={planning}
+      queuedMessages={messageQueue}
+      history={historyManager}
+      onSubmit={handleSubmit}
+      onInterrupt={handleInterrupt}
+      onToggleFreeze={handleToggleFreeze}
+      onToggleVerbose={handleToggleVerbose}
+      onPageUp={scrollViewportUp}
+      onPageDown={scrollViewportDown}
+      onHome={scrollViewportHome}
+      onEnd={scrollViewportEnd}
+    />
+  )
+  const content = (
+    <>
       <Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />
 
       {hiddenCount > 0 && (
         <Box marginBottom={1}>
           <Text dimColor>{`… ${hiddenCount} earlier messages hidden to keep rendering responsive`}</Text>
+        </Box>
+      )}
+
+      {fullscreenEnabled && !viewport.sticky && (
+        <Box marginBottom={1}>
+          <Text color="yellow">
+            {`Viewing history · ${newerHiddenCount} newer messages below · PgUp/PgDn scroll · End jumps to live`}
+          </Text>
         </Box>
       )}
 
@@ -341,21 +431,26 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
         />
       )}
 
-      {/* Prompt input (Claude Code-style bordered box) */}
-      <PromptInput
-        model={state.model}
-        isLoading={state.isLoading}
-        isActive={!showHelp && resumeSessions === null && !showModelSelector}
-        isFrozen={isFrozen}
-        verbose={state.verbose}
-        planning={planning}
-        queuedMessages={messageQueue}
-        history={historyManager}
-        onSubmit={handleSubmit}
-        onInterrupt={handleInterrupt}
-        onToggleFreeze={handleToggleFreeze}
-        onToggleVerbose={handleToggleVerbose}
-      />
+    </>
+  )
+
+  if (fullscreenEnabled) {
+    return (
+      <AlternateScreen enabled={fullscreenEnabled}>
+        <Box flexDirection="column" height={terminalRows} padding={0}>
+          <Box flexDirection="column" flexGrow={1}>
+            {content}
+          </Box>
+          {prompt}
+        </Box>
+      </AlternateScreen>
+    )
+  }
+
+  return (
+    <Box flexDirection="column" padding={0}>
+      {content}
+      {prompt}
     </Box>
   )
 }

@@ -68,6 +68,9 @@ pub enum RunEventPayload {
         message_count: usize,
         message_bytes: usize,
         system_prompt_tokens: usize,
+        /// Per-role message counts (e.g. {"user": 3, "assistant": 5, "tool_result": 8}).
+        #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+        message_role_counts: std::collections::HashMap<String, usize>,
     },
     LlmCallCompleted {
         turn: usize,

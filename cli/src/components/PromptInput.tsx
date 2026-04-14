@@ -448,13 +448,7 @@ export const PromptInput = React.memo(function PromptInput({
       )}
 
       {/* Footer */}
-      <Footer
-        model={model}
-        planning={planning}
-        logMode={logMode}
-        verbose={verbose}
-        columns={columns}
-      />
+      <Footer model={model} planning={planning} logMode={logMode} columns={columns} />
     </Box>
   )
 })
@@ -479,36 +473,26 @@ function CursorLine({ text, cursorCol, ghostHint }: { text: string; cursorCol: n
 }
 
 // ---------------------------------------------------------------------------
-// Footer — shortcuts hint + model name
+// Footer — model name + mode indicators
 // ---------------------------------------------------------------------------
 
-function Footer({
-  model,
-  planning,
-  logMode,
-  verbose,
-  columns,
-}: {
+function Footer({ model, planning, logMode, columns }: {
   model: string
   planning: boolean
   logMode: boolean
-  verbose: boolean
   columns: number
 }) {
-  // Compute actual rendered width for gap calculation
-  const leftLabel = logMode ? '/done to exit' : '/help'
-  let leftLen = leftLabel.length
-  if (logMode) leftLen += 6 // " [log]"
-  if (planning) leftLen += 7 // " [plan]"
-  if (verbose) leftLen += 10 // " [verbose]"
-  const gap = Math.max(1, columns - leftLen - model.length)
+  const hints: string[] = []
+  if (logMode) hints.push('[log] /done to exit')
+  if (planning) hints.push('[plan]')
+  const left = hints.join('  ')
+  const gap = Math.max(1, columns - left.length - model.length)
 
   return (
     <Box>
-      <Text dimColor>{leftLabel}</Text>
-      {logMode && <Text color="magenta" bold>{' [log]'}</Text>}
-      {planning && <Text color="yellow" bold>{' [plan]'}</Text>}
-      {verbose && <Text color="cyan">{' [verbose]'}</Text>}
+      {logMode && <Text color="magenta" bold>{'[log]'}</Text>}
+      {logMode && <Text dimColor>{' /done to exit'}</Text>}
+      {planning && <Text color="yellow" bold>{logMode ? '  [plan]' : '[plan]'}</Text>}
       <Text>{' '.repeat(gap)}</Text>
       <Text dimColor>{model}</Text>
     </Box>

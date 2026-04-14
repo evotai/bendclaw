@@ -688,21 +688,54 @@ async function runLogTurn(
 
   try {
     const stream = await forked.query(prompt)
-    let text = ''
+    let streamingText = ''
+
+    const commitStreamingText = () => {
+      if (streamingText.trim()) {
+        appendLines(buildAssistantLines(streamingText))
+      }
+      streamingText = ''
+    }
+
     for await (const event of stream) {
-      if (event.kind === 'assistant_delta' && event.payload?.delta) {
-        text += event.payload.delta as string
-        setPendingText(text)
+      switch (event.kind) {
+        case 'assistant_delta': {
+          const delta = event.payload?.delta as string | undefined
+          if (delta) {
+            streamingText += delta
+            // Commit lines as they complete (on newline boundaries)
+            const lastNl = streamingText.lastIndexOf('\n')
+            if (lastNl >= 0) {
+              const complete = streamingText.slice(0, lastNl + 1)
+              streamingText = streamingText.slice(lastNl + 1)
+              if (complete.trim()) {
+                appendLines(buildAssistantLines(complete))
+              }
+            }
+          }
+          break
+        }
+        case 'tool_started': {
+          commitStreamingText()
+          const toolName = (event.payload?.tool_name as string) ?? 'tool'
+          appendLines(buildToolCall(toolName, event.payload))
+          break
+        }
+        case 'tool_completed': {
+          const toolName = (event.payload?.tool_name as string) ?? 'tool'
+          const ok = event.payload?.error == null
+          const durationMs = (event.payload?.duration_ms as number) ?? 0
+          appendLines(buildToolResult(toolName, ok, durationMs))
+          break
+        }
+        default:
+          break
       }
     }
-    // Commit final text to static
-    if (text.trim()) {
-      appendLines(buildAssistantLines(text))
-    }
-    setPendingText('')
+    // Commit any remaining text
+    commitStreamingText()
   } catch (err: any) {
     appendLines(buildError(`Log query failed: ${err?.message ?? err}`))
-    setPendingText('')
   }
   setState(prev => ({ ...prev, isLoading: false }))
 }

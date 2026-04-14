@@ -7,6 +7,18 @@ import { readdirSync, statSync } from 'fs'
 import { join, dirname, basename } from 'path'
 import { COMMANDS, HIDDEN_COMMANDS } from './index.js'
 
+/**
+ * Returns true when text looks like a hand-typed slash command prefix:
+ * `/` followed by zero or more ASCII lowercase letters.
+ * Pasted paths like `/some/path.rs` are rejected.
+ */
+function isSlashPrefix(text: string): boolean {
+  if (!text.startsWith('/')) return false
+  const rest = text.slice(1)
+  const cmdPart = rest.split(/\s/)[0] ?? ''
+  return /^[a-z]*$/.test(cmdPart)
+}
+
 export interface CompletionResult {
   /** The completed text to replace the current word */
   replacement: string
@@ -22,8 +34,8 @@ export interface CompletionResult {
 export function complete(line: string, cursorCol: number): CompletionResult | null {
   const beforeCursor = line.slice(0, cursorCol)
 
-  // Slash command completion: input starts with /
-  if (beforeCursor.startsWith('/')) {
+  // Slash command completion: input looks like a hand-typed command
+  if (isSlashPrefix(beforeCursor)) {
     return completeSlashCommand(beforeCursor)
   }
 
@@ -50,7 +62,7 @@ export function getGhostHint(line: string, cursorCol: number): string {
 
   // Only show hints when cursor is at end of line
   if (afterCursor.trim().length > 0) return ''
-  if (!beforeCursor.startsWith('/')) return ''
+  if (!isSlashPrefix(beforeCursor)) return ''
 
   const parts = beforeCursor.split(/\s+/)
   const cmd = parts[0]!.toLowerCase()

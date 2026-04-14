@@ -68,13 +68,27 @@ export function resolveCommand(input: string): ResolvedCommand {
 }
 
 /**
+ * Returns true when text looks like a hand-typed slash command prefix:
+ * `/` followed by zero or more ASCII lowercase letters.
+ * Pasted paths like `/some/path.rs` are rejected.
+ */
+function isSlashPrefix(text: string): boolean {
+  if (!text.startsWith('/')) return false
+  const rest = text.slice(1)
+  const cmdPart = rest.split(/\s/)[0] ?? ''
+  return /^[a-z]*$/.test(cmdPart)
+}
+
+/**
  * Check if input looks like a slash command.
- * Only the first word is checked against known commands (visible + hidden),
- * so pasted paths like `/some/path.rs` are not treated as commands.
+ * Only triggers when the first word is a valid slash prefix
+ * AND matches a known command (visible + hidden) by exact or prefix match.
  */
 export function isSlashCommand(input: string): boolean {
-  const firstWord = input.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-  if (!firstWord.startsWith('/') || firstWord.length < 2) return false
+  const trimmed = input.trim()
+  if (!isSlashPrefix(trimmed)) return false
+  const firstWord = trimmed.split(/\s+/)[0]!.toLowerCase()
+  if (firstWord === '/') return false
   const allCmds = [...COMMANDS, ...HIDDEN_COMMANDS]
   return allCmds.some(c => c.name === firstWord || c.aliases?.includes(firstWord))
     || allCmds.some(c => c.name.startsWith(firstWord) || (c.aliases?.some(a => a.startsWith(firstWord)) ?? false))

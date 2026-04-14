@@ -47,14 +47,12 @@ export function ActiveResponse({
     return lines.slice(-maxLines).join('\n')
   }, [pendingText, maxLines])
 
-  // Show ⏺ prefix on first line of pending text
-  const displayText = rendered ? `⏺ ${rendered}` : ''
-
   return (
     <Box flexDirection="column">
-      {displayText.length > 0 && (
+      {rendered.length > 0 && (
         <Box>
-          <Text>{'  '}{displayText}</Text>
+          <Text color="magenta" bold>⏺ </Text>
+          <Text>{rendered}</Text>
         </Box>
       )}
 

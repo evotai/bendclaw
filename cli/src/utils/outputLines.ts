@@ -45,17 +45,37 @@ export function buildUserMessage(text: string): OutputLine[] {
   return [{ id: genId('user'), kind: 'user', text }]
 }
 
-export function buildAssistantLines(markdownText: string, withPrefix = false): OutputLine[] {
+export function buildAssistantLines(markdownText: string, isFirstChunk = false): OutputLine[] {
   if (!markdownText.trim()) return []
   const rendered = renderMarkdown(markdownText)
   if (!rendered || !rendered.trim()) return []
   const cleaned = rendered.replace(/^\n+/, '').replace(/\n+$/, '')
   const lines = cleaned.split('\n')
-  return lines.map((line, i) => ({
-    id: genId('asst'),
-    kind: 'assistant' as const,
-    text: (i === 0 && withPrefix) ? `⏺ ${line}` : line,
-  }))
+  const result: OutputLine[] = []
+  if (isFirstChunk) {
+    // First line gets ⏺ prefix, rendered text starts after it
+    result.push({
+      id: genId('asst'),
+      kind: 'assistant' as const,
+      text: `⏺  ${lines[0] ?? ''}`,
+    })
+    for (let i = 1; i < lines.length; i++) {
+      result.push({
+        id: genId('asst'),
+        kind: 'assistant' as const,
+        text: lines[i]!,
+      })
+    }
+  } else {
+    for (const line of lines) {
+      result.push({
+        id: genId('asst'),
+        kind: 'assistant' as const,
+        text: line,
+      })
+    }
+  }
+  return result
 }
 
 export function buildToolCall(

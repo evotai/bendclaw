@@ -45,37 +45,20 @@ export function buildUserMessage(text: string): OutputLine[] {
   return [{ id: genId('user'), kind: 'user', text }]
 }
 
-export function buildAssistantLines(markdownText: string, isFirstChunk = false): OutputLine[] {
+export function buildAssistantPrefix(): OutputLine[] {
+  return [{ id: genId('apfx'), kind: 'assistant' as const, text: '⏺' }]
+}
+
+export function buildAssistantLines(markdownText: string): OutputLine[] {
   if (!markdownText.trim()) return []
   const rendered = renderMarkdown(markdownText)
   if (!rendered || !rendered.trim()) return []
   const cleaned = rendered.replace(/^\n+/, '').replace(/\n+$/, '')
-  const lines = cleaned.split('\n')
-  const result: OutputLine[] = []
-  if (isFirstChunk) {
-    // First line gets ⏺ prefix, rendered text starts after it
-    result.push({
-      id: genId('asst'),
-      kind: 'assistant' as const,
-      text: `⏺  ${lines[0] ?? ''}`,
-    })
-    for (let i = 1; i < lines.length; i++) {
-      result.push({
-        id: genId('asst'),
-        kind: 'assistant' as const,
-        text: lines[i]!,
-      })
-    }
-  } else {
-    for (const line of lines) {
-      result.push({
-        id: genId('asst'),
-        kind: 'assistant' as const,
-        text: line,
-      })
-    }
-  }
-  return result
+  return cleaned.split('\n').map((line) => ({
+    id: genId('asst'),
+    kind: 'assistant' as const,
+    text: line,
+  }))
 }
 
 export function buildToolCall(
@@ -255,7 +238,8 @@ export function messagesToOutputLines(messages: import('../state/AppState.js').U
       }
       // Assistant text
       if (msg.text.trim()) {
-        lines.push(...buildAssistantLines(msg.text, true))
+        lines.push(...buildAssistantPrefix())
+        lines.push(...buildAssistantLines(msg.text))
       }
     }
   }
@@ -333,14 +317,17 @@ export class AssistantStreamBuffer {
   /** Flush remaining buffer. Returns OutputLines to append. */
   finish(): OutputLine[] {
     if (!this.started) return []
-    const needsPrefix = !this.prefixEmitted
-    const lines = this.buffer.trim().length > 0
-      ? buildAssistantLines(this.buffer, needsPrefix)
-      : []
-    if (needsPrefix && lines.length > 0) this.prefixEmitted = true
+    const result: OutputLine[] = []
+    if (!this.prefixEmitted) {
+      result.push(...buildAssistantPrefix())
+      this.prefixEmitted = true
+    }
+    if (this.buffer.trim().length > 0) {
+      result.push(...buildAssistantLines(this.buffer))
+    }
     this.buffer = ''
     this.started = false
-    return lines
+    return result
   }
 
   /** The current incomplete text (for display in dynamic zone). */

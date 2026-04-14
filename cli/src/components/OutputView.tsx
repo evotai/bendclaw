@@ -44,11 +44,10 @@ function OutputLineView({ line }: { line: OutputLine }) {
         </Box>
       )
     case 'assistant':
-      if (line.text.startsWith('⏺')) {
+      if (line.text === '⏺') {
         return (
           <Box marginTop={1}>
             <Text color="magenta" bold>⏺ </Text>
-            <Text>{line.text.slice(2).trimStart()}</Text>
           </Box>
         )
       }

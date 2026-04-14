@@ -21,6 +21,7 @@ import { skillList, skillInstall, skillRemove } from '../commands/skill.js'
 import {
   type OutputLine,
   buildUserMessage,
+  buildAssistantPrefix,
   buildAssistantLines,
   buildToolCall,
   buildToolResult,
@@ -691,10 +692,7 @@ async function runQuery(
       setPendingText('')
       return
     }
-    const needsPrefix = !prefixEmitted
-    const lines = buildAssistantLines(streamingText, needsPrefix)
-    if (needsPrefix && lines.length > 0) prefixEmitted = true
-    appendLines(lines)
+    appendLines(buildAssistantLines(streamingText))
     streamingText = ''
     setPendingText('')
   }
@@ -739,7 +737,12 @@ async function runQuery(
           streamingText += delta
           if (!prefixEmitted) {
             const trimmed = streamingText.replace(/^[\n\r]+/, '')
-            if (trimmed.length > 0) streamingText = trimmed
+            if (trimmed.length > 0) {
+              streamingText = trimmed
+              // Emit ⏺ prefix to Static immediately — it stays fixed
+              appendLines(buildAssistantPrefix())
+              prefixEmitted = true
+            }
           }
           // Auto-commit when dynamic zone gets too tall
           const termRows = process.stdout.rows ?? 24
@@ -748,10 +751,7 @@ async function runQuery(
             if (splitAt > 0 && splitAt < streamingText.length) {
               const completed = streamingText.slice(0, splitAt)
               streamingText = streamingText.slice(splitAt)
-              const needsPrefix = !prefixEmitted
-              const lines = buildAssistantLines(completed, needsPrefix)
-              if (needsPrefix && lines.length > 0) prefixEmitted = true
-              appendLines(lines)
+              appendLines(buildAssistantLines(completed))
             }
           }
           setPendingText(streamingText)

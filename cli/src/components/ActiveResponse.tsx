@@ -51,8 +51,7 @@ export function ActiveResponse({
     <Box flexDirection="column">
       {rendered.length > 0 && (
         <Box>
-          <Text color="magenta" bold>⏺ </Text>
-          <Text>{rendered}</Text>
+          <Text>{'   '}{rendered}</Text>
         </Box>
       )}
 

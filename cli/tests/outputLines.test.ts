@@ -197,7 +197,7 @@ describe('AssistantStreamBuffer', () => {
     const buf = new AssistantStreamBuffer()
     buf.push('hello')
     const lines = buf.finish()
-    expect(lines.some((l) => l.text.startsWith('⏺'))).toBe(true)
+    expect(lines.some((l) => l.text === '⏺')).toBe(true)
   })
 
   test('skips leading whitespace', () => {
@@ -206,7 +206,7 @@ describe('AssistantStreamBuffer', () => {
     expect(lines1).toHaveLength(0)
     buf.push('hello')
     const lines2 = buf.finish()
-    expect(lines2.some((l) => l.text.startsWith('⏺'))).toBe(true)
+    expect(lines2.some((l) => l.text === '⏺')).toBe(true)
   })
 
   test('emits lines on newline', () => {

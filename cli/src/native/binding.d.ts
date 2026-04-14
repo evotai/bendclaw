@@ -13,6 +13,9 @@ export interface NapiAgent {
   configInfo(): string
   availableModels(): string[]
   setProvider(provider: string): void
+  setLimits(maxTurns?: number | null, maxTokens?: number | null, maxDurationSecs?: number | null): void
+  appendSystemPrompt(extra: string): void
+  addSkillsDirs(dirs: string[]): void
 }
 
 export interface NapiForkedAgent {

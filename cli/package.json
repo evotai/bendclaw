@@ -23,10 +23,8 @@
   "dependencies": {
     "chalk": "^5.6.2",
     "diff": "^9.0.0",
-    "figures": "^6.1.0",
     "ink": "^5.2.0",
     "marked": "^15.0.0",
-    "marked-terminal": "^7.3.0",
     "react": "^18.3.1",
     "strip-ansi": "^7.2.0"
   },

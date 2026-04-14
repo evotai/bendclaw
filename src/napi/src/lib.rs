@@ -247,6 +247,40 @@ impl NapiAgent {
         self.agent.set_llm(llm);
         Ok(())
     }
+
+    /// Set execution limits (max turns, tokens, duration).
+    #[napi]
+    pub fn set_limits(
+        &self,
+        max_turns: Option<u32>,
+        max_tokens: Option<f64>,
+        max_duration_secs: Option<f64>,
+    ) {
+        let mut limits = self.agent.limits();
+        if let Some(t) = max_turns {
+            limits.max_turns = t;
+        }
+        if let Some(t) = max_tokens {
+            limits.max_total_tokens = t as u64;
+        }
+        if let Some(d) = max_duration_secs {
+            limits.max_duration_secs = d as u64;
+        }
+        self.agent.with_limits(limits);
+    }
+
+    /// Append extra text to the system prompt.
+    #[napi]
+    pub fn append_system_prompt(&self, extra: String) {
+        self.agent.append_system_prompt(&extra);
+    }
+
+    /// Add additional skills directories.
+    #[napi]
+    pub fn add_skills_dirs(&self, dirs: Vec<String>) {
+        let paths: Vec<PathBuf> = dirs.into_iter().map(PathBuf::from).collect();
+        self.agent.with_skills_dirs(paths);
+    }
 }
 
 // ---------------------------------------------------------------------------

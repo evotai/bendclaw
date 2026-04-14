@@ -155,6 +155,18 @@ export class Agent {
   setProvider(provider: string): void {
     this.raw.setProvider(provider)
   }
+
+  setLimits(maxTurns?: number, maxTokens?: number, maxDurationSecs?: number): void {
+    this.raw.setLimits(maxTurns ?? null, maxTokens ?? null, maxDurationSecs ?? null)
+  }
+
+  appendSystemPrompt(extra: string): void {
+    this.raw.appendSystemPrompt(extra)
+  }
+
+  addSkillsDirs(dirs: string[]): void {
+    this.raw.addSkillsDirs(dirs)
+  }
 }
 
 // ---------------------------------------------------------------------------

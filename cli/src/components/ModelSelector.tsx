@@ -97,7 +97,7 @@ export function ModelSelector({ models, currentModel, onSelect, onCancel }: Mode
 
 function providerFor(model: string): string | null {
   if (model.startsWith('claude-') || model.startsWith('anthropic/')) return 'anthropic'
-  if (model.startsWith('gpt-') || model.startsWith('o1') || model.startsWith('o3')) return 'openai'
+  if (model.startsWith('gpt-') || model.startsWith('o1-') || model.startsWith('o3-') || model === 'o1' || model === 'o3') return 'openai'
   if (model.startsWith('gemini-')) return 'google'
   return null
 }

@@ -98,9 +98,11 @@ function formatEvent(event: RunEvent): string[] {
       return [`[llm] ${model} turn=${event.turn}`]
     }
     case 'llm_call_completed': {
-      const input = p.input_tokens ?? 0
-      const output = p.output_tokens ?? 0
-      const dur = p.duration_ms ? `${p.duration_ms}ms` : ''
+      const usage = p.usage as Record<string, any> | undefined
+      const metrics = p.metrics as Record<string, any> | undefined
+      const input = usage?.input ?? 0
+      const output = usage?.output ?? 0
+      const dur = metrics?.duration_ms ? `${metrics.duration_ms}ms` : ''
       return [`[llm done] in=${input} out=${output} ${dur}`]
     }
     case 'context_compaction_started':

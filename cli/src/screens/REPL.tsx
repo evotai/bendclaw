@@ -98,40 +98,42 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
     }
   }, { isActive: state.isLoading })
 
+  const dispatchQuery = useCallback((text: string) => {
+    const userMsg: UIMessage = {
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'user',
+      text,
+      timestamp: Date.now(),
+    }
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMsg],
+      isLoading: true,
+      error: null,
+      currentStreamText: '',
+      currentThinkingText: '',
+      activeToolCalls: new Map(),
+    }))
+    runQuery(agent, text, sessionIdRef.current, streamRef, setState, planning ? 'planning' : undefined)
+  }, [agent, planning])
+
   const handleSubmit = useCallback(
     (text: string) => {
       setSystemMessages([])
 
       if (isSlashCommand(text)) {
-        handleSlashCommand(text, agent, state, setState, setSystemMessages, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, cachedConfigInfo, exit)
+        handleSlashCommand(text, { agent, state, setState, setSystem: setSystemMessages, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, configInfo: cachedConfigInfo, exit })
         return
       }
 
-      // If loading, queue the message instead of running immediately
       if (isLoadingRef.current) {
         setMessageQueue((prev) => [...prev, text])
         return
       }
 
-      const userMsg: UIMessage = {
-        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role: 'user',
-        text,
-        timestamp: Date.now(),
-      }
-      setState((prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMsg],
-        isLoading: true,
-        error: null,
-        currentStreamText: '',
-        currentThinkingText: '',
-        activeToolCalls: new Map(),
-      }))
-
-      runQuery(agent, text, sessionIdRef.current, streamRef, setState, planning ? 'planning' : undefined)
+      dispatchQuery(text)
     },
-    [agent, state, exit, planning]
+    [agent, state, exit, planning, dispatchQuery]
   )
 
   // Auto-drain queue when response finishes (skip if last run errored)
@@ -139,24 +141,9 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
     if (!state.isLoading && !state.error && messageQueue.length > 0) {
       const [next, ...rest] = messageQueue
       setMessageQueue(rest)
-      const userMsg: UIMessage = {
-        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role: 'user',
-        text: next!,
-        timestamp: Date.now(),
-      }
-      setState((prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMsg],
-        isLoading: true,
-        error: null,
-        currentStreamText: '',
-        currentThinkingText: '',
-        activeToolCalls: new Map(),
-      }))
-      runQuery(agent, next!, sessionIdRef.current, streamRef, setState, planning ? 'planning' : undefined)
+      dispatchQuery(next!)
     }
-  }, [state.isLoading, messageQueue, agent])
+  }, [state.isLoading, messageQueue, dispatchQuery])
 
   const handleInterrupt = useCallback(() => {
     if (streamRef.current) {
@@ -327,19 +314,21 @@ function pushSystem(
 // Slash command handler
 // ---------------------------------------------------------------------------
 
-async function handleSlashCommand(
-  input: string,
-  agent: Agent,
-  state: AppState,
-  setState: React.Dispatch<React.SetStateAction<AppState>>,
-  setSystem: React.Dispatch<React.SetStateAction<SystemMsg[]>>,
-  setShowHelp: React.Dispatch<React.SetStateAction<boolean>>,
-  setResumeSessions: React.Dispatch<React.SetStateAction<import('../native/index.js').SessionMeta[] | null>>,
-  setPlanning: React.Dispatch<React.SetStateAction<boolean>>,
-  setShowModelSelector: React.Dispatch<React.SetStateAction<boolean>>,
-  configInfo: import('../native/index.js').ConfigInfo | undefined,
-  exit: () => void,
-) {
+interface CommandContext {
+  agent: Agent
+  state: AppState
+  setState: React.Dispatch<React.SetStateAction<AppState>>
+  setSystem: React.Dispatch<React.SetStateAction<SystemMsg[]>>
+  setShowHelp: React.Dispatch<React.SetStateAction<boolean>>
+  setResumeSessions: React.Dispatch<React.SetStateAction<import('../native/index.js').SessionMeta[] | null>>
+  setPlanning: React.Dispatch<React.SetStateAction<boolean>>
+  setShowModelSelector: React.Dispatch<React.SetStateAction<boolean>>
+  configInfo: import('../native/index.js').ConfigInfo | undefined
+  exit: () => void
+}
+
+async function handleSlashCommand(input: string, ctx: CommandContext) {
+  const { agent, state, setState, setSystem, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, configInfo, exit } = ctx
   const resolved = resolveCommand(input)
 
   if (resolved.kind === 'unknown') {
@@ -560,9 +549,9 @@ async function handleSlashCommand(
 
         try {
           const forked = agent.fork(systemPrompt)
-          pushSystem(setSystem, 'info', `Analyzing log... (type /done to exit)`)
+          pushSystem(setSystem, 'info', `Analyzing log...`)
 
-          // Run first turn
+          // Run single-turn analysis (no multi-turn mini-REPL)
           const stream = await forked.query(query)
           let text = ''
           for await (const event of stream) {

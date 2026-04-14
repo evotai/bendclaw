@@ -274,14 +274,13 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       stats.toolCallCount++
       if (isError) stats.toolErrorCount++
 
-      // Update tool breakdown
-      const breakdown = [...stats.toolBreakdown]
-      const existing = breakdown.find((e) => e.name === toolName)
-      if (existing) {
-        existing.count++
-        existing.totalDurationMs += durationMs
-        if (isError) existing.errors++
-      } else {
+      // Update tool breakdown (immutable)
+      const breakdown = stats.toolBreakdown.map((e) =>
+        e.name === toolName
+          ? { ...e, count: e.count + 1, totalDurationMs: e.totalDurationMs + durationMs, errors: e.errors + (isError ? 1 : 0) }
+          : e
+      )
+      if (!breakdown.some((e) => e.name === toolName)) {
         breakdown.push({
           name: toolName,
           count: 1,

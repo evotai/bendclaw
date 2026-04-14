@@ -65,12 +65,18 @@ export function Spinner({ toolName, progressText, tokenCount = 0, lastTokenAt }:
     return () => clearInterval(timer)
   }, [])
 
-  // Terminal tab title
+  // Terminal tab title — update every ~500ms, not every frame
+  const titleIdx = useRef(0)
   useEffect(() => {
-    const titleGlyph = TITLE_GLYPHS[frame % TITLE_GLYPHS.length]
-    process.stdout.write(`\x1b]0;${titleGlyph} evot\x07`)
-    return () => { process.stdout.write('\x1b]0;evot\x07') }
-  }, [frame])
+    const timer = setInterval(() => {
+      titleIdx.current = (titleIdx.current + 1) % TITLE_GLYPHS.length
+      process.stdout.write(`\x1b]0;${TITLE_GLYPHS[titleIdx.current]} evot\x07`)
+    }, 500)
+    return () => {
+      clearInterval(timer)
+      process.stdout.write('\x1b]0;evot\x07')
+    }
+  }, [])
 
   const stalled = lastTokenAt != null && (Date.now() - lastTokenAt) > STALLED_THRESHOLD_MS
   const showTokens = elapsed > SHOW_TOKENS_AFTER_MS && tokenCount > 0

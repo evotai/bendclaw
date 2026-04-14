@@ -132,10 +132,22 @@ async function main() {
   }
 }
 
+function applyCliOpts(agent: Agent, opts: CliOptions): void {
+  agent.setLimits(opts.maxTurns, opts.maxTokens, opts.maxDuration)
+  if (opts.appendSystemPrompt) agent.appendSystemPrompt(opts.appendSystemPrompt)
+  if (opts.skillsDirs.length > 0) agent.addSkillsDirs(opts.skillsDirs)
+}
+
 async function runPrompt(opts: CliOptions) {
+  if (!opts.prompt) {
+    console.error('No prompt provided. Use -p <text>')
+    process.exit(1)
+  }
+
   let agent: Agent
   try {
     agent = Agent.create(opts.model)
+    applyCliOpts(agent, opts)
   } catch (err: any) {
     console.error(`Failed to initialize: ${err?.message ?? err}`)
     process.exit(1)
@@ -175,6 +187,7 @@ function runRepl(opts: CliOptions) {
   let agent: Agent
   try {
     agent = Agent.create(opts.model)
+    applyCliOpts(agent, opts)
   } catch (err: any) {
     console.error(`Failed to initialize: ${err?.message ?? err}`)
     process.exit(1)

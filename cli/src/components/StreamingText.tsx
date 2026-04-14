@@ -5,7 +5,7 @@
 
 import React from 'react'
 import { Text, Box } from 'ink'
-import { renderMarkdown } from '../utils/markdown.js'
+import { renderStreamingText } from '../utils/streaming.js'
 
 interface StreamingTextProps {
   text: string
@@ -17,7 +17,7 @@ export function StreamingText({ text, thinkingText }: StreamingTextProps) {
     return null
   }
 
-  const rendered = text.length > 0 ? renderMarkdown(text) : ''
+  const rendered = text.length > 0 ? renderStreamingText(text) : ''
 
   return (
     <Box flexDirection="column" marginBottom={1}>

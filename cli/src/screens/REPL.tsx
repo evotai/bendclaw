@@ -27,7 +27,7 @@ interface REPLProps {
   initialResume?: string
 }
 
-export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps) {
+export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps) {
   const { exit } = useApp()
   const [state, setState] = useState<AppState>(() => ({
     ...createInitialState(agent.model, agent.cwd),

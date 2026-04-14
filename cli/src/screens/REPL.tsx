@@ -175,7 +175,7 @@ export function REPL({ agent }: REPLProps) {
       {/* Message history with interleaved verbose events */}
       {state.messages.map((msg) => (
         <React.Fragment key={msg.id}>
-          {msg.verboseEvents?.map((evt, i) => (
+          {state.verbose && msg.verboseEvents?.map((evt, i) => (
             <VerboseEventLine key={`${msg.id}-evt-${i}`} event={evt} />
           ))}
           <Message key={msg.id} message={msg} />
@@ -186,7 +186,7 @@ export function REPL({ agent }: REPLProps) {
       ))}
 
       {/* Pending verbose events for current turn (not yet attached to a message) */}
-      {state.isLoading && state.verboseEvents.length > 0 && (
+      {state.isLoading && state.verbose && state.verboseEvents.length > 0 && (
         <Box flexDirection="column" marginBottom={0}>
           {state.verboseEvents.map((evt, i) => (
             <VerboseEventLine key={i} event={evt} />

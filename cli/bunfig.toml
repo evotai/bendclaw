@@ -1,0 +1,3 @@
+[build]
+jsx = "react-jsx"
+jsxImportSource = "react"

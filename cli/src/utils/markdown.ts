@@ -9,11 +9,98 @@ import { marked, type Token, type Tokens } from 'marked'
 import stripAnsi from 'strip-ansi'
 import { linkifyIssueRefs } from './linkify.js'
 
-let highlighter: typeof import('cli-highlight') | null = null
+const MARKDOWN_RENDER_CACHE_LIMIT = 256
+const markdownRenderCache = new Map<string, string>()
+
+interface CodeHighlighter {
+  supportsLanguage(language: string): boolean
+  highlight(code: string, options?: { language?: string }): string
+}
+
+const ANSI = {
+  reset: '\u001b[0m',
+  dim: '\u001b[2m',
+  green: '\u001b[32m',
+  yellow: '\u001b[33m',
+  blue: '\u001b[34m',
+  magenta: '\u001b[35m',
+  cyan: '\u001b[36m',
+}
+
+function colorize(text: string, color: string): string {
+  return `${color}${text}${ANSI.reset}`
+}
+
+function containsAnsi(text: string): boolean {
+  return /\u001b\[[0-9;]*m/.test(text)
+}
+
+const fallbackLanguages = new Set([
+  'js', 'jsx', 'ts', 'tsx', 'javascript', 'typescript',
+  'json', 'bash', 'sh', 'shell', 'zsh',
+  'rust', 'rs',
+  'python', 'py',
+  'go',
+  'java',
+  'sql',
+  'yaml', 'yml',
+  'toml',
+  'markdown', 'md',
+])
+
+function fallbackHighlight(code: string, language?: string): string {
+  let highlighted = code
+
+  highlighted = highlighted.replace(/(#.*$|\/\/.*$)/gm, (match) => colorize(match, ANSI.dim))
+  highlighted = highlighted.replace(/("[^"\n]*"|'[^'\n]*')/g, (match) => colorize(match, ANSI.green))
+  highlighted = highlighted.replace(/\b(\d+(?:\.\d+)?)\b/g, (match) => colorize(match, ANSI.yellow))
+
+  if (language) {
+    const keywordPatterns: Record<string, RegExp> = {
+      rust: /\b(fn|let|mut|pub|impl|trait|struct|enum|match|if|else|for|while|loop|return|use)\b/g,
+      rs: /\b(fn|let|mut|pub|impl|trait|struct|enum|match|if|else|for|while|loop|return|use)\b/g,
+      javascript: /\b(const|let|var|function|return|if|else|for|while|class|new|import|from|export|await|async)\b/g,
+      js: /\b(const|let|var|function|return|if|else|for|while|class|new|import|from|export|await|async)\b/g,
+      typescript: /\b(const|let|var|function|return|if|else|for|while|class|new|import|from|export|await|async|type|interface|implements)\b/g,
+      ts: /\b(const|let|var|function|return|if|else|for|while|class|new|import|from|export|await|async|type|interface|implements)\b/g,
+      python: /\b(def|class|return|if|elif|else|for|while|import|from|as|with|try|except|finally|async|await)\b/g,
+      py: /\b(def|class|return|if|elif|else|for|while|import|from|as|with|try|except|finally|async|await)\b/g,
+      bash: /\b(if|then|else|fi|for|do|done|case|esac|function|export|local)\b/g,
+      sh: /\b(if|then|else|fi|for|do|done|case|esac|function|export|local)\b/g,
+      shell: /\b(if|then|else|fi|for|do|done|case|esac|function|export|local)\b/g,
+      zsh: /\b(if|then|else|fi|for|do|done|case|esac|function|export|local)\b/g,
+      go: /\b(func|package|import|return|if|else|for|range|type|struct|interface|go|defer)\b/g,
+      java: /\b(class|public|private|protected|static|final|void|return|if|else|for|while|new|import|package)\b/g,
+      sql: /\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|INSERT|UPDATE|DELETE|CREATE|TABLE|JOIN|LEFT|RIGHT|INNER|OUTER|LIMIT)\b/g,
+    }
+
+    const pattern = keywordPatterns[language.trim().toLowerCase()]
+    if (pattern) {
+      highlighted = highlighted.replace(pattern, (match) => colorize(match, ANSI.cyan))
+    }
+  }
+
+  return highlighted
+}
+
+const fallbackHighlighter: CodeHighlighter = {
+  supportsLanguage(language: string): boolean {
+    return fallbackLanguages.has(language.trim().toLowerCase())
+  },
+  highlight(code: string, options?: { language?: string }): string {
+    return fallbackHighlight(code, options?.language)
+  },
+}
+
+let highlighter: CodeHighlighter | null = fallbackHighlighter
 try {
   highlighter = await import('cli-highlight')
 } catch {
-  // cli-highlight not available — code blocks render without syntax highlighting
+  // cli-highlight not available — fall back to a lightweight built-in highlighter
+}
+
+export function isCodeHighlightingAvailable(): boolean {
+  return highlighter !== null
 }
 
 let markedConfigured = false
@@ -58,6 +145,10 @@ export function formatToken(
     case 'code': {
       const text = token.text as string
       const lang = (token as Tokens.Code).lang
+      const normalizedLang = lang?.trim().toLowerCase()
+      if (normalizedLang === 'markdown' || normalizedLang === 'md') {
+        return renderMarkdown(text) + EOL
+      }
       let highlighted = text
       if (highlighter && lang) {
         try {
@@ -66,6 +157,9 @@ export function formatToken(
           }
         } catch {
           // fallback to plain text
+        }
+        if (!containsAnsi(highlighted) && fallbackHighlighter.supportsLanguage(lang)) {
+          highlighted = fallbackHighlighter.highlight(text, { language: lang })
         }
       } else if (highlighter && !lang) {
         try {
@@ -244,15 +338,40 @@ function padCell(content: string, displayWidth: number, targetWidth: number): st
 export function renderMarkdown(text: string): string {
   if (!text || text.trim().length === 0) return text
 
+  const cached = markdownRenderCache.get(text)
+  if (cached !== undefined) {
+    return cached
+  }
+
   configureMarked()
   try {
     const tokens = marked.lexer(text)
-    return tokens
+    const rendered = tokens
       .map(t => formatToken(t))
       .join('')
       .replace(/\n{3,}/g, '\n\n')
       .trimEnd()
+    setMarkdownRenderCache(text, rendered)
+    return rendered
   } catch {
     return text
   }
+}
+
+function setMarkdownRenderCache(input: string, rendered: string): void {
+  markdownRenderCache.set(input, rendered)
+  if (markdownRenderCache.size > MARKDOWN_RENDER_CACHE_LIMIT) {
+    const oldestKey = markdownRenderCache.keys().next().value
+    if (oldestKey !== undefined) {
+      markdownRenderCache.delete(oldestKey)
+    }
+  }
+}
+
+export function clearMarkdownRenderCache(): void {
+  markdownRenderCache.clear()
+}
+
+export function getMarkdownRenderCacheSize(): number {
+  return markdownRenderCache.size
 }

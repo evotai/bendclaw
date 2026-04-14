@@ -13,6 +13,7 @@ import { PromptInput } from '../components/PromptInput.js'
 import { StreamingText } from '../components/StreamingText.js'
 import { ToolCallDisplay } from '../components/ToolCallDisplay.js'
 import { RunSummary } from '../components/RunSummary.js'
+import { MessageList } from '../components/MessageList.js'
 import { HelpPane } from '../components/HelpPane.js'
 import { ModelSelector } from '../components/ModelSelector.js'
 import { SessionSelector } from '../components/SessionSelector.js'
@@ -21,6 +22,14 @@ import { TranscriptLog } from '../utils/transcriptLog.js'
 import { transcriptToMessages, type TranscriptItem } from '../utils/transcript.js'
 import { isSlashCommand, resolveCommand } from '../commands/index.js'
 import { skillList, skillInstall, skillRemove } from '../commands/skill.js'
+import { coalesceStreamEvents } from '../utils/streamBatch.js'
+import { logDirPath, sessionLogPath, sessionTranscriptPath } from '../utils/logPaths.js'
+import { partitionMessagesForRender } from '../utils/renderPartition.js'
+import { appendFrozenEvents } from '../utils/frozenUpdates.js'
+
+const STREAM_FLUSH_INTERVAL_MS = 33
+const LIVE_MESSAGE_WINDOW = 12
+const MAX_RENDERED_MESSAGES = 40
 
 interface REPLProps {
   agent: Agent
@@ -40,9 +49,12 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
   const [resumeSessions, setResumeSessions] = useState<import('../native/index.js').SessionMeta[] | null>(null)
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [planning, setPlanning] = useState(false)
+  const [isFrozen, setIsFrozen] = useState(false)
   const streamRef = useRef<QueryStream | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const isLoadingRef = useRef(false)
+  const isFrozenRef = useRef(false)
+  const frozenEventsRef = useRef<RunEvent[]>([])
   const streamGenRef = useRef(0)  // generation counter to reject stale stream events
   const [historyManager] = useState(() => new HistoryManager())
   const [configInfoState, setConfigInfoState] = useState(() => {
@@ -85,6 +97,10 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
     isLoadingRef.current = state.isLoading
   }, [state.isLoading])
 
+  useEffect(() => {
+    isFrozenRef.current = isFrozen
+  }, [isFrozen])
+
   // Abort current stream and reset transient state
   const abortCurrentStream = useCallback(() => {
     const stream = streamRef.current
@@ -111,7 +127,7 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
       abortCurrentStream()
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     }
-  }, { isActive: state.isLoading })
+  }, { isActive: state.isLoading && !isFrozen })
 
   const dispatchQuery = useCallback((text: string) => {
     const userMsg: UIMessage = {
@@ -129,7 +145,17 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
       currentThinkingText: '',
       activeToolCalls: new Map(),
     }))
-    runQuery(agent, text, sessionIdRef.current, streamRef, streamGenRef, setState, planning ? 'planning' : undefined)
+    runQuery(
+      agent,
+      text,
+      sessionIdRef.current,
+      streamRef,
+      streamGenRef,
+      isFrozenRef,
+      frozenEventsRef,
+      setState,
+      planning ? 'planning' : undefined,
+    )
   }, [agent, planning])
 
   const handleSubmit = useCallback(
@@ -178,29 +204,51 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
     setState((prev) => ({ ...prev, verbose: !prev.verbose }))
   }, [])
 
+  const handleToggleFreeze = useCallback(() => {
+    if (isFrozenRef.current) {
+      setState((prev) => {
+        let next = prev
+        for (const event of frozenEventsRef.current) {
+          next = applyEvent(next, event)
+        }
+        return next
+      })
+      frozenEventsRef.current = []
+      setIsFrozen(false)
+      pushSystem(setSystemMessages, 'info', 'UI repaint resumed.')
+      return
+    }
+
+    setIsFrozen(true)
+    pushSystem(setSystemMessages, 'info', 'UI repaint frozen. Terminal selection is enabled. Press Enter to resume.')
+  }, [])
+
   const hasStreamText = state.currentStreamText.length > 0
   const hasThinkingText = state.currentThinkingText.length > 0
   const hasActiveTools = state.activeToolCalls.size > 0
+  const { hiddenCount, frozen: frozenMessages, live: liveMessages } = React.useMemo(
+    () => partitionMessagesForRender(state.messages, LIVE_MESSAGE_WINDOW, MAX_RENDERED_MESSAGES),
+    [state.messages],
+  )
+  const renderVerboseEvent = React.useCallback((evt: import('../state/AppState.js').VerboseEvent, key: string) => (
+    <VerboseEventLine key={key} event={evt} />
+  ), [])
 
   return (
     <Box flexDirection="column" padding={0}>
       <Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />
 
-      {/* Message history with interleaved verbose events */}
-      {state.messages.map((msg) => (
-        <React.Fragment key={msg.id}>
-          {state.verbose && msg.verboseEvents?.map((evt, i) => (
-            <VerboseEventLine key={`${msg.id}-evt-${i}`} event={evt} />
-          ))}
-          <Message key={msg.id} message={msg} />
-          {state.verbose && msg.runStats && (
-            <RunSummary stats={msg.runStats} />
-          )}
-        </React.Fragment>
-      ))}
+      {hiddenCount > 0 && (
+        <Box marginBottom={1}>
+          <Text dimColor>{`… ${hiddenCount} earlier messages hidden to keep rendering responsive`}</Text>
+        </Box>
+      )}
+
+      <MessageList messages={frozenMessages} verbose={state.verbose} renderVerboseEvent={renderVerboseEvent} />
+      <MessageList messages={liveMessages} verbose={state.verbose} renderVerboseEvent={renderVerboseEvent} />
 
       {/* Pending verbose events for current turn (not yet attached to a message) */}
-      {state.isLoading && state.verbose && state.verboseEvents.length > 0 && (
+      {!isFrozen && state.isLoading && state.verbose && state.verboseEvents.length > 0 && (
         <Box flexDirection="column" marginBottom={0}>
           {state.verboseEvents.map((evt, i) => (
             <VerboseEventLine key={i} event={evt} />
@@ -209,7 +257,7 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
       )}
 
       {/* Streaming response */}
-      {state.isLoading && (hasStreamText || hasThinkingText) && (
+      {!isFrozen && state.isLoading && (hasStreamText || hasThinkingText) && (
         <StreamingText
           text={state.currentStreamText}
           thinkingText={state.currentThinkingText}
@@ -217,17 +265,23 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
       )}
 
       {/* Active tool calls */}
-      {state.isLoading && hasActiveTools && (
+      {!isFrozen && state.isLoading && hasActiveTools && (
         <ToolCallDisplay tools={state.activeToolCalls} />
       )}
 
       {/* Spinner */}
-      {state.isLoading && !hasStreamText && !hasThinkingText && (
+      {!isFrozen && state.isLoading && !hasStreamText && !hasThinkingText && (
         <Spinner
           toolName={hasActiveTools ? [...state.activeToolCalls.values()][0]?.name : undefined}
           progressText={hasActiveTools ? [...state.activeToolCalls.values()][0]?.previewCommand : undefined}
           tokenCount={state.currentRunStats.outputTokens}
         />
+      )}
+
+      {isFrozen && (
+        <Box marginBottom={1}>
+          <Text color="yellow">UI frozen. Background work continues. Terminal selection is enabled. Press Enter to refresh and resume.</Text>
+        </Box>
       )}
 
       {/* Error */}
@@ -289,12 +343,14 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
         model={state.model}
         isLoading={state.isLoading}
         isActive={!showHelp && resumeSessions === null && !showModelSelector}
+        isFrozen={isFrozen}
         verbose={state.verbose}
         planning={planning}
         queuedMessages={messageQueue}
         history={historyManager}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
+        onToggleFreeze={handleToggleFreeze}
         onToggleVerbose={handleToggleVerbose}
       />
     </Box>
@@ -526,16 +582,16 @@ async function handleSlashCommand(input: string, ctx: CommandContext) {
     }
 
     case '/log': {
-      const { join } = await import('path')
       const { homedir } = await import('os')
-      const logDir = join(homedir(), '.evotai', 'logs')
+      const homeDir = homedir()
+      const logDir = logDirPath(homeDir)
       const sid = state.sessionId
       const query = args.trim()
 
       if (!query) {
-        // Just show log path
         if (sid) {
-          pushSystem(setSystem, 'info', `Log: ${join(logDir, `${sid}.log`)}`)
+          pushSystem(setSystem, 'info', sessionLogPath(homeDir, sid))
+          pushSystem(setSystem, 'info', sessionTranscriptPath(homeDir, sid))
         } else {
           pushSystem(setSystem, 'info', `Log dir: ${logDir} (no active session)`)
         }
@@ -543,7 +599,7 @@ async function handleSlashCommand(input: string, ctx: CommandContext) {
         pushSystem(setSystem, 'error', 'No active session to analyze.')
       } else {
         // Side conversation: fork agent to analyze the log
-        const logPath = join(logDir, `${sid}.log`)
+        const logPath = sessionLogPath(homeDir, sid)
         const systemPrompt = [
           'You are in a temporary log analysis session.',
           `The session log file is at: ${logPath}`,
@@ -706,6 +762,8 @@ async function runQuery(
   sessionId: string | null,
   streamRef: React.MutableRefObject<QueryStream | null>,
   streamGenRef: React.MutableRefObject<number>,
+  isFrozenRef: React.MutableRefObject<boolean>,
+  frozenEventsRef: React.MutableRefObject<RunEvent[]>,
   setState: React.Dispatch<React.SetStateAction<AppState>>,
   toolMode?: string,
 ) {
@@ -723,11 +781,51 @@ async function runQuery(
       log.writeUserPrompt(text)
     } catch { /* ignore log failures */ }
 
+    let pendingEvents: RunEvent[] = []
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+    const flushPendingEvents = () => {
+      flushTimer = null
+      if (pendingEvents.length === 0) return
+
+      const events = coalesceStreamEvents(pendingEvents)
+      pendingEvents = []
+      if (isFrozenRef.current) {
+        frozenEventsRef.current = appendFrozenEvents(frozenEventsRef.current, events)
+        return
+      }
+      setState((prev) => {
+        let next = prev
+        for (const pendingEvent of events) {
+          next = applyEvent(next, pendingEvent)
+        }
+        return next
+      })
+    }
+
+    const scheduleFlush = () => {
+      if (flushTimer !== null) return
+      flushTimer = setTimeout(flushPendingEvents, STREAM_FLUSH_INTERVAL_MS)
+    }
+
     for await (const event of stream) {
       if (gen !== streamGenRef.current) break  // stale — stop processing
-      setState((prev) => applyEvent(prev, event))
+      pendingEvents.push(event)
+      if (event.kind === 'assistant_delta') {
+        scheduleFlush()
+      } else {
+        if (flushTimer !== null) {
+          clearTimeout(flushTimer)
+          flushTimer = null
+        }
+        flushPendingEvents()
+      }
       try { log?.writeEvent(event) } catch { /* ignore */ }
     }
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+    }
+    flushPendingEvents()
   } catch (err: any) {
     if (gen !== streamGenRef.current) return  // stale — don't overwrite new session's state
     setState((prev) => ({
@@ -744,14 +842,14 @@ async function runQuery(
 // Banner
 // ---------------------------------------------------------------------------
 
-function Banner({ model, cwd, sessionId, configInfo }: {
+const Banner = React.memo(function Banner({ model, cwd, sessionId, configInfo }: {
   model: string
   cwd: string
   sessionId: string | null
   configInfo?: import('../native/index.js').ConfigInfo
 }) {
   const shortCwd = cwd.replace(process.env.HOME ?? '', '~')
-  const gitBranch = getGitBranch(cwd)
+  const [gitBranch] = React.useState(() => getGitBranch(cwd))
   const sessionLabel = sessionId ? sessionId.slice(0, 8) : '(new)'
   const envPath = configInfo?.envPath?.replace(process.env.HOME ?? '', '~') ?? ''
 
@@ -773,7 +871,7 @@ function Banner({ model, cwd, sessionId, configInfo }: {
       <Text dimColor>  /help commands  ·  Tab complete  ·  ↑↓ history  ·  Ctrl+C×2 exit</Text>
     </Box>
   )
-}
+})
 
 function getGitBranch(cwd: string): string | null {
   try {

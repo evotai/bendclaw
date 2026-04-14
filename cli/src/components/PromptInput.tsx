@@ -9,22 +9,25 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react'
-import { Text, Box, useInput, useStdout } from 'ink'
+import { Text, Box, useInput, useStdout, useStdin } from 'ink'
 import { complete, getGhostHint, getCommandHints, type CommandHint } from '../commands/completion.js'
 import type { HistoryManager } from '../utils/history.js'
 import { InterruptHandler } from '../utils/interrupt.js'
 import { needsContinuation } from '../utils/continuation.js'
+import { getFreezeInputMode } from '../utils/freezeMode.js'
 
 interface PromptInputProps {
   model: string
   isLoading: boolean
   isActive: boolean
+  isFrozen: boolean
   verbose: boolean
   planning: boolean
   queuedMessages: string[]
   history: HistoryManager
   onSubmit: (text: string) => void
   onInterrupt: () => void
+  onToggleFreeze: () => void
   onToggleVerbose: () => void
 }
 
@@ -32,12 +35,14 @@ export function PromptInput({
   model,
   isLoading,
   isActive,
+  isFrozen,
   verbose,
   planning,
   queuedMessages,
   history,
   onSubmit,
   onInterrupt,
+  onToggleFreeze,
   onToggleVerbose,
 }: PromptInputProps) {
   const [lines, setLines] = useState<string[]>([''])
@@ -50,7 +55,9 @@ export function PromptInput({
   const savedInputRef = useRef('')
   const interruptRef = useRef(new InterruptHandler())
   const { stdout } = useStdout()
+  const { stdin, setRawMode, isRawModeSupported } = useStdin()
   const columns = stdout?.columns ?? 120
+  const freezeMode = getFreezeInputMode(isActive, isFrozen)
 
   // Load persistent history on mount
   useEffect(() => {
@@ -72,6 +79,29 @@ export function PromptInput({
     setCursorCol(0)
     historyIndexRef.current = -1
   }
+
+  useEffect(() => {
+    if (!isRawModeSupported) return
+    setRawMode(freezeMode.shouldUseRawMode)
+  }, [freezeMode.shouldUseRawMode, isRawModeSupported, setRawMode])
+
+  useEffect(() => {
+    if (!freezeMode.resumeOnLineInput) return
+
+    const handleData = (data: string | Buffer) => {
+      const text = typeof data === 'string' ? data : data.toString('utf8')
+      if (text === '\r' || text === '\n' || text === '\r\n') {
+        onToggleFreeze()
+      }
+    }
+
+    stdin.ref()
+    stdin.resume()
+    stdin.on('data', handleData)
+    return () => {
+      stdin.off('data', handleData)
+    }
+  }, [freezeMode.resumeOnLineInput, stdin, onToggleFreeze])
 
   useInput((ch, key) => {
     // During loading, only allow Ctrl+C to interrupt and Enter to queue
@@ -133,6 +163,12 @@ export function PromptInput({
     // Ctrl+O — toggle verbose output
     if ((key.ctrl && ch === 'o') || ch === '\x0f') {
       onToggleVerbose()
+      return
+    }
+
+    // Ctrl+S — freeze/unfreeze repaint so terminal selection is stable
+    if (key.ctrl && ch === 's') {
+      onToggleFreeze()
       return
     }
 
@@ -363,7 +399,7 @@ export function PromptInput({
       })
       setCursorCol((prev) => prev + ch.length)
     }
-  }, { isActive })
+  }, { isActive: freezeMode.shouldCaptureInput })
 
   const borderLine = '─'.repeat(columns)
 
@@ -373,27 +409,34 @@ export function PromptInput({
       <Text dimColor>{borderLine}</Text>
 
       {/* Input area */}
-      {lines.map((line, lineIdx) => (
-        <Box key={lineIdx}>
-          <Text color="cyan" bold>{lineIdx === 0 ? '❯ ' : '  '}</Text>
-          {lineIdx === cursorLine ? (
-            line === '' && lines.length === 1 ? (
-              // Empty input — show placeholder with cursor
-              <Text>
-                <Text inverse>{' '}</Text>
-                <Text dimColor>Type a message...</Text>
-              </Text>
-            ) : (
-              <CursorLine text={line} cursorCol={cursorCol} ghostHint={getGhostHint(line, cursorCol)} />
-            )
-          ) : (
-            <Text>{line || ' '}</Text>
-          )}
+      {isFrozen ? (
+        <Box>
+          <Text color="yellow" bold>{'❯ '}</Text>
+          <Text dimColor>Selection mode active. Press Enter to resume live updates.</Text>
         </Box>
-      ))}
+      ) : (
+        lines.map((line, lineIdx) => (
+          <Box key={lineIdx}>
+            <Text color="cyan" bold>{lineIdx === 0 ? '❯ ' : '  '}</Text>
+            {lineIdx === cursorLine ? (
+              line === '' && lines.length === 1 ? (
+                // Empty input — show placeholder with cursor
+                <Text>
+                  <Text inverse>{' '}</Text>
+                  <Text dimColor>Type a message...</Text>
+                </Text>
+              ) : (
+                <CursorLine text={line} cursorCol={cursorCol} ghostHint={getGhostHint(line, cursorCol)} />
+              )
+            ) : (
+              <Text>{line || ' '}</Text>
+            )}
+          </Box>
+        ))
+      )}
 
       {/* Completion candidates (file paths) */}
-      {completionCandidates.length > 1 && !lines[cursorLine]?.startsWith('/') && (
+      {!isFrozen && completionCandidates.length > 1 && !lines[cursorLine]?.startsWith('/') && (
         <Box>
           <Text dimColor>  </Text>
           <Text dimColor>{completionCandidates.join('  ')}</Text>
@@ -407,7 +450,7 @@ export function PromptInput({
       {(() => {
         const line = lines[cursorLine] ?? ''
         const hints = getCommandHints(line, cursorCol)
-        if (hints.length === 0 || !line.startsWith('/')) return null
+        if (isFrozen || hints.length === 0 || !line.startsWith('/')) return null
         // Find max command name length for alignment
         const maxLen = Math.max(...hints.map(h => h.name.length))
         return (
@@ -424,14 +467,14 @@ export function PromptInput({
       })()}
 
       {/* Exit hint */}
-      {exitHint && (
+      {!isFrozen && exitHint && (
         <Box>
           <Text dimColor italic>  Press Ctrl+C again to exit</Text>
         </Box>
       )}
 
       {/* Queued messages */}
-      {queuedMessages.length > 0 && (
+      {!isFrozen && queuedMessages.length > 0 && (
         <Box flexDirection="column" marginBottom={0}>
           {queuedMessages.map((msg, i) => (
             <Box key={i}>
@@ -445,6 +488,7 @@ export function PromptInput({
       {/* Footer */}
       <Footer
         model={model}
+        frozen={isFrozen}
         planning={planning}
         verbose={verbose}
         columns={columns}
@@ -478,11 +522,13 @@ function CursorLine({ text, cursorCol, ghostHint }: { text: string; cursorCol: n
 
 function Footer({
   model,
+  frozen,
   planning,
   verbose,
   columns,
 }: {
   model: string
+  frozen: boolean
   planning: boolean
   verbose: boolean
   columns: number
@@ -491,6 +537,7 @@ function Footer({
   let leftLen = 5 // "/help"
   if (planning) leftLen += 7 // " [plan]"
   if (verbose) leftLen += 10 // " [verbose]"
+  if (frozen) leftLen += 9 // " [forzen]"
   const gap = Math.max(1, columns - leftLen - model.length)
 
   return (
@@ -498,6 +545,7 @@ function Footer({
       <Text dimColor>/help</Text>
       {planning && <Text color="yellow" bold>{' [plan]'}</Text>}
       {verbose && <Text color="cyan">{' [verbose]'}</Text>}
+      {frozen && <Text color="yellow" bold>{' [forzen]'}</Text>}
       <Text>{' '.repeat(gap)}</Text>
       <Text dimColor>{model}</Text>
     </Box>

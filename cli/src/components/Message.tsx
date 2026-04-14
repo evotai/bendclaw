@@ -15,12 +15,14 @@ interface MessageProps {
   verbose?: boolean
 }
 
-export function Message({ message, verbose = false }: MessageProps) {
+function MessageInner({ message, verbose = false }: MessageProps) {
   if (message.role === 'user') {
     return <UserMessage message={message} />
   }
   return <AssistantMessage message={message} verbose={verbose} />
 }
+
+export const Message = React.memo(MessageInner)
 
 function UserMessage({ message }: { message: UIMessage }) {
   return (

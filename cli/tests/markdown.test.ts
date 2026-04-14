@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'bun:test'
-import { renderMarkdown, formatToken } from '../src/utils/markdown.js'
+import {
+  renderMarkdown,
+  formatToken,
+  clearMarkdownRenderCache,
+  getMarkdownRenderCacheSize,
+} from '../src/utils/markdown.js'
 import { marked, type Token } from 'marked'
 import stripAnsi from 'strip-ansi'
 
@@ -15,6 +20,19 @@ function lexFirst(md: string): Token {
 }
 
 describe('renderMarkdown', () => {
+  test('memoizes rendered markdown output for repeated inputs', () => {
+    clearMarkdownRenderCache()
+    expect(getMarkdownRenderCacheSize()).toBe(0)
+
+    const input = '## Title\n\n- one\n- two'
+    const first = renderMarkdown(input)
+    expect(getMarkdownRenderCacheSize()).toBe(1)
+
+    const second = renderMarkdown(input)
+    expect(second).toBe(first)
+    expect(getMarkdownRenderCacheSize()).toBe(1)
+  })
+
   test('renders plain text', () => {
     expect(render('hello world')).toBe('hello world')
   })
@@ -52,6 +70,33 @@ describe('renderMarkdown', () => {
   test('renders code blocks', () => {
     const result = render('```js\nconst x = 1\n```')
     expect(result).toContain('const x = 1')
+  })
+
+  test('loads the runtime code highlighter for fenced code blocks', async () => {
+    const markdown = await import('../src/utils/markdown.js')
+    expect(typeof markdown.isCodeHighlightingAvailable).toBe('function')
+    expect(markdown.isCodeHighlightingAvailable()).toBe(true)
+  })
+
+  test('emits ANSI styling for supported language code fences', () => {
+    const result = renderMarkdown('```rust\nfn main() { let x = 1 }\n```')
+    expect(result).toContain('\u001b[')
+    expect(stripAnsi(result)).toContain('fn main() { let x = 1 }')
+  })
+
+  test('renders markdown fenced blocks as nested markdown', () => {
+    const result = render('```markdown\n| A | B |\n|---|---|\n| 1 | 2 |\n```')
+    expect(result).toContain('┌')
+    expect(result).toContain('│ A')
+    expect(result).toContain('│ 1')
+    expect(result).not.toContain('```')
+  })
+
+  test('renders md fenced blocks as nested markdown', () => {
+    const result = render('```md\n- one\n- two\n```')
+    expect(result).toContain('- one')
+    expect(result).toContain('- two')
+    expect(result).not.toContain('```')
   })
 
   test('renders unordered lists', () => {

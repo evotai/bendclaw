@@ -7,6 +7,7 @@ import { appendFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { RunEvent } from '../native/index.js'
+import { formatDuration } from './format.js'
 
 const LOGS_DIR = join(homedir(), '.evotai', 'logs')
 
@@ -58,9 +59,8 @@ function formatEvent(event: RunEvent): string[] {
   const p = event.payload
   switch (event.kind) {
     case 'run_started':
-      return [`--- run started (turn ${event.turn}) ---`]
     case 'turn_started':
-      return [`--- turn ${event.turn} ---`]
+      return []
     case 'assistant_delta':
     case 'tool_progress':
       return [] // too noisy for log
@@ -96,27 +96,74 @@ function formatEvent(event: RunEvent): string[] {
     }
     case 'llm_call_started': {
       const model = p.model ?? ''
-      return [`[llm] ${model} turn=${event.turn}`]
+      const turn = p.turn ?? event.turn
+      const messageCount = Number(p.message_count ?? 0)
+      const toolCount = Array.isArray(p.tools) ? p.tools.length : 0
+      const messageBytes = Number(p.message_bytes ?? 0)
+      const systemPromptTokens = Number(p.system_prompt_tokens ?? 0)
+      const estimatedTokens = systemPromptTokens + Math.floor(messageBytes / 4)
+      return [`[llm call] ${model} · turn ${turn} · ${messageCount} messages · ${toolCount} tools · ~${estimatedTokens} est tokens`]
     }
     case 'llm_call_completed': {
       const usage = p.usage as Record<string, any> | undefined
       const metrics = p.metrics as Record<string, any> | undefined
       const input = usage?.input ?? 0
       const output = usage?.output ?? 0
-      const dur = metrics?.duration_ms ? `${metrics.duration_ms}ms` : ''
-      return [`[llm done] in=${input} out=${output} ${dur}`]
+      const durationMs = Number(metrics?.duration_ms ?? 0)
+      const ttftMs = Number(metrics?.ttft_ms ?? 0)
+      const streamingMs = Number(metrics?.streaming_ms ?? 0)
+      const tokPerSec = streamingMs > 0 ? Math.floor(output / (streamingMs / 1000)) : 0
+      const parts = [
+        `[llm completed] ${input} input · ${output} output tokens`,
+        durationMs > 0 ? `${durationMs}ms` : undefined,
+        ttftMs > 0 ? `ttft ${ttftMs}ms` : undefined,
+        streamingMs > 0 ? `${tokPerSec} tok/s` : undefined,
+      ].filter(Boolean)
+      return [parts.join(' · ')]
     }
-    case 'context_compaction_started':
-      return ['[compaction started]']
+    case 'context_compaction_started': {
+      const estimatedTokens = Number(p.estimated_tokens ?? 0)
+      const budgetTokens = Number(p.budget_tokens ?? 0)
+      const messageCount = Number(p.message_count ?? 0)
+      const pct = budgetTokens > 0 ? Math.floor((estimatedTokens / budgetTokens) * 100) : 0
+      return [`[compact] ${messageCount} messages · ~${estimatedTokens} tokens · ${pct}% of budget`]
+    }
     case 'context_compaction_completed':
-      return ['[compaction completed]']
+      return [`[compact completed] ${formatCompactionResult(p.result as Record<string, any> | undefined)}`]
     case 'run_finished': {
-      const dur = p.duration_ms ? `${p.duration_ms}ms` : ''
-      return [`--- run finished ${dur} ---`, '']
+      const durationMs = Number(p.duration_ms ?? 0)
+      const turnCount = Number(p.turn_count ?? 0)
+      const usage = p.usage as Record<string, any> | undefined
+      const input = Number(usage?.input ?? 0)
+      const output = Number(usage?.output ?? 0)
+      return [
+        '---',
+        `run ${formatDuration(durationMs)}  ·  turns ${turnCount}  ·  tokens ${input + output} (in ${input} · out ${output})`,
+        '',
+      ]
     }
     case 'error':
       return [`[error] ${p.message ?? p.error ?? 'unknown'}`]
     default:
       return []
   }
+}
+
+function formatCompactionResult(result: Record<string, any> | undefined): string {
+  const type = result?.type
+  if (type === 'no_op') return 'no compaction needed'
+  if (type === 'run_once_cleared') {
+    const saved = Number(result?.saved_tokens ?? 0)
+    return `cleared run-once context · saved ${saved} tokens`
+  }
+  if (type === 'level_compacted') {
+    const before = Number(result?.before_estimated_tokens ?? 0)
+    const after = Number(result?.after_estimated_tokens ?? 0)
+    return `compacted context ${before} → ${after} tokens`
+  }
+  return 'completed'
+}
+
+export function formatEventForTest(event: RunEvent): string[] {
+  return formatEvent(event)
 }

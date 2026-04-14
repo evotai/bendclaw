@@ -218,18 +218,7 @@ impl std::fmt::Display for ProviderKind {
     }
 }
 
-pub fn thinking_level_from_str(value: &str) -> Result<ThinkingLevel> {
-    match value.to_lowercase().as_str() {
-        "off" => Ok(ThinkingLevel::Off),
-        "minimal" => Ok(ThinkingLevel::Minimal),
-        "low" => Ok(ThinkingLevel::Low),
-        "medium" => Ok(ThinkingLevel::Medium),
-        "high" => Ok(ThinkingLevel::High),
-        other => Err(EvotError::Conf(format!(
-            "unknown thinking level: {other} (valid: off, minimal, low, medium, high)"
-        ))),
-    }
-}
+
 
 pub fn default_model(provider: &ProviderKind) -> &'static str {
     match provider {

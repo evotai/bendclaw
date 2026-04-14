@@ -2,7 +2,6 @@ use std::ffi::OsString;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use evot::conf::thinking_level_from_str;
 use evot::conf::Config;
 use evot::conf::ProviderKind;
 use evot::conf::StorageBackend;
@@ -243,21 +242,21 @@ workspace = ""
 
 #[test]
 fn thinking_level_from_str_parses_all_variants() -> TestResult {
-    assert_eq!(thinking_level_from_str("off")?, ThinkingLevel::Off);
-    assert_eq!(thinking_level_from_str("minimal")?, ThinkingLevel::Minimal);
-    assert_eq!(thinking_level_from_str("low")?, ThinkingLevel::Low);
-    assert_eq!(thinking_level_from_str("medium")?, ThinkingLevel::Medium);
-    assert_eq!(thinking_level_from_str("high")?, ThinkingLevel::High);
+    assert_eq!("off".parse::<ThinkingLevel>()?, ThinkingLevel::Off);
+    assert_eq!("minimal".parse::<ThinkingLevel>()?, ThinkingLevel::Minimal);
+    assert_eq!("low".parse::<ThinkingLevel>()?, ThinkingLevel::Low);
+    assert_eq!("medium".parse::<ThinkingLevel>()?, ThinkingLevel::Medium);
+    assert_eq!("high".parse::<ThinkingLevel>()?, ThinkingLevel::High);
     // case-insensitive
-    assert_eq!(thinking_level_from_str("HIGH")?, ThinkingLevel::High);
-    assert_eq!(thinking_level_from_str("Medium")?, ThinkingLevel::Medium);
+    assert_eq!("HIGH".parse::<ThinkingLevel>()?, ThinkingLevel::High);
+    assert_eq!("Medium".parse::<ThinkingLevel>()?, ThinkingLevel::Medium);
     Ok(())
 }
 
 #[test]
 fn thinking_level_from_str_rejects_invalid() {
-    assert!(thinking_level_from_str("turbo").is_err());
-    assert!(thinking_level_from_str("").is_err());
+    assert!("turbo".parse::<ThinkingLevel>().is_err());
+    assert!("".parse::<ThinkingLevel>().is_err());
 }
 
 #[test]

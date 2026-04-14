@@ -4,7 +4,6 @@ use std::path::Path;
 
 use crate::conf::default_config;
 use crate::conf::paths;
-use crate::conf::thinking_level_from_str;
 use crate::conf::Config;
 use crate::conf::ProviderKind;
 use crate::conf::StorageBackend;
@@ -37,6 +36,8 @@ fn optional_string(value: String) -> Option<String> {
     }
 }
 
+use evot_engine::ThinkingLevel;
+
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct ConfigSource {
@@ -45,7 +46,7 @@ struct ConfigSource {
     openai: ProviderSource,
     server: ServerSource,
     storage: StorageSource,
-    thinking_level: Option<String>,
+    thinking_level: Option<ThinkingLevel>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -141,7 +142,7 @@ impl ConfigSource {
         }
 
         if let Some(level) = self.thinking_level {
-            config.thinking_level = thinking_level_from_str(&level)?;
+            config.thinking_level = level;
         }
 
         Ok(())
@@ -250,7 +251,9 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     if let Some(level) = vars.get("EVOT_THINKING_LEVEL") {
-        config.thinking_level = thinking_level_from_str(level)?;
+        config.thinking_level = level
+            .parse::<ThinkingLevel>()
+            .map_err(|e| EvotError::Conf(e))?;
     }
 
     apply_provider_env(config, ProviderKind::Anthropic, vars);

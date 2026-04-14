@@ -319,6 +319,18 @@ pub enum ThinkingLevel {
     High,
 }
 
+impl std::str::FromStr for ThinkingLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        // serde rename_all = "lowercase", so normalize input to lowercase
+        let lower = s.to_lowercase();
+        serde_json::from_value(serde_json::Value::String(lower)).map_err(|_| {
+            format!("unknown thinking level: {s} (valid: off, minimal, low, medium, high)")
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tool definition
 // ---------------------------------------------------------------------------

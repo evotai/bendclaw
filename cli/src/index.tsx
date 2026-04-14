@@ -32,7 +32,7 @@ function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
     command: 'repl',
     outputFormat: 'text',
-    verbose: false,
+    verbose: true,
     maxTurns: 512,
     maxTokens: 100_000_000,
     maxDuration: 3600,
@@ -74,6 +74,7 @@ function parseArgs(argv: string[]): CliOptions {
 
     // Boolean flags
     if (arg === '--verbose') { opts.verbose = true; continue }
+    if (arg === '--no-verbose') { opts.verbose = false; continue }
 
     // Info flags
     if (arg === '--version' || arg === '-v') {
@@ -118,7 +119,8 @@ function printHelp() {
   console.log('  --max-duration <secs>  Max duration (default: 3600)')
   console.log('  --append-system-prompt <text>')
   console.log('  --skills <dir>         Skills directory (repeatable)')
-  console.log('  --verbose              Verbose output')
+  console.log('  --verbose              Verbose output (default: on)')
+  console.log('  --no-verbose           Disable verbose output')
   console.log('  --version, -v          Show version')
   console.log('  --help, -h             Show this help')
 }

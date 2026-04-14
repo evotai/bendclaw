@@ -1,0 +1,37 @@
+{
+  "name": "@evotai/evot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "evot-ui": "./bin/evot-ui"
+  },
+  "napi": {
+    "binaryName": "evot-napi",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
+  },
+  "scripts": {
+    "build:napi": "napi build --manifest-path ../src/napi/Cargo.toml --release --platform --js src/native/binding.js --dts src/native/binding.d.ts",
+    "dev": "bun run src/index.tsx",
+    "test": "bun test tests/"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "figures": "^6.1.0",
+    "ink": "^5.2.0",
+    "marked": "^15.0.0",
+    "marked-terminal": "^7.3.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/diff": "^8.0.0",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.8.0"
+  }
+}

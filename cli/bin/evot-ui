@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# evot-ui — launch the TypeScript Ink REPL
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_DIR="$(dirname "$SCRIPT_DIR")"
+
+exec bun run "$CLI_DIR/src/index.tsx" "$@"

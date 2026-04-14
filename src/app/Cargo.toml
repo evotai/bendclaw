@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 repository = "https://github.com/evotai/evot"
 
-[[bin]]
-name = "evot"
-path = "src/bin/evot.rs"
-
 [dependencies]
 bend-engine.workspace = true
 anyhow.workspace = true

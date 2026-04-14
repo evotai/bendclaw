@@ -1,5 +1,4 @@
 pub mod agent;
-pub mod cli;
 pub mod conf;
 pub mod error;
 pub mod log;

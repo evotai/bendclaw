@@ -146,7 +146,7 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
   line('─── This Run Summary ──────────────────────────────────')
   line(`${dur} · ${stats.turnCount} ${pl(stats.turnCount, 'turn')} · ${stats.llmCalls} llm ${pl(stats.llmCalls, 'call')} · ${stats.toolCallCount} tool ${pl(stats.toolCallCount, 'call')} · ${humanTokens(totalTokens)} tokens`)
 
-  // Context budget bar (only if meaningful)
+  // Context budget bar
   if (stats.contextWindow > 0 && stats.contextTokens > 0) {
     const budget = stats.contextWindow
     const pct = (stats.contextTokens / budget) * 100
@@ -155,11 +155,12 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
       line(`  context   ${bar}  ${pct.toFixed(0)}%(${humanTokens(stats.contextTokens)}) of budget(${humanTokens(budget)})`)
     }
   }
+  line('')
 
-  // Tokens
+  // --- tokens block ---
   const totalStreamMs = stats.llmCallDetails.reduce((s, c) => s + (c.durationMs - c.ttftMs), 0)
   const overallTps = totalStreamMs > 0 ? (stats.outputTokens / (totalStreamMs / 1000)).toFixed(1) : '0'
-  let tokLine = `  tokens    ${humanTokens(stats.inputTokens)} input · ${stats.outputTokens} output · ${overallTps} tok/s`
+  let tokLine = `  tokens    ${humanTokens(stats.inputTokens)} total input · ${stats.outputTokens} output · ${overallTps} tok/s`
   if (stats.cacheReadTokens > 0 || stats.cacheWriteTokens > 0) {
     const hitRate = stats.inputTokens > 0
       ? (stats.cacheReadTokens / stats.inputTokens * 100).toFixed(0)
@@ -167,19 +168,44 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
     tokLine += ` · cache ${hitRate}%`
   }
   line(tokLine)
+  line('')
 
-  // LLM call details
+  // --- compact block ---
+  if (stats.compactHistory.length > 0) {
+    const totalSaved = stats.compactHistory.reduce((s, c) => s + (c.beforeTokens - c.afterTokens), 0)
+    line(`  compact   ${stats.compactHistory.length} ${pl(stats.compactHistory.length, 'compaction')} · saved ${humanTokens(totalSaved)} tokens`)
+
+    const runOnce = stats.compactHistory.filter(c => c.level === 0)
+    const real = stats.compactHistory.filter(c => c.level > 0)
+
+    for (const c of runOnce) {
+      const saved = c.beforeTokens - c.afterTokens
+      line(`            run-once  ${humanTokens(c.beforeTokens)}→${humanTokens(c.afterTokens)}  saved ${humanTokens(saved)}`)
+    }
+    for (let i = 0; i < real.length; i++) {
+      const c = real[i]!
+      const saved = c.beforeTokens - c.afterTokens
+      const pct = c.beforeTokens > 0 ? (saved / c.beforeTokens * 100).toFixed(0) : '0'
+      const bar = renderBar(saved, c.beforeTokens || 1, 12)
+      line(`            #${i + 1}  lv${c.level}  ${humanTokens(c.beforeTokens)}→${humanTokens(c.afterTokens)}  saved ${humanTokens(saved)}  ${bar} ${pct}%`)
+    }
+    line('')
+  }
+
+  // --- llm block ---
   if (stats.llmCallDetails.length > 0) {
     const totalLlmMs = stats.llmCallDetails.reduce((s, c) => s + c.durationMs, 0)
     const llmPct = stats.durationMs > 0 ? (totalLlmMs / stats.durationMs * 100).toFixed(1) : '0'
-    const avgTps = (stats.llmCallDetails.reduce((s, c) => s + c.tokPerSec, 0) / stats.llmCallDetails.length).toFixed(1)
+    const totalOutputTok = stats.llmCallDetails.reduce((s, c) => s + c.outputTokens, 0)
+    const totalLlmStreamMs = stats.llmCallDetails.reduce((s, c) => s + (c.durationMs - c.ttftMs), 0)
+    const avgTps = totalLlmStreamMs > 0 ? (totalOutputTok / (totalLlmStreamMs / 1000)).toFixed(1) : '0'
     line(`  llm       ${stats.llmCallDetails.length} ${pl(stats.llmCallDetails.length, 'call')} · ${formatDuration(totalLlmMs)} (${llmPct}% of run) · ${avgTps} tok/s avg`)
 
     const avgTtft = stats.llmCallDetails.reduce((s, c) => s + c.ttftMs, 0) / stats.llmCallDetails.length
     const avgStream = stats.llmCallDetails.reduce((s, c) => s + (c.durationMs - c.ttftMs), 0) / stats.llmCallDetails.length
     line(`            ttft avg ${formatDuration(Math.round(avgTtft))} · stream avg ${formatDuration(Math.round(avgStream))}`)
 
-    // All calls by duration
+    // Top 3 LLM calls by duration
     const sorted = [...stats.llmCallDetails].sort((a, b) => b.durationMs - a.durationMs)
     const show = Math.min(sorted.length, 3)
     const maxDur = sorted[0]?.durationMs ?? 1
@@ -195,13 +221,16 @@ export function buildRunSummary(stats: import('../state/AppState.js').RunStats):
     }
   }
 
-  // Tool breakdown (compact, under llm section)
+  // Tool breakdown
   if (stats.toolBreakdown.length > 0) {
     for (const tb of stats.toolBreakdown) {
       const errStr = tb.errors > 0 ? ` · ${tb.errors} err` : ''
       line(`              ${tb.name}  ${tb.count} ${pl(tb.count, 'call')}  ${formatDuration(tb.totalDurationMs)}${errStr}`)
     }
   }
+
+  // Footer
+  line('────────────────────────────────────────────────────────')
 
   return lines
 }

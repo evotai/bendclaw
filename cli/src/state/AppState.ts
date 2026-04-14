@@ -53,6 +53,7 @@ export interface RunStats {
   contextWindow: number
   toolBreakdown: ToolBreakdownEntry[]
   llmCallDetails: LlmCallDetail[]
+  compactHistory: CompactRecord[]
 }
 
 export interface LlmCallDetail {
@@ -72,6 +73,12 @@ export interface ToolBreakdownEntry {
   errors: number
 }
 
+export interface CompactRecord {
+  level: number
+  beforeTokens: number
+  afterTokens: number
+}
+
 function emptyRunStats(): RunStats {
   return {
     durationMs: 0,
@@ -87,6 +94,7 @@ function emptyRunStats(): RunStats {
     contextWindow: 0,
     toolBreakdown: [],
     llmCallDetails: [],
+    compactHistory: [],
   }
 }
 
@@ -369,7 +377,11 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         text = `[LLM] failed · ${durSec}s\n  ${error}`
       } else {
         const durSec = (durationMs / 1000).toFixed(1)
-        text = `[LLM] completed\n  tokens   ${humanTokensInline(inputTok)} in · ${outputTok} out · ${tokPerSec.toFixed(0)} tok/s\n  timing   ${durSec}s · ttfb ${(ttfbMs / 1000).toFixed(1)}s · ttft ${(ttftMs / 1000).toFixed(1)}s · stream ${(streamingMs / 1000).toFixed(1)}s`
+        const dur = durationMs || 1
+        const ttfbPct = (ttfbMs / dur * 100).toFixed(0)
+        const ttftPct = (ttftMs / dur * 100).toFixed(0)
+        const streamPct = (streamingMs / dur * 100).toFixed(0)
+        text = `[LLM] completed\n  tokens   ${humanTokensInline(inputTok)} in · ${outputTok} out · ${tokPerSec.toFixed(0)} tok/s\n  timing   ${durSec}s · ttfb ${(ttfbMs / 1000).toFixed(1)}s (${ttfbPct}%) · ttft ${(ttftMs / 1000).toFixed(1)}s (${ttftPct}%) · stream ${(streamingMs / 1000).toFixed(1)}s (${streamPct}%)`
       }
 
       return {
@@ -406,12 +418,52 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         action = `cleared · saved ${humanTokensInline(saved)} tokens`
       } else if (type === 'level_compacted') {
         const level = (result?.level as number) ?? 0
+        const beforeMsgs = (result?.before_message_count as number) ?? 0
+        const afterMsgs = (result?.after_message_count as number) ?? 0
         const before = (result?.before_estimated_tokens as number) ?? 0
         const after = (result?.after_estimated_tokens as number) ?? 0
-        action = `L${level} · ${humanTokensInline(before)} → ${humanTokensInline(after)} tokens`
+        const saved = before - after
+        const savedPct = before > 0 ? (saved / before * 100).toFixed(0) : '0'
+        action = `L${level}\n  ${beforeMsgs} messages ~${humanTokensInline(before)} tok\n  → ${afterMsgs} messages ~${humanTokensInline(after)} tok\n  saved ${humanTokensInline(saved)} (${savedPct}%)`
+        // Add actions detail if available
+        const actions = result?.actions as any[] | undefined
+        if (actions && actions.length > 0) {
+          const sorted = [...actions].filter((a: any) => a.method !== 'Skipped').sort((a: any, b: any) => {
+            const sa = (a.before_tokens ?? 0) - (a.after_tokens ?? 0)
+            const sb = (b.before_tokens ?? 0) - (b.after_tokens ?? 0)
+            return sb - sa
+          })
+          for (const a of sorted) {
+            const method = (a.method as string) ?? 'unknown'
+            const msgs = (a.message_count as number) ?? 0
+            const bTok = (a.before_tokens as number) ?? 0
+            const aTok = (a.after_tokens as number) ?? 0
+            const aSaved = bTok - aTok
+            const aPct = before > 0 ? (aSaved / before * 100).toFixed(0) : '0'
+            const bar = renderBar(aSaved, saved || 1, 12)
+            action += `\n    ${method.toLowerCase()}  ${msgs} msgs  ${humanTokensInline(bTok)}→${humanTokensInline(aTok)}  saved ${humanTokensInline(aSaved)}  ${bar} ${aPct}%`
+          }
+        }
       }
+      // Track compact history for run summary
+      const compactRecord: import('./AppState.js').CompactRecord | null =
+        type === 'level_compacted' ? {
+          level: (result?.level as number) ?? 0,
+          beforeTokens: (result?.before_estimated_tokens as number) ?? 0,
+          afterTokens: (result?.after_estimated_tokens as number) ?? 0,
+        } : type === 'run_once_cleared' ? {
+          level: 0,
+          beforeTokens: state.currentRunStats.contextTokens,
+          afterTokens: state.currentRunStats.contextTokens - ((result?.saved_tokens as number) ?? 0),
+        } : null
+
+      const updatedStats = compactRecord
+        ? { ...state.currentRunStats, compactHistory: [...state.currentRunStats.compactHistory, compactRecord] }
+        : state.currentRunStats
+
       return {
         ...state,
+        currentRunStats: updatedStats,
         verboseEvents: [...state.verboseEvents, { kind: 'compact_done', text: `[COMPACT] · ${action}` }],
       }
     }

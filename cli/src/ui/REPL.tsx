@@ -48,6 +48,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const [messageQueue, setMessageQueue] = useState<string[]>([])
   const [outputLines, setOutputLines] = useState<OutputLine[]>([])
   const [pendingText, setPendingText] = useState('')
+  const [toolProgress, setToolProgress] = useState('')
   const [logMode, setLogMode] = useState<import('../native/index.js').ForkedAgent | null>(null)
   const [resumeSessions, setResumeSessions] = useState<import('../native/index.js').SessionMeta[] | null>(null)
   const [showModelSelector, setShowModelSelector] = useState(false)
@@ -159,7 +160,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       currentThinkingText: '',
       activeToolCalls: new Map(),
     }))
-    runQuery(agent, text, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, stateRef, planning ? 'planning' : undefined)
+    runQuery(agent, text, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, setToolProgress, stateRef, planning ? 'planning' : undefined)
   }, [agent, planning])
 
   const handleSubmit = useCallback(
@@ -230,6 +231,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       <ActiveResponse
         isLoading={state.isLoading}
         pendingText={pendingText}
+        toolProgress={toolProgress}
         activeToolCalls={state.activeToolCalls}
         outputTokens={state.currentRunStats.outputTokens}
         lastTokenAt={state.lastTokenAt}
@@ -758,6 +760,7 @@ async function runQuery(
   setState: React.Dispatch<React.SetStateAction<AppState>>,
   setOutputLines: React.Dispatch<React.SetStateAction<OutputLine[]>>,
   setPendingText: React.Dispatch<React.SetStateAction<string>>,
+  setToolProgress: React.Dispatch<React.SetStateAction<string>>,
   stateRef: React.MutableRefObject<AppState>,
   toolMode?: string,
 ) {
@@ -863,14 +866,22 @@ async function runQuery(
       // --- Tool started: show tool call badge with preview command ---
       if (event.kind === 'tool_started') {
         commitStreamingText()
+        setToolProgress('')
         const toolName = p.tool_name ?? 'unknown'
         const args = p.args ?? {}
         const previewCommand = p.preview_command as string | undefined
         appendLines(buildToolCall(toolName, args, previewCommand))
       }
 
+      // --- Tool progress: update dynamic zone with bash output ---
+      if (event.kind === 'tool_progress') {
+        const text = p.text as string | undefined
+        if (text) setToolProgress(text)
+      }
+
       // --- Tool finished: show result ---
       if (event.kind === 'tool_finished') {
+        setToolProgress('')
         const toolName = p.tool_name ?? 'unknown'
         const args = p.args ?? {}
         const details = p.details as Record<string, any> | undefined

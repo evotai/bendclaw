@@ -193,11 +193,11 @@ describe('findSafeSplitPoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('AssistantStreamBuffer', () => {
-  test('emits lines with prefix on first content', () => {
+  test('emits lines on first content', () => {
     const buf = new AssistantStreamBuffer()
     buf.push('hello')
     const lines = buf.finish()
-    expect(lines.some((l) => l.text === '⏺')).toBe(true)
+    expect(lines.some((l) => l.kind === 'assistant')).toBe(true)
   })
 
   test('skips leading whitespace', () => {
@@ -206,7 +206,7 @@ describe('AssistantStreamBuffer', () => {
     expect(lines1).toHaveLength(0)
     buf.push('hello')
     const lines2 = buf.finish()
-    expect(lines2.some((l) => l.text === '⏺')).toBe(true)
+    expect(lines2.some((l) => l.kind === 'assistant')).toBe(true)
   })
 
   test('emits lines on newline', () => {

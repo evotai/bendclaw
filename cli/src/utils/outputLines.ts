@@ -45,10 +45,6 @@ export function buildUserMessage(text: string): OutputLine[] {
   return [{ id: genId('user'), kind: 'user', text }]
 }
 
-export function buildAssistantPrefix(): OutputLine[] {
-  return [{ id: genId('apfx'), kind: 'assistant' as const, text: '⏺' }]
-}
-
 export function buildAssistantLines(markdownText: string): OutputLine[] {
   if (!markdownText.trim()) return []
   const rendered = renderMarkdown(markdownText)
@@ -238,7 +234,6 @@ export function messagesToOutputLines(messages: import('../state/AppState.js').U
       }
       // Assistant text
       if (msg.text.trim()) {
-        lines.push(...buildAssistantPrefix())
         lines.push(...buildAssistantLines(msg.text))
       }
     }
@@ -298,7 +293,6 @@ export function findSafeSplitPoint(content: string): number {
 export class AssistantStreamBuffer {
   private buffer = ''
   private started = false
-  private prefixEmitted = false
 
   /** Push a token. Returns OutputLines to append (may be empty). */
   push(token: string): OutputLine[] {
@@ -318,10 +312,6 @@ export class AssistantStreamBuffer {
   finish(): OutputLine[] {
     if (!this.started) return []
     const result: OutputLine[] = []
-    if (!this.prefixEmitted) {
-      result.push(...buildAssistantPrefix())
-      this.prefixEmitted = true
-    }
     if (this.buffer.trim().length > 0) {
       result.push(...buildAssistantLines(this.buffer))
     }

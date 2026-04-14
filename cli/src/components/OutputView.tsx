@@ -44,16 +44,9 @@ function OutputLineView({ line }: { line: OutputLine }) {
         </Box>
       )
     case 'assistant':
-      if (line.text === '⏺') {
-        return (
-          <Box marginTop={1}>
-            <Text color="magenta" bold>⏺ </Text>
-          </Box>
-        )
-      }
       return (
         <Box>
-          <Text>{'   '}{line.text}</Text>
+          <Text>{'  '}{line.text}</Text>
         </Box>
       )
     case 'tool':

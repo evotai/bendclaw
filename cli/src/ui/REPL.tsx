@@ -21,7 +21,6 @@ import { skillList, skillInstall, skillRemove } from '../commands/skill.js'
 import {
   type OutputLine,
   buildUserMessage,
-  buildAssistantPrefix,
   buildAssistantLines,
   buildToolCall,
   buildToolResult,
@@ -739,8 +738,6 @@ async function runQuery(
             const trimmed = streamingText.replace(/^[\n\r]+/, '')
             if (trimmed.length > 0) {
               streamingText = trimmed
-              // Emit ⏺ prefix to Static immediately — it stays fixed
-              appendLines(buildAssistantPrefix())
               prefixEmitted = true
             }
           }

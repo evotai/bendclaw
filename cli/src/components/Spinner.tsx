@@ -79,11 +79,11 @@ export function Spinner({ toolName, progressText, tokenCount = 0, lastTokenAt }:
   useEffect(() => {
     const timer = setInterval(() => {
       titleIdx.current = (titleIdx.current + 1) % TITLE_GLYPHS.length
-      process.stdout.write(`\x1b]0;${TITLE_GLYPHS[titleIdx.current]} evot\x07`)
+      process.stdout.write(`\x1b]0;${TITLE_GLYPHS[titleIdx.current]} Evot\x07`)
     }, 500)
     return () => {
       clearInterval(timer)
-      process.stdout.write('\x1b]0;evot\x07')
+      process.stdout.write('\x1b]0;Evot\x07')
     }
   }, [])
 

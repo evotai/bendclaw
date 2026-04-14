@@ -7,12 +7,9 @@ import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { Agent, type RunEvent, QueryStream } from '../native/index.js'
 import { type AppState, createInitialState, applyEvent, type UIMessage } from '../state/AppState.js'
-import { Message } from '../components/Message.js'
-import { Spinner } from '../components/Spinner.js'
 import { PromptInput } from '../components/PromptInput.js'
-import { StreamingText } from '../components/StreamingText.js'
-import { ToolCallDisplay } from '../components/ToolCallDisplay.js'
-import { RunSummary } from '../components/RunSummary.js'
+import { MessageHistory } from '../components/MessageHistory.js'
+import { ActiveResponse } from '../components/ActiveResponse.js'
 import { HelpPane } from '../components/HelpPane.js'
 import { ModelSelector } from '../components/ModelSelector.js'
 import { SessionSelector } from '../components/SessionSelector.js'
@@ -93,15 +90,31 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
       streamGenRef.current++  // invalidate any in-flight event loop
       stream.abort()
     }
-    setState((prev) => ({
-      ...prev,
-      isLoading: false,
-      currentStreamText: '',
-      currentThinkingText: '',
-      activeToolCalls: new Map(),
-      turnToolCalls: [],
-      verboseEvents: [],
-    }))
+    setState((prev) => {
+      // Commit any in-flight streaming text as an assistant message
+      const messages = [...prev.messages]
+      const text = prev.currentStreamText.trim()
+      if (text.length > 0) {
+        messages.push({
+          id: `abort-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'assistant',
+          text,
+          timestamp: Date.now(),
+          toolCalls: prev.turnToolCalls.length > 0 ? prev.turnToolCalls : undefined,
+          verboseEvents: prev.verboseEvents.length > 0 ? prev.verboseEvents : undefined,
+        })
+      }
+      return {
+        ...prev,
+        messages,
+        isLoading: false,
+        currentStreamText: '',
+        currentThinkingText: '',
+        activeToolCalls: new Map(),
+        turnToolCalls: [],
+        verboseEvents: [],
+      }
+    })
   }, [])
 
   // Interrupt handler during loading — Ctrl+C or Escape
@@ -178,57 +191,48 @@ export function REPL({ agent, initialVerbose = false, initialResume }: REPLProps
     setState((prev) => ({ ...prev, verbose: !prev.verbose }))
   }, [])
 
-  const hasStreamText = state.currentStreamText.length > 0
-  const hasThinkingText = state.currentThinkingText.length > 0
-  const hasActiveTools = state.activeToolCalls.size > 0
+  // Track how many messages have been committed to the static zone.
+  // This only grows — once a message enters <Static>, it stays forever.
+  const committedRef = useRef(0)
+
+  // Reset watermark when messages are cleared (/clear, /new)
+  if (state.messages.length === 0) {
+    committedRef.current = 0
+  }
+
+  // Advance the committed watermark:
+  // - Not loading: commit everything
+  // - Loading: commit all but the last (the tail stays dynamic for tool status updates)
+  const target = state.isLoading && state.messages.length > 0
+    ? state.messages.length - 1
+    : state.messages.length
+  if (target > committedRef.current) {
+    committedRef.current = target
+  }
+
+  const staticMessages = state.messages.slice(0, committedRef.current)
+  const tailMessage = committedRef.current < state.messages.length
+    ? state.messages[state.messages.length - 1]
+    : undefined
 
   return (
     <Box flexDirection="column" padding={0}>
-      <Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />
+      <MessageHistory
+        banner={<Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />}
+        messages={staticMessages}
+        verbose={state.verbose}
+      />
 
-      {/* Message history with interleaved verbose events */}
-      {state.messages.map((msg) => (
-        <React.Fragment key={msg.id}>
-          {state.verbose && msg.verboseEvents?.map((evt, i) => (
-            <VerboseEventLine key={`${msg.id}-evt-${i}`} event={evt} />
-          ))}
-          <Message key={msg.id} message={msg} />
-          {state.verbose && msg.runStats && (
-            <RunSummary stats={msg.runStats} />
-          )}
-        </React.Fragment>
-      ))}
-
-      {/* Pending verbose events for current turn (not yet attached to a message) */}
-      {state.isLoading && state.verbose && state.verboseEvents.length > 0 && (
-        <Box flexDirection="column" marginBottom={0}>
-          {state.verboseEvents.map((evt, i) => (
-            <VerboseEventLine key={i} event={evt} />
-          ))}
-        </Box>
-      )}
-
-      {/* Streaming response */}
-      {state.isLoading && (hasStreamText || hasThinkingText) && (
-        <StreamingText
-          text={state.currentStreamText}
-          thinkingText={state.currentThinkingText}
-        />
-      )}
-
-      {/* Active tool calls */}
-      {state.isLoading && hasActiveTools && (
-        <ToolCallDisplay tools={state.activeToolCalls} />
-      )}
-
-      {/* Spinner */}
-      {state.isLoading && !hasStreamText && !hasThinkingText && (
-        <Spinner
-          toolName={hasActiveTools ? [...state.activeToolCalls.values()][0]?.name : undefined}
-          progressText={hasActiveTools ? [...state.activeToolCalls.values()][0]?.previewCommand : undefined}
-          tokenCount={state.currentRunStats.outputTokens}
-        />
-      )}
+      <ActiveResponse
+        isLoading={state.isLoading}
+        tailMessage={tailMessage}
+        streamText={state.currentStreamText}
+        thinkingText={state.currentThinkingText}
+        activeToolCalls={state.activeToolCalls}
+        outputTokens={state.currentRunStats.outputTokens}
+        verbose={state.verbose}
+        verboseEvents={state.verboseEvents}
+      />
 
       {/* Error */}
       {state.error && (
@@ -606,39 +610,6 @@ async function handleSlashCommand(input: string, ctx: CommandContext) {
     default:
       pushSystem(setSystem, 'error', `Unhandled command: ${name}`)
   }
-}
-
-// ---------------------------------------------------------------------------
-// VerboseEventLine — colored badges for [COMPACT] and [LLM] events
-// ---------------------------------------------------------------------------
-
-function VerboseEventLine({ event }: { event: import('../state/AppState.js').VerboseEvent }) {
-  const lines = event.text.split('\n')
-  const isCompact = event.kind === 'compact_call' || event.kind === 'compact_done'
-  const isLlm = event.kind === 'llm_call' || event.kind === 'llm_completed'
-
-  // First line has the badge, rest are indented detail lines
-  const [firstLine, ...rest] = lines
-
-  // Extract badge and remainder from first line: "[COMPACT] call" or "[LLM] completed"
-  const badgeMatch = firstLine?.match(/^\[(\w+)\]\s*(.*)$/)
-  const badge = badgeMatch ? badgeMatch[1] : ''
-  const after = badgeMatch ? badgeMatch[2] : firstLine ?? ''
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        {isCompact && <Text color="green" bold>[{badge}]</Text>}
-        {isLlm && <Text color="yellow" bold>[{badge}]</Text>}
-        {after ? <Text dimColor> {after}</Text> : null}
-      </Box>
-      {rest.map((line, i) => (
-        <Box key={i}>
-          <Text dimColor>{line}</Text>
-        </Box>
-      ))}
-    </Box>
-  )
 }
 
 // ---------------------------------------------------------------------------

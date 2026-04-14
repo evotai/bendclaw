@@ -242,13 +242,18 @@ pub async fn get_ws_endpoint(
 
 // ── Receive loop ──
 
+pub struct WsContext<'a> {
+    pub client: &'a reqwest::Client,
+    pub app_id: &'a str,
+    pub app_secret: &'a str,
+    pub token_cache: &'a TokenCache,
+    pub config: &'a super::config::FeishuChannelConfig,
+    pub bot_open_id: &'a str,
+}
+
 /// Result of one WS connection session. Returns parsed messages via callback.
 pub async fn ws_receive_loop<F, Fut>(
-    client: &reqwest::Client,
-    app_id: &str,
-    app_secret: &str,
-    token_cache: &TokenCache,
-    config: &super::config::FeishuChannelConfig,
+    ctx: &WsContext<'_>,
     cancel: &tokio_util::sync::CancellationToken,
     mut on_message: F,
 ) -> Result<()>
@@ -256,7 +261,8 @@ where
     F: FnMut(ParsedMessage) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
-    let (ws_url, ping_interval_secs) = get_ws_endpoint(client, app_id, app_secret).await?;
+    let (ws_url, ping_interval_secs) =
+        get_ws_endpoint(ctx.client, ctx.app_id, ctx.app_secret).await?;
 
     tracing::info!(
         channel = "feishu",
@@ -342,23 +348,18 @@ where
 
                         if let Some(payload) = decoded.event_payload {
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&payload) {
-                                // Add thumbsup reaction
-                                let feishu_msg_id = json
-                                    .pointer("/event/message/message_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                if !feishu_msg_id.is_empty() {
-                                    let c = client.clone();
-                                    let tc = token_cache.clone();
-                                    let aid = app_id.to_string();
-                                    let asec = app_secret.to_string();
-                                    tokio::spawn(async move {
-                                        super::outbound::add_reaction(&c, &tc, &aid, &asec, &feishu_msg_id, "THUMBSUP").await;
-                                    });
-                                }
-
-                                if let Some(parsed) = super::message::parse_event(&json, config, &mut dedup) {
+                                if let Some(parsed) = super::message::parse_event(&json, ctx.config, ctx.bot_open_id, &mut dedup) {
+                                    // Add thumbsup reaction only for messages we will process
+                                    if !parsed.message_id.is_empty() {
+                                        let c = ctx.client.clone();
+                                        let tc = ctx.token_cache.clone();
+                                        let aid = ctx.app_id.to_string();
+                                        let asec = ctx.app_secret.to_string();
+                                        let mid = parsed.message_id.clone();
+                                        tokio::spawn(async move {
+                                            super::outbound::add_reaction(&c, &tc, &aid, &asec, &mid, "THUMBSUP").await;
+                                        });
+                                    }
                                     on_message(parsed).await;
                                 }
                             }

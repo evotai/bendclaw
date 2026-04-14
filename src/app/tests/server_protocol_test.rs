@@ -244,7 +244,7 @@ fn run_event_deserialize_rejects_missing_fields() {
 // SSE mapping tests (server/stream.rs::map_run_event_json)
 // ---------------------------------------------------------------------------
 
-use evot::channel::http::stream::map_run_event_json;
+use evot::gateway::http::stream::map_run_event_json;
 
 #[test]
 fn sse_map_assistant_delta() {

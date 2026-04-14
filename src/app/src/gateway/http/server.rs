@@ -13,9 +13,9 @@ use tower_http::cors::CorsLayer;
 
 use crate::agent::Agent;
 use crate::agent::QueryRequest;
-use crate::channel::http::stream;
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::gateway::http::stream;
 
 const INDEX_HTML: &str = include_str!("static/index.html");
 

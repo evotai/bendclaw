@@ -395,7 +395,7 @@ pub async fn start_server(port: Option<u16>, model: Option<String>) -> Result<()
     if let Some(p) = port {
         config = config.with_port(p);
     }
-    evot::runtime::start(config)
+    evot::gateway::service::start(config)
         .await
         .map_err(|e| Error::from_reason(format!("server error: {e}")))
 }

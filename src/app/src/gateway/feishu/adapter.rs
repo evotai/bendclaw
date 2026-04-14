@@ -13,14 +13,15 @@ use super::token::TokenCache;
 use crate::agent::Agent;
 use crate::agent::QueryRequest;
 use crate::agent::RunEventPayload;
-use crate::channel::Channel;
 use crate::error::Result;
+use crate::gateway::Channel;
 
 pub struct FeishuChannel {
     config: FeishuChannelConfig,
     session_map: SessionMap,
     client: reqwest::Client,
     token_cache: TokenCache,
+    bot_open_id: tokio::sync::OnceCell<String>,
 }
 
 impl FeishuChannel {
@@ -30,6 +31,7 @@ impl FeishuChannel {
             session_map: SessionMap::new(),
             client: reqwest::Client::new(),
             token_cache: TokenCache::new(),
+            bot_open_id: tokio::sync::OnceCell::new(),
         }
     }
 
@@ -47,35 +49,50 @@ impl FeishuChannel {
     }
 
     async fn handle_message(&self, agent: &Agent, msg: super::message::ParsedMessage) {
-        let session_id = self.session_map.resolve_or_create(&msg.chat_id).await;
+        let session_key = format!("{}:{}", msg.chat_id, msg.sender_id);
+        let session_id = self.session_map.get(&session_key).await;
         tracing::info!(
             channel = "feishu",
             chat_id = %msg.chat_id,
             sender_id = %msg.sender_id,
-            session_id = %session_id,
+            session_id = ?session_id,
             "received message"
         );
 
-        let request = QueryRequest::text(&msg.text).session_id(Some(session_id));
-        let reply = match agent.query(request).await {
-            Ok(mut stream) => collect_reply(&mut stream).await,
+        let request = QueryRequest::text(&msg.text).session_id(session_id);
+        match agent.query(request).await {
+            Ok(mut stream) => {
+                // Store the real session_id created by the agent
+                self.session_map
+                    .set(&session_key, stream.session_id.clone())
+                    .await;
+
+                let reply = collect_reply(&mut stream).await;
+                if !reply.is_empty() {
+                    self.send_reply(&msg.chat_id, &reply).await;
+                }
+            }
             Err(e) => {
                 tracing::error!(channel = "feishu", error = %e, "agent query failed");
-                format!("Error: {e}")
+                self.send_reply(&msg.chat_id, &format!("Error: {e}")).await;
             }
-        };
-
-        if reply.is_empty() {
-            return;
         }
+    }
 
-        // Truncate if too long
+    async fn send_reply(&self, chat_id: &str, reply: &str) {
+        // Truncate if too long (char-boundary safe)
         let reply = if reply.len() > FEISHU_MAX_MESSAGE_LEN {
-            let mut truncated = reply[..FEISHU_MAX_MESSAGE_LEN].to_string();
+            let boundary = reply
+                .char_indices()
+                .take_while(|(i, _)| *i <= FEISHU_MAX_MESSAGE_LEN)
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let mut truncated = reply[..boundary].to_string();
             truncated.push_str("\n\n... (truncated)");
             truncated
         } else {
-            reply
+            reply.to_string()
         };
 
         if let Err(e) = super::outbound::send_text(
@@ -83,12 +100,12 @@ impl FeishuChannel {
             &self.token_cache,
             &self.config.app_id,
             &self.config.app_secret,
-            &msg.chat_id,
+            chat_id,
             &reply,
         )
         .await
         {
-            tracing::error!(channel = "feishu", chat_id = %msg.chat_id, error = %e, "send failed");
+            tracing::error!(channel = "feishu", chat_id, error = %e, "send failed");
         }
     }
 }
@@ -102,6 +119,20 @@ impl Channel for FeishuChannel {
     async fn run(self: Arc<Self>, agent: Arc<Agent>, cancel: CancellationToken) -> Result<()> {
         tracing::info!(channel = "feishu", "channel started");
 
+        let bot_open_id = self
+            .bot_open_id
+            .get_or_try_init(|| async {
+                super::token::fetch_bot_open_id(
+                    &self.client,
+                    &self.config.app_id,
+                    &self.config.app_secret,
+                    &self.token_cache,
+                )
+                .await
+            })
+            .await?;
+        tracing::info!(channel = "feishu", bot_open_id, "resolved bot identity");
+
         let mut attempt: u32 = 0;
         loop {
             if cancel.is_cancelled() {
@@ -110,21 +141,21 @@ impl Channel for FeishuChannel {
 
             let self_ref = self.clone();
             let agent_ref = agent.clone();
-            let result = super::ws::ws_receive_loop(
-                &self.client,
-                &self.config.app_id,
-                &self.config.app_secret,
-                &self.token_cache,
-                &self.config,
-                &cancel,
-                |msg| {
-                    let self_inner = self_ref.clone();
-                    let agent_inner = agent_ref.clone();
-                    async move {
-                        self_inner.handle_message(&agent_inner, msg).await;
-                    }
-                },
-            )
+            let ctx = super::ws::WsContext {
+                client: &self.client,
+                app_id: &self.config.app_id,
+                app_secret: &self.config.app_secret,
+                token_cache: &self.token_cache,
+                config: &self.config,
+                bot_open_id,
+            };
+            let result = super::ws::ws_receive_loop(&ctx, &cancel, |msg| {
+                let self_inner = self_ref.clone();
+                let agent_inner = agent_ref.clone();
+                async move {
+                    self_inner.handle_message(&agent_inner, msg).await;
+                }
+            })
             .await;
 
             if cancel.is_cancelled() {
@@ -194,13 +225,11 @@ impl SessionMap {
         }
     }
 
-    async fn resolve_or_create(&self, chat_id: &str) -> String {
-        let mut map = self.inner.lock().await;
-        if let Some(id) = map.get(chat_id) {
-            return id.clone();
-        }
-        let session_id = uuid::Uuid::new_v4().to_string();
-        map.insert(chat_id.to_string(), session_id.clone());
-        session_id
+    async fn get(&self, key: &str) -> Option<String> {
+        self.inner.lock().await.get(key).cloned()
+    }
+
+    async fn set(&self, key: &str, session_id: String) {
+        self.inner.lock().await.insert(key.to_string(), session_id);
     }
 }

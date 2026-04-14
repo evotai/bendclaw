@@ -8,9 +8,12 @@ use super::config::FeishuChannelConfig;
 
 /// Remove `@_user_N` placeholders injected by Feishu for @mentions.
 pub fn strip_at_placeholders(text: &str) -> String {
-    static RE: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r"@_user_\d+").expect("static regex is valid"));
-    RE.replace_all(text, "").trim().to_string()
+    static RE: std::sync::LazyLock<Option<Regex>> =
+        std::sync::LazyLock::new(|| Regex::new(r"@_user_\d+").ok());
+    match RE.as_ref() {
+        Some(re) => re.replace_all(text, "").trim().to_string(),
+        None => text.trim().to_string(),
+    }
 }
 
 // ── Parsed message ──
@@ -149,6 +152,7 @@ fn is_sender_allowed(allow_from: &[String], sender_id: &str) -> bool {
 pub fn parse_event(
     event_json: &serde_json::Value,
     config: &FeishuChannelConfig,
+    bot_open_id: &str,
     dedup: &mut MessageDedup,
 ) -> Option<ParsedMessage> {
     let event_type = event_json
@@ -217,24 +221,10 @@ pub fn parse_event(
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let bot_open_id = mentions
-            .iter()
-            .find_map(|m| {
-                let key = m.get("key").and_then(|v| v.as_str()).unwrap_or("");
-                if key.starts_with("@_user_") {
-                    m.get("id")
-                        .and_then(|v| v.get("open_id"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
 
         if !should_respond_in_group(
             config.mention_only,
-            &bot_open_id,
+            bot_open_id,
             &mentions,
             &post_mentioned_ids,
         ) {

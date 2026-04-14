@@ -4,7 +4,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent::prompt::SystemPrompt;
 use crate::agent::Agent;
-use crate::channel;
 use crate::conf::Config;
 use crate::error::EvotError;
 use crate::error::Result;
@@ -14,12 +13,12 @@ pub async fn start(conf: Config) -> Result<()> {
     let cancel = CancellationToken::new();
 
     // Long-lived channels (feishu, telegram, ...)
-    let channel_handles = channel::spawn_all(&conf.channels, agent.clone(), cancel.clone());
+    let channel_handles = super::spawn_all(&conf.channels, agent.clone(), cancel.clone());
 
     print_banner(&conf, &channel_handles);
 
     // HTTP channel (blocking)
-    channel::http::Server::new(agent)
+    super::http::Server::new(agent)
         .start(conf.server.host.clone(), conf.server.port)
         .await?;
 

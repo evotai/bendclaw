@@ -4,10 +4,10 @@ use evot_engine::ThinkingLevel;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::channel::feishu::FeishuChannelConfig;
 use crate::conf::paths;
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::gateway::feishu::FeishuChannelConfig;
 
 #[derive(Debug, Clone)]
 pub struct Config {

@@ -122,3 +122,39 @@ pub fn is_token_error(status: u16, body: &serde_json::Value) -> bool {
     }
     body["code"].as_i64() == Some(99991663)
 }
+
+/// Fetch the bot's own open_id via `/bot/v3/info`.
+pub async fn fetch_bot_open_id(
+    client: &reqwest::Client,
+    app_id: &str,
+    app_secret: &str,
+    cache: &TokenCache,
+) -> Result<String> {
+    let token = get_token(client, app_id, app_secret, cache).await?;
+    let url = format!("{FEISHU_API}/bot/v3/info");
+    let resp = client
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu bot info: {e}")))?;
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu bot info response: {e}")))?;
+
+    let code = json["code"].as_i64().unwrap_or(-1);
+    if code != 0 {
+        let msg = json["msg"].as_str().unwrap_or("unknown");
+        return Err(EvotError::Run(format!(
+            "feishu bot info failed: code={code}, msg={msg}"
+        )));
+    }
+
+    json["bot"]
+        .get("open_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .ok_or_else(|| EvotError::Run("feishu bot info: missing open_id".into()))
+}

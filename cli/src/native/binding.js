@@ -11,10 +11,10 @@ function loadBinding() {
   const arch = process.arch
 
   const triples = {
-    'darwin-arm64': 'bendclaw-napi.darwin-arm64.node',
-    'darwin-x64': 'bendclaw-napi.darwin-x64.node',
-    'linux-x64': 'bendclaw-napi.linux-x64-gnu.node',
-    'linux-arm64': 'bendclaw-napi.linux-arm64-gnu.node',
+    'darwin-arm64': 'evot-napi.darwin-arm64.node',
+    'darwin-x64': 'evot-napi.darwin-x64.node',
+    'linux-x64': 'evot-napi.linux-x64-gnu.node',
+    'linux-arm64': 'evot-napi.linux-arm64-gnu.node',
   }
 
   const key = `${platform}-${arch}`

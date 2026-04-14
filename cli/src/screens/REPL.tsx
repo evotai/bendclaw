@@ -257,7 +257,10 @@ export function REPL({ agent }: REPLProps) {
       {/* Model selector for /model */}
       {showModelSelector && (
         <ModelSelector
-          models={[...getAvailableModels(agent), ...FALLBACK_MODELS.filter((m) => !getAvailableModels(agent).includes(m))]}
+          models={(() => {
+            const configured = getAvailableModels(agent)
+            return [...configured, ...FALLBACK_MODELS.filter((m) => !configured.includes(m))]
+          })()}
           currentModel={state.model}
           onSelect={(model) => {
             setShowModelSelector(false)

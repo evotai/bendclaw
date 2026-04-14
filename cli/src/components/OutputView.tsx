@@ -116,14 +116,13 @@ function VerboseLineView({ text }: { text: string }) {
   if (badgeMatch) {
     const badge = badgeMatch[1]!
     const rest = badgeMatch[2] ?? ''
-    const isCompact = badge === 'COMPACT'
-    const isCompleted = rest.startsWith('completed')
-    const bg = isCompleted
-      ? (rest.includes('error') ? 'red' : 'green')
-      : 'yellow'
+    const isCompleted = rest.startsWith('completed') || rest.startsWith('·')
+    let color: string = 'yellow'
+    if (badge === 'COMPACT') color = 'green'
+    if (isCompleted) color = rest.includes('error') ? 'red' : 'green'
     return (
       <Box marginTop={1}>
-        <Text backgroundColor={bg} color="black" bold>{` ${badge} `}</Text>
+        <Text color={color} bold>[{badge}]</Text>
         {rest ? <Text dimColor> {rest}</Text> : null}
       </Box>
     )

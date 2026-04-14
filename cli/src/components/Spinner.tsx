@@ -6,9 +6,10 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Text, Box } from 'ink'
+import { shouldAnimateTerminalTitle } from '../utils/streaming.js'
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-const SPINNER_INTERVAL = 80
+const SPINNER_INTERVAL = 1000
 const STALLED_THRESHOLD_MS = 3000
 const SHOW_TOKENS_AFTER_MS = 30000
 
@@ -65,9 +66,13 @@ export function Spinner({ toolName, progressText, tokenCount = 0, lastTokenAt }:
     return () => clearInterval(timer)
   }, [])
 
-  // Terminal tab title — update every ~500ms, not every frame
+  // Terminal tab title animation is opt-in because direct stdout writes can
+  // fight Ink's renderer and cause visible screen redraws in some terminals.
   const titleIdx = useRef(0)
   useEffect(() => {
+    if (!shouldAnimateTerminalTitle()) {
+      return
+    }
     const timer = setInterval(() => {
       titleIdx.current = (titleIdx.current + 1) % TITLE_GLYPHS.length
       process.stdout.write(`\x1b]0;${TITLE_GLYPHS[titleIdx.current]} evot\x07`)

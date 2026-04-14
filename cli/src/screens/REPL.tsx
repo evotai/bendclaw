@@ -22,12 +22,15 @@ import { TranscriptLog } from '../utils/transcriptLog.js'
 import { transcriptToMessages, type TranscriptItem } from '../utils/transcript.js'
 import { isSlashCommand, resolveCommand } from '../commands/index.js'
 import { skillList, skillInstall, skillRemove } from '../commands/skill.js'
-import { coalesceStreamEvents } from '../utils/streamBatch.js'
+import {
+  coalesceStreamEvents,
+  shouldFlushAssistantDeltaBatchImmediately,
+  STREAM_FLUSH_INTERVAL_MS,
+} from '../utils/streamBatch.js'
 import { logDirPath, sessionLogPath, sessionTranscriptPath } from '../utils/logPaths.js'
 import { partitionMessagesForRender } from '../utils/renderPartition.js'
 import { appendFrozenEvents } from '../utils/frozenUpdates.js'
 
-const STREAM_FLUSH_INTERVAL_MS = 33
 const LIVE_MESSAGE_WINDOW = 12
 const MAX_RENDERED_MESSAGES = 40
 
@@ -812,7 +815,15 @@ async function runQuery(
       if (gen !== streamGenRef.current) break  // stale — stop processing
       pendingEvents.push(event)
       if (event.kind === 'assistant_delta') {
-        scheduleFlush()
+        if (shouldFlushAssistantDeltaBatchImmediately(pendingEvents)) {
+          if (flushTimer !== null) {
+            clearTimeout(flushTimer)
+            flushTimer = null
+          }
+          flushPendingEvents()
+        } else {
+          scheduleFlush()
+        }
       } else {
         if (flushTimer !== null) {
           clearTimeout(flushTimer)

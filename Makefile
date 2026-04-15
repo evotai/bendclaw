@@ -119,10 +119,30 @@ install: build-cli
 			codesign --force --sign - "$$f"; \
 		done; \
 	fi
-	@echo ""
-	@echo "  ✓ Installed evot to $(HOME)/.evotai/bin/evot"
-	@echo "  ✓ Copied .node bindings to $(HOME)/.evotai/lib/"
-	@echo ""
+	@INSTALL_DIR="$(HOME)/.evotai/bin"; \
+	echo ""; \
+	echo "  ✓ Installed evot to $$INSTALL_DIR/evot"; \
+	echo "  ✓ Copied .node bindings to $(HOME)/.evotai/lib/"; \
+	echo ""; \
+	if ! echo "$$PATH" | tr ':' '\n' | grep -qx "$$INSTALL_DIR"; then \
+		SHELL_NAME="$$(basename "$${SHELL:-/bin/bash}")"; \
+		case "$$SHELL_NAME" in \
+			zsh)  RC="$(HOME)/.zshrc" ;; \
+			bash) RC="$(HOME)/.bashrc" ;; \
+			fish) RC="$(HOME)/.config/fish/config.fish" ;; \
+			*)    RC="$(HOME)/.profile" ;; \
+		esac; \
+		if [ "$$SHELL_NAME" = "fish" ]; then \
+			grep -qF "$$INSTALL_DIR" "$$RC" 2>/dev/null || \
+				echo "set -Ux fish_user_paths $$INSTALL_DIR \$$fish_user_paths" >> "$$RC"; \
+		else \
+			grep -qF "$$INSTALL_DIR" "$$RC" 2>/dev/null || \
+				echo "export PATH=\"$$INSTALL_DIR:\$$PATH\"" >> "$$RC"; \
+		fi; \
+		echo "  ✓ Added $$INSTALL_DIR to PATH in $$RC"; \
+		echo "    Run: source $$RC"; \
+		echo ""; \
+	fi
 
 build-napi-dev:
 	cd cli && bun install && npx napi build --manifest-path ../src/napi/Cargo.toml --platform --output-dir .

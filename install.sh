@@ -50,11 +50,11 @@ if [ -d "${TMP}/lib" ]; then
   cp "${TMP}"/lib/* "${LIB_DIR}/"
 fi
 
-# Remove macOS quarantine attribute to prevent Gatekeeper from killing the binary
+# Remove macOS quarantine/provenance attributes to prevent Gatekeeper from killing the binary
 if [ "${OS}" = "Darwin" ]; then
-  xattr -d com.apple.quarantine "${INSTALL_DIR}/${BINARY}" 2>/dev/null || true
+  xattr -cr "${INSTALL_DIR}/${BINARY}" 2>/dev/null || true
   for f in "${LIB_DIR}"/*.node 2>/dev/null; do
-    xattr -d com.apple.quarantine "$f" 2>/dev/null || true
+    xattr -cr "$f" 2>/dev/null || true
   done
 fi
 

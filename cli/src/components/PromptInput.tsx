@@ -51,6 +51,9 @@ export const PromptInput = React.memo(function PromptInput({
   const historyIndexRef = useRef(-1)
   const savedInputRef = useRef('')
   const interruptRef = useRef(new InterruptHandler())
+  // When a large paste is collapsed, store the full text here.
+  const pastedChunksRef = useRef<Map<number, string>>(new Map())
+  const nextPasteIdRef = useRef(1)
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
 
@@ -59,7 +62,16 @@ export const PromptInput = React.memo(function PromptInput({
     historyRef.current = history.load()
   }, [history])
 
-  const currentText = () => lines.join('\n')
+  const currentText = () => {
+    let text = lines.join('\n')
+    // Expand paste placeholders: [Pasted text #N] or [Pasted text #N +M lines]
+    const refPattern = /\[Pasted text #(\d+)(?:\s\+\d+ lines)?\]/g
+    text = text.replace(refPattern, (match, idStr) => {
+      const id = parseInt(idStr, 10)
+      return pastedChunksRef.current.get(id) ?? match
+    })
+    return text
+  }
   const setInputText = (text: string) => {
     const newLines = text.split('\n')
     setLines(newLines)
@@ -73,6 +85,7 @@ export const PromptInput = React.memo(function PromptInput({
     setCursorLine(0)
     setCursorCol(0)
     historyIndexRef.current = -1
+    pastedChunksRef.current.clear()
   }
 
   useInput((ch, key) => {
@@ -360,8 +373,30 @@ export const PromptInput = React.memo(function PromptInput({
       const normalized = ch.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       const pastedLines = normalized.split('\n')
 
-      if (pastedLines.length > 1) {
-        // Multi-line paste
+      // Collapse large pastes into a placeholder to avoid terminal
+      // rendering jitter. Full content is stored in pastedChunksRef
+      // and expanded back on submit via currentText().
+      const PASTE_CHAR_THRESHOLD = 1000
+      const PASTE_LINE_THRESHOLD = 3
+      const numLines = (normalized.match(/\n/g) || []).length
+
+      if (pastedLines.length > 1 && (normalized.length > PASTE_CHAR_THRESHOLD || numLines > PASTE_LINE_THRESHOLD)) {
+        const id = nextPasteIdRef.current++
+        pastedChunksRef.current.set(id, normalized)
+        const ref = numLines === 0
+          ? `[Pasted text #${id}]`
+          : `[Pasted text #${id} +${numLines} lines]`
+        setLines((prev) => {
+          const newLines = [...prev]
+          const line = newLines[cursorLine]!
+          const before = line.slice(0, cursorCol)
+          const after = line.slice(cursorCol)
+          newLines[cursorLine] = before + ref + after
+          return newLines
+        })
+        setCursorCol((prev) => prev + ref.length)
+      } else if (pastedLines.length > 1) {
+        // Multi-line paste (small enough to display inline)
         setLines((prev) => {
           const newLines = [...prev]
           const line = newLines[cursorLine]!

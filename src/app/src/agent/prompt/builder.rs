@@ -2,7 +2,6 @@ use std::path::Path;
 use std::process::Command;
 
 const PROJECT_CONTEXT_FILES: &[&str] = &["EVOT.md", "CLAUDE.md", "AGENTS.md"];
-const MAX_GIT_STATUS_CHARS: usize = 2000;
 
 const AGENT_BEHAVIOR_SECTION: &str = "\
 # Output efficiency
@@ -10,23 +9,24 @@ const AGENT_BEHAVIOR_SECTION: &str = "\
 IMPORTANT: Go straight to the point. Try the simplest approach first without going in \
 circles. Do not overdo it. Be extra concise.
 
-Do NOT ask clarifying questions unless the request is genuinely ambiguous with multiple \
-conflicting interpretations. When given an unclear or generic instruction, interpret it \
-in the most reasonable way and act on it directly. Lead with the answer or action, not \
-the reasoning. Do not restate what the user said — just do it.
+Do NOT ask clarifying questions. When given an unclear or generic instruction, interpret it \
+in the most reasonable and comprehensive way and act on it directly. Lead with the answer \
+or action, not the reasoning. Do not restate what the user said — just do it.
 
-Keep your text output brief and direct. If you can say it in one sentence, don't use \
-three. Focus text output on decisions that need the user's input, high-level status \
-updates at natural milestones, and errors or blockers that change the plan.
+Keep your text output brief and direct. Skip filler words, preamble, and unnecessary \
+transitions. When explaining, include only what is necessary for the user to understand. \
+If you can say it in one sentence, don't use three. Focus text output on decisions that \
+need the user's input, high-level status updates at natural milestones, and errors or \
+blockers that change the plan.
 
 # Doing tasks
 
  - The user will primarily request you to perform software engineering tasks including \
 solving bugs, adding new functionality, refactoring code, explaining code, and more. \
-When given an unclear or generic instruction, consider it in the context of software \
-engineering tasks and the current working directory. For example, if the user asks you \
-to change \"methodName\" to snake case, find the method in the code and modify it \
-directly — do not just reply with \"method_name\".
+When given an unclear or generic instruction, interpret it in the most reasonable and \
+comprehensive way and act on it directly. For example, if the user asks you to change \
+\"methodName\" to snake case, find the method in the code and modify it directly — do \
+not just reply with \"method_name\".
  - Do not propose changes to code you haven't read. Read first, then modify.
  - Do not create files unless absolutely necessary. Prefer editing existing files.
  - If an approach fails, diagnose why before switching tactics. Escalate to the user \
@@ -256,7 +256,6 @@ fn collect_git_info(cwd: &str) -> Option<String> {
     let branch = run_git(cwd, &["branch", "--show-current"]).unwrap_or_default();
     let default_branch = detect_default_branch(cwd);
     let user = run_git(cwd, &["config", "user.name"]);
-    let status = run_git(cwd, &["status", "--short"]);
     let log = run_git(cwd, &["log", "--oneline", "-n", "5"]);
 
     let mut parts = Vec::new();
@@ -269,19 +268,6 @@ fn collect_git_info(cwd: &str) -> Option<String> {
     }
     if let Some(u) = user {
         parts.push(format!("Git user: {u}"));
-    }
-    if let Some(st) = status {
-        let st = if st.is_empty() {
-            "(clean)".to_string()
-        } else if st.len() > MAX_GIT_STATUS_CHARS {
-            format!(
-                "{}\n... (truncated, run `git status` for full output)",
-                &st[..st.floor_char_boundary(MAX_GIT_STATUS_CHARS)]
-            )
-        } else {
-            st
-        };
-        parts.push(format!("Status:\n{st}"));
     }
     if let Some(l) = log {
         parts.push(format!("Recent commits:\n{l}"));

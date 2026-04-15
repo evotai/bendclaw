@@ -261,7 +261,6 @@ jobs:
           cp cli/${{ env.BINARY_NAME }}-napi.*.node distro/lib/
           cp configs/evot.env.example distro/configs/
           if [ "$(uname -s)" = "Darwin" ]; then
-            codesign --force --sign - distro/bin/${{ env.BINARY_NAME }}
             for f in distro/lib/*.node; do
               codesign --force --sign - "$f"
             done

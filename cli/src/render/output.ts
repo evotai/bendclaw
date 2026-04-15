@@ -276,8 +276,6 @@ export function buildRunSummary(stats: RunStats): OutputLine[] {
   }
 
   // Footer
-  line('────────────────────────────────────────────────────────')
-
   return lines
 }
 

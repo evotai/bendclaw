@@ -66,6 +66,8 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const stateRef = useRef(state)
   stateRef.current = state
   const streamGenRef = useRef(0)  // generation counter to reject stale stream events
+  const [restoreText, setRestoreText] = useState<string | undefined>(undefined)
+  const lastSubmittedRef = useRef<string>('')
   const [historyManager] = useState(() => new HistoryManager())
   const [configInfoState, setConfigInfoState] = useState(() => {
     try { return agent.configInfo() } catch { return undefined }
@@ -147,11 +149,16 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
     const isInterrupt = (key.ctrl && _ch === 'c') || key.escape
     if (isInterrupt && streamRef.current) {
       abortCurrentStream()
+      // Restore the last submitted message into the input box
+      if (lastSubmittedRef.current) {
+        setRestoreText(lastSubmittedRef.current)
+      }
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     }
   }, { isActive: state.isLoading })
 
   const dispatchQuery = useCallback((text: string) => {
+    lastSubmittedRef.current = text
     const userMsg: UIMessage = {
       id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
@@ -298,9 +305,11 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
         logMode={logMode !== null}
         queuedMessages={messageQueue}
         history={historyManager}
+        restoreText={restoreText}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
         onToggleVerbose={handleToggleVerbose}
+        onRestoreConsumed={() => setRestoreText(undefined)}
       />
     </Box>
   )

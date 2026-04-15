@@ -220,7 +220,6 @@ pub(super) async fn run_loop(
             } => {
                 got_run_completed = true;
 
-                // Push RunFinished stats BEFORE flush so it gets persisted.
                 let duration_ms = started_at.elapsed().as_millis() as u64;
                 let stats = TranscriptStats::RunFinished(RunFinishedStats {
                     usage: usage.clone(),
@@ -230,16 +229,6 @@ pub(super) async fn run_loop(
                 });
                 run_transcripts.push(stats.to_item());
 
-                if let Err(e) = flush(&session, &run_transcripts, &mut saved_count).await {
-                    tracing::error!(
-                        stage = "run",
-                        status = "transcript_save_failed",
-                        run_id = %run_id,
-                        session_id = %session_id,
-                        error = %e,
-                    );
-                }
-
                 let finished_event = RunEventContext::new(&run_id, &session_id, turn).finished(
                     last_text,
                     usage,
@@ -248,6 +237,10 @@ pub(super) async fn run_loop(
                     transcript_count,
                 );
                 let _ = tx.send(finished_event);
+                // Drop tx immediately so the consumer stream closes without
+                // waiting for transcript persistence.
+                drop(tx);
+                break;
             }
             RuntimeEvent::Public(payload) => {
                 let event = RunEventContext::new(&run_id, &session_id, turn).event(payload);

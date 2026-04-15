@@ -38,7 +38,7 @@ pub fn sanitize_tool_pairs(messages: Vec<AgentMessage>) -> Vec<AgentMessage> {
         return messages;
     }
 
-    messages
+    let filtered: Vec<AgentMessage> = messages
         .into_iter()
         .filter_map(|msg| match msg {
             AgentMessage::Llm(Message::ToolResult {
@@ -77,5 +77,7 @@ pub fn sanitize_tool_pairs(messages: Vec<AgentMessage>) -> Vec<AgentMessage> {
 
             other => Some(other),
         })
-        .collect()
+        .collect();
+
+    filtered
 }

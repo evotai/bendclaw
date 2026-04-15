@@ -193,10 +193,9 @@ impl AgentTool for BashTool {
             let max_len = 120;
             let needs_truncation = s.lines().count() > 1 || first_line.len() > max_len;
             if needs_truncation {
-                let truncated = if first_line.len() > max_len {
-                    &first_line[..max_len]
-                } else {
-                    first_line
+                let truncated = match first_line.char_indices().nth(max_len) {
+                    Some((byte_idx, _)) => &first_line[..byte_idx],
+                    None => first_line,
                 };
                 format!("{truncated}…")
             } else {

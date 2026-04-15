@@ -379,7 +379,27 @@ impl Agent {
         let config = self.build_config();
 
         let handle = tokio::spawn(async move {
-            let _new_messages = agent_loop(messages, &mut context, &config, tx, cancel).await;
+            let result = std::panic::AssertUnwindSafe(async {
+                let _new_messages =
+                    agent_loop(messages, &mut context, &config, tx.clone(), cancel).await;
+            });
+            if let Err(e) = futures::FutureExt::catch_unwind(result).await {
+                let msg = match e.downcast_ref::<&str>() {
+                    Some(s) => s.to_string(),
+                    None => match e.downcast_ref::<String>() {
+                        Some(s) => s.clone(),
+                        None => "unknown panic".into(),
+                    },
+                };
+                tx.send(AgentEvent::Error {
+                    error: AgentErrorInfo {
+                        kind: AgentErrorKind::Runtime,
+                        message: format!("Agent loop panicked: {msg}"),
+                    },
+                })
+                .ok();
+                tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
+            }
             (context.tools, context.messages)
         });
 
@@ -426,7 +446,27 @@ impl Agent {
         let config = self.build_config();
 
         let handle = tokio::spawn(async move {
-            let _new_messages = agent_loop_continue(&mut context, &config, tx, cancel).await;
+            let result = std::panic::AssertUnwindSafe(async {
+                let _new_messages =
+                    agent_loop_continue(&mut context, &config, tx.clone(), cancel).await;
+            });
+            if let Err(e) = futures::FutureExt::catch_unwind(result).await {
+                let msg = match e.downcast_ref::<&str>() {
+                    Some(s) => s.to_string(),
+                    None => match e.downcast_ref::<String>() {
+                        Some(s) => s.clone(),
+                        None => "unknown panic".into(),
+                    },
+                };
+                tx.send(AgentEvent::Error {
+                    error: AgentErrorInfo {
+                        kind: AgentErrorKind::Runtime,
+                        message: format!("Agent loop panicked: {msg}"),
+                    },
+                })
+                .ok();
+                tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
+            }
             (context.tools, context.messages)
         });
 

@@ -11,6 +11,7 @@ use evot::agent::ToolMode;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 
 // ---------------------------------------------------------------------------
 // NapiAgent — wraps the app-level Agent for JS consumption
@@ -108,10 +109,10 @@ impl NapiAgent {
             inner: Mutex::new(stream),
             cached_session_id: sid,
             aborted: Arc::new(AtomicBool::new(false)),
+            abort_notify: Arc::new(Notify::new()),
         })
     }
 
-    /// List recent sessions.
     #[napi]
     pub async fn list_sessions(&self, limit: Option<u32>) -> Result<String> {
         let sessions = self
@@ -302,6 +303,7 @@ pub struct NapiQueryStream {
     inner: Mutex<evot::agent::QueryStream>,
     cached_session_id: String,
     aborted: Arc<AtomicBool>,
+    abort_notify: Arc<Notify>,
 }
 
 #[napi]
@@ -319,13 +321,26 @@ impl NapiQueryStream {
             return Ok(None);
         }
         let mut stream = self.inner.lock().await;
-        match stream.next().await {
-            Some(event) => {
-                let json = serde_json::to_string(&event)
-                    .map_err(|e| Error::from_reason(format!("serialize event: {e}")))?;
-                Ok(Some(json))
+        // Race between the next stream event and the abort signal so that
+        // abort() can wake us up even while we're blocked on rx.recv().
+        tokio::select! {
+            event = stream.next() => {
+                if self.aborted.load(Ordering::Relaxed) {
+                    return Ok(None);
+                }
+                match event {
+                    Some(event) => {
+                        let json = serde_json::to_string(&event)
+                            .map_err(|e| Error::from_reason(format!("serialize event: {e}")))?;
+                        Ok(Some(json))
+                    }
+                    None => Ok(None),
+                }
             }
-            None => Ok(None),
+            _ = self.abort_notify.notified() => {
+                stream.abort();
+                Ok(None)
+            }
         }
     }
 
@@ -333,8 +348,9 @@ impl NapiQueryStream {
     #[napi]
     pub fn abort(&self) {
         self.aborted.store(true, Ordering::Relaxed);
-        // If we can grab the lock, abort the engine immediately.
-        // Otherwise, the next() call will see the aborted flag and return None.
+        // Wake up any in-flight next() call so it returns None immediately.
+        self.abort_notify.notify_waiters();
+        // If we can grab the lock, abort the engine immediately too.
         if let Ok(stream) = self.inner.try_lock() {
             stream.abort();
         }
@@ -365,6 +381,7 @@ impl NapiForkedAgent {
             inner: Mutex::new(stream),
             cached_session_id: sid,
             aborted: Arc::new(AtomicBool::new(false)),
+            abort_notify: Arc::new(Notify::new()),
         })
     }
 }

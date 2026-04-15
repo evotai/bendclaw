@@ -322,6 +322,65 @@ fn test_sanitize_empty_assistant_removed() {
     ));
 }
 
+// ---------------------------------------------------------------------------
+// sanitize_tool_pairs DSL pattern tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_sanitize_dsl_orphan_tool_removed() {
+    // T = orphan tool call (no result) → removed by sanitize
+    let messages = pat("u T u").build();
+    let result = sanitize_tool_pairs(messages);
+    // orphan T removed, two user messages remain
+    assert_eq!(result.len(), 2);
+    assert!(matches!(
+        &result[0],
+        AgentMessage::Llm(Message::User { .. })
+    ));
+    assert!(matches!(
+        &result[1],
+        AgentMessage::Llm(Message::User { .. })
+    ));
+}
+
+#[test]
+fn test_sanitize_dsl_paired_tools_intact() {
+    // Paired tool calls stay intact
+    let messages = pat("u tr u").build();
+    let result = sanitize_tool_pairs(messages);
+    assert_eq!(result.len(), 4); // u, t, r, u
+}
+
+#[test]
+fn test_sanitize_dsl_mixed_paired_and_orphan() {
+    // Paired + orphan: paired stays, orphan removed
+    let messages = pat("u tr T u").build();
+    let result = sanitize_tool_pairs(messages);
+    // u, t, r survive; orphan T removed; trailing u stays
+    assert_eq!(result.len(), 4); // u, t, r, u
+}
+
+#[test]
+fn test_sanitize_dsl_many_orphans_between_users() {
+    // Multiple orphan Ts between user messages
+    let messages = pat("u T u T u T u").build();
+    let result = sanitize_tool_pairs(messages);
+    // All Ts removed, 4 user messages remain
+    assert_eq!(result.len(), 4);
+    for msg in &result {
+        assert!(matches!(msg, AgentMessage::Llm(Message::User { .. })));
+    }
+}
+
+#[test]
+fn test_sanitize_dsl_orphan_after_valid_conversation() {
+    // Normal conversation then orphan at end
+    let messages = pat("u a u tr T u").build();
+    let result = sanitize_tool_pairs(messages);
+    // u, a, u, t, r survive; T removed; last u stays
+    assert_eq!(result.len(), 6); // u, a, u, t, r, u
+}
+
 #[test]
 fn test_compact_level2_no_orphans() {
     let messages = pat("u u u tr u").pad(800).build();

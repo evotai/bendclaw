@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_loop;
 pub mod context;
+pub mod doom_loop;
 pub mod provider;
 pub mod retry;
 pub mod tools;

@@ -6,7 +6,8 @@ use evotengine::types::*;
 /// # Pattern Format
 /// - `u` = User message
 /// - `a` = Assistant text message
-/// - `t` = Assistant message with tool call
+/// - `t` = Assistant message with tool call (must be followed by `r`)
+/// - `T` = Assistant message with tool call (orphan — no matching `r`)
 /// - `r` = Tool result (auto-matches most recent unmatched `t`)
 /// - spaces are ignored (for readability)
 ///
@@ -15,6 +16,7 @@ use evotengine::types::*;
 /// let msgs = pat("u a u").build();
 /// let msgs = pat("u tr u tr u").pad(2000).build();
 /// let msgs = pat("u tr").tool_output(5000).build();
+/// let msgs = pat("u T u T u").build();  // orphan tool calls
 /// ```
 #[derive(Debug, Clone)]
 pub struct MessagePattern {
@@ -73,6 +75,25 @@ impl MessagePattern {
                     tool_id_counter += 1;
                     let id = format!("tc-{}", tool_id_counter);
                     pending_tool_ids.push(id.clone());
+                    messages.push(AgentMessage::Llm(Message::Assistant {
+                        content: vec![Content::ToolCall {
+                            id,
+                            name: "bash".into(),
+                            arguments: serde_json::json!({}),
+                        }],
+                        stop_reason: StopReason::ToolUse,
+                        model: "test".into(),
+                        provider: "test".into(),
+                        usage: Usage::default(),
+                        timestamp: 0,
+                        error_message: None,
+                    }));
+                    msg_index += 1;
+                }
+                'T' => {
+                    // Orphan tool call — no matching 'r' expected
+                    tool_id_counter += 1;
+                    let id = format!("tc-{}", tool_id_counter);
                     messages.push(AgentMessage::Llm(Message::Assistant {
                         content: vec![Content::ToolCall {
                             id,

@@ -169,12 +169,14 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const turn = event.turn
       const attempt = (p.attempt as number) ?? 0
       const msgCount = (p.message_count as number) ?? 0
-      const toolCount = (p.tool_count as number) ?? 0
+      const tools = p.tools as any[] | undefined
+      const toolCount = (p.tool_count as number) ?? tools?.length ?? 0
       const sysTok = (p.system_prompt_tokens as number) ?? 0
       const retryStr = attempt > 0 ? ` · retry ${attempt}` : ''
 
-      // Use pre-computed message stats from Rust side
+      // Use pre-computed message stats from Rust side, or compute from messages array
       const ms = p.message_stats as Record<string, any> | undefined
+      const rawMessages = p.messages as { role: string; content?: string; toolName?: string }[] | undefined
       const msgStats: MessageStats | null = ms
         ? {
             userCount: (ms.user_count as number) ?? 0,
@@ -185,7 +187,9 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
             toolResultTokens: (ms.tool_result_tokens as number) ?? 0,
             toolDetails: (ms.tool_details as [string, number][]) ?? [],
           }
-        : null
+        : rawMessages
+          ? countMessagesByRole(rawMessages)
+          : null
 
       let msgLine = `  ${msgCount} messages`
       if (msgStats) {
@@ -480,6 +484,44 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
     default:
       return state
   }
+}
+
+/** Rough token estimate: ~4 chars per token. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Count messages by role and estimate token usage.
+ * Unknown roles are counted as user.
+ */
+export function countMessagesByRole(messages: { role: string; content?: string; toolName?: string }[]): MessageStats {
+  let userCount = 0
+  let assistantCount = 0
+  let toolResultCount = 0
+  let userTokens = 0
+  let assistantTokens = 0
+  let toolResultTokens = 0
+  const toolDetails: [string, number][] = []
+
+  for (const msg of messages) {
+    const tokens = estimateTokens(msg.content ?? '')
+    if (msg.role === 'assistant') {
+      assistantCount++
+      assistantTokens += tokens
+    } else if (msg.role === 'tool_result') {
+      toolResultCount++
+      toolResultTokens += tokens
+      toolDetails.push([msg.toolName ?? 'unknown', tokens])
+    } else {
+      userCount++
+      userTokens += tokens
+    }
+  }
+
+  toolDetails.sort((a, b) => b[1] - a[1])
+
+  return { userCount, assistantCount, toolResultCount, userTokens, assistantTokens, toolResultTokens, toolDetails }
 }
 
 function updateToolCallInMessages(messages: UIMessage[], toolCallId: string, finished: UIToolCall): UIMessage[] {

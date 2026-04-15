@@ -113,6 +113,15 @@ impl Storage for FsStorage {
 
         let mut sessions = Vec::new();
         while let Some(entry) = entries.next_entry().await? {
+            // Skip non-directory entries (e.g. .DS_Store)
+            match entry.file_type().await {
+                Ok(ft) if ft.is_dir() => {}
+                Ok(_) => continue,
+                Err(e) => {
+                    tracing::warn!(path = ?entry.path(), "skipping session entry: {e}");
+                    continue;
+                }
+            }
             let path = entry.path().join("session.json");
             if let Some(session) = self.read_json::<SessionMeta>(&path).await? {
                 sessions.push(session);

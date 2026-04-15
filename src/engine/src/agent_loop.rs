@@ -13,6 +13,7 @@ use crate::context::DefaultCompaction;
 use crate::context::ExecutionLimits;
 use crate::context::ExecutionTracker;
 use crate::context::{self};
+use crate::doom_loop::DoomLoopDetector;
 use crate::provider::ModelConfig;
 use crate::provider::ProviderError;
 use crate::provider::StreamConfig;
@@ -272,6 +273,7 @@ async fn run_loop(
         .execution_limits
         .as_ref()
         .map(|limits| ExecutionTracker::new(limits.clone()));
+    let mut doom_detector = DoomLoopDetector::new(3);
 
     // Check for steering messages at start
     let mut pending: Vec<AgentMessage> = config
@@ -440,6 +442,45 @@ async fn run_loop(
 
             let has_tool_calls = !tool_calls.is_empty();
             let mut tool_results: Vec<Message> = Vec::new();
+
+            // Doom-loop detection: if the same tool batch repeats >= threshold
+            // times, skip execution and inject a steering message instead.
+            if has_tool_calls {
+                if let Some(intervention) = doom_detector.check(&tool_calls) {
+                    for (id, name, _) in &tool_calls {
+                        let result = skip_tool_call_doom_loop(id, name, tx);
+                        let am: AgentMessage = result.clone().into();
+                        context.messages.push(am.clone());
+                        new_messages.push(am);
+                        tool_results.push(result);
+                    }
+                    pending.push(intervention.steering_message);
+
+                    // Track turn + emit TurnEnd, then continue inner loop.
+                    if let Some(ref mut tracker) = tracker {
+                        let turn_tokens = match &message {
+                            Message::Assistant { usage, .. } => {
+                                (usage.input + usage.output) as usize
+                            }
+                            _ => context::message_tokens(&agent_msg),
+                        };
+                        tracker.record_turn(turn_tokens);
+                    }
+                    if let Some(ref after_turn) = config.after_turn {
+                        let usage = match &message {
+                            Message::Assistant { usage, .. } => usage.clone(),
+                            _ => Usage::default(),
+                        };
+                        after_turn(&context.messages, &usage);
+                    }
+                    tx.send(AgentEvent::TurnEnd {
+                        message: agent_msg,
+                        tool_results,
+                    })
+                    .ok();
+                    continue;
+                }
+            }
 
             if has_tool_calls {
                 let execution = execute_tool_calls(
@@ -1145,6 +1186,60 @@ fn skip_tool_call(
     let result = ToolResult {
         content: vec![Content::Text {
             text: "Skipped due to queued user message.".into(),
+        }],
+        details: serde_json::Value::Null,
+        retention: Retention::Normal,
+    };
+
+    tx.send(AgentEvent::ToolExecutionStart {
+        tool_call_id: tool_call_id.into(),
+        tool_name: tool_name.into(),
+        args: serde_json::Value::Null,
+        preview_command: None,
+    })
+    .ok();
+
+    let result_tokens = context::content_tokens(&result.content);
+
+    tx.send(AgentEvent::ToolExecutionEnd {
+        tool_call_id: tool_call_id.into(),
+        tool_name: tool_name.into(),
+        result: result.clone(),
+        is_error: true,
+        result_tokens,
+        duration_ms: 0,
+    })
+    .ok();
+
+    let msg = Message::ToolResult {
+        tool_call_id: tool_call_id.into(),
+        tool_name: tool_name.into(),
+        content: result.content,
+        is_error: true,
+        timestamp: now_ms(),
+        retention: Retention::Normal,
+    };
+
+    tx.send(AgentEvent::MessageStart {
+        message: msg.clone().into(),
+    })
+    .ok();
+    tx.send(AgentEvent::MessageEnd {
+        message: msg.clone().into(),
+    })
+    .ok();
+
+    msg
+}
+
+fn skip_tool_call_doom_loop(
+    tool_call_id: &str,
+    tool_name: &str,
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+) -> Message {
+    let result = ToolResult {
+        content: vec![Content::Text {
+            text: "Skipped: doom loop detected — repeated identical tool call.".into(),
         }],
         details: serde_json::Value::Null,
         retention: Retention::Normal,

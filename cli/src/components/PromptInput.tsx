@@ -24,12 +24,10 @@ interface PromptInputProps {
   logMode: boolean
   queuedMessages: string[]
   history: HistoryManager
-  restoreText?: string
   updateHint?: string
   onSubmit: (text: string) => void
   onInterrupt: () => void
   onToggleVerbose: () => void
-  onRestoreConsumed?: () => void
 }
 
 export const PromptInput = React.memo(function PromptInput({
@@ -41,12 +39,10 @@ export const PromptInput = React.memo(function PromptInput({
   logMode,
   queuedMessages,
   history,
-  restoreText,
   updateHint,
   onSubmit,
   onInterrupt,
   onToggleVerbose,
-  onRestoreConsumed,
 }: PromptInputProps) {
   const [lines, setLines] = useState<string[]>([''])
   const [cursorLine, setCursorLine] = useState(0)
@@ -67,14 +63,6 @@ export const PromptInput = React.memo(function PromptInput({
   useEffect(() => {
     historyRef.current = history.load()
   }, [history])
-
-  // Restore input text when a running query is cancelled
-  useEffect(() => {
-    if (restoreText !== undefined) {
-      setInputText(restoreText)
-      onRestoreConsumed?.()
-    }
-  }, [restoreText])
 
   const currentText = () => {
     let text = lines.join('\n')

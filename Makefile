@@ -110,7 +110,7 @@ ci: check test
 # -- TS CLI -------------------------------------------------------------------
 
 build-napi:
-	cd cli && bun install && npx napi build --manifest-path ../src/napi/Cargo.toml --release --platform --output-dir .
+	cd cli && bun install && bunx napi build --manifest-path ../src/napi/Cargo.toml --release --platform --output-dir .
 
 build-cli: build-napi
 	cd cli && bun build src/index.tsx --compile --define 'process.env.DEV="false"' --define 'process.env.NODE_ENV="production"' --outfile dist/evot
@@ -129,10 +129,17 @@ install: build-cli
 		done; \
 	fi
 	@INSTALL_DIR="$(HOME)/.evotai/bin"; \
+	ENV_FILE="$(HOME)/.evotai/evot.env"; \
 	echo ""; \
 	echo "  ✓ Installed evot to $$INSTALL_DIR/evot"; \
 	echo "  ✓ Copied .node bindings to $(HOME)/.evotai/lib/"; \
 	echo ""; \
+	if [ ! -f "$$ENV_FILE" ]; then \
+		cp configs/evot.env.example "$$ENV_FILE"; \
+		echo "  ✓ Created config at $$ENV_FILE"; \
+		echo "    Edit it to set your API keys and provider settings."; \
+		echo ""; \
+	fi; \
 	if ! echo "$$PATH" | tr ':' '\n' | grep -qx "$$INSTALL_DIR"; then \
 		SHELL_NAME="$$(basename "$${SHELL:-/bin/bash}")"; \
 		case "$$SHELL_NAME" in \
@@ -154,7 +161,7 @@ install: build-cli
 	fi
 
 build-napi-dev:
-	cd cli && bun install && npx napi build --manifest-path ../src/napi/Cargo.toml --platform --output-dir .
+	cd cli && bun install && bunx napi build --manifest-path ../src/napi/Cargo.toml --platform --output-dir .
 
 dev: build-napi-dev
 	cd cli && bun install && bun run src/index.tsx

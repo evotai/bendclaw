@@ -198,10 +198,12 @@ impl NapiAgent {
         let env_path = evot::conf::paths::env_file_path()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
+        let has_api_key = !llm.api_key.is_empty();
         let available = self.collect_models();
         let info = serde_json::json!({
             "provider": provider,
             "envPath": env_path,
+            "hasApiKey": has_api_key,
             "baseUrl": llm.base_url,
             "anthropicModel": self.config.anthropic.model,
             "openaiModel": self.config.openai.model,

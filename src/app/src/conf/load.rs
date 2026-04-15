@@ -202,6 +202,35 @@ fn load_file_source(path: &Path) -> Result<ConfigSource> {
     .map_err(|e| EvotError::Conf(format!("failed to parse {}: {e}", path.display())))
 }
 
+/// Create a default env file with commented-out config if it doesn't exist.
+fn ensure_env_file(path: &Path) -> Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| EvotError::Conf(format!("failed to create {}: {e}", parent.display())))?;
+    }
+    let template = "\
+# Evot configuration — uncomment and set values as needed
+# Full reference: configs/evot.env.example
+#
+# LLM provider: anthropic or openai
+# EVOT_LLM_PROVIDER=anthropic
+#
+# EVOT_ANTHROPIC_API_KEY=
+# EVOT_ANTHROPIC_BASE_URL=
+# EVOT_ANTHROPIC_MODEL=claude-opus-4-6
+#
+# EVOT_OPENAI_API_KEY=
+# EVOT_OPENAI_BASE_URL=
+# EVOT_OPENAI_MODEL=gpt-5.4
+";
+    std::fs::write(path, template)
+        .map_err(|e| EvotError::Conf(format!("failed to write {}: {e}", path.display())))?;
+    Ok(())
+}
+
 fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
     if !path.exists() {
         return Ok(HashMap::new());
@@ -372,7 +401,9 @@ pub(super) fn load_config_inner() -> Result<Config> {
     let file_source = load_file_source(&paths::config_file_path()?)?;
     file_source.apply(&mut config)?;
 
-    let env_file_vars = load_env_file(&paths::env_file_path()?)?;
+    let env_path = paths::env_file_path()?;
+    ensure_env_file(&env_path)?;
+    let env_file_vars = load_env_file(&env_path)?;
     apply_env(&mut config, &env_file_vars)?;
 
     let process_vars = load_process_env();

@@ -33,8 +33,6 @@ pub fn wrap_command(
     cmd: &mut tokio::process::Command,
     allowed_dirs: &[PathBuf],
 ) -> Result<(), String> {
-    use std::os::unix::process::CommandExt;
-
     let dirs = allowed_dirs.to_vec();
 
     // SAFETY: Follows common Landlock pre_exec pattern. The child process is
@@ -80,7 +78,9 @@ fn apply_rules(allowed_dirs: &[PathBuf]) -> Result<(), String> {
         let path = std::path::Path::new(path_str);
         if path.exists() {
             if let Ok(fd) = PathFd::new(path) {
-                let _ = ruleset.add_rule(PathBeneath::new(fd, AccessFs::from_read(abi)));
+                ruleset = ruleset
+                    .add_rule(PathBeneath::new(fd, AccessFs::from_read(abi)))
+                    .map_err(|e| format!("Landlock add_rule ro: {e}"))?;
             }
         }
     }
@@ -91,7 +91,9 @@ fn apply_rules(allowed_dirs: &[PathBuf]) -> Result<(), String> {
         let path = std::path::Path::new(path_str);
         if path.exists() {
             if let Ok(fd) = PathFd::new(path) {
-                let _ = ruleset.add_rule(PathBeneath::new(fd, AccessFs::from_all(abi)));
+                ruleset = ruleset
+                    .add_rule(PathBeneath::new(fd, AccessFs::from_all(abi)))
+                    .map_err(|e| format!("Landlock add_rule rw: {e}"))?;
             }
         }
     }
@@ -101,7 +103,9 @@ fn apply_rules(allowed_dirs: &[PathBuf]) -> Result<(), String> {
         if dir.exists() {
             match PathFd::new(dir) {
                 Ok(fd) => {
-                    let _ = ruleset.add_rule(PathBeneath::new(fd, AccessFs::from_all(abi)));
+                    ruleset = ruleset
+                        .add_rule(PathBeneath::new(fd, AccessFs::from_all(abi)))
+                        .map_err(|e| format!("Landlock add_rule dir: {e}"))?;
                 }
                 Err(e) => {
                     return Err(format!("Cannot open {:?} for Landlock: {e}", dir));

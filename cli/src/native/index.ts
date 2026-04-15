@@ -44,6 +44,7 @@ export interface VariableInfo {
 export interface ConfigInfo {
   provider: string
   envPath: string
+  hasApiKey: boolean
   baseUrl: string | null
   anthropicModel: string
   openaiModel: string

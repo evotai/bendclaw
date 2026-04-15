@@ -67,8 +67,6 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const stateRef = useRef(state)
   stateRef.current = state
   const streamGenRef = useRef(0)  // generation counter to reject stale stream events
-  const [restoreText, setRestoreText] = useState<string | undefined>(undefined)
-  const lastSubmittedRef = useRef<string>('')
   const [historyManager] = useState(() => new HistoryManager())
   const [updateHint, setUpdateHint] = useState<string | undefined>(undefined)
   const [updateManager] = useState(() => new UpdateManager(version()))
@@ -166,21 +164,13 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   useInput((_ch, key) => {
     const isInterrupt = (key.ctrl && _ch === 'c') || key.escape
     if (isInterrupt && streamRef.current) {
-      // Only restore input if LLM hasn't produced any output yet
-      const hasOutput = stateRef.current.currentStreamText.length > 0
-        || stateRef.current.turnToolCalls.length > 0
       abortCurrentStream()
-      if (lastSubmittedRef.current && !hasOutput) {
-        setRestoreText(lastSubmittedRef.current)
-      }
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     }
   }, { isActive: state.isLoading })
 
   const dispatchQuery = useCallback((text: string) => {
-    lastSubmittedRef.current = text
     const userMsg: UIMessage = {
-      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
       text,
       timestamp: Date.now(),
@@ -325,12 +315,10 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
         logMode={logMode !== null}
         queuedMessages={messageQueue}
         history={historyManager}
-        restoreText={restoreText}
         updateHint={updateHint}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
         onToggleVerbose={handleToggleVerbose}
-        onRestoreConsumed={() => setRestoreText(undefined)}
       />
     </Box>
   )

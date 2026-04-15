@@ -2,6 +2,8 @@
 # evot — launch the Evot CLI
 set -euo pipefail
 
+export PATH="$HOME/.bun/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$SCRIPT_DIR")"
 

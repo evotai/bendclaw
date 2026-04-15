@@ -21,7 +21,10 @@ export function Banner({ model, cwd, sessionId, configInfo }: {
         </Text>
         <Text dimColor> v{version()}</Text>
       </Box>
-      {envPath ? <Text dimColor>  env:      {envPath}</Text> : null}
+      <Text dimColor>  env:      {envPath}</Text>
+      {configInfo && !configInfo.hasApiKey && (
+        <Text color="yellow">  ⚠ No API key configured — edit {envPath} to set your API keys</Text>
+      )}
       {configInfo && <Text dimColor>  provider: {configInfo.provider}</Text>}
       <Text dimColor>  model:    {model}</Text>
       {configInfo?.baseUrl && <Text dimColor>  base_url: {configInfo.baseUrl}</Text>}

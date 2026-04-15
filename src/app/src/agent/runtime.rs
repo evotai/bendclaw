@@ -13,6 +13,7 @@ use super::convert::extract_content_text;
 use super::convert::from_agent_messages;
 use super::convert::total_usage;
 use super::convert::transcript_from_assistant_completed;
+use super::event::LlmMessageStats;
 use super::event::RunEvent;
 use super::event::RunEventContext;
 use super::event::RunEventPayload;
@@ -482,17 +483,67 @@ fn map_agent_event(
             let message_count = request.messages.len();
             let system_prompt_tokens =
                 evot_engine::context::estimate_tokens(&request.system_prompt);
-            let messages: Vec<serde_json::Value> = request
-                .messages
-                .iter()
-                .map(|m| serialize_or_placeholder(m, "message"))
-                .collect();
-            let tools: Vec<serde_json::Value> = request
-                .tools
-                .iter()
-                .map(|t| serialize_or_placeholder(t, "tool"))
-                .collect();
-            let message_bytes: usize = messages.iter().map(|m| m.to_string().len()).sum();
+            let tool_count = request.tools.len();
+
+            // Compute message stats and bytes on the Rust side to avoid
+            // serializing the full messages/tools across the NAPI boundary.
+            let mut user_count = 0usize;
+            let mut assistant_count = 0usize;
+            let mut tool_result_count = 0usize;
+            let mut user_tokens = 0usize;
+            let mut assistant_tokens = 0usize;
+            let mut tool_result_tokens = 0usize;
+            let mut tool_details: Vec<(String, usize)> = Vec::new();
+            let mut message_bytes = 0usize;
+
+            for msg in &request.messages {
+                let json = serialize_or_placeholder(msg, "message");
+                let json_str = json.to_string();
+                let est = json_str.len() / 4;
+                message_bytes += json_str.len();
+
+                let role = json
+                    .get("role")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("unknown");
+                match role {
+                    "user" => {
+                        user_count += 1;
+                        user_tokens += est;
+                    }
+                    "assistant" => {
+                        assistant_count += 1;
+                        assistant_tokens += est;
+                    }
+                    "toolResult" | "tool_result" | "tool" => {
+                        tool_result_count += 1;
+                        tool_result_tokens += est;
+                        let name = json
+                            .get("toolName")
+                            .or_else(|| json.get("tool_name"))
+                            .or_else(|| json.get("name"))
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown");
+                        tool_details.push((name.to_string(), est));
+                    }
+                    _ => {
+                        user_count += 1;
+                        user_tokens += est;
+                    }
+                }
+            }
+            tool_details.sort_by(|a, b| b.1.cmp(&a.1));
+
+            let message_stats = Some(LlmMessageStats {
+                user_count,
+                assistant_count,
+                tool_result_count,
+                user_tokens,
+                assistant_tokens,
+                tool_result_tokens,
+                tool_details,
+            });
+
             vec![
                 RuntimeEvent::Transcript(
                     TranscriptStats::LlmCallStarted(LlmCallStartedStats {
@@ -509,12 +560,11 @@ fn map_agent_event(
                     turn: *turn,
                     attempt: *attempt,
                     model: request.model.clone(),
-                    system_prompt: request.system_prompt.clone(),
-                    messages,
-                    tools,
                     message_count,
                     message_bytes,
                     system_prompt_tokens,
+                    tool_count,
+                    message_stats,
                 }),
             ]
         }

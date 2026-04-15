@@ -188,7 +188,21 @@ impl AgentTool for BashTool {
     }
 
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
-        params["command"].as_str().map(|s| s.to_string())
+        params["command"].as_str().map(|s| {
+            let first_line = s.lines().next().unwrap_or("");
+            let max_len = 120;
+            let needs_truncation = s.lines().count() > 1 || first_line.len() > max_len;
+            if needs_truncation {
+                let truncated = if first_line.len() > max_len {
+                    &first_line[..max_len]
+                } else {
+                    first_line
+                };
+                format!("{truncated}…")
+            } else {
+                first_line.to_string()
+            }
+        })
     }
 
     fn is_concurrency_safe(&self) -> bool {

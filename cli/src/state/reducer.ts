@@ -7,46 +7,6 @@ import { humanTokens as humanTokensInline, renderBar, renderPositionBar } from '
 import { emptyRunStats, type AppState } from './app.js'
 import type { CompactRecord, MessageStats, UIMessage, UIToolCall } from './types.js'
 
-export function countMessagesByRole(messages: any[]): MessageStats {
-  const stats: MessageStats = {
-    userCount: 0,
-    assistantCount: 0,
-    toolResultCount: 0,
-    userTokens: 0,
-    assistantTokens: 0,
-    toolResultTokens: 0,
-    toolDetails: [],
-  }
-  for (const msg of messages) {
-    const role = (msg?.role as string) ?? 'unknown'
-    const est = Math.round(JSON.stringify(msg).length / 4)
-    switch (role) {
-      case 'user':
-        stats.userCount++
-        stats.userTokens += est
-        break
-      case 'assistant':
-        stats.assistantCount++
-        stats.assistantTokens += est
-        break
-      case 'toolResult':
-      case 'tool_result':
-      case 'tool': {
-        stats.toolResultCount++
-        stats.toolResultTokens += est
-        const name = (msg?.toolName ?? msg?.tool_name ?? msg?.name ?? 'unknown') as string
-        stats.toolDetails.push([name, est])
-        break
-      }
-      default:
-        stats.userCount++
-        stats.userTokens += est
-        break
-    }
-  }
-  stats.toolDetails.sort((a, b) => b[1] - a[1])
-  return stats
-}
 
 export function applyEvent(state: AppState, event: RunEvent): AppState {
   const kind = event.kind
@@ -209,13 +169,24 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const turn = event.turn
       const attempt = (p.attempt as number) ?? 0
       const msgCount = (p.message_count as number) ?? 0
-      const tools = p.tools as any[] | undefined
-      const toolCount = tools?.length ?? 0
+      const toolCount = (p.tool_count as number) ?? 0
       const sysTok = (p.system_prompt_tokens as number) ?? 0
-      const messages = p.messages as any[] | undefined
       const retryStr = attempt > 0 ? ` · retry ${attempt}` : ''
 
-      const msgStats = messages ? countMessagesByRole(messages) : null
+      // Use pre-computed message stats from Rust side
+      const ms = p.message_stats as Record<string, any> | undefined
+      const msgStats: MessageStats | null = ms
+        ? {
+            userCount: (ms.user_count as number) ?? 0,
+            assistantCount: (ms.assistant_count as number) ?? 0,
+            toolResultCount: (ms.tool_result_count as number) ?? 0,
+            userTokens: (ms.user_tokens as number) ?? 0,
+            assistantTokens: (ms.assistant_tokens as number) ?? 0,
+            toolResultTokens: (ms.tool_result_tokens as number) ?? 0,
+            toolDetails: (ms.tool_details as [string, number][]) ?? [],
+          }
+        : null
+
       let msgLine = `  ${msgCount} messages`
       if (msgStats) {
         const parts: string[] = []

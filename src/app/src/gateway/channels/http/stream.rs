@@ -84,12 +84,11 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
             turn,
             attempt,
             model,
-            system_prompt,
-            messages,
-            tools,
             message_count,
             message_bytes,
             system_prompt_tokens,
+            tool_count,
+            message_stats,
         } => {
             events.push(json!({
                 "type": "llm_call_started",
@@ -97,12 +96,11 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                     "turn": turn,
                     "attempt": attempt,
                     "model": model,
-                    "system_prompt": system_prompt,
-                    "messages": messages,
-                    "tools": tools,
                     "message_count": message_count,
                     "message_bytes": message_bytes,
                     "system_prompt_tokens": system_prompt_tokens,
+                    "tool_count": tool_count,
+                    "message_stats": message_stats,
                 }
             }));
         }

@@ -62,12 +62,13 @@ pub enum RunEventPayload {
         turn: usize,
         attempt: usize,
         model: String,
-        system_prompt: String,
-        messages: Vec<serde_json::Value>,
-        tools: Vec<serde_json::Value>,
         message_count: usize,
         message_bytes: usize,
         system_prompt_tokens: usize,
+        tool_count: usize,
+        /// Pre-computed message stats by role.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message_stats: Option<LlmMessageStats>,
     },
     LlmCallCompleted {
         turn: usize,
@@ -102,6 +103,22 @@ pub enum RunEventPayload {
     Error {
         message: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// LlmMessageStats — pre-computed message breakdown by role
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmMessageStats {
+    pub user_count: usize,
+    pub assistant_count: usize,
+    pub tool_result_count: usize,
+    pub user_tokens: usize,
+    pub assistant_tokens: usize,
+    pub tool_result_tokens: usize,
+    /// Per-tool token breakdown: (name, estimated_tokens), sorted desc.
+    pub tool_details: Vec<(String, usize)>,
 }
 
 impl RunEventPayload {

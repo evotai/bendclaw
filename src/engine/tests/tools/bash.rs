@@ -342,3 +342,36 @@ async fn test_bash_without_envs_variable_is_empty() {
     // Variable not set, printf outputs empty string
     assert!(!text.contains("hello"));
 }
+
+#[test]
+fn test_preview_command_single_line_short() {
+    let tool = BashTool::new();
+    let params = serde_json::json!({"command": "echo hello"});
+    assert_eq!(tool.preview_command(&params), Some("echo hello".into()));
+}
+
+#[test]
+fn test_preview_command_multiline_truncates() {
+    let tool = BashTool::new();
+    let params = serde_json::json!({"command": "echo hello\necho world\necho done"});
+    let preview = tool.preview_command(&params).unwrap();
+    assert_eq!(preview, "echo hello…");
+}
+
+#[test]
+fn test_preview_command_long_line_truncates() {
+    let tool = BashTool::new();
+    let long = "x".repeat(200);
+    let params = serde_json::json!({"command": long});
+    let preview = tool.preview_command(&params).unwrap();
+    assert!(preview.ends_with('…'));
+    // 120 chars + "…"
+    assert_eq!(preview.chars().count(), 121);
+}
+
+#[test]
+fn test_preview_command_missing_command() {
+    let tool = BashTool::new();
+    let params = serde_json::json!({});
+    assert_eq!(tool.preview_command(&params), None);
+}

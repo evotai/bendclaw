@@ -116,7 +116,7 @@ impl AgentTool for EditFileTool {
             return Err(ToolError::Failed(format!("Error: {msg}")));
         }
 
-        let path = params["path"]
+        let path_str = params["path"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'path' parameter".into()))?;
         let old_text = params["old_text"]
@@ -127,6 +127,8 @@ impl AgentTool for EditFileTool {
             .ok_or_else(|| ToolError::InvalidArgs("missing 'new_text' parameter".into()))?;
         let replace_all = params["replace_all"].as_bool().unwrap_or(false);
 
+        let path = ctx.path_guard.resolve_path(&ctx.cwd, path_str)?;
+
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
@@ -134,12 +136,12 @@ impl AgentTool for EditFileTool {
         // Read file bytes and validate UTF-8
         let bytes = tokio::fs::read(&path).await.map_err(|e| {
             ToolError::Failed(format!(
-                "Cannot read {path}: {e}. Use write_file to create new files."
+                "Cannot read {path_str}: {e}. Use write_file to create new files."
             ))
         })?;
         let raw = String::from_utf8(bytes).map_err(|_| {
             ToolError::Failed(format!(
-                "Cannot edit {path}: only UTF-8 text files are supported."
+                "Cannot edit {path_str}: only UTF-8 text files are supported."
             ))
         })?;
 
@@ -170,7 +172,7 @@ impl AgentTool for EditFileTool {
                         .into(),
                 };
                 return Err(ToolError::Failed(format!(
-                    "old_text not found in {path}.{suffix}"
+                    "old_text not found in {path_str}.{suffix}"
                 )));
             }
             let replaced = content_lf.replace(&old_text_lf, &new_text_lf);
@@ -193,10 +195,10 @@ impl AgentTool for EditFileTool {
                                  then copy the exact text you want to replace."
                                 .into(),
                         };
-                        ToolError::Failed(format!("old_text not found in {path}.{suffix}"))
+                        ToolError::Failed(format!("old_text not found in {path_str}.{suffix}"))
                     }
                     MatchError::NotUnique { count } => ToolError::Failed(format!(
-                        "old_text matches {count} locations in {path}. \
+                        "old_text matches {count} locations in {path_str}. \
                          Include more surrounding context to make the match unique, \
                          or set replace_all to true to replace all occurrences."
                     )),
@@ -210,12 +212,12 @@ impl AgentTool for EditFileTool {
         // No-change detection
         if new_content_lf == content_lf {
             return Err(ToolError::Failed(format!(
-                "No changes made to {path}. The replacement produced identical content."
+                "No changes made to {path_str}. The replacement produced identical content."
             )));
         }
 
         // Generate diff (for details only, not sent to LLM)
-        let diff_result = diff::unified_diff(&content_lf, &new_content_lf, path);
+        let diff_result = diff::unified_diff(&content_lf, &new_content_lf, path_str);
 
         // Restore BOM + original line endings and write back
         let final_content = format!(
@@ -225,14 +227,14 @@ impl AgentTool for EditFileTool {
         );
         tokio::fs::write(&path, &final_content)
             .await
-            .map_err(|e| ToolError::Failed(format!("Cannot write {path}: {e}")))?;
+            .map_err(|e| ToolError::Failed(format!("Cannot write {path_str}: {e}")))?;
 
         Ok(ToolResult {
             content: vec![Content::Text {
-                text: format!("Updated {path}."),
+                text: format!("Updated {path_str}."),
             }],
             details: serde_json::json!({
-                "path": path,
+                "path": path_str,
                 "match_kind": match_kind,
                 "replace_all": replace_all,
                 "replacement_count": replacement_count,

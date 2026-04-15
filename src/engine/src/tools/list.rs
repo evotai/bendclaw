@@ -96,24 +96,28 @@ impl AgentTool for ListFilesTool {
         ctx: ToolContext,
     ) -> Result<ToolResult, ToolError> {
         let cancel = ctx.cancel;
-        let path = params["path"].as_str().unwrap_or(".");
+        let path_str = params["path"].as_str().unwrap_or(".");
         let pattern = params["pattern"].as_str();
         let max_depth = params["max_depth"].as_u64().unwrap_or(3);
+
+        let path = ctx
+            .path_guard
+            .resolve_optional_path(&ctx.cwd, Some(path_str))?;
 
         if cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
         // Check path exists
-        if !std::path::Path::new(path).exists() {
+        if !path.exists() {
             return Err(ToolError::Failed(format!(
                 "Directory not found: {}. Check the path and try again.",
-                path
+                path.display()
             )));
         }
 
         let mut cmd = Command::new("find");
-        cmd.arg(path);
+        cmd.arg(&path);
         cmd.args(["-maxdepth", &max_depth.to_string()]);
 
         if let Some(pat) = pattern {
@@ -150,7 +154,7 @@ impl AgentTool for ListFilesTool {
         }
 
         let text = if lines.is_empty() {
-            format!("No files found in {}", path)
+            format!("No files found in {}", path.display())
         } else if truncated {
             format!(
                 "{}\n\n... ({} files, showing first {})",

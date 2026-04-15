@@ -66,41 +66,63 @@ impl ToolMode {
     }
 }
 
+fn build_bash_tool(
+    envs: Vec<(String, String)>,
+    sandbox_dirs: Option<Vec<PathBuf>>,
+) -> Box<dyn evot_engine::AgentTool> {
+    let mut bash = BashTool::default().with_envs(envs);
+    if let Some(dirs) = sandbox_dirs {
+        bash = bash.with_sandbox_dirs(dirs);
+    }
+    Box::new(bash)
+}
+
 fn build_tools(
     mode: &ToolMode,
     envs: Vec<(String, String)>,
+    allow_bash: bool,
+    sandbox_dirs: Option<Vec<PathBuf>>,
 ) -> Vec<Box<dyn evot_engine::AgentTool>> {
     match mode {
-        ToolMode::Interactive { ask_fn } => vec![
-            Box::new(BashTool::default().with_envs(envs)),
-            Box::new(ReadFileTool::default()),
-            Box::new(WriteFileTool::new()),
-            Box::new(EditFileTool::new()),
-            Box::new(ListFilesTool::default()),
-            Box::new(SearchTool::default()),
-            Box::new(WebFetchTool::new()),
-            Box::new(AskUserTool::new(ask_fn.clone())),
-        ],
-        ToolMode::Headless => vec![
-            Box::new(BashTool::default().with_envs(envs)),
-            Box::new(ReadFileTool::default()),
-            Box::new(WriteFileTool::new()),
-            Box::new(EditFileTool::new()),
-            Box::new(ListFilesTool::default()),
-            Box::new(SearchTool::default()),
-            Box::new(WebFetchTool::new()),
-        ],
+        ToolMode::Interactive { ask_fn } => {
+            let mut t: Vec<Box<dyn evot_engine::AgentTool>> = Vec::new();
+            if allow_bash {
+                t.push(build_bash_tool(envs, sandbox_dirs));
+            }
+            t.push(Box::new(ReadFileTool::default()));
+            t.push(Box::new(WriteFileTool::new()));
+            t.push(Box::new(EditFileTool::new()));
+            t.push(Box::new(ListFilesTool::default()));
+            t.push(Box::new(SearchTool::default()));
+            t.push(Box::new(WebFetchTool::new()));
+            t.push(Box::new(AskUserTool::new(ask_fn.clone())));
+            t
+        }
+        ToolMode::Headless => {
+            let mut t: Vec<Box<dyn evot_engine::AgentTool>> = Vec::new();
+            if allow_bash {
+                t.push(build_bash_tool(envs, sandbox_dirs));
+            }
+            t.push(Box::new(ReadFileTool::default()));
+            t.push(Box::new(WriteFileTool::new()));
+            t.push(Box::new(EditFileTool::new()));
+            t.push(Box::new(ListFilesTool::default()));
+            t.push(Box::new(SearchTool::default()));
+            t.push(Box::new(WebFetchTool::new()));
+            t
+        }
         ToolMode::Planning { ask_fn } => {
             let msg = "Not allowed in planning mode. Use /act to switch.";
-            let mut t: Vec<Box<dyn evot_engine::AgentTool>> = vec![
-                Box::new(BashTool::default().with_envs(envs)),
-                Box::new(ReadFileTool::default()),
-                Box::new(WriteFileTool::new().disallow(msg)),
-                Box::new(EditFileTool::new().disallow(msg)),
-                Box::new(ListFilesTool::default()),
-                Box::new(SearchTool::default()),
-                Box::new(WebFetchTool::new()),
-            ];
+            let mut t: Vec<Box<dyn evot_engine::AgentTool>> = Vec::new();
+            if allow_bash {
+                t.push(build_bash_tool(envs, sandbox_dirs));
+            }
+            t.push(Box::new(ReadFileTool::default()));
+            t.push(Box::new(WriteFileTool::new().disallow(msg)));
+            t.push(Box::new(EditFileTool::new().disallow(msg)));
+            t.push(Box::new(ListFilesTool::default()));
+            t.push(Box::new(SearchTool::default()));
+            t.push(Box::new(WebFetchTool::new()));
             if let Some(f) = ask_fn {
                 t.push(Box::new(AskUserTool::new(f.clone())));
             }
@@ -195,6 +217,7 @@ pub struct Agent {
     cwd: String,
     storage: RwLock<Arc<dyn Storage>>,
     variables: RwLock<Option<Arc<Variables>>>,
+    sandbox: super::sandbox::SandboxPolicy,
 }
 
 impl Agent {
@@ -210,6 +233,7 @@ impl Agent {
             cwd,
             storage: RwLock::new(storage),
             variables: RwLock::new(None),
+            sandbox: super::sandbox::SandboxPolicy::from_config(&config.sandbox),
         }))
     }
 
@@ -242,7 +266,10 @@ impl Agent {
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
             let claude_dir = PathBuf::from(home).join(".claude").join("skills");
             if claude_dir.is_dir() {
-                self.skills_dirs.write().push(claude_dir);
+                let mut dirs = self.skills_dirs.write();
+                if !dirs.contains(&claude_dir) {
+                    dirs.push(claude_dir);
+                }
             }
         }
         Arc::clone(self)
@@ -334,6 +361,7 @@ impl Agent {
             cwd,
             storage: _,
             variables: _,
+            sandbox,
         } = self.as_ref();
 
         let forked = Arc::new(Self {
@@ -344,6 +372,10 @@ impl Agent {
             cwd: cwd.clone(),
             storage: RwLock::new(Arc::new(MemoryStorage::new())),
             variables: RwLock::new(None),
+            sandbox: super::sandbox::SandboxPolicy {
+                enabled: sandbox.enabled,
+                extra_dirs: sandbox.extra_dirs.clone(),
+            },
         });
         Ok(ForkedAgent {
             agent: forked,
@@ -398,6 +430,20 @@ impl Agent {
             }
         }
 
+        if self.sandbox.enabled {
+            prompt.push_str(
+                "\n\n# Sandbox Mode\n\
+                 You are running in a sandboxed environment with OS-level filesystem restrictions.\n\
+                 - File access is restricted to the project workspace and explicitly allowed directories.\n\
+                 - The user's home directory ($HOME) is NOT accessible except for allowed paths.\n\
+                 - Do NOT attempt to install packages (pip install, brew install, curl | sh, etc.) — \
+                 they will fail with \"Operation not permitted\".\n\
+                 - Do NOT retry commands that fail with permission errors — the restriction is \
+                 enforced by the kernel and cannot be bypassed.\n\
+                 - Use only tools and binaries already available on PATH.",
+            );
+        }
+
         prompt
     }
 
@@ -432,7 +478,20 @@ impl Agent {
             .variables()
             .map(|v| v.all_env_pairs())
             .unwrap_or_default();
-        let mut tools = build_tools(&request.mode, envs);
+        // Build path guard from sandbox policy
+        let cwd_path = std::path::Path::new(&self.cwd);
+        let memory_dirs = super::prompt::memory::resolve_memory_dirs(&self.cwd);
+        let skill_dirs = self.skills_dirs.read().clone();
+        let sandbox_rt = self
+            .sandbox
+            .build_runtime(cwd_path, &memory_dirs, &skill_dirs)?;
+
+        let mut tools = build_tools(
+            &request.mode,
+            envs,
+            sandbox_rt.allow_bash,
+            sandbox_rt.bash_sandbox_dirs,
+        );
 
         if !request.mode.is_readonly() {
             if let Some(mt) = super::prompt::memory::load_memory_tool(&self.cwd) {
@@ -458,9 +517,11 @@ impl Agent {
                 base_url: llm.base_url,
                 system_prompt,
                 limits: self.limits.read().clone(),
-                skills_dirs: self.skills_dirs.read().clone(),
+                skills_dirs: skill_dirs,
                 tools,
                 thinking_level: llm.thinking_level,
+                cwd: cwd_path.to_path_buf(),
+                path_guard: sandbox_rt.path_guard,
             },
             prior_messages,
             prompt: request.prompt.clone(),

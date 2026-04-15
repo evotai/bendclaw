@@ -10,6 +10,8 @@ mod disallow;
 mod edit;
 #[path = "tools/file.rs"]
 mod file;
+#[path = "tools/guard.rs"]
+mod guard;
 #[path = "tools/list.rs"]
 mod list;
 #[path = "tools/memory.rs"]
@@ -25,6 +27,8 @@ mod validation;
 #[path = "tools/web_fetch.rs"]
 mod web_fetch;
 
+use std::sync::Arc;
+
 use evotengine::types::*;
 use tokio_util::sync::CancellationToken;
 
@@ -36,6 +40,8 @@ pub fn ctx(name: &str) -> ToolContext {
         cancel: CancellationToken::new(),
         on_update: None,
         on_progress: None,
+        cwd: std::path::PathBuf::new(),
+        path_guard: Arc::new(evotengine::PathGuard::open()),
     }
 }
 
@@ -46,5 +52,7 @@ pub fn ctx_with_cancel(name: &str, cancel: CancellationToken) -> ToolContext {
         cancel,
         on_update: None,
         on_progress: None,
+        cwd: std::path::PathBuf::new(),
+        path_guard: Arc::new(evotengine::PathGuard::open()),
     }
 }

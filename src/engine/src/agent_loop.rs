@@ -490,6 +490,8 @@ async fn run_loop(
                     cancel,
                     config.get_steering_messages.as_ref(),
                     &config.tool_execution,
+                    &context.cwd,
+                    &context.path_guard,
                 )
                 .await;
 
@@ -899,6 +901,7 @@ fn all_concurrency_safe(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_tool_calls(
     tools: &[Box<dyn AgentTool>],
     tool_calls: &[(String, String, serde_json::Value)],
@@ -906,16 +909,19 @@ async fn execute_tool_calls(
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
     strategy: &ToolExecutionStrategy,
+    cwd: &std::path::Path,
+    path_guard: &Arc<crate::tools::guard::PathGuard>,
 ) -> ToolExecutionResult {
     match strategy {
         ToolExecutionStrategy::Sequential => {
-            execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
+            execute_sequential(tools, tool_calls, tx, cancel, get_steering, cwd, path_guard).await
         }
         ToolExecutionStrategy::Parallel => {
             if all_concurrency_safe(tools, tool_calls) {
-                execute_batch(tools, tool_calls, tx, cancel, get_steering).await
+                execute_batch(tools, tool_calls, tx, cancel, get_steering, cwd, path_guard).await
             } else {
-                execute_sequential(tools, tool_calls, tx, cancel, get_steering).await
+                execute_sequential(tools, tool_calls, tx, cancel, get_steering, cwd, path_guard)
+                    .await
             }
         }
         ToolExecutionStrategy::Batched { size } => {
@@ -924,9 +930,9 @@ async fn execute_tool_calls(
 
             for (batch_idx, batch) in tool_calls.chunks(*size).enumerate() {
                 let batch_result = if all_concurrency_safe(tools, batch) {
-                    execute_batch(tools, batch, tx, cancel, None).await
+                    execute_batch(tools, batch, tx, cancel, None, cwd, path_guard).await
                 } else {
-                    execute_sequential(tools, batch, tx, cancel, None).await
+                    execute_sequential(tools, batch, tx, cancel, None, cwd, path_guard).await
                 };
                 results.extend(batch_result.tool_results);
 
@@ -962,12 +968,15 @@ async fn execute_sequential(
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
+    cwd: &std::path::Path,
+    path_guard: &Arc<crate::tools::guard::PathGuard>,
 ) -> ToolExecutionResult {
     let mut results: Vec<Message> = Vec::new();
     let mut steering_messages: Option<Vec<AgentMessage>> = None;
 
     for (index, (id, name, args)) in tool_calls.iter().enumerate() {
-        let (result_msg, _is_error) = execute_single_tool(tools, id, name, args, tx, cancel).await;
+        let (result_msg, _is_error) =
+            execute_single_tool(tools, id, name, args, tx, cancel, cwd, path_guard).await;
         results.push(result_msg);
 
         // Check for steering — skip remaining tools if user interrupted
@@ -996,12 +1005,16 @@ async fn execute_batch(
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
+    cwd: &std::path::Path,
+    path_guard: &Arc<crate::tools::guard::PathGuard>,
 ) -> ToolExecutionResult {
     use futures::future::join_all;
 
     let futures: Vec<_> = tool_calls
         .iter()
-        .map(|(id, name, args)| execute_single_tool(tools, id, name, args, tx, cancel))
+        .map(|(id, name, args)| {
+            execute_single_tool(tools, id, name, args, tx, cancel, cwd, path_guard)
+        })
         .collect();
 
     let batch_results = join_all(futures).await;
@@ -1027,6 +1040,7 @@ async fn execute_batch(
 }
 
 /// Execute a single tool call and emit events.
+#[allow(clippy::too_many_arguments)]
 async fn execute_single_tool(
     tools: &[Box<dyn AgentTool>],
     id: &str,
@@ -1034,6 +1048,8 @@ async fn execute_single_tool(
     args: &serde_json::Value,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
+    cwd: &std::path::Path,
+    path_guard: &Arc<crate::tools::guard::PathGuard>,
 ) -> (Message, bool) {
     let tool = tools.iter().find(|t| t.name() == name);
 
@@ -1083,6 +1099,8 @@ async fn execute_single_tool(
         cancel: cancel.child_token(),
         on_update,
         on_progress,
+        cwd: cwd.to_path_buf(),
+        path_guard: path_guard.clone(),
     };
 
     let (result, is_error) = match tool {

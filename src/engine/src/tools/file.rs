@@ -41,15 +41,12 @@ fn get_image_mime_type(path: &Path) -> Option<&'static str> {
 pub struct ReadFileTool {
     /// Max file size to read (prevents OOM)
     pub max_bytes: usize,
-    /// Allowed directory roots (empty = no restriction)
-    pub allowed_paths: Vec<String>,
 }
 
 impl Default for ReadFileTool {
     fn default() -> Self {
         Self {
             max_bytes: 1024 * 1024, // 1MB
-            allowed_paths: Vec::new(),
         }
     }
 }
@@ -124,40 +121,41 @@ impl AgentTool for ReadFileTool {
         params: serde_json::Value,
         ctx: ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        let path = params["path"]
+        let path_str = params["path"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'path' parameter".into()))?;
+
+        let path = ctx.path_guard.resolve_path(&ctx.cwd, path_str)?;
 
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
         // Check file exists and size
-        let metadata = tokio::fs::metadata(path)
+        let metadata = tokio::fs::metadata(&path)
             .await
-            .map_err(|e| ToolError::Failed(format!("Cannot access {}: {}", path, e)))?;
+            .map_err(|e| ToolError::Failed(format!("Cannot access {}: {}", path.display(), e)))?;
 
         // Handle image files: read as binary, return base64-encoded Content::Image
-        let file_path = Path::new(path);
-        if is_image_file(file_path) {
+        if is_image_file(&path) {
             if metadata.len() > MAX_IMAGE_SIZE_BYTES {
                 return Err(ToolError::Failed(format!(
                     "Image too large ({}MB, max 20MB)",
                     metadata.len() / (1024 * 1024)
                 )));
             }
-            let mime_type = get_image_mime_type(file_path)
+            let mime_type = get_image_mime_type(&path)
                 .ok_or_else(|| ToolError::Failed("Unknown image format".into()))?;
-            let bytes = tokio::fs::read(path)
+            let bytes = tokio::fs::read(&path)
                 .await
-                .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path, e)))?;
+                .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path.display(), e)))?;
             let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
             return Ok(ToolResult {
                 content: vec![Content::Image {
                     data,
                     mime_type: mime_type.to_string(),
                 }],
-                details: serde_json::json!({ "path": path, "bytes": bytes.len() }),
+                details: serde_json::json!({ "path": path_str, "bytes": bytes.len() }),
                 retention: Retention::Normal,
             });
         }
@@ -171,9 +169,9 @@ impl AgentTool for ReadFileTool {
             )));
         }
 
-        let content = tokio::fs::read_to_string(path)
+        let content = tokio::fs::read_to_string(&path)
             .await
-            .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path, e)))?;
+            .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path.display(), e)))?;
 
         let offset = params["offset"].as_u64().map(|v| v.max(1) as usize);
         let limit = params["limit"].as_u64().map(|v| v as usize);
@@ -211,7 +209,7 @@ impl AgentTool for ReadFileTool {
 
         Ok(ToolResult {
             content: vec![Content::Text { text: output }],
-            details: serde_json::json!({ "path": path }),
+            details: serde_json::json!({ "path": path_str }),
             retention: Retention::Normal,
         })
     }
@@ -302,22 +300,24 @@ impl AgentTool for WriteFileTool {
             return Err(ToolError::Failed(format!("Error: {msg}")));
         }
 
-        let path = params["path"]
+        let path_str = params["path"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'path' parameter".into()))?;
         let content = params["content"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'content' parameter".into()))?;
 
+        let path = ctx.path_guard.resolve_path(&ctx.cwd, path_str)?;
+
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
         // Read old content before writing (for diff display)
-        let old_content = tokio::fs::read_to_string(path).await.ok();
+        let old_content = tokio::fs::read_to_string(&path).await.ok();
 
         // Create parent directories
-        if let Some(parent) = std::path::Path::new(path).parent() {
+        if let Some(parent) = path.parent() {
             if !parent.exists() {
                 tokio::fs::create_dir_all(parent)
                     .await
@@ -325,20 +325,20 @@ impl AgentTool for WriteFileTool {
             }
         }
 
-        tokio::fs::write(path, content)
+        tokio::fs::write(&path, content)
             .await
-            .map_err(|e| ToolError::Failed(format!("Cannot write {}: {}", path, e)))?;
+            .map_err(|e| ToolError::Failed(format!("Cannot write {}: {}", path.display(), e)))?;
 
         let bytes = content.len();
         let existed = old_content.is_some();
         let old = old_content.as_deref().unwrap_or("");
-        let diff_result = diff::unified_diff(old, content, path);
+        let diff_result = diff::unified_diff(old, content, path_str);
         Ok(ToolResult {
             content: vec![Content::Text {
-                text: format!("Wrote {} bytes to {}", bytes, path),
+                text: format!("Wrote {} bytes to {}", bytes, path_str),
             }],
             details: serde_json::json!({
-                "path": path,
+                "path": path_str,
                 "bytes": bytes,
                 "created": !existed,
                 "diff": diff_result.unified,

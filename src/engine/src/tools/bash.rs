@@ -4,6 +4,7 @@ use crate::types::*;
 
 /// Type alias for command confirmation callback.
 pub type ConfirmFn = Box<dyn Fn(&str) -> bool + Send + Sync>;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -27,6 +28,10 @@ pub struct BashTool {
     pub confirm_fn: Option<ConfirmFn>,
     /// Environment variables injected into every bash subprocess.
     pub envs: Vec<(String, String)>,
+    /// Directories the OS sandbox allows the child process to access.
+    /// When set, OS-level sandbox (Seatbelt/Landlock) is applied before exec.
+    /// Separate from PathGuard — may include toolchain dirs that file tools should not access.
+    pub sandbox_dirs: Option<Vec<PathBuf>>,
 }
 
 impl Default for BashTool {
@@ -44,6 +49,7 @@ impl Default for BashTool {
             ],
             confirm_fn: None,
             envs: Vec::new(),
+            sandbox_dirs: None,
         }
     }
 }
@@ -75,6 +81,11 @@ impl BashTool {
 
     pub fn with_envs(mut self, envs: impl IntoIterator<Item = (String, String)>) -> Self {
         self.envs = envs.into_iter().collect();
+        self
+    }
+
+    pub fn with_sandbox_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.sandbox_dirs = Some(dirs);
         self
     }
 }
@@ -256,6 +267,12 @@ impl AgentTool for BashTool {
 
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
+
+        // Apply OS-level sandbox if sandbox_dirs is set
+        if let Some(ref dirs) = self.sandbox_dirs {
+            super::sandbox::wrap_command(&mut cmd, dirs)
+                .map_err(|e| ToolError::Failed(format!("Sandbox setup failed: {e}")))?;
+        }
 
         let timeout = self.timeout;
         let max_bytes = self.max_output_bytes;
@@ -449,6 +466,20 @@ impl AgentTool for BashTool {
                 "Exit code: {}\nSTDOUT:\n{}\nSTDERR:\n{}",
                 exit_code, stdout, stderr
             )
+        };
+
+        // Append sandbox hint when command fails with permission errors
+        let output = if self.sandbox_dirs.is_some()
+            && exit_code != 0
+            && (stderr.contains("Operation not permitted") || stderr.contains("Permission denied"))
+        {
+            format!(
+                "{output}\n\n[Sandbox] This command failed due to OS-level sandbox restrictions. \
+                 File access is limited to the allowed directories. \
+                 Do not retry — the restriction is enforced by the kernel."
+            )
+        } else {
+            output
         };
 
         // Return output even on failure — LLMs need error output to self-correct

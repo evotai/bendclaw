@@ -70,6 +70,8 @@ async fn test_abort_cancels_loop() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("Hi"));
@@ -220,6 +222,8 @@ async fn test_parallel_tool_execution_faster_than_sequential() {
                 delay_ms: 50,
             }),
         ],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("Run all tools"));
@@ -291,6 +295,8 @@ async fn test_sequential_tool_execution_is_slower() {
                 delay_ms: 50,
             }),
         ],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("Run tools"));
@@ -358,6 +364,8 @@ async fn test_batched_tool_execution() {
                 delay_ms: 50,
             }),
         ],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("Run all tools"));
@@ -449,6 +457,8 @@ async fn test_tool_execution_update_events_emitted() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(ProgressTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -557,6 +567,8 @@ async fn test_retry_on_rate_limit_succeeds() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -618,6 +630,8 @@ async fn test_retry_exhausted_returns_error() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -686,6 +700,8 @@ async fn test_retry_on_auth_error_succeeds() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -745,6 +761,8 @@ async fn test_retry_none_disables_retries() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -859,6 +877,8 @@ async fn test_before_turn_can_abort() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(ProgressTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -901,6 +921,8 @@ async fn test_after_turn_receives_messages() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(ProgressTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -933,6 +955,8 @@ async fn test_error_event_fires_on_provider_error() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -1022,6 +1046,8 @@ async fn test_progress_message_event_emitted() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(ProgressMessageTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -1096,6 +1122,8 @@ async fn test_tool_ignoring_progress_no_panic() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(SilentTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -1178,6 +1206,8 @@ async fn test_parallel_tools_progress_distinguishable() {
                 tool_name: "pb".into(),
             }),
         ],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -1219,6 +1249,8 @@ async fn test_on_update_still_works_after_refactor() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: vec![Box::new(ProgressTool)],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("go"));
@@ -1381,6 +1413,8 @@ async fn test_filter_chain_first_reject_wins() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("Bad"));
@@ -1450,6 +1484,8 @@ async fn test_filter_non_text_content_only_text_extracted() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::User {
@@ -1579,6 +1615,8 @@ async fn test_custom_compaction_strategy_is_called() {
         system_prompt: String::new(),
         messages: vec![],
         tools: vec![],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let (tx, _rx) = mpsc::unbounded_channel();
@@ -1653,6 +1691,8 @@ async fn test_none_compaction_strategy_uses_default() {
         system_prompt: String::new(),
         messages: vec![],
         tools: vec![],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let (tx, _rx) = mpsc::unbounded_channel();
@@ -1863,6 +1903,8 @@ async fn test_empty_response_retried_then_succeeds() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));
@@ -1935,6 +1977,8 @@ async fn test_empty_response_exhausts_retries() {
         system_prompt: "test".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("hi"));

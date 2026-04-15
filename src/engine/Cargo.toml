@@ -55,3 +55,6 @@ proptest = "1"
 
 [lints.clippy]
 module_inception = "allow"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"

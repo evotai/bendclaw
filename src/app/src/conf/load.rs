@@ -32,6 +32,8 @@ const RELEVANT_KEYS: &[&str] = &[
     "EVOT_CHANNEL_FEISHU_APP_ID",
     "EVOT_CHANNEL_FEISHU_APP_SECRET",
     "EVOT_CHANNEL_FEISHU_MENTION_ONLY",
+    "EVOT_SANDBOX",
+    "EVOT_SANDBOX_ALLOWED_DIRS",
 ];
 
 fn optional_string(value: String) -> Option<String> {
@@ -52,6 +54,7 @@ struct ConfigSource {
     storage: StorageSource,
     thinking_level: Option<String>,
     channel: ChannelSource,
+    sandbox: SandboxSource,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -101,6 +104,13 @@ struct CloudStorageSource {
     endpoint: Option<String>,
     api_key: Option<String>,
     workspace: Option<String>,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+struct SandboxSource {
+    enabled: Option<bool>,
+    allowed_dirs: Option<Vec<String>>,
 }
 
 impl ConfigSource {
@@ -160,6 +170,17 @@ impl ConfigSource {
             config.channels = ChannelsConfig {
                 feishu: self.channel.feishu,
             };
+        }
+
+        if let Some(enabled) = self.sandbox.enabled {
+            config.sandbox.enabled = enabled;
+        }
+        if let Some(dirs) = self.sandbox.allowed_dirs {
+            let mut expanded = Vec::new();
+            for d in dirs {
+                expanded.push(paths::expand_home_path(&d)?);
+            }
+            config.sandbox.allowed_dirs = expanded;
         }
 
         Ok(())
@@ -323,6 +344,23 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
             mention_only,
             allow_from: Vec::new(),
         });
+    }
+
+    // Sandbox
+    if let Some(val) = vars.get("EVOT_SANDBOX") {
+        config.sandbox.enabled = val == "true" || val == "1";
+    }
+    if let Some(val) = vars.get("EVOT_SANDBOX_ALLOWED_DIRS") {
+        let mut dirs = Vec::new();
+        for d in val.split(':') {
+            let d = d.trim();
+            if !d.is_empty() {
+                dirs.push(paths::expand_home_path(d)?);
+            }
+        }
+        if !dirs.is_empty() {
+            config.sandbox.allowed_dirs = dirs;
+        }
     }
 
     Ok(())

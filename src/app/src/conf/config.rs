@@ -17,6 +17,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub storage: StorageConfig,
     pub channels: ChannelsConfig,
+    pub sandbox: SandboxConfig,
 }
 
 impl Config {
@@ -28,6 +29,7 @@ impl Config {
             server: ServerConfig::default(),
             storage: StorageConfig::fs(state_root),
             channels: ChannelsConfig::default(),
+            sandbox: SandboxConfig::default(),
         }
     }
 
@@ -256,4 +258,10 @@ pub fn default_config() -> Result<Config> {
 #[derive(Debug, Clone, Default)]
 pub struct ChannelsConfig {
     pub feishu: Option<FeishuChannelConfig>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SandboxConfig {
+    pub enabled: bool,
+    pub allowed_dirs: Vec<PathBuf>,
 }

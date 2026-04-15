@@ -1,10 +1,12 @@
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::provider::ToolDefinition;
+use crate::tools::guard::PathGuard;
 
 // ---------------------------------------------------------------------------
 // Retention
@@ -352,6 +354,10 @@ pub struct ToolContext {
     pub on_update: Option<ToolUpdateFn>,
     /// Optional callback for emitting user-facing progress messages.
     pub on_progress: Option<ProgressFn>,
+    /// Working directory for path resolution.
+    pub cwd: PathBuf,
+    /// Path access guard — restricts file tools to allowed directories.
+    pub path_guard: Arc<PathGuard>,
 }
 
 impl Clone for ToolContext {
@@ -362,6 +368,8 @@ impl Clone for ToolContext {
             cancel: self.cancel.clone(),
             on_update: self.on_update.clone(),
             on_progress: self.on_progress.clone(),
+            cwd: self.cwd.clone(),
+            path_guard: self.path_guard.clone(),
         }
     }
 }
@@ -377,6 +385,8 @@ impl std::fmt::Debug for ToolContext {
                 "on_progress",
                 &self.on_progress.as_ref().map(|_| "<callback>"),
             )
+            .field("cwd", &self.cwd)
+            .field("path_guard", &self.path_guard)
             .finish()
     }
 }
@@ -586,6 +596,8 @@ pub struct AgentContext {
     pub system_prompt: String,
     pub messages: Vec<AgentMessage>,
     pub tools: Vec<Box<dyn AgentTool>>,
+    pub cwd: PathBuf,
+    pub path_guard: Arc<PathGuard>,
 }
 
 // ---------------------------------------------------------------------------

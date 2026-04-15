@@ -85,6 +85,8 @@ async fn test_anthropic_simple_text() {
         system_prompt: "Reply with exactly one word.".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user("What color is the sky?"));
@@ -146,6 +148,8 @@ async fn test_anthropic_tool_use() {
             Box::new(tools::SearchTool::default()),
             Box::new(tools::WebFetchTool::new()),
         ],
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     let prompt = AgentMessage::Llm(Message::user(
@@ -206,6 +210,8 @@ async fn test_anthropic_multi_turn() {
         system_prompt: "Reply with exactly one word.".into(),
         messages: Vec::new(),
         tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     };
 
     // Turn 1

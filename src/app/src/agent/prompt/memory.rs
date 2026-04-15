@@ -34,6 +34,15 @@ pub fn load_memory_tool(cwd: &str) -> Option<MemoryTool> {
     Some(MemoryTool::new(paths.global_dir, paths.project_dir))
 }
 
+/// Return the memory directories for sandbox allowlist purposes.
+/// Returns an empty vec if the home directory cannot be determined.
+pub fn resolve_memory_dirs(cwd: &str) -> Vec<PathBuf> {
+    match resolve_paths(cwd) {
+        Some(paths) => vec![paths.global_dir, paths.project_dir],
+        None => Vec::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // System prompt section builders
 // ---------------------------------------------------------------------------

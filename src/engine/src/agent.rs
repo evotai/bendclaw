@@ -1,6 +1,7 @@
 //! Stateful Agent struct — wraps the agent loop with state management,
 //! steering/follow-up queues, and abort support.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -18,6 +19,7 @@ use crate::context::ContextConfig;
 use crate::context::ExecutionLimits;
 use crate::provider::ModelConfig;
 use crate::provider::StreamProvider;
+use crate::tools::guard::PathGuard;
 use crate::types::*;
 
 /// Queue mode for steering and follow-up messages
@@ -42,6 +44,10 @@ pub struct Agent {
     messages: Vec<AgentMessage>,
     tools: Vec<Box<dyn AgentTool>>,
     provider: Arc<dyn StreamProvider>,
+
+    // Sandbox
+    cwd: PathBuf,
+    path_guard: Arc<PathGuard>,
 
     // Queues (shared with the loop via Arc<Mutex>)
     steering_queue: Arc<Mutex<Vec<AgentMessage>>>,
@@ -89,6 +95,8 @@ impl Agent {
             messages: Vec::new(),
             tools: Vec::new(),
             provider: Arc::new(provider),
+            cwd: PathBuf::new(),
+            path_guard: Arc::new(PathGuard::open()),
             steering_queue: Arc::new(Mutex::new(Vec::new())),
             follow_up_queue: Arc::new(Mutex::new(Vec::new())),
             steering_mode: QueueMode::OneAtATime,
@@ -133,6 +141,16 @@ impl Agent {
 
     pub fn with_tools(mut self, tools: Vec<Box<dyn AgentTool>>) -> Self {
         self.tools = tools;
+        self
+    }
+
+    pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
+        self.cwd = cwd.into();
+        self
+    }
+
+    pub fn with_path_guard(mut self, guard: Arc<PathGuard>) -> Self {
+        self.path_guard = guard;
         self
     }
 
@@ -374,6 +392,8 @@ impl Agent {
             system_prompt: self.system_prompt.clone(),
             messages: self.messages.clone(),
             tools: std::mem::take(&mut self.tools),
+            cwd: self.cwd.clone(),
+            path_guard: self.path_guard.clone(),
         };
 
         let config = self.build_config();
@@ -441,6 +461,8 @@ impl Agent {
             system_prompt: self.system_prompt.clone(),
             messages: self.messages.clone(),
             tools: std::mem::take(&mut self.tools),
+            cwd: self.cwd.clone(),
+            path_guard: self.path_guard.clone(),
         };
 
         let config = self.build_config();

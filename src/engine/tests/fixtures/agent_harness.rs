@@ -239,6 +239,8 @@ impl TestHarness {
             system_prompt: self.system_prompt,
             messages: self.prior_messages,
             tools: self.tools,
+            cwd: std::path::PathBuf::new(),
+            path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
         };
 
         let prompt_msg = AgentMessage::Llm(Message::user(prompt));
@@ -285,6 +287,8 @@ impl TestHarness {
             system_prompt: self.system_prompt,
             messages: self.prior_messages,
             tools: self.tools,
+            cwd: std::path::PathBuf::new(),
+            path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
         };
 
         let (tx, rx) = mpsc::unbounded_channel();

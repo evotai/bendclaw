@@ -126,7 +126,7 @@ impl AgentTool for SearchTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'pattern' parameter".into()))?;
 
-        let search_path = params["path"]
+        let search_path_str = params["path"]
             .as_str()
             .map(|s| s.to_string())
             .or_else(|| self.root.clone())
@@ -135,15 +135,20 @@ impl AgentTool for SearchTool {
         let include = params["include"].as_str();
         let case_sensitive = params["case_sensitive"].as_bool().unwrap_or(false);
 
+        let search_path = ctx
+            .path_guard
+            .resolve_optional_path(&ctx.cwd, Some(&search_path_str))?;
+
         if cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
         // Try ripgrep first, fall back to grep
+        let search_path_resolved = search_path.to_string_lossy();
         let (cmd_name, args) = if which_exists("rg") {
             build_rg_args(
                 pattern,
-                &search_path,
+                &search_path_resolved,
                 include,
                 case_sensitive,
                 self.max_results,
@@ -151,7 +156,7 @@ impl AgentTool for SearchTool {
         } else {
             build_grep_args(
                 pattern,
-                &search_path,
+                &search_path_resolved,
                 include,
                 case_sensitive,
                 self.max_results,

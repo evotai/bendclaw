@@ -124,6 +124,8 @@ fn make_ctx() -> ToolContext {
         cancel: CancellationToken::new(),
         on_update: None,
         on_progress: None,
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
     }
 }
 

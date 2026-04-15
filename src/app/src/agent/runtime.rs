@@ -45,6 +45,8 @@ pub struct EngineOptions {
     pub skills_dirs: Vec<std::path::PathBuf>,
     pub tools: Vec<Box<dyn evot_engine::AgentTool>>,
     pub thinking_level: evot_engine::ThinkingLevel,
+    pub cwd: std::path::PathBuf,
+    pub path_guard: std::sync::Arc<evot_engine::PathGuard>,
 }
 
 /// Handle to a running engine instance.
@@ -753,6 +755,8 @@ pub(crate) fn build_agent(
         .with_messages(prior_messages)
         .with_execution_limits(limits)
         .with_tools(options.tools)
+        .with_cwd(options.cwd)
+        .with_path_guard(options.path_guard)
         .with_skills(skills)
         .with_thinking(options.thinking_level)
 }

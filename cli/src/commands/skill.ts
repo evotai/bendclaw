@@ -89,12 +89,27 @@ export async function skillInstall(
   const tempDir = mkdtempSync(join(tmpdir(), 'evot-skill-'))
 
   try {
-    const cloneResult = Bun.spawnSync(['gh', 'repo', 'clone', parsed.repo, tempDir, '--', '--depth=1'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    if (cloneResult.exitCode !== 0) {
-      throw new Error(`gh repo clone failed: ${cloneResult.stderr.toString()}`)
+    // Download repo tarball via GitHub API (avoids git-remote-https issues)
+    const gitRef = parsed.gitRef ?? 'main'
+    const tarFile = join(tempDir, 'repo.tar.gz')
+    const ghToken = Bun.spawnSync(['gh', 'auth', 'token'], { stdout: 'pipe', stderr: 'pipe' })
+    const token = ghToken.exitCode === 0 ? ghToken.stdout.toString().trim() : ''
+    const headers: string[] = token
+      ? ['-H', `Authorization: token ${token}`, '-H', 'Accept: application/vnd.github+json']
+      : ['-H', 'Accept: application/vnd.github+json']
+    const download = Bun.spawnSync(
+      ['curl', '-fsSL', ...headers, '-o', tarFile, `https://api.github.com/repos/${parsed.repo}/tarball/${gitRef}`],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    if (download.exitCode !== 0) {
+      throw new Error(`failed to download repo: ${download.stderr.toString()}`)
+    }
+    const extract = Bun.spawnSync(
+      ['tar', 'xzf', tarFile, '--strip-components=1', '-C', tempDir],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    if (extract.exitCode !== 0) {
+      throw new Error(`failed to extract tarball: ${extract.stderr.toString()}`)
     }
 
     // Determine source dir

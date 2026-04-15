@@ -210,7 +210,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
           - target: aarch64-apple-darwin
             os: macos-latest
     steps:
@@ -243,6 +243,8 @@ jobs:
           cd cli
           bun install
           npx napi build --manifest-path ../src/napi/Cargo.toml --release --platform --target ${{ matrix.target }} --output-dir .
+        env:
+          EVOT_VERSION: ${{ needs.create_release.outputs.version }}
 
       - name: Build CLI binary
         shell: bash

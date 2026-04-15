@@ -373,15 +373,14 @@ export const PromptInput = React.memo(function PromptInput({
       const normalized = ch.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       const pastedLines = normalized.split('\n')
 
-      // Collapse large pastes into a placeholder to avoid terminal
-      // rendering jitter. Full content is stored in pastedChunksRef
-      // and expanded back on submit via currentText().
-      const PASTE_CHAR_THRESHOLD = 1000
-      const PASTE_LINE_THRESHOLD = 3
-      const numLines = (normalized.match(/\n/g) || []).length
+      // Collapse multi-line pastes into a placeholder to avoid terminal
+      // rendering jitter and keep history navigation working (up/down arrows
+      // only navigate history when lines.length === 1).
+      const PASTE_LINE_THRESHOLD = 2
 
-      if (pastedLines.length > 1 && (normalized.length > PASTE_CHAR_THRESHOLD || numLines > PASTE_LINE_THRESHOLD)) {
+      if (pastedLines.length > PASTE_LINE_THRESHOLD) {
         const id = nextPasteIdRef.current++
+        const numLines = (normalized.match(/\n/g) || []).length
         pastedChunksRef.current.set(id, normalized)
         const ref = numLines === 0
           ? `[Pasted text #${id}]`

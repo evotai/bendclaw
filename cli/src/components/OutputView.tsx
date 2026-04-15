@@ -59,7 +59,7 @@ function OutputLineView({ line, prevKind }: { line: OutputLine; prevKind?: strin
     case 'tool_result':
       return (
         <Box>
-          <Text color="green">{line.text}</Text>
+          <Text color="gray">{line.text}</Text>
         </Box>
       )
     case 'verbose':

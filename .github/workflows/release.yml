@@ -203,6 +203,7 @@ jobs:
     needs: create_release
     if: github.ref_name == 'main'
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -281,7 +282,7 @@ jobs:
     name: Publish release (undraft)
     runs-on: ubuntu-latest
     needs: [create_release, build]
-    if: github.ref_name == 'main' && needs.build.result == 'success'
+    if: github.ref_name == 'main' && !cancelled() && needs.build.result != 'cancelled'
     steps:
       - name: Publish release
         shell: bash

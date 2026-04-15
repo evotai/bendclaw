@@ -42,11 +42,11 @@ export function formatToken(
       const inner = (token.tokens ?? [])
         .map(t => formatToken(t, 0, null, null))
         .join('')
-      const bar = chalk.yellow('▎')
+      const bar = chalk.dim('▎')
       return inner
         .split(EOL)
         .map(line =>
-          stripAnsi(line).trim() ? `${bar} ${chalk.italic.dim(line)}` : line,
+          stripAnsi(line).trim() ? `${bar} ${chalk.italic(line)}` : line,
         )
         .join(EOL)
     }
@@ -69,27 +69,13 @@ export function formatToken(
           // fallback
         }
       }
-      // Wrap code block with border and optional language label
-      const codeLines = highlighted.split(EOL)
-      const maxLen = Math.max(...codeLines.map(l => stringWidth(stripAnsi(l))), 0)
-      const width = Math.max(maxLen, 40)
-      const langWidth = lang ? stringWidth(lang) : 0
-      const header = lang
-        ? chalk.dim(`┌─ ${lang} ${'─'.repeat(Math.max(0, width - langWidth - 3))}┐`)
-        : chalk.dim(`┌${'─'.repeat(width + 2)}┐`)
-      const footer = chalk.dim(`└${'─'.repeat(width + 2)}┘`)
-      const body = codeLines
-        .map(l => {
-          const pad = width - stringWidth(stripAnsi(l))
-          return chalk.dim('│') + ' ' + l + ' '.repeat(Math.max(0, pad)) + ' ' + chalk.dim('│')
-        })
-        .join(EOL)
-      return header + EOL + body + EOL + footer + EOL
+      // Borderless code block for easy copy-paste.
+      return EOL + highlighted + EOL
     }
     case 'codespan':
-      return chalk.bgGray.white(` ${token.text} `)
+      return chalk.blue(token.text)
     case 'del':
-      return chalk.dim.strikethrough(
+      return chalk.dim(
         (token.tokens ?? [])
           .map(t => formatToken(t, 0, null, parent))
           .join(''),
@@ -110,17 +96,14 @@ export function formatToken(
       const text = (token.tokens ?? [])
         .map(t => formatToken(t, 0, null, null))
         .join('')
-      if (token.depth === 1) {
-        return chalk.bold.underline(text) + EOL + EOL
-      }
-      if (token.depth === 2) {
-        return chalk.bold(text) + EOL + EOL
-      }
-      return chalk.bold.dim('▸ ') + chalk.bold(text) + EOL + EOL
+      return chalk.bold(text) + EOL + EOL
     }
     case 'hr':
-      return chalk.dim('─'.repeat(50)) + EOL
+      return '---'
     case 'link': {
+      if (token.href.startsWith('mailto:')) {
+        return token.href.replace(/^mailto:/, '')
+      }
       const linkText = (token.tokens ?? [])
         .map(t => formatToken(t, 0, null, token))
         .join('')
@@ -159,9 +142,12 @@ export function formatToken(
     case 'br':
       return EOL
     case 'text': {
+      if (parent?.type === 'link') {
+        return token.text
+      }
       if (parent?.type === 'list_item') {
         const bullet = orderedListNumber === null
-          ? (listDepth <= 1 ? '•' : '◦')
+          ? '-'
           : `${getListNumber(listDepth, orderedListNumber)}.`
         const inner = token.tokens
           ? token.tokens.map(t => formatToken(t, listDepth, orderedListNumber, token)).join('')
@@ -174,7 +160,7 @@ export function formatToken(
       return linkifyIssueRefs(token.text)
     }
     case 'table': {
-      // Box-drawing table matching Claude Code style.
+      // Box-drawing table.
       const tableToken = token as Tokens.Table
       function getDisplayText(tokens: Token[] | undefined): string {
         return stripAnsi(
@@ -235,6 +221,9 @@ export function formatToken(
       return token.text
     case 'image':
       return token.href
+    case 'def':
+    case 'html':
+      return ''
     default:
       return ''
   }

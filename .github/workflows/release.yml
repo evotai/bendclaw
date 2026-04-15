@@ -261,7 +261,9 @@ jobs:
           cp cli/${{ env.BINARY_NAME }}-napi.*.node distro/lib/
           cp configs/evot.env.example distro/configs/
           if [ "$(uname -s)" = "Darwin" ]; then
-            # bun-compiled binary already has adhoc linker-signed signature — do not re-sign
+            # Re-sign bun-compiled binary: remove potentially invalid signature, then adhoc sign
+            codesign --remove-signature distro/bin/${{ env.BINARY_NAME }} 2>/dev/null || true
+            codesign --force --sign - distro/bin/${{ env.BINARY_NAME }}
             for f in distro/lib/*.node; do
               codesign --force --sign - "$f"
             done

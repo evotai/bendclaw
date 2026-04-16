@@ -83,10 +83,14 @@ export function getGhostHint(line: string, cursorCol: number): string {
 
   if (matches.length === 0) return ''
 
-  // Single match — show completion suffix + description
+  // Single match — show completion suffix + sub-commands or description
   if (matches.length === 1) {
     const m = matches[0]!
     const suffix = m.name.slice(cmd.length)
+    const subcmds = SUB_COMMANDS[m.name]
+    if (subcmds && subcmds.length > 0 && (suffix === '' || m.name === cmd + suffix)) {
+      return `${suffix}  [${subcmds.join('  ')}]`
+    }
     return `${suffix}  ${m.description}`
   }
 
@@ -123,6 +127,9 @@ const SUB_COMMANDS: Record<string, string[]> = {
   '/help': COMMANDS.map(c => c.name.slice(1)),
   '/skill': ['install', 'list', 'remove'],
   '/env': ['set', 'del', 'load'],
+  '/log': ['up', 'dl', 'query'],
+  '/resume': ['<id>'],
+  '/model': ['<name>'],
 }
 
 // ---------------------------------------------------------------------------

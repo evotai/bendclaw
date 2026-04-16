@@ -34,7 +34,7 @@ export function parseArgs(argv: string[]): CliOptions {
       continue
     }
 
-    if (arg === 'update') {
+    if (arg === 'update' || arg === '--update') {
       opts.command = 'update'
       continue
     }
@@ -109,6 +109,7 @@ export function printHelp() {
   console.log('  --skills <dir>         Skills directory (repeatable)')
   console.log('  --verbose              Verbose output')
   console.log('  --version, -v          Show version')
+  console.log('  --update               Update evot to latest version')
   console.log('  --help, -h             Show this help')
 }
 

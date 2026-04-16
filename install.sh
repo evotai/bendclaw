@@ -123,6 +123,10 @@ fi
 tar -xzf "$TMP/$ASSET" -C "$TMP"
 
 mkdir -p "$INSTALL_DIR"
+# On Linux, a running binary cannot be overwritten in place (ETXTBSY).
+# Remove first so the kernel unlinks the old inode while the running process
+# keeps its file descriptor; then copy the new binary to a fresh inode.
+rm -f "$INSTALL_DIR/$BINARY"
 cp "$TMP/bin/$BINARY" "$INSTALL_DIR/$BINARY"
 chmod +x "$INSTALL_DIR/$BINARY"
 

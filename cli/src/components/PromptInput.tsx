@@ -91,6 +91,11 @@ export const PromptInput = React.memo(function PromptInput({
   }
 
   useInput((ch, key) => {
+    // Discard terminal protocol responses that Ink's keypress parser doesn't
+    // recognize (e.g. Kitty keyboard [?0u, DECRPM [?2026;2$y).
+    // These leak through as character input and cause infinite re-render loops.
+    if (ch && /^\[[\?=]/.test(ch)) return
+
     // During loading, only allow Ctrl+C to interrupt and Enter to queue
     if (isLoading) {
       if (key.ctrl && ch === 'c') {

@@ -96,10 +96,10 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   }, [])
 
   useEffect(() => {
-    setTerminalTitle(null)
+    setTerminalTitle()
     tryStartServer().then((s) => {
       setServerState(s)
-      setTerminalTitle(s)
+      setTerminalTitle()
     }).catch(() => {})
   }, [])
 
@@ -250,7 +250,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       abortCurrentStream()
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     } else {
-      setTerminalTitle(null)
+      setTerminalTitle()
       if (sessionIdRef.current) {
         console.log(`\n\x1b[90m${'─'.repeat(80)}\x1b[0m`)
         console.log(`\x1b[90mResume this session with:\n  evot --resume ${sessionIdRef.current}\x1b[0m\n`)

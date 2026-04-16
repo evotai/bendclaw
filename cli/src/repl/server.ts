@@ -5,9 +5,12 @@ export interface ServerState {
   startedAt: number
 }
 
+let activePort: number | null = null
+
 export async function tryStartServer(port?: number): Promise<ServerState | null> {
   const result = await startServerBackground(port)
   if (result === null) return null
+  activePort = result
   return { port: result, startedAt: Date.now() }
 }
 
@@ -22,7 +25,11 @@ export function formatUptime(startedAt: number): string {
   return `${hours}h${remainMinutes.toString().padStart(2, '0')}m`
 }
 
-export function setTerminalTitle(serverState: ServerState | null): void {
-  const title = serverState ? `Evot · :${serverState.port}` : 'Evot'
-  process.stdout.write(`\x1b]0;${title}\x07`)
+export function terminalTitle(prefix?: string): string {
+  const suffix = activePort ? ` · :${activePort}` : ''
+  return prefix ? `${prefix} Evot${suffix}` : `Evot${suffix}`
+}
+
+export function setTerminalTitle(prefix?: string): void {
+  process.stdout.write(`\x1b]0;${terminalTitle(prefix)}\x07`)
 }

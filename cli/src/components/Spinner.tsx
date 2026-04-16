@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Text, Box } from 'ink'
+import { setTerminalTitle } from '../repl/server.js'
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const SPINNER_INTERVAL = 100
@@ -87,11 +88,11 @@ export function Spinner({ toolName, tokenCount = 0, lastTokenAt, streaming = fal
   useEffect(() => {
     const timer = setInterval(() => {
       titleIdx.current = (titleIdx.current + 1) % TITLE_GLYPHS.length
-      process.stdout.write(`\x1b]0;${TITLE_GLYPHS[titleIdx.current]} Evot\x07`)
+      setTerminalTitle(TITLE_GLYPHS[titleIdx.current])
     }, 500)
     return () => {
       clearInterval(timer)
-      process.stdout.write('\x1b]0;Evot\x07')
+      setTerminalTitle()
     }
   }, [])
 

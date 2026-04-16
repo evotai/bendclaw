@@ -27,10 +27,10 @@ function pickVerb(): string {
 
 function humanDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
-  const secs = Math.floor(ms / 1000)
-  if (secs < 60) return `${secs}s`
+  const secs = ms / 1000
+  if (secs < 60) return `${secs.toFixed(1)}s`
   const mins = Math.floor(secs / 60)
-  const rem = secs % 60
+  const rem = Math.floor(secs) % 60
   return rem > 0 ? `${mins}m${rem}s` : `${mins}m`
 }
 

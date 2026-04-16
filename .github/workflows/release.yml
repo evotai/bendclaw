@@ -212,6 +212,8 @@ jobs:
             os: ubuntu-24.04-arm
           - target: aarch64-apple-darwin
             os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
     steps:
       - uses: actions/checkout@v4
         with:
@@ -270,13 +272,26 @@ jobs:
           fi
           tar -C distro -czf ${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz bin lib configs
 
+      - name: Generate checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create_release.outputs.version }}"
+          ARCHIVE="${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz"
+          if command -v sha256sum > /dev/null 2>&1; then
+            sha256sum "$ARCHIVE" | awk '{print $1}' > "${ARCHIVE}.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" | awk '{print $1}' > "${ARCHIVE}.sha256"
+          fi
+
       - name: Upload artifact to release
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ needs.create_release.outputs.tag }}"
           VERSION="${{ needs.create_release.outputs.version }}"
-          gh release upload "${TAG}" ${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz --clobber
+          ARCHIVE="${{ env.BINARY_NAME }}-v${VERSION}-${{ matrix.target }}.tar.gz"
+          gh release upload "${TAG}" "$ARCHIVE" "${ARCHIVE}.sha256" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

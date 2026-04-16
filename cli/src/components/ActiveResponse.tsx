@@ -81,6 +81,7 @@ export function ActiveResponse({
           toolName={hasTools ? [...activeToolCalls.values()][0]?.name : undefined}
           tokenCount={outputTokens}
           lastTokenAt={lastTokenAt || undefined}
+          streaming={!!pendingText}
         />
       </Box>
     </Box>

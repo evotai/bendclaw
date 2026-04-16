@@ -233,7 +233,9 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         }
       }
 
-      const text = `[LLM] call · ${model} · turn ${turn}${retryStr}\n${msgLine}\n${tokLine}${toolBreakdownLines}`
+      const injectedCount = (p.injected_count as number) ?? 0
+      const injectedStr = injectedCount > 0 ? ` · ${injectedCount} injected` : ''
+      const text = `[LLM] call · ${model} · turn ${turn}${retryStr}${injectedStr}\n${msgLine}\n${tokLine}${toolBreakdownLines}`
       return {
         ...state,
         currentRunStats: {

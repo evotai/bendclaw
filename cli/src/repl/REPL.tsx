@@ -96,24 +96,21 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   }, [])
 
   useEffect(() => {
-    setTerminalTitle()
-    tryStartServer().then((s) => {
-      setServerState(s)
-      setTerminalTitle()
-      if (s) {
-        const parts = [`  server: ${s.address}`]
-        if (s.channels.length > 0) parts.push(`channels: ${s.channels.join(', ')}`)
-        pushSystem(setSystemMessages, 'info', parts.join('  ·  '))
-      }
-    }).catch(() => {})
-  }, [])
-
-  // Startup: auto-resume or show resume hint
-  useEffect(() => {
     (async () => {
+      setTerminalTitle()
+      try {
+        const s = await tryStartServer()
+        setServerState(s)
+        setTerminalTitle()
+        if (s) {
+          const parts = [`  server: ${s.address}`]
+          if (s.channels.length > 0) parts.push(`channels: ${s.channels.join(', ')}`)
+          pushSystem(setSystemMessages, 'info', parts.join('  ·  '))
+        }
+      } catch { /* ignore */ }
+
       try {
         if (initialResume) {
-          // Auto-resume from --resume flag
           const sessions = await agent.listSessions(20)
           const match = sessions.find((s) => s.session_id === initialResume || s.session_id.startsWith(initialResume))
           if (match) {

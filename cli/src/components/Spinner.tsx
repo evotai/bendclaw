@@ -47,6 +47,16 @@ export function Spinner({ toolName, tokenCount = 0, lastTokenAt }: SpinnerProps)
   const lastTokenAtRef = useRef(lastTokenAt)
   lastTokenAtRef.current = lastTokenAt
 
+  // Reset timer when phase changes (thinking → executing or between tools)
+  const prevToolRef = useRef(toolName)
+  useEffect(() => {
+    if (prevToolRef.current !== toolName) {
+      prevToolRef.current = toolName
+      startRef.current = Date.now()
+      lastTokenAtRef.current = undefined
+    }
+  }, [toolName])
+
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now()

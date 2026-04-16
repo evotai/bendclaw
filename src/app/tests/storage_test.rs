@@ -26,6 +26,7 @@ async fn open_storage_returns_working_backend() -> TestResult {
             0,
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
         ))
         .await?;

@@ -18,28 +18,39 @@ pub fn strip_at_placeholders(text: &str) -> String {
 
 // ── Parsed message ──
 
+#[derive(Debug, Clone)]
+pub enum MessagePart {
+    Text(String),
+    ImageKey(String),
+}
+
 pub struct ParsedMessage {
     pub message_id: String,
     pub chat_id: String,
     pub sender_id: String,
     pub text: String,
+    pub parent_id: Option<String>,
+    pub parts: Vec<MessagePart>,
 }
 
 // ── Post (rich text) parsing ──
 
-struct ParsedPost {
-    text: String,
-    mentioned_open_ids: Vec<String>,
+pub struct ParsedPost {
+    pub text: String,
+    pub mentioned_open_ids: Vec<String>,
+    pub parts: Vec<MessagePart>,
 }
 
-fn parse_post(content: &serde_json::Value) -> Option<ParsedPost> {
+pub fn parse_post(content: &serde_json::Value) -> Option<ParsedPost> {
     let paragraphs = content.get("content")?.as_array()?;
     let mut text_parts = Vec::new();
     let mut mentioned_open_ids = Vec::new();
+    let mut parts = Vec::new();
 
     if let Some(title) = content.get("title").and_then(|v| v.as_str()) {
         if !title.is_empty() {
             text_parts.push(title.to_string());
+            parts.push(MessagePart::Text(title.to_string()));
         }
     }
 
@@ -55,6 +66,7 @@ fn parse_post(content: &serde_json::Value) -> Option<ParsedPost> {
                 "text" | "a" => {
                     if let Some(t) = elem.get("text").and_then(|v| v.as_str()) {
                         line_parts.push(t.to_string());
+                        parts.push(MessagePart::Text(t.to_string()));
                     }
                 }
                 "at" => {
@@ -62,7 +74,16 @@ fn parse_post(content: &serde_json::Value) -> Option<ParsedPost> {
                         mentioned_open_ids.push(uid.to_string());
                     }
                     if let Some(name) = elem.get("user_name").and_then(|v| v.as_str()) {
-                        line_parts.push(format!("@{name}"));
+                        let mention = format!("@{name}");
+                        line_parts.push(mention.clone());
+                        parts.push(MessagePart::Text(mention));
+                    }
+                }
+                "img" => {
+                    if let Some(key) = elem.get("image_key").and_then(|v| v.as_str()) {
+                        if !key.is_empty() {
+                            parts.push(MessagePart::ImageKey(key.to_string()));
+                        }
                     }
                 }
                 _ => {}
@@ -74,12 +95,13 @@ fn parse_post(content: &serde_json::Value) -> Option<ParsedPost> {
     }
 
     let text = text_parts.join("\n").trim().to_string();
-    if text.is_empty() {
+    if text.is_empty() && parts.is_empty() {
         return None;
     }
     Some(ParsedPost {
         text,
         mentioned_open_ids,
+        parts,
     })
 }
 
@@ -172,6 +194,11 @@ pub fn parse_event(
     let chat_id = message.get("chat_id")?.as_str()?;
     let sender_id = sender.get("open_id")?.as_str()?;
     let msg_type = message.get("message_type")?.as_str()?;
+    let parent_id = message
+        .get("parent_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     let chat_type = message
         .get("chat_type")
         .and_then(|v| v.as_str())
@@ -195,14 +222,32 @@ pub fn parse_event(
         }
     };
 
-    let (text, post_mentioned_ids) = match msg_type {
+    let (text, post_mentioned_ids, parts) = match msg_type {
         "text" => {
             let t = content.get("text").and_then(|v| v.as_str())?;
-            (t.to_string(), Vec::new())
+            let stripped = strip_at_placeholders(t);
+            (
+                stripped.clone(),
+                Vec::new(),
+                if stripped.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![MessagePart::Text(stripped)]
+                },
+            )
         }
         "post" => {
             let parsed = parse_post(&content)?;
-            (parsed.text, parsed.mentioned_open_ids)
+            (parsed.text, parsed.mentioned_open_ids, parsed.parts)
+        }
+        "image" => {
+            let key = content
+                .get("image_key")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())?;
+            (String::new(), Vec::new(), vec![MessagePart::ImageKey(
+                key.to_string(),
+            )])
         }
         _ => {
             tracing::debug!(
@@ -233,7 +278,7 @@ pub fn parse_event(
     }
 
     let text = strip_at_placeholders(&text);
-    if text.is_empty() {
+    if text.is_empty() && parts.is_empty() {
         return None;
     }
 
@@ -242,5 +287,7 @@ pub fn parse_event(
         chat_id: chat_id.to_string(),
         sender_id: sender_id.to_string(),
         text,
+        parent_id,
+        parts,
     })
 }

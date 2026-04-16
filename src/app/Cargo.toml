@@ -9,6 +9,7 @@ evot-engine.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
+base64 = "0.22"
 chrono.workspace = true
 clap.workspace = true
 crossterm = "0.28"

@@ -10,7 +10,6 @@ use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::run::run::Run;
-use super::tools::ToolMode;
 use super::Agent;
 use super::QueryRequest;
 use crate::error::Result;
@@ -61,12 +60,7 @@ impl RunManager {
         &self.agent
     }
 
-    pub async fn send(
-        &self,
-        key: &ConversationKey,
-        prompt: &str,
-        mode: ToolMode,
-    ) -> Result<SendOutcome> {
+    pub async fn send(&self, key: &ConversationKey, request: QueryRequest) -> Result<SendOutcome> {
         let gate = {
             let mut convs = self.conversations.lock();
             let conv = convs.entry(key.clone()).or_insert_with(|| Conversation {
@@ -86,15 +80,12 @@ impl RunManager {
 
         if let Some(ref sid) = session_id {
             if self.agent.has_active_run(sid) {
-                self.agent.steer(sid, prompt);
+                self.agent.steer(sid, request.input.clone());
                 return Ok(SendOutcome::Steered);
             }
         }
 
-        let request = QueryRequest::text(prompt)
-            .session_id(session_id)
-            .mode(mode)
-            .source(key.channel());
+        let request = request.session_id(session_id).source(key.channel());
         let run = self.agent.query(request).await?;
 
         self.conversations

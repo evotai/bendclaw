@@ -56,8 +56,8 @@ pub struct EngineOptions {
 
 pub(in crate::agent) struct TurnInput {
     pub options: EngineOptions,
-    pub prior_messages: Vec<evot_engine::AgentMessage>,
-    pub prompt: String,
+    pub history: Vec<evot_engine::AgentMessage>,
+    pub input: Vec<evot_engine::Content>,
     pub session: Arc<Session>,
     pub run_id: String,
     pub session_id: String,
@@ -71,8 +71,12 @@ pub(in crate::agent) async fn execute_turn(
     turn: TurnInput,
     on_complete: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> Result<Run> {
-    let mut engine = build_agent(turn.options, turn.prior_messages);
-    let (run_handle, engine_rx) = engine.submit_text(turn.prompt.clone()).await;
+    let mut engine = build_agent(turn.options, turn.history);
+    let user_msg = evot_engine::AgentMessage::Llm(evot_engine::Message::User {
+        content: turn.input.clone(),
+        timestamp: evot_engine::now_ms(),
+    });
+    let (run_handle, engine_rx) = engine.submit(vec![user_msg]).await;
 
     let (runtime_tx, runtime_rx) = mpsc::unbounded_channel();
 
@@ -88,7 +92,7 @@ pub(in crate::agent) async fn execute_turn(
         runtime_rx,
         tx,
         turn.session,
-        turn.prompt,
+        turn.input,
         turn.run_id.clone(),
         turn.session_id.clone(),
         on_complete,
@@ -125,7 +129,7 @@ async fn run_loop(
     mut rx: mpsc::UnboundedReceiver<RuntimeEvent>,
     tx: mpsc::UnboundedSender<RunEvent>,
     session: Arc<Session>,
-    prompt: String,
+    input: Vec<evot_engine::Content>,
     run_id: String,
     session_id: String,
     on_complete: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -136,7 +140,7 @@ async fn run_loop(
     // Send RunStarted
     let _ = tx.send(ctx.started());
 
-    let mut run_transcripts: Vec<TranscriptItem> = vec![TranscriptItem::User { text: prompt }];
+    let mut run_transcripts: Vec<TranscriptItem> = vec![TranscriptItem::user_from_content(&input)];
     let mut saved_count: usize = 0;
     let mut turn = 0_u32;
     let mut got_run_completed = false;

@@ -172,6 +172,7 @@ fn stats_run_finished_round_trip() {
 fn try_from_item_returns_none_for_non_stats() {
     let item = TranscriptItem::User {
         text: "hello".into(),
+        content: vec![],
     };
     assert!(TranscriptStats::try_from_item(&item).is_none());
 }
@@ -214,6 +215,7 @@ fn stats_item_is_not_context() {
 fn user_item_is_context() {
     let item = TranscriptItem::User {
         text: "hello".into(),
+        content: vec![],
     };
     assert!(item.is_context_item());
 }
@@ -221,7 +223,10 @@ fn user_item_is_context() {
 #[test]
 fn compact_item_is_not_context() {
     let item = TranscriptItem::Compact {
-        messages: vec![TranscriptItem::User { text: "hi".into() }],
+        messages: vec![TranscriptItem::User {
+            text: "hi".into(),
+            content: vec![],
+        }],
     };
     assert!(!item.is_context_item());
 }
@@ -259,5 +264,52 @@ fn stats_item_deserializes_from_jsonl() {
         assert_eq!(s.turn_count, 2);
     } else {
         panic!("expected RunFinished");
+    }
+}
+
+#[test]
+fn user_content_round_trip_preserves_multimodal_order() {
+    let item = TranscriptItem::user_from_content(&[
+        evot_engine::Content::Text {
+            text: "before".into(),
+        },
+        evot_engine::Content::Image {
+            data: "img1".into(),
+            mime_type: "image/png".into(),
+        },
+        evot_engine::Content::Text {
+            text: "between".into(),
+        },
+        evot_engine::Content::Image {
+            data: "img2".into(),
+            mime_type: "image/jpeg".into(),
+        },
+    ]);
+
+    let TranscriptItem::User { text, content } = item else {
+        panic!("expected user item");
+    };
+    assert_eq!(text, "before\nbetween");
+    assert_eq!(content.len(), 4);
+    assert!(matches!(&content[0], TranscriptUserContent::Text { text } if text == "before"));
+    assert!(
+        matches!(&content[1], TranscriptUserContent::Image { data, mime_type } if data == "img1" && mime_type == "image/png")
+    );
+    assert!(matches!(&content[2], TranscriptUserContent::Text { text } if text == "between"));
+    assert!(
+        matches!(&content[3], TranscriptUserContent::Image { data, mime_type } if data == "img2" && mime_type == "image/jpeg")
+    );
+}
+
+#[test]
+fn user_item_without_content_deserializes_for_backward_compatibility() {
+    let json = r#"{"type":"user","text":"hello"}"#;
+    let item: TranscriptItem = serde_json::from_str(json).expect("deserialize");
+    match item {
+        TranscriptItem::User { text, content } => {
+            assert_eq!(text, "hello");
+            assert!(content.is_empty());
+        }
+        _ => panic!("expected user item"),
     }
 }

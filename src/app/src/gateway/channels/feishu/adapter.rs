@@ -12,6 +12,7 @@ use crate::agent::run_manager::ConversationKey;
 use crate::agent::run_manager::RunManager;
 use crate::agent::run_manager::SendOutcome;
 use crate::agent::Agent;
+use crate::agent::QueryRequest;
 use crate::agent::ToolMode;
 use crate::error::Result;
 use crate::gateway::delivery::stream as stream_delivery;
@@ -63,11 +64,66 @@ impl FeishuChannel {
         // Spawn so we don't block the websocket receive loop
         let this = Arc::clone(self);
         tokio::spawn(async move {
-            match this
-                .run_manager
-                .send(&key, &msg.text, ToolMode::Headless)
+            let mut input: Vec<evot_engine::Content> = Vec::new();
+
+            if let Some(ref pid) = msg.parent_id {
+                match super::delivery::fetch_message_content(
+                    &this.client,
+                    &this.token_cache,
+                    &this.config.app_id,
+                    &this.config.app_secret,
+                    pid,
+                )
                 .await
-            {
+                {
+                    Ok(Some(parent)) => {
+                        if let Some(quoted) = parent.text {
+                            input.push(evot_engine::Content::Text {
+                                text: format!("[Quoted message: {quoted}]"),
+                            });
+                        }
+                        input.extend(
+                            super::delivery::resolve_message_parts(
+                                &this.client,
+                                &this.token_cache,
+                                &this.config.app_id,
+                                &this.config.app_secret,
+                                &parent.message_id,
+                                &parent.parts,
+                            )
+                            .await,
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        tracing::warn!(
+                            channel = "feishu",
+                            parent_id = %pid,
+                            error = %e,
+                            "failed to fetch quoted message"
+                        );
+                    }
+                }
+            }
+
+            input.extend(
+                super::delivery::resolve_message_parts(
+                    &this.client,
+                    &this.token_cache,
+                    &this.config.app_id,
+                    &this.config.app_secret,
+                    &msg.message_id,
+                    &msg.parts,
+                )
+                .await,
+            );
+
+            if input.is_empty() {
+                return;
+            }
+
+            let request = QueryRequest::with_input(input).mode(ToolMode::Headless);
+            match this.run_manager.send(&key, request).await {
                 Ok(SendOutcome::Started(mut run)) => {
                     let sink = FeishuMessageSink::new(
                         this.client.clone(),

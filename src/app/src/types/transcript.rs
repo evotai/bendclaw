@@ -37,6 +37,17 @@ pub struct ToolCallRecord {
 }
 
 // ---------------------------------------------------------------------------
+// TranscriptUserContent — user content blocks preserved in original order
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TranscriptUserContent {
+    Text { text: String },
+    Image { data: String, mime_type: String },
+}
+
+// ---------------------------------------------------------------------------
 // TranscriptItem — a single item in a conversation transcript
 // ---------------------------------------------------------------------------
 
@@ -45,6 +56,8 @@ pub struct ToolCallRecord {
 pub enum TranscriptItem {
     User {
         text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        content: Vec<TranscriptUserContent>,
     },
     Assistant {
         text: String,
@@ -85,6 +98,36 @@ impl TranscriptItem {
     /// the raw transcript but must be filtered out before sending to the engine.
     pub fn is_context_item(&self) -> bool {
         !matches!(self, Self::Stats { .. } | Self::Compact { .. })
+    }
+
+    /// Build a User transcript item from engine content blocks.
+    pub fn user_from_content(content: &[evot_engine::Content]) -> Self {
+        let text = content
+            .iter()
+            .filter_map(|c| match c {
+                evot_engine::Content::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let content = content
+            .iter()
+            .filter_map(|c| match c {
+                evot_engine::Content::Text { text } => {
+                    Some(TranscriptUserContent::Text { text: text.clone() })
+                }
+                evot_engine::Content::Image { data, mime_type } => {
+                    Some(TranscriptUserContent::Image {
+                        data: data.clone(),
+                        mime_type: mime_type.clone(),
+                    })
+                }
+                _ => None,
+            })
+            .collect();
+
+        Self::User { text, content }
     }
 }
 

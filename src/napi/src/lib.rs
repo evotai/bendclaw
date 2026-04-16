@@ -331,7 +331,8 @@ impl NapiAgent {
     /// Send a steering message to the active run for a session.
     #[napi]
     pub fn steer(&self, session_id: String, text: String) {
-        self.agent.steer(&session_id, &text);
+        self.agent
+            .steer(&session_id, vec![evot_engine::Content::Text { text }]);
     }
 
     /// Send a follow-up message to the active run for a session.

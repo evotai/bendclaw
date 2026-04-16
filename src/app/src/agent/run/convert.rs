@@ -3,6 +3,7 @@
 use crate::types::AssistantBlock;
 use crate::types::ToolCallRecord;
 use crate::types::TranscriptItem;
+use crate::types::TranscriptUserContent;
 use crate::types::UsageSummary;
 
 /// Extract text content from engine Content blocks.
@@ -34,8 +35,7 @@ pub fn into_agent_messages(items: &[TranscriptItem]) -> Vec<evot_engine::AgentMe
 pub fn transcript_from_agent_message(message: &evot_engine::AgentMessage) -> TranscriptItem {
     match message {
         evot_engine::AgentMessage::Llm(evot_engine::Message::User { content, .. }) => {
-            let text = extract_content_text(content);
-            TranscriptItem::User { text }
+            TranscriptItem::user_from_content(content)
         }
         evot_engine::AgentMessage::Llm(evot_engine::Message::Assistant {
             content,
@@ -106,8 +106,29 @@ pub fn transcript_from_agent_message(message: &evot_engine::AgentMessage) -> Tra
 /// Convert a single TranscriptItem to an engine AgentMessage.
 pub fn agent_message_from_transcript(item: &TranscriptItem) -> evot_engine::AgentMessage {
     match item {
-        TranscriptItem::User { text } => {
-            evot_engine::AgentMessage::Llm(evot_engine::Message::user(text.clone()))
+        TranscriptItem::User { text, content } => {
+            let content = if content.is_empty() {
+                vec![evot_engine::Content::Text { text: text.clone() }]
+            } else {
+                content
+                    .iter()
+                    .map(|item| match item {
+                        TranscriptUserContent::Text { text } => {
+                            evot_engine::Content::Text { text: text.clone() }
+                        }
+                        TranscriptUserContent::Image { data, mime_type } => {
+                            evot_engine::Content::Image {
+                                data: data.clone(),
+                                mime_type: mime_type.clone(),
+                            }
+                        }
+                    })
+                    .collect()
+            };
+            evot_engine::AgentMessage::Llm(evot_engine::Message::User {
+                content,
+                timestamp: evot_engine::now_ms(),
+            })
         }
         TranscriptItem::Assistant {
             text,

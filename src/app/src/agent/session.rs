@@ -151,7 +151,7 @@ fn build_title(items: &[TranscriptItem]) -> Option<String> {
     let user_texts: Vec<String> = items
         .iter()
         .filter_map(|item| {
-            if let TranscriptItem::User { text } = item {
+            if let TranscriptItem::User { text, .. } = item {
                 let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
                 if !normalized.is_empty() {
                     return Some(normalized);

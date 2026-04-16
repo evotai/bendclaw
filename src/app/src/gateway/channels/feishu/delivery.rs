@@ -134,6 +134,250 @@ fn extract_message_id(json: &serde_json::Value) -> String {
         .to_string()
 }
 
+// ── Fetch message text (for reply context) ──
+
+// ── Fetch parent message content (for reply context) ──
+
+/// Content extracted from a parent message.
+pub struct ParentMessageContent {
+    pub text: Option<String>,
+    pub parts: Vec<super::message::MessagePart>,
+    pub message_id: String,
+}
+
+/// Fetch the content of a message by ID, for reply context.
+/// Returns text and/or image keys depending on message type.
+pub async fn fetch_message_content(
+    client: &reqwest::Client,
+    token_cache: &TokenCache,
+    app_id: &str,
+    app_secret: &str,
+    message_id: &str,
+) -> Result<Option<ParentMessageContent>> {
+    let url = format!("{FEISHU_API}/im/v1/messages/{message_id}");
+
+    let token = get_token(client, app_id, app_secret, token_cache).await?;
+    let resp = client
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu fetch message: {e}")))?;
+
+    let status = resp.status().as_u16();
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu fetch message response: {e}")))?;
+
+    // Retry once on token error
+    if is_token_error(status, &json) {
+        token_cache.invalidate().await;
+        let token2 = get_token(client, app_id, app_secret, token_cache).await?;
+        let resp2 = client
+            .get(&url)
+            .bearer_auth(&token2)
+            .send()
+            .await
+            .map_err(|e| EvotError::Run(format!("feishu fetch message retry: {e}")))?;
+        let json2: serde_json::Value = resp2
+            .json()
+            .await
+            .map_err(|e| EvotError::Run(format!("feishu fetch message retry response: {e}")))?;
+        check_api_error(&json2)?;
+        return Ok(extract_content_from_message_response(&json2, message_id));
+    }
+
+    check_api_error(&json)?;
+    Ok(extract_content_from_message_response(&json, message_id))
+}
+
+/// Extract content from a GET /im/v1/messages/{id} response.
+fn extract_content_from_message_response(
+    json: &serde_json::Value,
+    message_id: &str,
+) -> Option<ParentMessageContent> {
+    let item = json
+        .pointer("/data/items")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())?;
+
+    let msg_type = item.get("msg_type").and_then(|v| v.as_str())?;
+    let raw_content = item.pointer("/body/content").and_then(|v| v.as_str())?;
+    let content: serde_json::Value = serde_json::from_str(raw_content).ok()?;
+
+    match msg_type {
+        "text" => {
+            let text = content
+                .get("text")
+                .and_then(|v| v.as_str())
+                .map(super::message::strip_at_placeholders)
+                .filter(|s| !s.is_empty());
+            text.map(|t| ParentMessageContent {
+                text: Some(t.clone()),
+                parts: vec![super::message::MessagePart::Text(t)],
+                message_id: message_id.to_string(),
+            })
+        }
+        "post" => {
+            let parsed = super::message::parse_post(&content)?;
+            Some(ParentMessageContent {
+                text: if parsed.text.is_empty() {
+                    None
+                } else {
+                    Some(parsed.text)
+                },
+                parts: parsed.parts,
+                message_id: message_id.to_string(),
+            })
+        }
+        "image" => {
+            let key = content
+                .get("image_key")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())?;
+            Some(ParentMessageContent {
+                text: None,
+                parts: vec![super::message::MessagePart::ImageKey(key.to_string())],
+                message_id: message_id.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+// ── Download image ──
+
+pub struct DownloadedImage {
+    pub data_base64: String,
+    pub mime_type: String,
+}
+
+pub async fn resolve_message_parts(
+    client: &reqwest::Client,
+    token_cache: &TokenCache,
+    app_id: &str,
+    app_secret: &str,
+    message_id: &str,
+    parts: &[super::message::MessagePart],
+) -> Vec<evot_engine::Content> {
+    let mut content = Vec::new();
+
+    for part in parts {
+        match part {
+            super::message::MessagePart::Text(text) => {
+                if !text.is_empty() {
+                    content.push(evot_engine::Content::Text { text: text.clone() });
+                }
+            }
+            super::message::MessagePart::ImageKey(image_key) => match download_image(
+                client,
+                token_cache,
+                app_id,
+                app_secret,
+                message_id,
+                image_key,
+            )
+            .await
+            {
+                Ok(img) => {
+                    content.push(evot_engine::Content::Image {
+                        data: img.data_base64,
+                        mime_type: img.mime_type,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        channel = "feishu",
+                        image_key,
+                        error = %e,
+                        "failed to download image"
+                    );
+                }
+            },
+        }
+    }
+
+    content
+}
+
+/// Download an image resource from a Feishu message.
+pub async fn download_image(
+    client: &reqwest::Client,
+    token_cache: &TokenCache,
+    app_id: &str,
+    app_secret: &str,
+    message_id: &str,
+    image_key: &str,
+) -> Result<DownloadedImage> {
+    use base64::Engine;
+
+    let url = format!("{FEISHU_API}/im/v1/messages/{message_id}/resources/{image_key}?type=image");
+
+    let token = get_token(client, app_id, app_secret, token_cache).await?;
+    let resp = client
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu download image: {e}")))?;
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        // Retry once on token error
+        token_cache.invalidate().await;
+        let token2 = get_token(client, app_id, app_secret, token_cache).await?;
+        let resp2 = client
+            .get(&url)
+            .bearer_auth(&token2)
+            .send()
+            .await
+            .map_err(|e| EvotError::Run(format!("feishu download image retry: {e}")))?;
+        if !resp2.status().is_success() {
+            return Err(EvotError::Run(format!(
+                "feishu download image failed after retry: HTTP {}",
+                resp2.status()
+            )));
+        }
+        let mime_type = resp2
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("image/png")
+            .to_string();
+        let bytes = resp2
+            .bytes()
+            .await
+            .map_err(|e| EvotError::Run(format!("feishu download image body: {e}")))?;
+        return Ok(DownloadedImage {
+            data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            mime_type,
+        });
+    }
+
+    if !status.is_success() {
+        return Err(EvotError::Run(format!(
+            "feishu download image failed: HTTP {status}"
+        )));
+    }
+
+    let mime_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu download image body: {e}")))?;
+
+    Ok(DownloadedImage {
+        data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        mime_type,
+    })
+}
+
 // ── Edit message ──
 
 async fn edit_text(

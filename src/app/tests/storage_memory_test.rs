@@ -47,6 +47,7 @@ async fn memory_storage_append_and_list_entries() -> TestResult {
             0,
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
         ))
         .await?;
@@ -74,7 +75,7 @@ async fn memory_storage_append_and_list_entries() -> TestResult {
         })
         .await?;
     assert_eq!(entries.len(), 2);
-    assert!(matches!(&entries[0].item, TranscriptItem::User { text } if text == "hello"));
+    assert!(matches!(&entries[0].item, TranscriptItem::User { text, .. } if text == "hello"));
     assert!(matches!(&entries[1].item, TranscriptItem::Assistant { text, .. } if text == "hi"));
     Ok(())
 }
@@ -91,6 +92,7 @@ async fn memory_storage_filters_entries_by_session_id() -> TestResult {
             0,
             TranscriptItem::User {
                 text: "from a".into(),
+                content: vec![],
             },
         ))
         .await?;
@@ -102,6 +104,7 @@ async fn memory_storage_filters_entries_by_session_id() -> TestResult {
             0,
             TranscriptItem::User {
                 text: "from b".into(),
+                content: vec![],
             },
         ))
         .await?;
@@ -115,7 +118,7 @@ async fn memory_storage_filters_entries_by_session_id() -> TestResult {
         })
         .await?;
     assert_eq!(entries_a.len(), 1);
-    assert!(matches!(&entries_a[0].item, TranscriptItem::User { text } if text == "from a"));
+    assert!(matches!(&entries_a[0].item, TranscriptItem::User { text, .. } if text == "from a"));
 
     let entries_b = storage
         .list_entries(ListTranscriptEntries {
@@ -126,7 +129,7 @@ async fn memory_storage_filters_entries_by_session_id() -> TestResult {
         })
         .await?;
     assert_eq!(entries_b.len(), 1);
-    assert!(matches!(&entries_b[0].item, TranscriptItem::User { text } if text == "from b"));
+    assert!(matches!(&entries_b[0].item, TranscriptItem::User { text, .. } if text == "from b"));
     Ok(())
 }
 
@@ -184,6 +187,7 @@ async fn session_write_and_read_transcript_in_memory() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "hi".into(),
@@ -196,7 +200,7 @@ async fn session_write_and_read_transcript_in_memory() -> TestResult {
 
     let transcript = session.transcript().await;
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "hello"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "hello"));
     assert!(matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "hi"));
     Ok(())
 }
@@ -218,6 +222,7 @@ async fn session_open_with_memory_storage_restores_transcript() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "first".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "reply".into(),
@@ -236,7 +241,7 @@ async fn session_open_with_memory_storage_restores_transcript() -> TestResult {
 
     let transcript = reopened.transcript().await;
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "first"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "first"));
     assert!(matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "reply"));
     Ok(())
 }
@@ -258,6 +263,7 @@ async fn session_multi_turn_with_memory_storage() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "turn 1 question".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "turn 1 answer".into(),
@@ -281,6 +287,7 @@ async fn session_multi_turn_with_memory_storage() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "turn 2 question".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "turn 2 answer".into(),
@@ -299,11 +306,15 @@ async fn session_multi_turn_with_memory_storage() -> TestResult {
 
     let transcript = session3.transcript().await;
     assert_eq!(transcript.len(), 4);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "turn 1 question"));
+    assert!(
+        matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "turn 1 question")
+    );
     assert!(
         matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "turn 1 answer")
     );
-    assert!(matches!(&transcript[2], TranscriptItem::User { text } if text == "turn 2 question"));
+    assert!(
+        matches!(&transcript[2], TranscriptItem::User { text, .. } if text == "turn 2 question")
+    );
     assert!(
         matches!(&transcript[3], TranscriptItem::Assistant { text, .. } if text == "turn 2 answer")
     );
@@ -343,6 +354,7 @@ async fn memory_storage_dropped_leaves_no_trace() -> TestResult {
     session
         .write_items(vec![TranscriptItem::User {
             text: "side chat".into(),
+            content: vec![],
         }])
         .await?;
 

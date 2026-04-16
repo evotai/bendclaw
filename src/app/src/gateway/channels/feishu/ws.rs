@@ -348,7 +348,14 @@ where
 
                         if let Some(payload) = decoded.event_payload {
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&payload) {
-                                if let Some(parsed) = super::message::parse_event(&json, ctx.config, ctx.bot_open_id, &mut dedup) {
+                                if let Some(parsed) =
+                                    super::message::parse_event(
+                                        &json,
+                                        ctx.config,
+                                        ctx.bot_open_id,
+                                        &mut dedup,
+                                    )
+                                {
                                     // Add thumbsup reaction only for messages we will process
                                     if !parsed.message_id.is_empty() {
                                         let c = ctx.client.clone();
@@ -357,7 +364,10 @@ where
                                         let asec = ctx.app_secret.to_string();
                                         let mid = parsed.message_id.clone();
                                         tokio::spawn(async move {
-                                            super::delivery::add_reaction(&c, &tc, &aid, &asec, &mid, "THUMBSUP").await;
+                                            super::delivery::add_reaction(
+                                                &c, &tc, &aid, &asec, &mid, "THUMBSUP",
+                                            )
+                                            .await;
                                         });
                                     }
                                     on_message(parsed).await;

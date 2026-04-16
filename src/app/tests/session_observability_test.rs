@@ -296,6 +296,7 @@ fn aggregator_from_items_batch_ingest() {
     let items = vec![
         TranscriptItem::User {
             text: "hello".into(),
+            content: vec![],
         },
         TranscriptStats::LlmCallStarted(LlmCallStartedStats {
             turn: 1,

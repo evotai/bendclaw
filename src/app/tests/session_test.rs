@@ -64,6 +64,7 @@ async fn round_trip_session_with_transcript() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "hi".into(),
@@ -98,6 +99,7 @@ async fn resume_session_appends_transcript() -> TestResult {
     session
         .write_items(vec![TranscriptItem::User {
             text: "first".into(),
+            content: vec![],
         }])
         .await?;
 
@@ -109,6 +111,7 @@ async fn resume_session_appends_transcript() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "second".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "reply".into(),
@@ -144,6 +147,7 @@ async fn session_title_comes_from_first_user_message() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "summarize the quarterly numbers for the infra team".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "working".into(),
@@ -212,6 +216,7 @@ async fn save_and_load_transcript() -> TestResult {
             0,
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
         ))
         .await?;
@@ -239,7 +244,7 @@ async fn save_and_load_transcript() -> TestResult {
         })
         .await?;
     assert_eq!(loaded.len(), 2);
-    assert!(matches!(&loaded[0].item, TranscriptItem::User { text } if text == "hello"));
+    assert!(matches!(&loaded[0].item, TranscriptItem::User { text, .. } if text == "hello"));
     assert!(
         matches!(&loaded[1].item, TranscriptItem::Assistant { text, .. } if text == "hi there")
     );
@@ -263,6 +268,7 @@ async fn open_resumes_from_last_compact_entry() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "old message 1".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "old reply 1".into(),
@@ -272,6 +278,7 @@ async fn open_resumes_from_last_compact_entry() -> TestResult {
             },
             TranscriptItem::User {
                 text: "old message 2".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "old reply 2".into(),
@@ -288,6 +295,7 @@ async fn open_resumes_from_last_compact_entry() -> TestResult {
             messages: vec![
                 TranscriptItem::User {
                     text: "summary of prior context".into(),
+                    content: vec![],
                 },
                 TranscriptItem::Assistant {
                     text: "acknowledged".into(),
@@ -304,6 +312,7 @@ async fn open_resumes_from_last_compact_entry() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "new message after compact".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "new reply".into(),
@@ -323,13 +332,13 @@ async fn open_resumes_from_last_compact_entry() -> TestResult {
     // Should have: 2 from compact + 2 new = 4 (not the original 4 + compact + 2)
     assert_eq!(transcript.len(), 4);
     assert!(
-        matches!(&transcript[0], TranscriptItem::User { text } if text == "summary of prior context")
+        matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "summary of prior context")
     );
     assert!(
         matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "acknowledged")
     );
     assert!(
-        matches!(&transcript[2], TranscriptItem::User { text } if text == "new message after compact")
+        matches!(&transcript[2], TranscriptItem::User { text, .. } if text == "new message after compact")
     );
     assert!(
         matches!(&transcript[3], TranscriptItem::Assistant { text, .. } if text == "new reply")
@@ -354,6 +363,7 @@ async fn open_without_compact_returns_all_entries() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "hi".into(),
@@ -369,7 +379,7 @@ async fn open_without_compact_returns_all_entries() -> TestResult {
         .ok_or_else(|| missing_error("missing session"))?;
     let transcript = loaded.transcript().await;
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "hello"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "hello"));
     assert!(matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "hi"));
     Ok(())
 }
@@ -390,6 +400,7 @@ async fn write_items_is_append_only() -> TestResult {
     session
         .write_items(vec![TranscriptItem::User {
             text: "first".into(),
+            content: vec![],
         }])
         .await?;
 
@@ -397,6 +408,7 @@ async fn write_items_is_append_only() -> TestResult {
         .write_items(vec![TranscriptItem::Compact {
             messages: vec![TranscriptItem::User {
                 text: "compacted".into(),
+                content: vec![],
             }],
         }])
         .await?;
@@ -433,6 +445,7 @@ async fn multiple_compactions_uses_last() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "msg1".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "reply1".into(),
@@ -448,6 +461,7 @@ async fn multiple_compactions_uses_last() -> TestResult {
         .write_items(vec![TranscriptItem::Compact {
             messages: vec![TranscriptItem::User {
                 text: "compact-v1".into(),
+                content: vec![],
             }],
         }])
         .await?;
@@ -456,6 +470,7 @@ async fn multiple_compactions_uses_last() -> TestResult {
     session
         .write_items(vec![TranscriptItem::User {
             text: "msg2".into(),
+            content: vec![],
         }])
         .await?;
 
@@ -464,6 +479,7 @@ async fn multiple_compactions_uses_last() -> TestResult {
         .write_items(vec![TranscriptItem::Compact {
             messages: vec![TranscriptItem::User {
                 text: "compact-v2".into(),
+                content: vec![],
             }],
         }])
         .await?;
@@ -472,6 +488,7 @@ async fn multiple_compactions_uses_last() -> TestResult {
     session
         .write_items(vec![TranscriptItem::User {
             text: "msg3".into(),
+            content: vec![],
         }])
         .await?;
 
@@ -483,8 +500,8 @@ async fn multiple_compactions_uses_last() -> TestResult {
 
     // compact-v2 messages (1) + msg3 (1) = 2
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "compact-v2"));
-    assert!(matches!(&transcript[1], TranscriptItem::User { text } if text == "msg3"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "compact-v2"));
+    assert!(matches!(&transcript[1], TranscriptItem::User { text, .. } if text == "msg3"));
     Ok(())
 }
 
@@ -524,6 +541,7 @@ async fn stats_items_persisted_but_filtered_on_resume() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "hello".into(),
+                content: vec![],
             },
             stats_item,
             TranscriptItem::Assistant {
@@ -556,7 +574,7 @@ async fn stats_items_persisted_but_filtered_on_resume() -> TestResult {
         .ok_or_else(|| missing_error("missing session"))?;
     let transcript = loaded.transcript().await;
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "hello"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "hello"));
     assert!(matches!(&transcript[1], TranscriptItem::Assistant { text, .. } if text == "hi"));
     Ok(())
 }
@@ -578,6 +596,7 @@ async fn stats_after_compact_filtered_on_resume() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "old msg".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "old reply".into(),
@@ -613,11 +632,13 @@ async fn stats_after_compact_filtered_on_resume() -> TestResult {
             TranscriptItem::Compact {
                 messages: vec![TranscriptItem::User {
                     text: "summary".into(),
+                    content: vec![],
                 }],
             },
             compact_stats,
             TranscriptItem::User {
                 text: "new msg".into(),
+                content: vec![],
             },
         ])
         .await?;
@@ -629,8 +650,8 @@ async fn stats_after_compact_filtered_on_resume() -> TestResult {
         .ok_or_else(|| missing_error("missing session"))?;
     let transcript = loaded.transcript().await;
     assert_eq!(transcript.len(), 2);
-    assert!(matches!(&transcript[0], TranscriptItem::User { text } if text == "summary"));
-    assert!(matches!(&transcript[1], TranscriptItem::User { text } if text == "new msg"));
+    assert!(matches!(&transcript[0], TranscriptItem::User { text, .. } if text == "summary"));
+    assert!(matches!(&transcript[1], TranscriptItem::User { text, .. } if text == "new msg"));
     Ok(())
 }
 
@@ -661,7 +682,10 @@ async fn title_is_wrong_when_planning_prompt_pollutes_user_message() -> TestResu
         "refactor the auth module to use JWT"
     );
     session
-        .write_items(vec![TranscriptItem::User { text: polluted }])
+        .write_items(vec![TranscriptItem::User {
+            text: polluted,
+            content: vec![],
+        }])
         .await?;
     session.save().await?;
 
@@ -701,6 +725,7 @@ async fn title_is_correct_when_user_message_is_clean() -> TestResult {
         .write_items(vec![
             TranscriptItem::User {
                 text: "refactor the auth module to use JWT".into(),
+                content: vec![],
             },
             TranscriptItem::Assistant {
                 text: "planning".into(),

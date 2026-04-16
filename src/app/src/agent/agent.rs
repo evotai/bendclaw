@@ -50,7 +50,7 @@ impl Default for ExecutionLimits {
 // ---------------------------------------------------------------------------
 
 pub struct QueryRequest {
-    pub prompt: String,
+    pub input: Vec<evot_engine::Content>,
     pub session_id: Option<String>,
     pub mode: ToolMode,
     pub source: String,
@@ -59,11 +59,27 @@ pub struct QueryRequest {
 impl QueryRequest {
     pub fn text(prompt: impl Into<String>) -> Self {
         Self {
-            prompt: prompt.into(),
+            input: vec![evot_engine::Content::Text {
+                text: prompt.into(),
+            }],
             session_id: None,
             mode: ToolMode::Headless,
             source: String::new(),
         }
+    }
+
+    pub fn with_input(input: Vec<evot_engine::Content>) -> Self {
+        Self {
+            input,
+            session_id: None,
+            mode: ToolMode::Headless,
+            source: String::new(),
+        }
+    }
+
+    /// Extract plain text from input content (for transcript, titles, logs).
+    pub fn input_text(&self) -> String {
+        crate::agent::run::convert::extract_content_text(&self.input)
     }
 
     pub fn session_id(mut self, id: Option<String>) -> Self {
@@ -214,13 +230,14 @@ impl Agent {
     // -- run control ---------------------------------------------------------
 
     /// Send a steering message to the active run for a session.
-    pub fn steer(&self, session_id: &str, text: impl Into<String>) {
+    pub fn steer(&self, session_id: &str, input: Vec<evot_engine::Content>) {
         if let Some(ar) = self.active_runs.lock().get(session_id) {
             if !ar.done.load(Ordering::Relaxed) {
                 ar.handle
-                    .steer(evot_engine::AgentMessage::Llm(evot_engine::Message::user(
-                        text,
-                    )));
+                    .steer(evot_engine::AgentMessage::Llm(evot_engine::Message::User {
+                        content: input,
+                        timestamp: evot_engine::now_ms(),
+                    }));
             }
         }
     }
@@ -501,8 +518,8 @@ impl Agent {
                 cwd: cwd_path.to_path_buf(),
                 path_guard: sandbox_rt.path_guard,
             },
-            prior_messages,
-            prompt: request.prompt.clone(),
+            history: prior_messages,
+            input: request.input.clone(),
             session,
             run_id: run_id.to_string(),
             session_id: session_id.to_string(),

@@ -201,7 +201,58 @@ export async function handleSlashCommand(input: string, ctx: CommandContext) {
       const logDir = join(homedir(), '.evotai', 'logs')
       const sid = state.sessionId
       const query = args.trim()
-      if (!query) {
+
+      if (query.startsWith('up')) {
+        // /log up [session_id_prefix]
+        const upArg = query.slice(2).trim()
+        const targetSid = upArg || sid
+        if (!targetSid) {
+          pushSystem(setSystem, 'error', 'No active session. Usage: /log up [session_id]')
+          break
+        }
+        let resolvedSid = targetSid
+        if (upArg) {
+          try {
+            const allSessions = await agent.listSessions(100)
+            const matches = allSessions.filter((s) => s.session_id === upArg || s.session_id.startsWith(upArg))
+            if (matches.length === 0) {
+              pushSystem(setSystem, 'error', `Session not found: ${upArg}`)
+              break
+            }
+            if (matches.length > 1) {
+              pushSystem(setSystem, 'error', `Ambiguous session id: ${upArg} (${matches.length} matches)`)
+              break
+            }
+            resolvedSid = matches[0]!.session_id
+          } catch (err: any) {
+            pushSystem(setSystem, 'error', `Failed to list sessions: ${err?.message ?? err}`)
+            break
+          }
+        }
+        pushSystem(setSystem, 'info', `  packing session ${resolvedSid.slice(0, 8)}...`)
+        try {
+          const { logPut } = await import('./log-share.js')
+          const result = await logPut(resolvedSid)
+          pushSystem(setSystem, 'info', `  uploaded. share this link:\n  ${result.url}\n  ⏳ link expires in 60 minutes`)
+        } catch (err: any) {
+          pushSystem(setSystem, 'error', `Export failed: ${err?.message ?? err}`)
+        }
+      } else if (query.startsWith('dl ')) {
+        // /log dl <url#password>
+        const dlUrl = query.slice(3).trim()
+        if (!dlUrl) {
+          pushSystem(setSystem, 'error', 'Usage: /log dl <url#password>')
+          break
+        }
+        pushSystem(setSystem, 'info', '  downloading and importing...')
+        try {
+          const { logGet } = await import('./log-share.js')
+          const result = await logGet(dlUrl)
+          pushSystem(setSystem, 'info', `  imported session: ${result.sessionId}\n  resume with: /resume ${result.sessionId.slice(0, 8)}`)
+        } catch (err: any) {
+          pushSystem(setSystem, 'error', `Import failed: ${err?.message ?? err}`)
+        }
+      } else if (!query) {
         if (sid) pushSystem(setSystem, 'info', `Log: ${join(logDir, `${sid}.screen.log`)}`)
         else pushSystem(setSystem, 'info', `Log dir: ${logDir} (no active session)`)
       } else if (!sid) {

@@ -123,8 +123,12 @@ impl Storage for FsStorage {
                 }
             }
             let path = entry.path().join("session.json");
-            if let Some(session) = self.read_json::<SessionMeta>(&path).await? {
-                sessions.push(session);
+            match self.read_json::<SessionMeta>(&path).await {
+                Ok(Some(session)) => sessions.push(session),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(path = ?path, "skipping malformed session.json: {e}");
+                }
             }
         }
 

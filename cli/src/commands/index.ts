@@ -18,7 +18,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/plan', description: 'Enter planning mode', handler: 'builtin' },
   { name: '/act', description: 'Return to normal action mode', handler: 'builtin' },
   { name: '/env', description: 'Manage variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
-  { name: '/log', description: 'Analyze session log in a side conversation', usage: '/log [query]', handler: 'builtin' },
+  { name: '/log', description: 'Analyze session log / share sessions', usage: '/log [up [id] | dl <url> | query]', handler: 'builtin' },
   { name: '/skill', description: 'Manage skills', usage: '/skill [list | install <source> | remove <name>]', handler: 'builtin' },
   { name: '/update', description: 'Update evot to latest version', handler: 'builtin' },
 ]

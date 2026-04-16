@@ -660,7 +660,7 @@ function Footer({ model, planning, logMode, updateHint, serverState, columns }: 
       <Text>{' '.repeat(gap)}</Text>
       <Text dimColor>{model}</Text>
       {serverState && (
-        <Text dimColor>{`  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]`}</Text>
+        <Text color="green">{`  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]`}</Text>
       )}
       {updateHint && (
         <Text color="yellow">{'  '}{updateHint}</Text>

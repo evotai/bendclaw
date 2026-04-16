@@ -15,6 +15,7 @@ import type { HistoryManager } from '../session/history.js'
 import type { ServerState } from '../repl/server.js'
 import { formatUptime } from '../repl/server.js'
 import { InterruptHandler } from '../input/interrupt.js'
+import stripAnsi from 'strip-ansi'
 import { needsContinuation } from '../input/continuation.js'
 import {
   formatPastedTextRef,
@@ -647,26 +648,23 @@ function Footer({ model, planning, logMode, updateHint, serverState, columns }: 
   if (planning) hints.push('[plan]')
   const left = hints.join('  ')
   const serverLabel = serverState ? `  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]` : ''
-  const right = model + serverLabel
-  const gap = Math.max(1, columns - left.length - right.length)
+  const updateLabel = updateHint ? `  ${updateHint}` : ''
+  const right = model + serverLabel + updateLabel
+  const gap = Math.max(1, columns - left.length - stripAnsi(right).length)
 
   return (
-    <Box flexDirection="column">
-      {updateHint && (
-        <Box>
-          <Text color="yellow">{'  '}{updateHint}</Text>
-        </Box>
+    <Box>
+      {logMode && <Text color="magenta" bold>{'[log]'}</Text>}
+      {logMode && <Text dimColor>{' /done to exit'}</Text>}
+      {planning && <Text color="yellow" bold>{logMode ? '  [plan]' : '[plan]'}</Text>}
+      <Text>{' '.repeat(gap)}</Text>
+      <Text dimColor>{model}</Text>
+      {serverState && (
+        <Text dimColor>{`  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]`}</Text>
       )}
-      <Box>
-        {logMode && <Text color="magenta" bold>{'[log]'}</Text>}
-        {logMode && <Text dimColor>{' /done to exit'}</Text>}
-        {planning && <Text color="yellow" bold>{logMode ? '  [plan]' : '[plan]'}</Text>}
-        <Text>{' '.repeat(gap)}</Text>
-        <Text dimColor>{model}</Text>
-        {serverState && (
-          <Text dimColor>{`  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]`}</Text>
-        )}
-      </Box>
+      {updateHint && (
+        <Text color="yellow">{'  '}{updateHint}</Text>
+      )}
     </Box>
   )
 }

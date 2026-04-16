@@ -30,7 +30,7 @@ pub async fn start(conf: Config) -> Result<()> {
     Ok(())
 }
 
-fn build_agent(conf: &Config) -> Result<Arc<Agent>> {
+pub fn build_agent(conf: &Config) -> Result<Arc<Agent>> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| EvotError::Run(format!("failed to get cwd: {e}")))?;

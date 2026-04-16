@@ -441,7 +441,6 @@ pub fn version() -> String {
     env!("EVOT_VERSION").to_string()
 }
 
-/// Start the HTTP server. Blocks until the server shuts down.
 #[napi]
 pub async fn start_server(port: Option<u16>, model: Option<String>) -> Result<()> {
     let mut config = evot::conf::Config::load()
@@ -453,4 +452,35 @@ pub async fn start_server(port: Option<u16>, model: Option<String>) -> Result<()
     evot::gateway::service::start(config)
         .await
         .map_err(|e| Error::from_reason(format!("server error: {e}")))
+}
+
+#[napi]
+pub async fn start_server_background(
+    port: Option<u16>,
+    model: Option<String>,
+) -> Result<Option<u16>> {
+    let mut config = evot::conf::Config::load()
+        .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
+        .with_model(model);
+    if let Some(p) = port {
+        config = config.with_port(p);
+    }
+    let actual_port = config.server.port;
+    let host = config.server.host.clone();
+    let addr = format!("{host}:{actual_port}");
+
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(_) => return Ok(None),
+    };
+
+    let agent = evot::gateway::service::build_agent(&config)
+        .map_err(|e| Error::from_reason(format!("agent init: {e}")))?;
+
+    let server = evot::gateway::channels::http::Server::new(agent);
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, server.router()).await;
+    });
+
+    Ok(Some(actual_port))
 }

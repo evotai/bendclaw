@@ -38,6 +38,7 @@ import {
 import { splitMarkdownBlocks } from '../render/markdown.js'
 import { Banner } from './Banner.js'
 import { UpdateManager, type ReleaseInfo } from '../update/index.js'
+import { tryStartServer, setTerminalTitle, type ServerState } from './server.js'
 
 interface REPLProps {
   agent: Agent
@@ -70,6 +71,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const [historyManager] = useState(() => new HistoryManager())
   const [updateHint, setUpdateHint] = useState<string | undefined>(undefined)
   const [updateManager] = useState(() => new UpdateManager(version()))
+  const [serverState, setServerState] = useState<ServerState | null>(null)
   const [configInfoState, setConfigInfoState] = useState(() => {
     try { return agent.configInfo() } catch { return undefined }
   })
@@ -91,6 +93,14 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       updateManager.off('update-available', onUpdateAvailable)
       updateManager.cleanup()
     }
+  }, [])
+
+  useEffect(() => {
+    setTerminalTitle(null)
+    tryStartServer().then((s) => {
+      setServerState(s)
+      setTerminalTitle(s)
+    }).catch(() => {})
   }, [])
 
   // Startup: auto-resume or show resume hint
@@ -240,7 +250,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       abortCurrentStream()
       pushSystem(setSystemMessages, 'info', 'Interrupted.')
     } else {
-      // Show resume hint on exit
+      setTerminalTitle(null)
       if (sessionIdRef.current) {
         console.log(`\n\x1b[90m${'─'.repeat(80)}\x1b[0m`)
         console.log(`\x1b[90mResume this session with:\n  evot --resume ${sessionIdRef.current}\x1b[0m\n`)
@@ -256,7 +266,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   return (
     <Box flexDirection="column" padding={0}>
       <OutputView
-        banner={<Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />}
+        banner={<Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} serverState={serverState} />}
         lines={outputLines}
       />
 
@@ -324,6 +334,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
         queuedMessages={messageQueue}
         history={historyManager}
         updateHint={updateHint}
+        serverState={serverState}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
         onToggleVerbose={handleToggleVerbose}

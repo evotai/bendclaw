@@ -40,3 +40,4 @@ export declare const NapiAgent: {
 export declare function version(): string
 
 export declare function startServer(port?: number | null, model?: string | null): Promise<void>
+export declare function startServerBackground(port?: number | null, model?: string | null): Promise<number | null>

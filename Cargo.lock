@@ -836,6 +836,7 @@ dependencies = [
 name = "evot-napi"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "evot",
  "evotengine",
  "napi",

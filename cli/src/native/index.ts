@@ -5,7 +5,7 @@
  */
 
 // @ts-ignore — binding.js is generated
-import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer } from './binding.js'
+import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer, startServerBackground as rawStartServerBackground } from './binding.js'
 import type { NapiAgent as RawAgentType, NapiRun as RawRunType, NapiForkedAgent as RawForkedType } from './binding.d.ts'
 
 // ---------------------------------------------------------------------------
@@ -217,4 +217,8 @@ export function version(): string {
 
 export async function startServer(port?: number, model?: string): Promise<void> {
   return rawStartServer(port ?? null, model ?? null)
+}
+
+export async function startServerBackground(port?: number, model?: string): Promise<number | null> {
+  return rawStartServerBackground(port ?? null, model ?? null)
 }

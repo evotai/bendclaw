@@ -50,7 +50,7 @@ impl Server {
         Ok(())
     }
 
-    fn router(self: Arc<Self>) -> Router {
+    pub fn router(self: Arc<Self>) -> Router {
         Router::new()
             .route(
                 "/",

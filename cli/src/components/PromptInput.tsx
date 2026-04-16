@@ -12,6 +12,8 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Text, Box, useInput, useStdout } from 'ink'
 import { complete, getGhostHint } from '../commands/completion.js'
 import type { HistoryManager } from '../session/history.js'
+import type { ServerState } from '../repl/server.js'
+import { formatUptime } from '../repl/server.js'
 import { InterruptHandler } from '../input/interrupt.js'
 import { needsContinuation } from '../input/continuation.js'
 import {
@@ -35,6 +37,7 @@ interface PromptInputProps {
   queuedMessages: string[]
   history: HistoryManager
   updateHint?: string
+  serverState: ServerState | null
   onSubmit: (text: string) => void
   onInterrupt: () => void
   onToggleVerbose: () => void
@@ -50,6 +53,7 @@ export const PromptInput = React.memo(function PromptInput({
   queuedMessages,
   history,
   updateHint,
+  serverState,
   onSubmit,
   onInterrupt,
   onToggleVerbose,
@@ -523,7 +527,7 @@ export const PromptInput = React.memo(function PromptInput({
       )}
 
       {/* Footer */}
-      <Footer model={model} planning={planning} logMode={logMode} updateHint={updateHint} columns={columns} />
+      <Footer model={model} planning={planning} logMode={logMode} updateHint={updateHint} serverState={serverState} columns={columns} />
     </Box>
   )
 })
@@ -622,18 +626,29 @@ function DimRefsLine({ text }: { text: string }) {
 // Footer — model name + mode indicators
 // ---------------------------------------------------------------------------
 
-function Footer({ model, planning, logMode, updateHint, columns }: {
+function Footer({ model, planning, logMode, updateHint, serverState, columns }: {
   model: string
   planning: boolean
   logMode: boolean
   updateHint?: string
+  serverState: ServerState | null
   columns: number
 }) {
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!serverState) return
+    const timer = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(timer)
+  }, [serverState])
+
   const hints: string[] = []
   if (logMode) hints.push('[log] /done to exit')
   if (planning) hints.push('[plan]')
   const left = hints.join('  ')
-  const gap = Math.max(1, columns - left.length - model.length)
+  const serverLabel = serverState ? `  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]` : ''
+  const right = model + serverLabel
+  const gap = Math.max(1, columns - left.length - right.length)
 
   return (
     <Box flexDirection="column">
@@ -648,6 +663,9 @@ function Footer({ model, planning, logMode, updateHint, columns }: {
         {planning && <Text color="yellow" bold>{logMode ? '  [plan]' : '[plan]'}</Text>}
         <Text>{' '.repeat(gap)}</Text>
         <Text dimColor>{model}</Text>
+        {serverState && (
+          <Text dimColor>{`  [server :${serverState.port} · ${formatUptime(serverState.startedAt)}]`}</Text>
+        )}
       </Box>
     </Box>
   )

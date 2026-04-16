@@ -355,22 +355,20 @@ fn test_preview_command_single_line_short() {
 }
 
 #[test]
-fn test_preview_command_multiline_truncates() {
+fn test_preview_command_multiline_shows_full() {
     let tool = BashTool::new();
     let params = serde_json::json!({"command": "echo hello\necho world\necho done"});
     let preview = tool.preview_command(&params).unwrap();
-    assert_eq!(preview, "echo hello…");
+    assert_eq!(preview, "echo hello\necho world\necho done");
 }
 
 #[test]
-fn test_preview_command_long_line_truncates() {
+fn test_preview_command_long_line_shows_full() {
     let tool = BashTool::new();
     let long = "x".repeat(200);
     let params = serde_json::json!({"command": long});
     let preview = tool.preview_command(&params).unwrap();
-    assert!(preview.ends_with('…'));
-    // 120 chars + "…"
-    assert_eq!(preview.chars().count(), 121);
+    assert_eq!(preview.len(), 200);
 }
 
 #[test]

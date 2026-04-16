@@ -70,9 +70,13 @@ export function buildToolCall(
     kind: 'tool',
     text: `[${name.toUpperCase()}] call`,
   })
-  // Detail: preview command takes priority, otherwise show args
+  // Detail: preview command takes priority (shown in full), otherwise show args
   if (previewCommand) {
-    lines.push({ id: genId('tool'), kind: 'tool', text: `  ❯ ${previewCommand}` })
+    const cmdLines = previewCommand.split('\n')
+    lines.push({ id: genId('tool'), kind: 'tool', text: `  ❯ ${cmdLines[0]}` })
+    for (let i = 1; i < cmdLines.length; i++) {
+      lines.push({ id: genId('tool'), kind: 'tool', text: `    ${cmdLines[i]}` })
+    }
   } else {
     for (const line of formatToolInputLines(args)) {
       lines.push({ id: genId('tool'), kind: 'tool', text: `  ${line}` })

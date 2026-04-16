@@ -1,6 +1,6 @@
-#[path = "agent/agent.rs"]
-mod agent;
-#[path = "agent/agent_loop.rs"]
-mod agent_loop;
+#[path = "agent/run.rs"]
+mod run;
+#[path = "agent/state.rs"]
+mod state;
 
 mod fixtures;

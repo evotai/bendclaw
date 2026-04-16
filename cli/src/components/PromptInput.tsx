@@ -96,9 +96,9 @@ export const PromptInput = React.memo(function PromptInput({
     // These leak through as character input and cause infinite re-render loops.
     if (ch && /^\[[\?=]/.test(ch)) return
 
-    // During loading, only allow Ctrl+C to interrupt and Enter to queue
+    // During loading, Ctrl+C or Escape interrupts the stream
     if (isLoading) {
-      if (key.ctrl && ch === 'c') {
+      if ((key.ctrl && ch === 'c') || key.escape) {
         onInterrupt()
         return
       }

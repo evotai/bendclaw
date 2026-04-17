@@ -127,8 +127,8 @@ export class Agent {
     this.raw = raw
   }
 
-  static create(model?: string): Agent {
-    const raw = RawAgent.create(model ?? null)
+  static create(model?: string, envFile?: string): Agent {
+    const raw = RawAgent.create(model ?? null, envFile ?? null)
     return new Agent(raw)
   }
 

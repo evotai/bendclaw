@@ -35,7 +35,7 @@ export interface NapiRun {
 }
 
 export declare const NapiAgent: {
-  create(model?: string | null): NapiAgent
+  create(model?: string | null, envFile?: string | null): NapiAgent
 }
 
 export declare function version(): string

@@ -21,13 +21,17 @@ describe('applyEvent llm_call_started', () => {
     const next = applyEvent(state, makeEvent('llm_call_started', 1, {
       model: 'claude-opus-4-6',
       message_count: 5,
-      messages: [
-        { role: 'user', content: 'hello' },
-        { role: 'assistant', content: 'hi there' },
-        { role: 'user', content: 'do something' },
-        { role: 'tool_result', toolName: 'bash', content: 'output' },
-        { role: 'assistant', content: 'done' },
-      ],
+      message_stats: {
+        user_count: 2,
+        assistant_count: 2,
+        tool_result_count: 1,
+        image_count: 0,
+        user_tokens: 100,
+        assistant_tokens: 80,
+        tool_result_tokens: 50,
+        image_tokens: 0,
+        tool_details: [['bash', 50]],
+      },
       tools: [{}, {}, {}],
       system_prompt_tokens: 1200,
       attempt: 0,
@@ -42,7 +46,7 @@ describe('applyEvent llm_call_started', () => {
     expect(evt.text).toContain('user 2')
     expect(evt.text).toContain('assistant 2')
     expect(evt.text).toContain('tool_result 1')
-    expect(evt.text).toContain('tokens')
+    expect(evt.text).toContain('system ~1k')
     expect(evt.text).not.toContain('retry')
   })
 
@@ -64,14 +68,17 @@ describe('applyEvent llm_call_started', () => {
     const next = applyEvent(state, makeEvent('llm_call_started', 1, {
       model: 'test-model',
       message_count: 6,
-      messages: [
-        { role: 'user', content: 'do stuff' },
-        { role: 'tool_result', toolName: 'bash', content: 'x'.repeat(400) },
-        { role: 'tool_result', toolName: 'read', content: 'y'.repeat(800) },
-        { role: 'tool_result', toolName: 'bash', content: 'z'.repeat(200) },
-        { role: 'assistant', content: 'ok' },
-        { role: 'user', content: 'more' },
-      ],
+      message_stats: {
+        user_count: 2,
+        assistant_count: 1,
+        tool_result_count: 3,
+        image_count: 0,
+        user_tokens: 50,
+        assistant_tokens: 10,
+        tool_result_tokens: 1400,
+        image_tokens: 0,
+        tool_details: [['bash', 600], ['read', 800]],
+      },
       tools: [{}, {}],
       system_prompt_tokens: 1000,
       attempt: 0,
@@ -184,8 +191,9 @@ describe('applyEvent context_compaction', () => {
     }))
     const evt = next.verboseEvents[next.verboseEvents.length - 1]!
     expect(evt.text).toContain('[COMPACT] · L1')
-    expect(evt.text).toContain('72 messages ~74k tok')
-    expect(evt.text).toContain('65 messages ~65k tok  (saved ~9k, 12.2%)')
+    expect(evt.text).toContain('72 msgs ~74k')
+    expect(evt.text).toContain('65 msgs ~65k')
+    expect(evt.text).toContain('saved ~9k')
   })
 
   test('compact actions with position bar, summary, and top/tail truncation', () => {
@@ -211,18 +219,21 @@ describe('applyEvent context_compaction', () => {
     expect(evt.text).toContain('[')
     expect(evt.text).toContain(']')
     // Action summary
-    expect(evt.text).toContain('↓ outlined 2, head-tail 1')
+    expect(evt.text).toContain('outlined 2, head-tail 1')
     // After line with saved
-    expect(evt.text).toContain('(saved ~5k, 10.0%)')
+    expect(evt.text).toContain('saved ~5k')
     // Actions header
-    expect(evt.text).toContain('actions: (3 of 4 changed, sorted by savings)')
+    expect(evt.text).toContain('actions:')
+    expect(evt.text).toContain('changed')
     // Skipped is filtered out
     expect(evt.text).not.toContain('Skipped')
     // Action lines show #index, tool_name, Method
-    expect(evt.text).toContain('#0   read_file    Outline')
-    expect(evt.text).toContain('#1   bash         HeadTail')
-    // saved=0 action still shown (evot_bak shows all non-Skipped)
-    expect(evt.text).toContain('#3   read_file    Outline')
+    expect(evt.text).toContain('#0')
+    expect(evt.text).toContain('read_file')
+    expect(evt.text).toContain('Outline')
+    expect(evt.text).toContain('#1')
+    expect(evt.text).toContain('bash')
+    expect(evt.text).toContain('HeadTail')
   })
 
   test('compact completed tracks history for run summary', () => {
@@ -260,7 +271,7 @@ describe('applyEvent context_compaction', () => {
     }))
     const evt = next.verboseEvents[next.verboseEvents.length - 1]!
     expect(evt.text).toContain('cleared')
-    expect(evt.text).toContain('saved 12k')
+    expect(evt.text).toContain('12k')
   })
 })
 

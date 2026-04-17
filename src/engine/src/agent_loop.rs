@@ -277,6 +277,8 @@ async fn run_loop(
         .map(|limits| ExecutionTracker::new(limits.clone()));
     let mut doom_detector = DoomLoopDetector::new(3);
     let mut context_tracker = ContextTracker::new();
+    let mut consecutive_errors: usize = 0;
+    let mut compacted_after_error = false;
 
     // Check for steering messages at start
     let mut pending: Vec<AgentMessage> = config
@@ -427,6 +429,65 @@ async fn run_loop(
             } = message
             {
                 if *stop_reason == StopReason::Error || *stop_reason == StopReason::Aborted {
+                    consecutive_errors += 1;
+
+                    // Compact-and-retry: if we've failed ≥2 times consecutively,
+                    // context is over 50% of budget, and we haven't already
+                    // compacted for this error streak — force compact and retry
+                    // the turn instead of giving up.
+                    if *stop_reason == StopReason::Error
+                        && !cancel.is_cancelled()
+                        && consecutive_errors >= 2
+                        && !compacted_after_error
+                    {
+                        if let Some(ref ctx_config) = config.context_config {
+                            let budget = ctx_config
+                                .max_context_tokens
+                                .saturating_sub(ctx_config.system_prompt_tokens);
+                            let current_tokens =
+                                context_tracker.estimate_context_tokens(&context.messages);
+
+                            if current_tokens > budget / 2 {
+                                // Remove the error message we just pushed
+                                context.messages.pop();
+                                new_messages.pop();
+
+                                let budget_state = CompactionBudgetState {
+                                    estimated_tokens: current_tokens,
+                                };
+                                let compact_result = strategy.compact(
+                                    std::mem::take(&mut context.messages),
+                                    ctx_config,
+                                    &budget_state,
+                                );
+                                context.messages = compact_result.messages;
+                                context_tracker.reset();
+                                compacted_after_error = true;
+
+                                tx.send(AgentEvent::ContextCompactionStart {
+                                    message_count: compact_result.stats.before_message_count,
+                                    estimated_tokens: compact_result.stats.before_estimated_tokens,
+                                    budget_tokens: budget,
+                                    system_prompt_tokens: ctx_config.system_prompt_tokens,
+                                    context_window: ctx_config.max_context_tokens,
+                                    message_stats:
+                                        crate::context::compute_call_stats_from_agent_messages(
+                                            &context.messages,
+                                        ),
+                                })
+                                .ok();
+                                tx.send(AgentEvent::ContextCompactionEnd {
+                                    stats: compact_result.stats,
+                                    messages: context.messages.clone(),
+                                })
+                                .ok();
+
+                                // Retry the turn with compacted context
+                                continue;
+                            }
+                        }
+                    }
+
                     // Emit unified Error event for provider errors (but not cancellations)
                     if *stop_reason == StopReason::Error && !cancel.is_cancelled() {
                         let err_str = error_message
@@ -453,6 +514,10 @@ async fn run_loop(
                     return;
                 }
             }
+
+            // Successful turn — reset error tracking
+            consecutive_errors = 0;
+            compacted_after_error = false;
 
             // Extract tool calls
             let tool_calls: Vec<_> = match &message {

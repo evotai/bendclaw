@@ -19,7 +19,7 @@ describe('padRight', () => {
   })
 
   test('handles n=0', () => {
-    expect(padRight('hi', 0)).toBe('h…')
+    expect(padRight('hi', 0)).toBe('…')
   })
 
   test('handles n=1 with long string', () => {

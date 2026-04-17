@@ -227,7 +227,7 @@ fn format_error(tool_name: &str, issues: &[String]) -> String {
 /// Prevents oversized outputs from blowing up the context window.
 /// Aligned with Claude Code's `maxResultSizeChars: 20_000` (GrepTool)
 /// and `DEFAULT_MAX_RESULT_SIZE_CHARS = 50_000`.
-pub const MAX_TOOL_RESULT_BYTES: usize = 30_000;
+pub const MAX_TOOL_RESULT_BYTES: usize = 12_000;
 
 /// Truncate a tool result text to `max_bytes`, keeping head + tail with a
 /// note in the middle.  UTF-8 safe.  Returns the original string unchanged

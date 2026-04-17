@@ -68,6 +68,15 @@ fn single_content_tokens(c: &Content) -> usize {
 /// user/assistant/tool_result tokens), so:
 ///   total = user_tokens + assistant_tokens + tool_result_tokens + image_tokens
 pub fn compute_call_stats(messages: &[Message]) -> LlmCallStats {
+    compute_call_stats_iter(messages.iter())
+}
+
+/// Compute stats from `AgentMessage` slice (filters to LLM messages only).
+pub fn compute_call_stats_from_agent_messages(messages: &[AgentMessage]) -> LlmCallStats {
+    compute_call_stats_iter(messages.iter().filter_map(|m| m.as_llm()))
+}
+
+fn compute_call_stats_iter<'a>(messages: impl Iterator<Item = &'a Message>) -> LlmCallStats {
     let mut stats = LlmCallStats::default();
 
     for msg in messages {
@@ -118,12 +127,4 @@ pub fn compute_call_stats(messages: &[Message]) -> LlmCallStats {
 
     stats.tool_details.sort_by(|a, b| b.1.cmp(&a.1));
     stats
-}
-
-/// Compute stats from `AgentMessage` slice (filters to LLM messages only).
-pub fn compute_call_stats_from_agent_messages(messages: &[AgentMessage]) -> LlmCallStats {
-    let llm_messages: Vec<&Message> = messages.iter().filter_map(|m| m.as_llm()).collect();
-    // Reuse the same logic by collecting refs
-    let owned: Vec<Message> = llm_messages.into_iter().cloned().collect();
-    compute_call_stats(&owned)
 }

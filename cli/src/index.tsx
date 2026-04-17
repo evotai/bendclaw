@@ -13,7 +13,6 @@ import { installBracketedPaste } from './input/bracketed_paste.js'
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2))
-  if (opts.envFile) process.env.EVOT_ENV_FILE = opts.envFile
 
   switch (opts.command) {
     case 'serve':

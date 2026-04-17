@@ -30,10 +30,7 @@ pub fn config_file_path() -> Result<PathBuf> {
     Ok(state_root_dir()?.join("evot.toml"))
 }
 
-pub fn env_file_path() -> Result<PathBuf> {
-    if let Ok(custom) = std::env::var("EVOT_ENV_FILE") {
-        return expand_home_path(&custom);
-    }
+pub fn default_env_file_path() -> Result<PathBuf> {
     Ok(state_root_dir()?.join("evot.env"))
 }
 

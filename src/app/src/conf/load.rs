@@ -395,18 +395,20 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     Ok(())
 }
 
-pub(super) fn load_config_inner() -> Result<Config> {
+pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     let mut config = default_config()?;
 
     let file_source = load_file_source(&paths::config_file_path()?)?;
     file_source.apply(&mut config)?;
 
-    let env_path = paths::env_file_path()?;
-    let is_custom_env = std::env::var("EVOT_ENV_FILE").is_ok();
+    let (env_path, is_custom_env) = match env_file {
+        Some(path) => (paths::expand_home_path(path)?, true),
+        None => (paths::default_env_file_path()?, false),
+    };
     if is_custom_env {
         if !env_path.exists() {
             return Err(crate::error::EvotError::Conf(format!(
-                "EVOT_ENV_FILE not found: {}",
+                "env file not found: {}",
                 env_path.display()
             )));
         }

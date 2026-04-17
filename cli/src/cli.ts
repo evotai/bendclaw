@@ -124,7 +124,7 @@ export function applyCliOpts(agent: Agent, opts: CliOptions): void {
 
 export function createAgent(opts: CliOptions): Agent {
   try {
-    const agent = Agent.create(opts.model)
+    const agent = Agent.create(opts.model, opts.envFile)
     applyCliOpts(agent, opts)
     return agent
   } catch (err: any) {

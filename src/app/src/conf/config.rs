@@ -61,7 +61,11 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        super::load::load_config_inner()
+        super::load::load_config_inner(None)
+    }
+
+    pub fn load_with_env_file(env_file: Option<&str>) -> Result<Self> {
+        super::load::load_config_inner(env_file)
     }
 
     pub fn with_model(mut self, model: Option<String>) -> Self {
@@ -93,7 +97,7 @@ impl Config {
                     "EVOT_OPENAI_MODEL",
                 ),
             };
-            let env_path = crate::conf::paths::env_file_path()
+            let env_path = crate::conf::paths::default_env_file_path()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|_| "unknown".into());
             return Err(EvotError::Conf(format!(

@@ -52,8 +52,8 @@ impl NapiAgent {
     /// Load config from disk and create an agent.
     /// Optional `model` override.
     #[napi(factory)]
-    pub fn create(model: Option<String>) -> Result<Self> {
-        let config = evot::conf::Config::load()
+    pub fn create(model: Option<String>, env_file: Option<String>) -> Result<Self> {
+        let config = evot::conf::Config::load_with_env_file(env_file.as_deref())
             .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
             .with_model(model);
 
@@ -274,7 +274,7 @@ impl NapiAgent {
     pub fn config_info(&self) -> Result<String> {
         let llm = self.agent.llm();
         let provider = format!("{}", self.config.llm.provider);
-        let env_path = evot::conf::paths::env_file_path()
+        let env_path = evot::conf::paths::default_env_file_path()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
         let has_api_key = !llm.api_key.is_empty();

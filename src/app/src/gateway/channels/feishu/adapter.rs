@@ -73,6 +73,12 @@ impl FeishuChannel {
             channel = "feishu",
             chat_id = %msg.chat_id,
             sender_id = %msg.sender_id,
+            message_id = %msg.message_id,
+            thread_id = ?msg.thread_id,
+            root_id = ?msg.root_id,
+            parent_id = ?msg.parent_id,
+            scope = %scope,
+            session_id = %locator.session_id(),
             "received message"
         );
 

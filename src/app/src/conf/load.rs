@@ -392,6 +392,16 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
         }
     }
 
+    // Skills
+    if let Some(val) = vars.get("EVOT_SKILLS_DIRS") {
+        for d in val.split(':') {
+            let d = d.trim();
+            if !d.is_empty() {
+                config.skills_dirs.push(paths::expand_home_path(d)?);
+            }
+        }
+    }
+
     Ok(())
 }
 

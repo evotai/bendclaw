@@ -18,6 +18,7 @@ pub struct Config {
     pub storage: StorageConfig,
     pub channels: ChannelsConfig,
     pub sandbox: SandboxConfig,
+    pub skills_dirs: Vec<PathBuf>,
     /// The env file path actually used during config loading.
     pub env_file_path: PathBuf,
 }
@@ -32,6 +33,7 @@ impl Config {
             storage: StorageConfig::fs(state_root),
             channels: ChannelsConfig::default(),
             sandbox: SandboxConfig::default(),
+            skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
         }
     }

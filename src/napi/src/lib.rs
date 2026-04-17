@@ -98,7 +98,7 @@ impl NapiAgent {
         let agent = evot::agent::Agent::new(&config, &cwd)
             .map_err(|e| Error::from_reason(format!("agent init: {e}")))?
             .with_system_prompt(system_prompt)
-            .with_skills_dirs(build_skills_dirs());
+            .with_skills_dirs(build_skills_dirs(&config));
 
         // Load variables
         let rt = tokio::runtime::Handle::current();
@@ -602,11 +602,12 @@ impl NapiForkedAgent {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn build_skills_dirs() -> Vec<PathBuf> {
+fn build_skills_dirs(config: &evot::conf::Config) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(global) = evot::conf::paths::skills_dir() {
         dirs.push(global);
     }
+    dirs.extend(config.skills_dirs.clone());
     dirs
 }
 

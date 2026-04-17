@@ -49,6 +49,7 @@ pub fn build_agent(conf: &Config) -> Result<Arc<Agent>> {
     if let Ok(global) = crate::conf::paths::skills_dir() {
         skills_dirs.push(global);
     }
+    skills_dirs.extend(conf.skills_dirs.clone());
 
     Ok(Agent::new(conf, &cwd)?
         .with_system_prompt(system_prompt)

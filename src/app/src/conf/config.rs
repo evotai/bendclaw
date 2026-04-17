@@ -18,6 +18,8 @@ pub struct Config {
     pub storage: StorageConfig,
     pub channels: ChannelsConfig,
     pub sandbox: SandboxConfig,
+    /// The env file path actually used during config loading.
+    pub env_file_path: PathBuf,
 }
 
 impl Config {
@@ -30,6 +32,7 @@ impl Config {
             storage: StorageConfig::fs(state_root),
             channels: ChannelsConfig::default(),
             sandbox: SandboxConfig::default(),
+            env_file_path: PathBuf::new(),
         }
     }
 
@@ -97,9 +100,7 @@ impl Config {
                     "EVOT_OPENAI_MODEL",
                 ),
             };
-            let env_path = crate::conf::paths::default_env_file_path()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "unknown".into());
+            let env_path = self.env_file_path.display();
             return Err(EvotError::Conf(format!(
                 "{key_name} not set (provider: {provider:?}, env file: {env_path})"
             )));

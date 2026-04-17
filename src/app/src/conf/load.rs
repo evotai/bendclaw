@@ -418,6 +418,8 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     let env_file_vars = load_env_file(&env_path)?;
     apply_env(&mut config, &env_file_vars)?;
 
+    config.env_file_path = env_path;
+
     let process_vars = load_process_env();
     apply_env(&mut config, &process_vars)?;
 

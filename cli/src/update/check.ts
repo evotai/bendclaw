@@ -47,6 +47,32 @@ export async function fetchLatestStable(): Promise<ReleaseInfo | null> {
 }
 
 /**
+ * Fetch recent release note titles from GitHub for the startup banner.
+ */
+export async function fetchRecentReleaseNotes(limit: number): Promise<string[]> {
+  try {
+    const resp = await fetch(RELEASES_URL, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+    })
+    if (!resp.ok) return []
+
+    const releases = await resp.json() as Array<{
+      draft: boolean
+      prerelease: boolean
+      name: string
+      tag_name: string
+    }>
+
+    return releases
+      .filter((r) => !r.draft && !r.prerelease && r.name.startsWith('evot'))
+      .slice(0, limit)
+      .map((r) => r.name)
+  } catch {
+    return []
+  }
+}
+
+/**
  * Compare two version strings (e.g. "2026.4.13" vs "2026.4.15").
  * Splits on "." and compares each segment numerically.
  * Returns true if remote is newer than current.

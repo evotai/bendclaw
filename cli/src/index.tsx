@@ -40,10 +40,22 @@ async function main() {
       const agent = createAgent(opts)
       process.on('SIGINT', () => {})
 
+      // Preload data for the startup banner (Static renders only once)
+      let preloadedSessions: Awaited<ReturnType<typeof agent.listSessions>> = []
+      try { preloadedSessions = await agent.listSessions(20) } catch { /* ignore */ }
+
+      let preloadedReleaseNotes: string[] = []
+      try {
+        const { fetchRecentReleaseNotes } = await import('./update/check.js')
+        preloadedReleaseNotes = await fetchRecentReleaseNotes(4)
+      } catch { /* ignore */ }
+
       const { waitUntilExit } = render(React.createElement(REPL, {
         agent,
         initialVerbose: opts.verbose,
         initialResume: opts.resume,
+        preloadedSessions,
+        preloadedReleaseNotes,
       }), {
         exitOnCtrlC: false,
       })

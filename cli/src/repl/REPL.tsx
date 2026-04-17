@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { Box, Text, useApp, useInput } from 'ink'
+import { Box, Text, useApp } from 'ink'
 import { Agent, type RunEvent, QueryStream, version } from '../native/index.js'
 import { type AppState, createInitialState } from '../state/app.js'
 import { applyEvent } from '../state/reducer.js'
@@ -37,7 +37,7 @@ import {
   findSafeSplitPoint,
 } from '../render/output.js'
 import { splitMarkdownBlocks } from '../render/markdown.js'
-import { Banner } from './Banner.js'
+import { Banner, type BannerProps } from './Banner.js'
 import { UpdateManager, type ReleaseInfo } from '../update/index.js'
 import { tryStartServer, setTerminalTitle, type ServerState } from './server.js'
 
@@ -45,9 +45,11 @@ interface REPLProps {
   agent: Agent
   initialVerbose?: boolean
   initialResume?: string
+  preloadedSessions?: import('../native/index.js').SessionMeta[]
+  preloadedReleaseNotes?: string[]
 }
 
-export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps) {
+export function REPL({ agent, initialVerbose = true, initialResume, preloadedSessions, preloadedReleaseNotes }: REPLProps) {
   const { exit } = useApp()
   const [state, setState] = useState<AppState>(() => ({
     ...createInitialState(agent.model, agent.cwd),
@@ -73,6 +75,8 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   const [updateHint, setUpdateHint] = useState<string | undefined>(undefined)
   const [updateManager] = useState(() => new UpdateManager(version()))
   const [serverState, setServerState] = useState<ServerState | null>(null)
+  const [recentSessions] = useState<import('../native/index.js').SessionMeta[]>(preloadedSessions ?? [])
+  const [releaseNotes] = useState<string[]>(preloadedReleaseNotes ?? [])
   const [configInfoState, setConfigInfoState] = useState(() => {
     try { return agent.configInfo() } catch { return undefined }
   })
@@ -112,7 +116,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
 
       try {
         if (initialResume) {
-          const sessions = await agent.listSessions(20)
+          const sessions = preloadedSessions ?? await agent.listSessions(20)
           const match = sessions.find((s) => s.session_id === initialResume || s.session_id.startsWith(initialResume))
           if (match) {
             await resumeSession(agent, match, setState, setSystemMessages, setOutputLines)
@@ -120,7 +124,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
             pushSystem(setSystemMessages, 'error', `Session not found: ${initialResume}`)
           }
         } else {
-          const sessions = await agent.listSessions(20)
+          const sessions = preloadedSessions ?? await agent.listSessions(20)
           const match = sessions.find((s) => s.cwd === agent.cwd)
           if (match) {
             const tag = match.source ? `[${match.source}] ` : ''
@@ -175,15 +179,6 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
       }
     })
   }, [])
-
-  // Interrupt handler during loading — Ctrl+C or Escape
-  useInput((_ch, key) => {
-    const isInterrupt = (key.ctrl && _ch === 'c') || key.escape
-    if (isInterrupt && streamRef.current) {
-      abortCurrentStream()
-      pushSystem(setSystemMessages, 'info', 'Interrupted.')
-    }
-  }, { isActive: state.isLoading })
 
   const dispatchQuery = useCallback((text: string) => {
     const userMsg: UIMessage = {
@@ -272,7 +267,7 @@ export function REPL({ agent, initialVerbose = true, initialResume }: REPLProps)
   return (
     <Box flexDirection="column" padding={0}>
       <OutputView
-        banner={<Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} />}
+        banner={<Banner model={state.model} cwd={state.cwd} sessionId={state.sessionId} configInfo={configInfoState} recentSessions={recentSessions} releaseNotes={releaseNotes} />}
         lines={outputLines}
       />
 

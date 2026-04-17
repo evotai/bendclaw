@@ -92,22 +92,42 @@ async fn deliver_progressive(
                         &mut edit_broken,
                     )
                     .await;
+
+                    // Edit limit reached — send a new message and continue editing there
+                    if edit_broken {
+                        let display = compose_display(&text_buf, &tool_status, max_len);
+                        if let Ok(id) = sink.send_text(chat_id, &display).await {
+                            msg_id = Some(id);
+                            edit_broken = false;
+                            last_edit = Instant::now();
+                        }
+                    }
                 }
             }
 
             RunEventPayload::ToolStarted { tool_name, .. } if config.show_tool_progress => {
                 tool_status = format!("\u{1f527} {tool_name}...");
-                try_edit(
-                    sink,
-                    chat_id,
-                    msg_id.as_deref(),
-                    &text_buf,
-                    &tool_status,
-                    max_len,
-                    &mut last_edit,
-                    &mut edit_broken,
-                )
-                .await;
+                if !edit_broken {
+                    try_edit(
+                        sink,
+                        chat_id,
+                        msg_id.as_deref(),
+                        &text_buf,
+                        &tool_status,
+                        max_len,
+                        &mut last_edit,
+                        &mut edit_broken,
+                    )
+                    .await;
+                    if edit_broken {
+                        let display = compose_display(&text_buf, &tool_status, max_len);
+                        if let Ok(id) = sink.send_text(chat_id, &display).await {
+                            msg_id = Some(id);
+                            edit_broken = false;
+                            last_edit = Instant::now();
+                        }
+                    }
+                }
             }
 
             RunEventPayload::ToolFinished {
@@ -117,32 +137,52 @@ async fn deliver_progressive(
             } if config.show_tool_progress => {
                 let icon = if *is_error { "\u{274c}" } else { "\u{2705}" };
                 tool_status = format!("{icon} {tool_name}");
-                try_edit(
-                    sink,
-                    chat_id,
-                    msg_id.as_deref(),
-                    &text_buf,
-                    &tool_status,
-                    max_len,
-                    &mut last_edit,
-                    &mut edit_broken,
-                )
-                .await;
+                if !edit_broken {
+                    try_edit(
+                        sink,
+                        chat_id,
+                        msg_id.as_deref(),
+                        &text_buf,
+                        &tool_status,
+                        max_len,
+                        &mut last_edit,
+                        &mut edit_broken,
+                    )
+                    .await;
+                    if edit_broken {
+                        let display = compose_display(&text_buf, &tool_status, max_len);
+                        if let Ok(id) = sink.send_text(chat_id, &display).await {
+                            msg_id = Some(id);
+                            edit_broken = false;
+                            last_edit = Instant::now();
+                        }
+                    }
+                }
             }
 
             RunEventPayload::ToolProgress { text, .. } if config.show_tool_progress => {
                 tool_status = format!("\u{23f3} {text}");
-                try_edit(
-                    sink,
-                    chat_id,
-                    msg_id.as_deref(),
-                    &text_buf,
-                    &tool_status,
-                    max_len,
-                    &mut last_edit,
-                    &mut edit_broken,
-                )
-                .await;
+                if !edit_broken {
+                    try_edit(
+                        sink,
+                        chat_id,
+                        msg_id.as_deref(),
+                        &text_buf,
+                        &tool_status,
+                        max_len,
+                        &mut last_edit,
+                        &mut edit_broken,
+                    )
+                    .await;
+                    if edit_broken {
+                        let display = compose_display(&text_buf, &tool_status, max_len);
+                        if let Ok(id) = sink.send_text(chat_id, &display).await {
+                            msg_id = Some(id);
+                            edit_broken = false;
+                            last_edit = Instant::now();
+                        }
+                    }
+                }
             }
 
             _ => {}
@@ -156,13 +196,13 @@ async fn deliver_progressive(
     }
 
     match msg_id {
-        Some(ref id) => {
+        Some(ref id) if !edit_broken => {
             if let Err(e) = sink.edit_text(chat_id, id, &final_text).await {
                 tracing::warn!(error = %e, "delivery: final edit failed, sending new message");
                 let _ = sink.send_text(chat_id, &final_text).await;
             }
         }
-        None => {
+        _ => {
             let _ = sink.send_text(chat_id, &final_text).await;
         }
     }

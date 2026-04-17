@@ -9,8 +9,8 @@ export interface ServerState {
 
 let activePort: number | null = null
 
-export async function tryStartServer(port?: number): Promise<ServerState | null> {
-  const info = await startServerBackground(port)
+export async function tryStartServer(port?: number, envFile?: string): Promise<ServerState | null> {
+  const info = await startServerBackground(port, undefined, envFile)
   if (info === null) return null
   activePort = info.port
   return {

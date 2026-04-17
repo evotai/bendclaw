@@ -46,12 +46,13 @@ interface REPLProps {
   agent: Agent
   initialVerbose?: boolean
   initialResume?: string
+  envFile?: string
   preloadedSessions?: import('../native/index.js').SessionMeta[]
   preloadedReleaseNotes?: string[]
   onEmptyPaste?: (handler: () => void) => void
 }
 
-export function REPL({ agent, initialVerbose = true, initialResume, preloadedSessions, preloadedReleaseNotes, onEmptyPaste }: REPLProps) {
+export function REPL({ agent, initialVerbose = true, initialResume, envFile, preloadedSessions, preloadedReleaseNotes, onEmptyPaste }: REPLProps) {
   const { exit } = useApp()
   const [state, setState] = useState<AppState>(() => ({
     ...createInitialState(agent.model, agent.cwd),
@@ -106,7 +107,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
     (async () => {
       setTerminalTitle()
       try {
-        const s = await tryStartServer()
+        const s = await tryStartServer(undefined, envFile)
         setServerState(s)
         setTerminalTitle()
         if (s) {

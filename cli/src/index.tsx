@@ -62,6 +62,7 @@ async function main() {
         agent,
         initialVerbose: opts.verbose,
         initialResume: opts.resume,
+        envFile: opts.envFile,
         preloadedSessions,
         preloadedReleaseNotes,
         onEmptyPaste: (handler: () => void) => { emptyPasteHandler = handler },

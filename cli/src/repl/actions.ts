@@ -245,6 +245,11 @@ export async function runQuery(
         }
       }
 
+      if (event.kind === 'error') {
+        commitStreamingText()
+        appendLines(buildError(p.message as string ?? 'Unknown error'))
+      }
+
       if (event.kind === 'run_finished' && localState.verbose) {
         commitStreamingText()
         appendLines(buildRunSummary(nextState.currentRunStats))

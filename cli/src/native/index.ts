@@ -77,8 +77,8 @@ export class QueryStream {
     this.raw.abort()
   }
 
-  steer(text: string): void {
-    this.raw.steer(text)
+  steer(text: string, contentJson?: string): void {
+    this.raw.steer(text, contentJson ?? null)
   }
 
   followUp(text: string): void {
@@ -98,6 +98,23 @@ export class QueryStream {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Content block types for multi-content queries
+// ---------------------------------------------------------------------------
+
+export interface TextContentBlock {
+  type: 'text'
+  text: string
+}
+
+export interface ImageContentBlock {
+  type: 'image'
+  data: string
+  mimeType: string
+}
+
+export type ContentBlock = TextContentBlock | ImageContentBlock
 
 // ---------------------------------------------------------------------------
 // Agent — main entry point
@@ -127,8 +144,8 @@ export class Agent {
     return this.raw.cwd
   }
 
-  async query(prompt: string, sessionId?: string, toolMode?: string): Promise<QueryStream> {
-    const raw = await this.raw.query(prompt, sessionId ?? null, toolMode ?? null)
+  async query(prompt: string, sessionId?: string, toolMode?: string, contentJson?: string): Promise<QueryStream> {
+    const raw = await this.raw.query(prompt, sessionId ?? null, toolMode ?? null, contentJson ?? null)
     return new QueryStream(raw)
   }
 
@@ -183,8 +200,8 @@ export class Agent {
     this.raw.addSkillsDirs(dirs)
   }
 
-  steer(sessionId: string, text: string): void {
-    this.raw.steer(sessionId, text)
+  steer(sessionId: string, text: string, contentJson?: string): void {
+    this.raw.steer(sessionId, text, contentJson ?? null)
   }
 
   followUp(sessionId: string, text: string): void {

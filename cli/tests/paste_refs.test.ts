@@ -5,8 +5,10 @@
 import { describe, test, expect } from 'bun:test'
 import {
   formatPastedTextRef,
+  formatImageRef,
   parsePasteRefs,
   expandPasteRefs,
+  stripImageRefs,
   snapCursor,
   deleteRefBackspace,
   skipRefOnMove,
@@ -52,6 +54,7 @@ describe('parsePasteRefs', () => {
       start: 6,
       end: 22,
       match: '[Pasted text #1]',
+      type: 'text',
     }])
   })
 
@@ -62,6 +65,7 @@ describe('parsePasteRefs', () => {
       start: 6,
       end: 32,
       match: '[Pasted text #2 +10 lines]',
+      type: 'text',
     }])
   })
 
@@ -261,5 +265,135 @@ describe('cleanPastedText', () => {
 
   test('plain text unchanged', () => {
     expect(cleanPastedText('hello world')).toBe('hello world')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatImageRef
+// ---------------------------------------------------------------------------
+
+describe('formatImageRef', () => {
+  test('formats image ref', () => {
+    expect(formatImageRef(1)).toBe('[Image #1]')
+  })
+
+  test('formats image ref with higher id', () => {
+    expect(formatImageRef(42)).toBe('[Image #42]')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parsePasteRefs — Image refs
+// ---------------------------------------------------------------------------
+
+describe('parsePasteRefs — image refs', () => {
+  test('parses image ref', () => {
+    const refs = parsePasteRefs('hello [Image #1] world')
+    expect(refs).toEqual([{
+      id: 1,
+      start: 6,
+      end: 16,
+      match: '[Image #1]',
+      type: 'image',
+    }])
+  })
+
+  test('parses mixed text and image refs', () => {
+    const text = '[Pasted text #1] and [Image #2]'
+    const refs = parsePasteRefs(text)
+    expect(refs).toHaveLength(2)
+    expect(refs[0]!.type).toBe('text')
+    expect(refs[0]!.id).toBe(1)
+    expect(refs[1]!.type).toBe('image')
+    expect(refs[1]!.id).toBe(2)
+  })
+
+  test('text refs have type text', () => {
+    const refs = parsePasteRefs('[Pasted text #1 +5 lines]')
+    expect(refs[0]!.type).toBe('text')
+  })
+
+  test('multiple image refs', () => {
+    const refs = parsePasteRefs('[Image #1] [Image #2]')
+    expect(refs).toHaveLength(2)
+    expect(refs[0]!.id).toBe(1)
+    expect(refs[1]!.id).toBe(2)
+    expect(refs[0]!.type).toBe('image')
+    expect(refs[1]!.type).toBe('image')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// expandPasteRefs — skips image refs
+// ---------------------------------------------------------------------------
+
+describe('expandPasteRefs — image refs', () => {
+  test('image refs are not expanded', () => {
+    const store = new Map([[1, 'should not appear']])
+    const text = 'hello [Image #1] world'
+    expect(expandPasteRefs(text, store)).toBe(text)
+  })
+
+  test('text refs expanded, image refs left intact', () => {
+    const store = new Map([[1, 'expanded text']])
+    const text = '[Pasted text #1] and [Image #2]'
+    expect(expandPasteRefs(text, store)).toBe('expanded text and [Image #2]')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// stripImageRefs
+// ---------------------------------------------------------------------------
+
+describe('stripImageRefs', () => {
+  test('strips single image ref', () => {
+    expect(stripImageRefs('hello [Image #1] world')).toBe('hello world')
+  })
+
+  test('strips multiple image refs', () => {
+    expect(stripImageRefs('[Image #1] hello [Image #2]')).toBe('hello')
+  })
+
+  test('leaves text refs intact', () => {
+    expect(stripImageRefs('[Pasted text #1] and [Image #2]')).toBe('[Pasted text #1] and')
+  })
+
+  test('no refs → unchanged', () => {
+    expect(stripImageRefs('hello world')).toBe('hello world')
+  })
+
+  test('only image ref → empty', () => {
+    expect(stripImageRefs('[Image #1]')).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cursor/delete/skip work with image refs
+// ---------------------------------------------------------------------------
+
+describe('cursor operations with image refs', () => {
+  const text = 'hello [Image #1] end'
+  const refs = parsePasteRefs(text)
+  // [Image #1] at start=6, end=16
+
+  test('snapCursor inside image ref → snap to boundary', () => {
+    expect(snapCursor(10, refs)).toBe(6)
+    expect(snapCursor(14, refs)).toBe(16)
+  })
+
+  test('deleteRefBackspace at image ref end → delete entire ref', () => {
+    const result = deleteRefBackspace(text, 16, refs)
+    expect(result).toEqual({
+      newLine: 'hello  end',
+      newCursorCol: 6,
+    })
+  })
+
+  test('skipRefOnMove right at image ref start → skip to end', () => {
+    expect(skipRefOnMove(6, 'right', refs)).toBe(16)
+  })
+
+  test('skipRefOnMove left at image ref end → skip to start', () => {
+    expect(skipRefOnMove(16, 'left', refs)).toBe(6)
   })
 })

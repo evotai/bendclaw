@@ -14,6 +14,7 @@ use evot_engine::tools::AskUserResponse;
 use futures::FutureExt;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use serde::Deserialize;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -23,6 +24,19 @@ use tokio::sync::Notify;
 type AskResponder =
     Arc<Mutex<Option<oneshot::Sender<std::result::Result<AskUserResponse, String>>>>>;
 
+/// Content block from JS — typed deserialization for queryWithContent.
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum JsContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image {
+        data: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+    },
+}
 // ---------------------------------------------------------------------------
 // NapiAgent — wraps the app-level Agent for JS consumption
 // ---------------------------------------------------------------------------
@@ -94,12 +108,16 @@ impl NapiAgent {
     /// Send a prompt and get a stream of events.
     /// Optional tool_mode: "interactive", "planning", "planning_interactive", "readonly",
     /// or omit for default (headless).
+    ///
+    /// When `content_json` is provided it takes precedence over `prompt`.
+    /// Format: `[{"type":"text","text":"..."}, {"type":"image","data":"b64","mimeType":"image/png"}]`
     #[napi]
     pub async fn query(
         &self,
         prompt: String,
         session_id: Option<String>,
         tool_mode: Option<String>,
+        content_json: Option<String>,
     ) -> Result<NapiRun> {
         // Channel for ask_user events injected into the event stream
         let (ask_event_tx, ask_event_rx) = tokio_mpsc::unbounded_channel::<String>();
@@ -121,10 +139,38 @@ impl NapiAgent {
             Some("readonly") => ToolMode::Readonly,
             _ => ToolMode::Headless,
         };
-        let request = QueryRequest::text(prompt)
-            .session_id(session_id)
-            .mode(mode)
-            .source("repl");
+
+        let request = if let Some(json) = content_json {
+            let blocks: Vec<JsContent> = serde_json::from_str(&json)
+                .map_err(|e| Error::from_reason(format!("parse content: {e}")))?;
+
+            let input: Vec<evot_engine::Content> = blocks
+                .into_iter()
+                .filter_map(|block| match block {
+                    JsContent::Text { text } if !text.is_empty() => {
+                        Some(evot_engine::Content::Text { text })
+                    }
+                    JsContent::Image { data, mime_type } if !data.is_empty() => {
+                        Some(evot_engine::Content::Image { data, mime_type })
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            if input.is_empty() {
+                return Err(Error::from_reason("empty content"));
+            }
+
+            QueryRequest::with_input(input)
+                .session_id(session_id)
+                .mode(mode)
+                .source("repl")
+        } else {
+            QueryRequest::text(prompt)
+                .session_id(session_id)
+                .mode(mode)
+                .source("repl")
+        };
 
         let run = self
             .agent
@@ -329,10 +375,30 @@ impl NapiAgent {
     }
 
     /// Send a steering message to the active run for a session.
+    /// When `content_json` is provided, it takes precedence over `text`.
     #[napi]
-    pub fn steer(&self, session_id: String, text: String) {
-        self.agent
-            .steer(&session_id, vec![evot_engine::Content::Text { text }]);
+    pub fn steer(&self, session_id: String, text: String, content_json: Option<String>) {
+        let input = if let Some(json) = content_json {
+            if let Ok(blocks) = serde_json::from_str::<Vec<JsContent>>(&json) {
+                blocks
+                    .into_iter()
+                    .filter_map(|block| match block {
+                        JsContent::Text { text } if !text.is_empty() => {
+                            Some(evot_engine::Content::Text { text })
+                        }
+                        JsContent::Image { data, mime_type } if !data.is_empty() => {
+                            Some(evot_engine::Content::Image { data, mime_type })
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            } else {
+                vec![evot_engine::Content::Text { text }]
+            }
+        } else {
+            vec![evot_engine::Content::Text { text }]
+        };
+        self.agent.steer(&session_id, input);
     }
 
     /// Send a follow-up message to the active run for a session.
@@ -434,12 +500,34 @@ impl NapiRun {
     }
 
     /// Send a steering message into the running agent loop.
+    /// When `content_json` is provided, it takes precedence over `text`.
     #[napi]
-    pub fn steer(&self, text: String) {
+    pub fn steer(&self, text: String, content_json: Option<String>) {
+        let content = if let Some(json) = content_json {
+            if let Ok(blocks) = serde_json::from_str::<Vec<JsContent>>(&json) {
+                blocks
+                    .into_iter()
+                    .filter_map(|block| match block {
+                        JsContent::Text { text } if !text.is_empty() => {
+                            Some(evot_engine::Content::Text { text })
+                        }
+                        JsContent::Image { data, mime_type } if !data.is_empty() => {
+                            Some(evot_engine::Content::Image { data, mime_type })
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            } else {
+                vec![evot_engine::Content::Text { text }]
+            }
+        } else {
+            vec![evot_engine::Content::Text { text }]
+        };
         self.handle
-            .steer(evot_engine::AgentMessage::Llm(evot_engine::Message::user(
-                text,
-            )));
+            .steer(evot_engine::AgentMessage::Llm(evot_engine::Message::User {
+                content,
+                timestamp: evot_engine::now_ms(),
+            }));
     }
 
     /// Send a follow-up message (processed after current turn finishes).

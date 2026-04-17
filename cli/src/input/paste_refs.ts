@@ -15,32 +15,41 @@ export function formatPastedTextRef(id: number, numLines: number): string {
   return `[Pasted text #${id} +${numLines} lines]`
 }
 
+/** Format an image reference string. */
+export function formatImageRef(id: number): string {
+  return `[Image #${id}]`
+}
+
+export type RefType = 'text' | 'image'
+
 export interface PasteRef {
   id: number
   start: number
   end: number
   match: string
+  type: RefType
 }
 
-const PASTE_REF_RE = /\[Pasted text #(\d+)(?:\s\+\d+ lines)?\]/g
+const PASTE_REF_RE = /\[(Pasted text|Image) #(\d+)(?:\s\+\d+ lines)?\]/g
 
-/** Parse all paste references in a string, returning their positions. */
+/** Parse all paste references (text and image) in a string, returning their positions. */
 export function parsePasteRefs(text: string): PasteRef[] {
   const refs: PasteRef[] = []
   let m: RegExpExecArray | null
   const re = new RegExp(PASTE_REF_RE.source, 'g')
   while ((m = re.exec(text)) !== null) {
     refs.push({
-      id: parseInt(m[1]!, 10),
+      id: parseInt(m[2]!, 10),
       start: m.index,
       end: m.index + m[0]!.length,
       match: m[0]!,
+      type: m[1] === 'Image' ? 'image' : 'text',
     })
   }
   return refs
 }
 
-/** Expand paste references with their stored content. */
+/** Expand text paste references with their stored content. Image refs are left intact. */
 export function expandPasteRefs(
   text: string,
   store: Map<number, string>,
@@ -50,12 +59,29 @@ export function expandPasteRefs(
   let result = text
   for (let i = refs.length - 1; i >= 0; i--) {
     const ref = refs[i]!
+    if (ref.type !== 'text') continue
     const content = store.get(ref.id)
     if (content !== undefined) {
       result = result.slice(0, ref.start) + content + result.slice(ref.end)
     }
   }
   return result
+}
+
+/**
+ * Strip image refs from text, returning only the text portion.
+ * Used when storing to history (images are not persisted).
+ */
+export function stripImageRefs(text: string): string {
+  const refs = parsePasteRefs(text)
+  let result = text
+  for (let i = refs.length - 1; i >= 0; i--) {
+    const ref = refs[i]!
+    if (ref.type !== 'image') continue
+    result = result.slice(0, ref.start) + result.slice(ref.end)
+  }
+  // Collapse multiple spaces left by removal
+  return result.replace(/  +/g, ' ').trim()
 }
 
 /**

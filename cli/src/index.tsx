@@ -9,6 +9,7 @@ import { startServer } from './native/index.js'
 import { REPL } from './repl/REPL.js'
 import { createAgent, parseArgs } from './cli.js'
 import { runPrompt } from './prompt.js'
+import { installBracketedPaste } from './input/bracketed_paste.js'
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2))
@@ -50,16 +51,26 @@ async function main() {
         preloadedReleaseNotes = await fetchRecentReleaseNotes(4)
       } catch { /* ignore */ }
 
+      // Install bracketed paste mode to detect Cmd+V image paste on macOS.
+      // The onEmptyPaste callback is wired up after render via the REPL ref.
+      let emptyPasteHandler: (() => void) | undefined
+      const bp = process.platform === 'darwin'
+        ? installBracketedPaste(process.stdin, () => emptyPasteHandler?.())
+        : null
+
       const { waitUntilExit } = render(React.createElement(REPL, {
         agent,
         initialVerbose: opts.verbose,
         initialResume: opts.resume,
         preloadedSessions,
         preloadedReleaseNotes,
+        onEmptyPaste: (handler: () => void) => { emptyPasteHandler = handler },
       }), {
         exitOnCtrlC: false,
+        ...(bp ? { stdin: bp.stream } : {}),
       })
       waitUntilExit().then(() => {
+        bp?.cleanup()
         process.exit(0)
       })
       break

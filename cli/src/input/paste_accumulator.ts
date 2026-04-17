@@ -23,9 +23,11 @@ export class PasteAccumulator {
    * arrive within the timeout window.
    */
   push(input: string): void {
-    if (input.length === 1) {
-      // Normal keystroke — flush immediately
-      this.onFlush(input)
+    if (input.length <= 1) {
+      if (input.length === 1) {
+        // Normal keystroke — flush immediately
+        this.onFlush(input)
+      }
       return
     }
 

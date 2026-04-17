@@ -3,7 +3,7 @@
 export interface NapiAgent {
   model: string
   readonly cwd: string
-  query(prompt: string, sessionId?: string | null, toolMode?: string | null): Promise<NapiRun>
+  query(prompt: string, sessionId?: string | null, toolMode?: string | null, contentJson?: string | null): Promise<NapiRun>
   listSessions(limit?: number | null): Promise<string>
   loadTranscript(sessionId: string): Promise<string>
   fork(systemPrompt: string): NapiForkedAgent
@@ -16,7 +16,7 @@ export interface NapiAgent {
   setLimits(maxTurns?: number | null, maxTokens?: number | null, maxDurationSecs?: number | null): void
   appendSystemPrompt(extra: string): void
   addSkillsDirs(dirs: string[]): void
-  steer(sessionId: string, text: string): void
+  steer(sessionId: string, text: string, contentJson?: string | null): void
   followUp(sessionId: string, text: string): void
   abortRun(sessionId: string): void
 }
@@ -29,7 +29,7 @@ export interface NapiRun {
   readonly sessionId: string
   next(): Promise<string | null>
   abort(): void
-  steer(text: string): void
+  steer(text: string, contentJson?: string | null): void
   followUp(text: string): void
   respondAskUser(responseJson: string): Promise<void>
 }

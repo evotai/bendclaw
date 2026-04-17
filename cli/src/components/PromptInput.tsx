@@ -17,16 +17,35 @@ import { formatUptime } from '../repl/server.js'
 import { InterruptHandler } from '../input/interrupt.js'
 import { needsContinuation } from '../input/continuation.js'
 import { PasteAccumulator } from '../input/paste_accumulator.js'
+import { getImageFromClipboard } from '../input/clipboard_image.js'
 import {
   formatPastedTextRef,
+  formatImageRef,
   parsePasteRefs,
   expandPasteRefs,
+  stripImageRefs,
   snapCursor,
   deleteRefBackspace,
   skipRefOnMove,
   shouldCollapse,
   cleanPastedText,
 } from '../input/paste_refs.js'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface PastedImage {
+  id: number
+  base64: string
+  mediaType: string
+}
+
+export interface PromptPayload {
+  text: string           // expanded text (paste refs resolved, image refs stripped)
+  displayText: string    // raw display text (with refs intact)
+  images: PastedImage[]  // attached images
+}
 
 interface PromptInputProps {
   model: string
@@ -39,9 +58,10 @@ interface PromptInputProps {
   history: HistoryManager
   updateHint?: string
   serverState: ServerState | null
-  onSubmit: (text: string) => void
+  onSubmit: (payload: PromptPayload) => void
   onInterrupt: () => void
   onToggleVerbose: () => void
+  onEmptyPaste?: (handler: () => void) => void
 }
 
 export const PromptInput = React.memo(function PromptInput({
@@ -58,6 +78,7 @@ export const PromptInput = React.memo(function PromptInput({
   onSubmit,
   onInterrupt,
   onToggleVerbose,
+  onEmptyPaste,
 }: PromptInputProps) {
   const [lines, setLines] = useState<string[]>([''])
   const [cursorLine, setCursorLine] = useState(0)
@@ -70,6 +91,8 @@ export const PromptInput = React.memo(function PromptInput({
   const interruptRef = useRef(new InterruptHandler())
   // When a large paste is collapsed, store the full text here.
   const pastedChunksRef = useRef<Map<number, string>>(new Map())
+  // When an image is pasted, store the image data here.
+  const pastedImagesRef = useRef<Map<number, PastedImage>>(new Map())
   const nextPasteIdRef = useRef(1)
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
@@ -135,6 +158,22 @@ export const PromptInput = React.memo(function PromptInput({
     })
   }
 
+  // Register empty paste handler for Cmd+V image detection (macOS).
+  // The bracketed paste transform in index.tsx calls this when it detects
+  // an empty paste (Cmd+V with image in clipboard).
+  useEffect(() => {
+    if (!onEmptyPaste) return
+    onEmptyPaste(() => {
+      getImageFromClipboard().then((img) => {
+        if (img) {
+          const id = nextPasteIdRef.current++
+          pastedImagesRef.current.set(id, { id, base64: img.base64, mediaType: img.mediaType })
+          insertTextRef.current(formatImageRef(id))
+        }
+      })
+    })
+  }, [onEmptyPaste])
+
   // Load persistent history on mount
   useEffect(() => {
     historyRef.current = history.load()
@@ -150,6 +189,20 @@ export const PromptInput = React.memo(function PromptInput({
       setCursorCol(snapped)
     }
   }, [cursorCol, cursorLine, lines])
+
+  // Prune stale images whose [Image #N] ref was removed by editing (Ctrl+U, Ctrl+K, etc.)
+  useEffect(() => {
+    if (pastedImagesRef.current.size === 0) return
+    const allText = lines.join('\n')
+    const referencedIds = new Set(
+      parsePasteRefs(allText).filter(r => r.type === 'image').map(r => r.id)
+    )
+    for (const id of pastedImagesRef.current.keys()) {
+      if (!referencedIds.has(id)) {
+        pastedImagesRef.current.delete(id)
+      }
+    }
+  }, [lines])
 
   const currentText = () => {
     const text = lines.join('\n')
@@ -169,6 +222,7 @@ export const PromptInput = React.memo(function PromptInput({
     setCursorCol(0)
     historyIndexRef.current = -1
     pastedChunksRef.current.clear()
+    pastedImagesRef.current.clear()
     pasteAccRef.current!.cancel()
   }
 
@@ -325,16 +379,32 @@ export const PromptInput = React.memo(function PromptInput({
           setCursorCol(0)
           return
         }
-        // Add display text (with placeholders) to history so up/down
-        // arrow restores the collapsed single-line view.
+
+        // Collect attached images from refs still present in the input
         const displayText = lines.join('\n').trim()
-        const hist = historyRef.current
-        if (hist.length === 0 || hist[hist.length - 1] !== displayText) {
-          hist.push(displayText)
+        const imageRefs = parsePasteRefs(displayText).filter(r => r.type === 'image')
+        const images: PastedImage[] = imageRefs
+          .map(r => pastedImagesRef.current.get(r.id))
+          .filter((img): img is PastedImage => img !== undefined)
+
+        // Strip image refs from the expanded text so the model doesn't see placeholders
+        const expandedText = stripImageRefs(text).trim()
+
+        // Add to history — strip image refs since images aren't persisted
+        const historyText = stripImageRefs(displayText)
+        if (historyText.length > 0) {
+          const hist = historyRef.current
+          if (hist.length === 0 || hist[hist.length - 1] !== historyText) {
+            hist.push(historyText)
+          }
+          history.append(historyText)
         }
-        history.append(displayText)
         historyIndexRef.current = -1
-        onSubmit(text)
+
+        // Allow image-only submissions (no text, just images)
+        if (expandedText.length === 0 && images.length === 0) return
+
+        onSubmit({ text: expandedText, displayText, images })
         clearInput()
       }
       return
@@ -351,6 +421,7 @@ export const PromptInput = React.memo(function PromptInput({
           const deletedRef = refs.find(r => r.end === cursorCol)
           if (deletedRef) {
             pastedChunksRef.current.delete(deletedRef.id)
+            pastedImagesRef.current.delete(deletedRef.id)
           }
           setLines((prev) => {
             const newLines = [...prev]
@@ -473,6 +544,18 @@ export const PromptInput = React.memo(function PromptInput({
           setCompletionCandidates(result.candidates)
         }
       }
+      return
+    }
+
+    // Ctrl+V — paste image from clipboard
+    if (key.ctrl && ch === 'v') {
+      getImageFromClipboard().then((img) => {
+        if (img) {
+          const id = nextPasteIdRef.current++
+          pastedImagesRef.current.set(id, { id, base64: img.base64, mediaType: img.mediaType })
+          insertTextRef.current(formatImageRef(id))
+        }
+      })
       return
     }
 

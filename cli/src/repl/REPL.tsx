@@ -10,6 +10,7 @@ import { type AppState, createInitialState } from '../state/app.js'
 import { applyEvent } from '../state/reducer.js'
 import type { UIMessage } from '../state/types.js'
 import { PromptInput } from '../components/PromptInput.js'
+import type { PromptPayload, PastedImage } from '../components/PromptInput.js'
 import { OutputView } from '../components/OutputView.js'
 import { ActiveResponse } from '../components/ActiveResponse.js'
 import { HelpPane } from '../components/HelpPane.js'
@@ -47,9 +48,10 @@ interface REPLProps {
   initialResume?: string
   preloadedSessions?: import('../native/index.js').SessionMeta[]
   preloadedReleaseNotes?: string[]
+  onEmptyPaste?: (handler: () => void) => void
 }
 
-export function REPL({ agent, initialVerbose = true, initialResume, preloadedSessions, preloadedReleaseNotes }: REPLProps) {
+export function REPL({ agent, initialVerbose = true, initialResume, preloadedSessions, preloadedReleaseNotes, onEmptyPaste }: REPLProps) {
   const { exit } = useApp()
   const [state, setState] = useState<AppState>(() => ({
     ...createInitialState(agent.model, agent.cwd),
@@ -57,7 +59,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
   }))
   const [systemMessages, setSystemMessages] = useState<SystemMsg[]>([])
   const [showHelp, setShowHelp] = useState(false)
-  const [messageQueue, setMessageQueue] = useState<string[]>([])
+  const [messageQueue, setMessageQueue] = useState<{ text: string; images?: PastedImage[] }[]>([])
   const [outputLines, setOutputLines] = useState<OutputLine[]>([])
   const [pendingText, setPendingText] = useState('')
   const [toolProgress, setToolProgress] = useState('')
@@ -180,7 +182,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
     })
   }, [])
 
-  const dispatchQuery = useCallback((text: string) => {
+  const dispatchQuery = useCallback((text: string, images?: PastedImage[]) => {
     const userMsg: UIMessage = {
       id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
@@ -196,15 +198,19 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
       currentThinkingText: '',
       activeToolCalls: new Map(),
     }))
-    runQuery(agent, text, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, setToolProgress, stateRef, planning ? 'planning_interactive' : 'interactive')
+    runQuery(agent, text, images, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, setToolProgress, stateRef, planning ? 'planning_interactive' : 'interactive')
   }, [agent, planning])
 
   const handleSubmit = useCallback(
-    (text: string) => {
+    (payload: PromptPayload) => {
+      const { text, images } = payload
       setSystemMessages([])
 
       // Log mode: /done exits, everything else goes to the forked agent
       if (logMode) {
+        if (images.length > 0) {
+          pushSystem(setSystemMessages, 'warn', '  Images are not supported in log mode — ignored')
+        }
         if (text.trim() === '/done') {
           setLogMode(null)
           pushSystem(setSystemMessages, 'info', '  [log mode ended]')
@@ -215,25 +221,41 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
         return
       }
 
+      // Slash commands don't support images
       if (isSlashCommand(text)) {
+        if (images.length > 0) {
+          pushSystem(setSystemMessages, 'warn', '  Images are not supported with slash commands — ignored')
+        }
         handleSlashCommand(text, { agent, state: stateRef.current, setState, setSystem: setSystemMessages, setOutputLines, setPendingText, setShowHelp, setResumeSessions, setPlanning, setShowModelSelector, setLogMode, configInfo: configInfoState, abortCurrentStream, exit })
         return
       }
 
       if (isLoadingRef.current) {
-        // Steer into the active run instead of queuing
+        // Steer into the active run — supports text + images
         const stream = streamRef.current
         if (stream) {
-          stream.steer(text)
+          if (images.length > 0) {
+            const content: import('../native/index.js').ContentBlock[] = [
+              ...(text ? [{ type: 'text' as const, text }] : []),
+              ...images.map((img) => ({
+                type: 'image' as const,
+                data: img.base64,
+                mimeType: img.mediaType,
+              })),
+            ]
+            stream.steer('', JSON.stringify(content))
+          } else {
+            stream.steer(text)
+          }
           // Show the steered message in the UI immediately
-          setOutputLines((prev) => [...prev, ...buildUserMessage(text)])
+          setOutputLines((prev) => [...prev, ...buildUserMessage(text, images.length > 0 ? images.length : undefined)])
         } else {
-          setMessageQueue((prev) => [...prev, text])
+          setMessageQueue((prev) => [...prev, { text, images: images.length > 0 ? images : undefined }])
         }
         return
       }
 
-      dispatchQuery(text)
+      dispatchQuery(text, images.length > 0 ? images : undefined)
     },
     [agent, exit, configInfoState, dispatchQuery, abortCurrentStream, logMode]
   )
@@ -243,7 +265,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
     if (!state.isLoading && !state.error && messageQueue.length > 0) {
       const [next, ...rest] = messageQueue
       setMessageQueue(rest)
-      dispatchQuery(next!)
+      dispatchQuery(next!.text, next!.images)
     }
   }, [state.isLoading, messageQueue, dispatchQuery])
 
@@ -378,13 +400,14 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
         verbose={state.verbose}
         planning={planning}
         logMode={logMode !== null}
-        queuedMessages={messageQueue}
+        queuedMessages={messageQueue.map(m => m.text)}
         history={historyManager}
         updateHint={updateHint}
         serverState={serverState}
         onSubmit={handleSubmit}
         onInterrupt={handleInterrupt}
         onToggleVerbose={handleToggleVerbose}
+        onEmptyPaste={onEmptyPaste}
       />
     </Box>
   )

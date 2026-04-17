@@ -1,5 +1,7 @@
 import React from 'react'
 import { Agent, QueryStream } from '../native/index.js'
+import type { ContentBlock } from '../native/index.js'
+import type { PastedImage } from '../components/PromptInput.js'
 import type { AppState } from '../state/app.js'
 import { applyEvent } from '../state/reducer.js'
 import type { OutputLine } from '../render/output.js'
@@ -90,6 +92,7 @@ export async function runLogTurn(
 export async function runQuery(
   agent: Agent,
   text: string,
+  images: PastedImage[] | undefined,
   sessionId: string | null,
   streamRef: React.MutableRefObject<QueryStream | null>,
   streamGenRef: React.MutableRefObject<number>,
@@ -139,7 +142,21 @@ export async function runQuery(
   }
 
   try {
-    const stream = await agent.query(text, sessionId ?? undefined, toolMode)
+    let stream: QueryStream
+    if (images && images.length > 0) {
+      const content: ContentBlock[] = [
+        ...(text ? [{ type: 'text' as const, text }] : []),
+        ...images.map((img) => ({
+          type: 'image' as const,
+          data: img.base64,
+          mimeType: img.mediaType,
+        })),
+      ]
+      const contentJson = JSON.stringify(content)
+      stream = await agent.query('', sessionId ?? undefined, toolMode, contentJson)
+    } else {
+      stream = await agent.query(text, sessionId ?? undefined, toolMode)
+    }
     if (gen !== streamGenRef.current) { stream.abort(); return }
     streamRef.current = stream
 
@@ -147,7 +164,7 @@ export async function runQuery(
       screenLog = new ScreenLog(stream.sessionId)
     } catch { /* ignore log failures */ }
 
-    appendLines(buildUserMessage(text))
+    appendLines(buildUserMessage(text, images?.length))
 
     for await (const event of stream) {
       if (gen !== streamGenRef.current) break

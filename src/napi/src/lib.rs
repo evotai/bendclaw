@@ -20,6 +20,27 @@ use tokio::sync::oneshot;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
 
+/// Initialize tracing once — writes INFO+ logs to ~/.evotai/logs/evot.log.
+fn init_tracing() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."));
+        let log_dir = home.join(".evotai").join("logs");
+        let file_appender = tracing_appender::rolling::daily(log_dir, "evot.log");
+        let _ = tracing_subscriber::fmt()
+            .with_writer(file_appender)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            )
+            .with_ansi(false)
+            .try_init();
+    });
+}
+
 /// Shared slot for the oneshot sender that unblocks the `AskUserFn` callback.
 type AskResponder =
     Arc<Mutex<Option<oneshot::Sender<std::result::Result<AskUserResponse, String>>>>>;
@@ -53,6 +74,8 @@ impl NapiAgent {
     /// Optional `model` override.
     #[napi(factory)]
     pub fn create(model: Option<String>, env_file: Option<String>) -> Result<Self> {
+        init_tracing();
+
         let config = evot::conf::Config::load_with_env_file(env_file.as_deref())
             .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
             .with_model(model);

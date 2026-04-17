@@ -561,12 +561,22 @@ impl MessageSink for FeishuMessageSink {
             )
             .await;
 
-            // Only consume reply_to after a successful reply
-            if result.is_ok() {
-                self.reply_to
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .take();
+            // Update reply_to to the new message ID so subsequent sends
+            // stay inside the same thread/topic.
+            match result {
+                Ok(ref new_id) if !new_id.is_empty() => {
+                    *self.reply_to.lock().unwrap_or_else(|e| e.into_inner()) = Some(new_id.clone());
+                }
+                Ok(_) => {
+                    // Empty message ID — clear to avoid infinite retry on same target
+                    self.reply_to
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .take();
+                }
+                Err(_) => {
+                    // Keep reply_to so next attempt retries into the thread
+                }
             }
 
             return result;

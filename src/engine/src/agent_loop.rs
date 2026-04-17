@@ -365,26 +365,32 @@ async fn run_loop(
                     .max_context_tokens
                     .saturating_sub(ctx_config.system_prompt_tokens);
 
-                tx.send(AgentEvent::ContextCompactionStart {
-                    message_count: original_count,
-                    estimated_tokens: original_tokens,
-                    budget_tokens: budget,
-                    system_prompt_tokens: ctx_config.system_prompt_tokens,
-                    context_window: ctx_config.max_context_tokens,
-                })
-                .ok();
-
                 let result = strategy.compact(std::mem::take(&mut context.messages), ctx_config);
+                let did_work = result.stats.level > 0 || result.stats.current_run_cleared > 0;
                 context.messages = result.messages;
 
-                // Reset tracker after compaction — baseline is no longer valid
-                context_tracker.reset();
+                if did_work {
+                    // Only emit events, clone messages, and reset tracker when
+                    // compaction actually changed something. This avoids noisy
+                    // no-op events and preserves the tracker's real-usage baseline.
+                    tx.send(AgentEvent::ContextCompactionStart {
+                        message_count: original_count,
+                        estimated_tokens: original_tokens,
+                        budget_tokens: budget,
+                        system_prompt_tokens: ctx_config.system_prompt_tokens,
+                        context_window: ctx_config.max_context_tokens,
+                    })
+                    .ok();
 
-                tx.send(AgentEvent::ContextCompactionEnd {
-                    stats: result.stats,
-                    messages: context.messages.clone(),
-                })
-                .ok();
+                    // Reset tracker after compaction — baseline is no longer valid
+                    context_tracker.reset();
+
+                    tx.send(AgentEvent::ContextCompactionEnd {
+                        stats: result.stats,
+                        messages: context.messages.clone(),
+                    })
+                    .ok();
+                }
             }
 
             // Stream assistant response

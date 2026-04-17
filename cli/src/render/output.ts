@@ -42,16 +42,9 @@ export function resetIdCounter(): void {
 // Builders — pure functions that create OutputLines from events
 // ---------------------------------------------------------------------------
 
-export function buildUserMessage(text: string, imageCount?: number): OutputLine[] {
-  const lines: OutputLine[] = [{ id: genId('user'), kind: 'user', text }]
-  if (imageCount && imageCount > 0) {
-    lines.push({
-      id: genId('user-img'),
-      kind: 'user',
-      text: `  [${imageCount} image${imageCount > 1 ? 's' : ''} attached]`,
-    })
-  }
-  return lines
+export function buildUserMessage(text: string): OutputLine[] {
+  if (!text) return []
+  return [{ id: genId('user'), kind: 'user', text }]
 }
 
 export function buildAssistantLines(markdownText: string): OutputLine[] {

@@ -59,7 +59,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
   }))
   const [systemMessages, setSystemMessages] = useState<SystemMsg[]>([])
   const [showHelp, setShowHelp] = useState(false)
-  const [messageQueue, setMessageQueue] = useState<{ text: string; images?: PastedImage[] }[]>([])
+  const [messageQueue, setMessageQueue] = useState<{ text: string; images?: PastedImage[]; displayText?: string }[]>([])
   const [outputLines, setOutputLines] = useState<OutputLine[]>([])
   const [pendingText, setPendingText] = useState('')
   const [toolProgress, setToolProgress] = useState('')
@@ -182,7 +182,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
     })
   }, [])
 
-  const dispatchQuery = useCallback((text: string, images?: PastedImage[]) => {
+  const dispatchQuery = useCallback((text: string, images?: PastedImage[], displayText?: string) => {
     const userMsg: UIMessage = {
       id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
@@ -198,12 +198,12 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
       currentThinkingText: '',
       activeToolCalls: new Map(),
     }))
-    runQuery(agent, text, images, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, setToolProgress, stateRef, planning ? 'planning_interactive' : 'interactive')
+    runQuery(agent, text, images, sessionIdRef.current, streamRef, streamGenRef, setState, setOutputLines, setPendingText, setToolProgress, stateRef, planning ? 'planning_interactive' : 'interactive', displayText)
   }, [agent, planning])
 
   const handleSubmit = useCallback(
     (payload: PromptPayload) => {
-      const { text, images } = payload
+      const { text, displayText, images } = payload
       setSystemMessages([])
 
       // Log mode: /done exits, everything else goes to the forked agent
@@ -248,14 +248,14 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
             stream.steer(text)
           }
           // Show the steered message in the UI immediately
-          setOutputLines((prev) => [...prev, ...buildUserMessage(text, images.length > 0 ? images.length : undefined)])
+          setOutputLines((prev) => [...prev, ...buildUserMessage(displayText)])
         } else {
-          setMessageQueue((prev) => [...prev, { text, images: images.length > 0 ? images : undefined }])
+          setMessageQueue((prev) => [...prev, { text, images: images.length > 0 ? images : undefined, displayText }])
         }
         return
       }
 
-      dispatchQuery(text, images.length > 0 ? images : undefined)
+      dispatchQuery(text, images.length > 0 ? images : undefined, displayText)
     },
     [agent, exit, configInfoState, dispatchQuery, abortCurrentStream, logMode]
   )
@@ -265,7 +265,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
     if (!state.isLoading && !state.error && messageQueue.length > 0) {
       const [next, ...rest] = messageQueue
       setMessageQueue(rest)
-      dispatchQuery(next!.text, next!.images)
+      dispatchQuery(next!.text, next!.images, next!.displayText)
     }
   }, [state.isLoading, messageQueue, dispatchQuery])
 

@@ -102,6 +102,7 @@ export async function runQuery(
   setToolProgress: React.Dispatch<React.SetStateAction<string>>,
   stateRef: React.MutableRefObject<AppState>,
   toolMode?: string,
+  displayText?: string,
 ) {
   const gen = ++streamGenRef.current
   let streamingText = ''
@@ -164,7 +165,7 @@ export async function runQuery(
       screenLog = new ScreenLog(stream.sessionId)
     } catch { /* ignore log failures */ }
 
-    appendLines(buildUserMessage(text, images?.length))
+    appendLines(buildUserMessage(displayText || text))
 
     for await (const event of stream) {
       if (gen !== streamGenRef.current) break

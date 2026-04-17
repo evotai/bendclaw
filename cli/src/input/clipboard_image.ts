@@ -32,9 +32,15 @@ export async function getImageFromClipboard(): Promise<ClipboardImage | null> {
 }
 
 async function getImageMacOS(): Promise<ClipboardImage | null> {
-  // Check if clipboard has image data (exit code 0 = yes)
+  // Check if clipboard contains image data without reading the full payload.
+  // "clipboard info for «class PNGf»" returns a small text description
+  // (e.g. "«class PNGf», 123456") instead of dumping the raw bytes.
   try {
-    await execFileAsync('osascript', ['-e', 'the clipboard as «class PNGf»'], { timeout: 3000 })
+    const { stdout } = await execFileAsync('osascript', [
+      '-e', 'clipboard info for «class PNGf»',
+    ], { timeout: 3000 })
+    // If the clipboard has no PNG data, osascript errors or returns empty
+    if (!stdout || !stdout.includes('PNGf')) return null
   } catch {
     return null
   }
@@ -46,7 +52,7 @@ async function getImageMacOS(): Promise<ClipboardImage | null> {
       '-e', `set fp to open for access POSIX file "${path}" with write permission`,
       '-e', 'write png_data to fp',
       '-e', 'close access fp',
-    ], { timeout: 5000 })
+    ], { timeout: 30000 })
 
     const buffer = await readFile(path)
     unlink(path).catch(() => {})

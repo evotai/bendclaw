@@ -26,6 +26,24 @@ describe('buildUserMessage', () => {
     expect(lines[0]!.kind).toBe('user')
     expect(lines[0]!.text).toBe('hello world')
   })
+
+  test('shows image ref inline from displayText', () => {
+    const lines = buildUserMessage('analyze this [Image #1]')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.text).toBe('analyze this [Image #1]')
+  })
+
+  test('image-only displayText', () => {
+    const lines = buildUserMessage('[Image #1]')
+    expect(lines).toHaveLength(1)
+    expect(lines[0]!.kind).toBe('user')
+    expect(lines[0]!.text).toBe('[Image #1]')
+  })
+
+  test('empty text returns empty', () => {
+    const lines = buildUserMessage('')
+    expect(lines).toHaveLength(0)
+  })
 })
 
 // ---------------------------------------------------------------------------

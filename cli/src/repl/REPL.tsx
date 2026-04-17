@@ -182,6 +182,7 @@ export function REPL({ agent, initialVerbose = true, initialResume, preloadedSes
 
   const dispatchQuery = useCallback((text: string) => {
     const userMsg: UIMessage = {
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
       text,
       timestamp: Date.now(),

@@ -108,9 +108,13 @@ export async function runQuery(
   // Throttle setState for assistant_delta to ~60ms to avoid re-render storms
   let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null
   let deltaStateDirty = false
+  const cancelDeltaFlush = () => {
+    if (deltaFlushTimer) { clearTimeout(deltaFlushTimer); deltaFlushTimer = null }
+    deltaStateDirty = false
+  }
   const flushDeltaState = () => {
     if (deltaFlushTimer) { clearTimeout(deltaFlushTimer); deltaFlushTimer = null }
-    if (deltaStateDirty) {
+    if (deltaStateDirty && gen === streamGenRef.current) {
       setState(() => localState)
       deltaStateDirty = false
     }
@@ -285,6 +289,7 @@ export async function runQuery(
       error: err?.message ?? String(err),
     }))
   } finally {
+    cancelDeltaFlush()
     streamRef.current = null
     if (gen === streamGenRef.current) {
       setState((prev) => prev.isLoading ? { ...prev, isLoading: false } : prev)

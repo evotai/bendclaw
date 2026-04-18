@@ -673,3 +673,152 @@ model = "anthropic/claude-sonnet-4-20250514"
     );
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Tests covering NAPI set_model / set_provider core logic
+// ---------------------------------------------------------------------------
+
+fn make_multi_provider_config() -> Config {
+    let mut config = Config::new(std::path::PathBuf::from("/tmp"));
+    config
+        .providers
+        .insert("anthropic".into(), evot::conf::ProviderProfile {
+            protocol: Protocol::Anthropic,
+            api_key: "ant-key".into(),
+            base_url: "https://api.anthropic.com".into(),
+            model: "claude-sonnet-4-20250514".into(),
+        });
+    config
+        .providers
+        .insert("openai".into(), evot::conf::ProviderProfile {
+            protocol: Protocol::OpenAi,
+            api_key: "oai-key".into(),
+            base_url: "https://api.openai.com/v1".into(),
+            model: "gpt-5.4".into(),
+        });
+    config
+        .providers
+        .insert("deepseek".into(), evot::conf::ProviderProfile {
+            protocol: Protocol::OpenAi,
+            api_key: "ds-key".into(),
+            base_url: "https://api.deepseek.com".into(),
+            model: "deepseek-chat".into(),
+        });
+    config.llm.provider = "anthropic".into();
+    config
+}
+
+/// Simulates NAPI set_model: resolve model spec, build LlmConfig from provider profile.
+fn resolve_llm_config(
+    config: &Config,
+    model_spec: &str,
+) -> std::result::Result<evot::conf::LlmConfig, Box<dyn std::error::Error>> {
+    let (provider_name, model_override) = config.resolve_model_spec(model_spec)?;
+    let profile = config
+        .providers
+        .get(&provider_name)
+        .ok_or_else(|| format!("provider '{}' not found", provider_name))?;
+    Ok(evot::conf::LlmConfig {
+        provider: provider_name,
+        protocol: profile.protocol.clone(),
+        api_key: profile.api_key.clone(),
+        base_url: profile.base_url.clone(),
+        model: model_override.unwrap_or_else(|| profile.model.clone()),
+        thinking_level: config.llm.thinking_level,
+    })
+}
+
+#[test]
+fn set_model_switches_provider_by_model_name() -> TestResult {
+    let config = make_multi_provider_config();
+
+    // Switch to openai by model name
+    let llm = resolve_llm_config(&config, "gpt-5.4")?;
+    assert_eq!(llm.provider, "openai");
+    assert_eq!(llm.protocol, Protocol::OpenAi);
+    assert_eq!(llm.api_key, "oai-key");
+    assert_eq!(llm.base_url, "https://api.openai.com/v1");
+    assert_eq!(llm.model, "gpt-5.4");
+
+    // Switch to deepseek by model name
+    let llm = resolve_llm_config(&config, "deepseek-chat")?;
+    assert_eq!(llm.provider, "deepseek");
+    assert_eq!(llm.protocol, Protocol::OpenAi);
+    assert_eq!(llm.api_key, "ds-key");
+    assert_eq!(llm.base_url, "https://api.deepseek.com");
+    assert_eq!(llm.model, "deepseek-chat");
+
+    // Switch back to anthropic by model name
+    let llm = resolve_llm_config(&config, "claude-sonnet-4-20250514")?;
+    assert_eq!(llm.provider, "anthropic");
+    assert_eq!(llm.protocol, Protocol::Anthropic);
+    assert_eq!(llm.api_key, "ant-key");
+    assert_eq!(llm.base_url, "https://api.anthropic.com");
+    Ok(())
+}
+
+#[test]
+fn set_model_with_provider_prefix_overrides_model() -> TestResult {
+    let config = make_multi_provider_config();
+
+    // Use provider:model to override model
+    let llm = resolve_llm_config(&config, "openai:gpt-4o")?;
+    assert_eq!(llm.provider, "openai");
+    assert_eq!(llm.protocol, Protocol::OpenAi);
+    assert_eq!(llm.api_key, "oai-key");
+    assert_eq!(llm.base_url, "https://api.openai.com/v1");
+    assert_eq!(llm.model, "gpt-4o"); // overridden, not the default gpt-5.4
+
+    // Override anthropic model
+    let llm = resolve_llm_config(&config, "anthropic:claude-opus-4-6")?;
+    assert_eq!(llm.provider, "anthropic");
+    assert_eq!(llm.protocol, Protocol::Anthropic);
+    assert_eq!(llm.model, "claude-opus-4-6");
+    Ok(())
+}
+
+#[test]
+fn set_model_unknown_model_returns_error() {
+    let config = make_multi_provider_config();
+    assert!(resolve_llm_config(&config, "nonexistent-model").is_err());
+}
+
+#[test]
+fn set_model_unknown_provider_returns_error() {
+    let config = make_multi_provider_config();
+    assert!(resolve_llm_config(&config, "badprovider:some-model").is_err());
+}
+
+#[test]
+fn set_model_empty_model_in_spec_returns_error() {
+    let config = make_multi_provider_config();
+    assert!(resolve_llm_config(&config, "openai:").is_err());
+}
+
+#[test]
+fn set_provider_validates_incomplete_provider() {
+    let mut config = Config::new(std::path::PathBuf::from("/tmp"));
+    config
+        .providers
+        .insert("anthropic".into(), evot::conf::ProviderProfile {
+            protocol: Protocol::Anthropic,
+            api_key: "key".into(),
+            base_url: "https://api.anthropic.com".into(),
+            model: "claude-sonnet-4-20250514".into(),
+        });
+    config
+        .providers
+        .insert("broken".into(), evot::conf::ProviderProfile {
+            protocol: Protocol::OpenAi,
+            api_key: String::new(), // missing
+            base_url: "https://example.com".into(),
+            model: "some-model".into(),
+        });
+    config.llm.provider = "anthropic".into();
+
+    // Resolving the broken provider succeeds at spec level
+    let llm = resolve_llm_config(&config, "some-model");
+    assert!(llm.is_ok());
+    // But the resulting LlmConfig has empty api_key — NAPI set_provider would reject this
+    assert!(llm.as_ref().is_ok_and(|l| l.api_key.is_empty()));
+}

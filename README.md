@@ -29,6 +29,8 @@
 
 ## 📢 News
 
+- **2026-04-18** 📜 [REPL] `/history` + `/goto` — time-travel through conversation context.
+- **2026-04-17** 📋 [REPL] Ctrl+V image paste support.
 - **2026-04-13** 🏷️ Project renamed from BendClaw to Evot.
 - **2026-04-13** 🔌 [Skills] Auto-load Claude Code skills.
 - **2026-04-11** 🧠 [Memory] Auto-load Claude Code memories for the current project.

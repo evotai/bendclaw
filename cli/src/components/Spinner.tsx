@@ -8,7 +8,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Text, Box } from 'ink'
 import { setTerminalTitle } from '../repl/server.js'
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+const SPINNER_CHARS = ['·', '✢', '✳', '✶', '✻', '✽']
+const SPINNER_FRAMES = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()]
 const SPINNER_INTERVAL = 100
 const SLOW_THRESHOLD_MS = 8000
 const SHOW_TOKENS_AFTER_MS = 30000
@@ -117,7 +118,7 @@ export function Spinner({ toolName, tokenCount = 0, lastTokenAt, streaming = fal
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={color}>{SPINNER_FRAMES[frame]} </Text>
+        <Box width={2}><Text color={color}>{SPINNER_FRAMES[frame]}</Text></Box>
         {slow
           ? <Text color="red">{label}</Text>
           : <GlimmerText text={label} pos={glimmerPos} />

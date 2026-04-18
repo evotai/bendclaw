@@ -61,7 +61,7 @@ jobs:
         with:
           bun-version: latest
       - run: cd cli && bun install
-      - run: cd cli && npx napi build --manifest-path ../src/napi/Cargo.toml --release --platform --output-dir .
+      - run: cd cli && npx napi build --manifest-path addon/Cargo.toml --release --platform --output-dir .
 
   test-cli:
     name: Test CLI (TypeScript)

@@ -14,6 +14,7 @@ axum = { version = "0.8", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
+indexmap = { version = "2", features = ["serde"] }
 parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 similar = "2.4"

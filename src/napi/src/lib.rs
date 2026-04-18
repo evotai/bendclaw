@@ -78,7 +78,11 @@ impl NapiAgent {
 
         let config = evot::conf::Config::load_with_env_file(env_file.as_deref())
             .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
-            .with_model(model);
+            .with_model(model)
+            .map_err(|e| Error::from_reason(format!("config model: {e}")))?;
+        config
+            .validate()
+            .map_err(|e| Error::from_reason(format!("config validation: {e}")))?;
 
         let cwd = std::env::current_dir()
             .map_err(|e| Error::from_reason(format!("cwd: {e}")))?
@@ -296,7 +300,7 @@ impl NapiAgent {
     #[napi]
     pub fn config_info(&self) -> Result<String> {
         let llm = self.agent.llm();
-        let provider = format!("{}", self.config.llm.provider);
+        let provider = llm.provider.clone();
         let env_path = evot::conf::paths::default_env_file_path()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
@@ -307,8 +311,6 @@ impl NapiAgent {
             "envPath": env_path,
             "hasApiKey": has_api_key,
             "baseUrl": llm.base_url,
-            "anthropicModel": self.config.anthropic.model,
-            "openaiModel": self.config.openai.model,
             "availableModels": available,
             "thinkingLevel": format!("{:?}", self.config.llm.thinking_level).to_lowercase(),
         });
@@ -324,41 +326,57 @@ impl NapiAgent {
     fn collect_models(&self) -> Vec<String> {
         let llm = self.agent.llm();
         let mut models = Vec::new();
-        for m in [
-            &self.config.anthropic.model,
-            &self.config.openai.model,
-            &llm.model,
-        ] {
-            let trimmed = m.trim();
+        for (_, profile) in &self.config.providers {
+            let trimmed = profile.model.trim();
             if !trimmed.is_empty() && !models.contains(&trimmed.to_string()) {
                 models.push(trimmed.to_string());
             }
         }
+        // Also include the current active model (may be an override)
+        let trimmed = llm.model.trim();
+        if !trimmed.is_empty() && !models.contains(&trimmed.to_string()) {
+            models.push(trimmed.to_string());
+        }
         models
     }
 
-    /// Switch the active provider ("anthropic" or "openai") and update the LLM config.
+    /// Switch the active provider by model spec (e.g. "deepseek-chat" or "openrouter:google/gemini-2.5-pro").
     #[napi]
     pub fn set_provider(&self, provider: String) -> Result<()> {
-        let kind = evot::conf::ProviderKind::from_str_loose(&provider)
+        let (provider_name, model_override) = self
+            .config
+            .resolve_model_spec(&provider)
             .map_err(|e| Error::from_reason(format!("invalid provider: {e}")))?;
-        self.agent.set_provider(kind.clone());
-        let llm = match kind {
-            evot::conf::ProviderKind::Anthropic => evot::conf::LlmConfig {
-                provider: kind,
-                api_key: self.config.anthropic.api_key.clone(),
-                base_url: self.config.anthropic.base_url.clone(),
-                model: self.config.anthropic.model.clone(),
-                thinking_level: self.config.llm.thinking_level,
-            },
-            evot::conf::ProviderKind::OpenAi => evot::conf::LlmConfig {
-                provider: kind,
-                api_key: self.config.openai.api_key.clone(),
-                base_url: self.config.openai.base_url.clone(),
-                model: self.config.openai.model.clone(),
-                thinking_level: self.config.llm.thinking_level,
-            },
+        let profile =
+            self.config.providers.get(&provider_name).ok_or_else(|| {
+                Error::from_reason(format!("provider '{}' not found", provider_name))
+            })?;
+        let llm = evot::conf::LlmConfig {
+            provider: provider_name,
+            protocol: profile.protocol.clone(),
+            api_key: profile.api_key.clone(),
+            base_url: profile.base_url.clone(),
+            model: model_override.unwrap_or_else(|| profile.model.clone()),
+            thinking_level: self.config.llm.thinking_level,
         };
+        if llm.api_key.is_empty() {
+            return Err(Error::from_reason(format!(
+                "{}.api_key not set",
+                llm.provider
+            )));
+        }
+        if llm.base_url.is_empty() {
+            return Err(Error::from_reason(format!(
+                "{}.base_url not set",
+                llm.provider
+            )));
+        }
+        if llm.model.is_empty() {
+            return Err(Error::from_reason(format!(
+                "{}.model not set",
+                llm.provider
+            )));
+        }
         self.agent.set_llm(llm);
         Ok(())
     }
@@ -720,10 +738,14 @@ pub async fn start_server(
     init_tracing();
     let mut config = evot::conf::Config::load_with_env_file(env_file.as_deref())
         .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
-        .with_model(model);
+        .with_model(model)
+        .map_err(|e| Error::from_reason(format!("config model: {e}")))?;
     if let Some(p) = port {
         config = config.with_port(p);
     }
+    config
+        .validate()
+        .map_err(|e| Error::from_reason(format!("config validation: {e}")))?;
     evot::gateway::service::start(config)
         .await
         .map_err(|e| Error::from_reason(format!("server error: {e}")))
@@ -738,10 +760,14 @@ pub async fn start_server_background(
     init_tracing();
     let mut config = evot::conf::Config::load_with_env_file(env_file.as_deref())
         .map_err(|e| Error::from_reason(format!("config load failed: {e}")))?
-        .with_model(model);
+        .with_model(model)
+        .map_err(|e| Error::from_reason(format!("config model: {e}")))?;
     if let Some(p) = port {
         config = config.with_port(p);
     }
+    config
+        .validate()
+        .map_err(|e| Error::from_reason(format!("config validation: {e}")))?;
     let actual_port = config.server.port;
     let host = config.server.host.clone();
     let addr = format!("{host}:{actual_port}");

@@ -2,57 +2,32 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::Path;
 
+use indexmap::IndexMap;
+
 use crate::conf::default_config;
+use crate::conf::infer_protocol;
+use crate::conf::parse_protocol;
 use crate::conf::paths;
 use crate::conf::thinking_level_from_str;
 use crate::conf::ChannelsConfig;
 use crate::conf::Config;
-use crate::conf::ProviderKind;
+use crate::conf::ProviderProfile;
 use crate::conf::StorageBackend;
 use crate::error::EvotError;
 use crate::error::Result;
 use crate::gateway::channels::feishu::FeishuChannelConfig;
 
-const RELEVANT_KEYS: &[&str] = &[
-    "EVOT_LLM_PROVIDER",
-    "EVOT_THINKING_LEVEL",
-    "EVOT_ANTHROPIC_API_KEY",
-    "EVOT_ANTHROPIC_BASE_URL",
-    "EVOT_ANTHROPIC_MODEL",
-    "EVOT_OPENAI_API_KEY",
-    "EVOT_OPENAI_BASE_URL",
-    "EVOT_OPENAI_MODEL",
-    "EVOT_SERVER_HOST",
-    "EVOT_SERVER_PORT",
-    "EVOT_STORAGE_BACKEND",
-    "EVOT_STORAGE_FS_ROOT_DIR",
-    "EVOT_STORAGE_CLOUD_ENDPOINT",
-    "EVOT_STORAGE_CLOUD_API_KEY",
-    "EVOT_STORAGE_CLOUD_WORKSPACE",
-    "EVOT_CHANNEL_FEISHU_APP_ID",
-    "EVOT_CHANNEL_FEISHU_APP_SECRET",
-    "EVOT_CHANNEL_FEISHU_MENTION_ONLY",
-    "EVOT_SANDBOX",
-    "EVOT_SANDBOX_ALLOWED_DIRS",
-];
-
-fn optional_string(value: String) -> Option<String> {
-    if value.trim().is_empty() {
-        None
-    } else {
-        Some(value)
-    }
-}
+// ---------------------------------------------------------------------------
+// TOML source structures
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct ConfigSource {
     llm: LlmSelectionSource,
-    anthropic: ProviderSource,
-    openai: ProviderSource,
+    providers: IndexMap<String, ProviderSource>,
     server: ServerSource,
     storage: StorageSource,
-    thinking_level: Option<String>,
     channel: ChannelSource,
     sandbox: SandboxSource,
 }
@@ -66,12 +41,14 @@ struct ChannelSource {
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct LlmSelectionSource {
-    provider: Option<ProviderKind>,
+    provider: Option<String>,
+    thinking_level: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct ProviderSource {
+    protocol: Option<String>,
     api_key: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
@@ -113,30 +90,30 @@ struct SandboxSource {
     allowed_dirs: Option<Vec<String>>,
 }
 
+fn optional_string(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TOML apply
+// ---------------------------------------------------------------------------
+
 impl ConfigSource {
     fn apply(self, config: &mut Config) -> Result<()> {
         if let Some(provider) = self.llm.provider {
             config.llm.provider = provider;
         }
-
-        if let Some(api_key) = self.anthropic.api_key {
-            config.anthropic.api_key = api_key;
-        }
-        if let Some(base_url) = self.anthropic.base_url {
-            config.anthropic.base_url = optional_string(base_url);
-        }
-        if let Some(model) = self.anthropic.model {
-            config.anthropic.model = model;
+        if let Some(level) = self.llm.thinking_level {
+            config.llm.thinking_level = thinking_level_from_str(&level)?;
         }
 
-        if let Some(api_key) = self.openai.api_key {
-            config.openai.api_key = api_key;
-        }
-        if let Some(base_url) = self.openai.base_url {
-            config.openai.base_url = optional_string(base_url);
-        }
-        if let Some(model) = self.openai.model {
-            config.openai.model = model;
+        // Apply [providers.*] from TOML — preserves declaration order
+        for (name, src) in self.providers {
+            merge_provider_source(&mut config.providers, &name, src)?;
         }
 
         if let Some(host) = self.server.host {
@@ -162,10 +139,6 @@ impl ConfigSource {
             config.storage.cloud.workspace = optional_string(workspace);
         }
 
-        if let Some(level) = self.thinking_level {
-            config.llm.thinking_level = thinking_level_from_str(&level)?;
-        }
-
         if self.channel.feishu.is_some() {
             config.channels = ChannelsConfig {
                 feishu: self.channel.feishu,
@@ -178,31 +151,134 @@ impl ConfigSource {
         if let Some(dirs) = self.sandbox.allowed_dirs {
             let mut expanded = Vec::new();
             for d in dirs {
-                expanded.push(paths::expand_home_path(&d)?);
+                let d = d.trim().to_string();
+                if !d.is_empty() {
+                    expanded.push(paths::expand_home_path(&d)?);
+                }
             }
-            config.sandbox.allowed_dirs = expanded;
+            if !expanded.is_empty() {
+                config.sandbox.allowed_dirs = expanded;
+            }
         }
 
         Ok(())
     }
 }
 
+/// Normalize a provider name to lowercase kebab-case.
+fn normalize_provider_name(name: &str) -> String {
+    name.to_lowercase()
+}
+
+/// Validate that a provider name is legal (no `:` allowed).
+fn validate_provider_name(name: &str) -> Result<()> {
+    if name.contains(':') {
+        return Err(EvotError::Conf(format!(
+            "provider name '{}' must not contain ':'",
+            name
+        )));
+    }
+    Ok(())
+}
+
+/// Merge a ProviderSource into the providers IndexMap.
+/// If the provider already exists, only overwrite fields that are Some.
+/// If new, insert with inferred protocol.
+fn merge_provider_source(
+    providers: &mut IndexMap<String, ProviderProfile>,
+    name: &str,
+    src: ProviderSource,
+) -> Result<()> {
+    let name = normalize_provider_name(name);
+    validate_provider_name(&name)?;
+    if let Some(profile) = providers.get_mut(&name) {
+        if let Some(protocol) = src.protocol {
+            profile.protocol = parse_protocol(&protocol)?;
+        }
+        if let Some(api_key) = src.api_key {
+            profile.api_key = api_key;
+        }
+        if let Some(base_url) = src.base_url {
+            profile.base_url = base_url;
+        }
+        if let Some(model) = src.model {
+            profile.model = model;
+        }
+    } else {
+        let protocol = match src.protocol {
+            Some(p) => parse_protocol(&p)?,
+            None => infer_protocol(&name),
+        };
+        providers.insert(name, ProviderProfile {
+            protocol,
+            api_key: src.api_key.unwrap_or_default(),
+            base_url: src.base_url.unwrap_or_default(),
+            model: src.model.unwrap_or_default(),
+        });
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// TOML file loading
+// ---------------------------------------------------------------------------
+
 fn load_file_source(path: &Path) -> Result<ConfigSource> {
     if !path.exists() {
         return Ok(ConfigSource::default());
     }
-
     let content = std::fs::read_to_string(path)
         .map_err(|e| EvotError::Conf(format!("failed to read {}: {e}", path.display())))?;
-
-    let parser = toml::Deserializer::new(&content);
-    serde_ignored::deserialize(parser, |unknown| {
-        tracing::warn!(path = %unknown, "unknown config field");
-    })
-    .map_err(|e| EvotError::Conf(format!("failed to parse {}: {e}", path.display())))
+    if content.trim().is_empty() {
+        return Ok(ConfigSource::default());
+    }
+    let source: ConfigSource = toml::from_str(&content)
+        .map_err(|e| EvotError::Conf(format!("failed to parse {}: {e}", path.display())))?;
+    Ok(source)
 }
 
-/// Create a default env file with commented-out config if it doesn't exist.
+// ---------------------------------------------------------------------------
+// Env file loading
+// ---------------------------------------------------------------------------
+
+fn load_env_file(path: &Path) -> Result<Vec<(String, String)>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let file = std::fs::File::open(path)
+        .map_err(|e| EvotError::Conf(format!("failed to open {}: {e}", path.display())))?;
+    let reader = std::io::BufReader::new(file);
+    let mut pairs = Vec::new();
+    for line in reader.lines() {
+        let line =
+            line.map_err(|e| EvotError::Conf(format!("failed to read {}: {e}", path.display())))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        // Strip optional "export " prefix
+        let trimmed = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+        if let Some((key, value)) = trimmed.split_once('=') {
+            let key = key.trim().to_string();
+            let value = value.trim().to_string();
+            if !key.is_empty() {
+                pairs.push((key, value));
+            }
+        }
+    }
+    Ok(pairs)
+}
+
+fn load_process_env() -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for (key, value) in std::env::vars() {
+        if is_relevant_key(&key) {
+            pairs.push((key, value));
+        }
+    }
+    pairs
+}
+
 fn ensure_env_file(path: &Path) -> Result<()> {
     if path.exists() {
         return Ok(());
@@ -211,161 +287,236 @@ fn ensure_env_file(path: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)
             .map_err(|e| EvotError::Conf(format!("failed to create {}: {e}", parent.display())))?;
     }
-    let template = "\
-# Evot configuration — uncomment and set values as needed
-# Full reference: configs/evot.env.example
-#
-# LLM provider: anthropic or openai
-# EVOT_LLM_PROVIDER=anthropic
-#
-# EVOT_ANTHROPIC_API_KEY=
-# EVOT_ANTHROPIC_BASE_URL=
-# EVOT_ANTHROPIC_MODEL=claude-opus-4-6
-#
-# EVOT_OPENAI_API_KEY=
-# EVOT_OPENAI_BASE_URL=
-# EVOT_OPENAI_MODEL=gpt-5.4
-";
-    std::fs::write(path, template)
+    std::fs::write(path, default_env_content())
         .map_err(|e| EvotError::Conf(format!("failed to write {}: {e}", path.display())))?;
     Ok(())
 }
 
-fn load_env_file(path: &Path) -> Result<HashMap<String, String>> {
-    if !path.exists() {
-        return Ok(HashMap::new());
+fn default_env_content() -> &'static str {
+    r#"# EVOT_LLM_PROVIDER=anthropic
+# EVOT_LLM_THINKING_LEVEL=off
+
+# EVOT_LLM_ANTHROPIC_API_KEY=
+# EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+# EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-20250514
+"#
+}
+
+// ---------------------------------------------------------------------------
+// Env key classification
+// ---------------------------------------------------------------------------
+
+/// Global keys that are not provider fields.
+const GLOBAL_ENV_KEYS: &[&str] = &["EVOT_LLM_PROVIDER", "EVOT_LLM_THINKING_LEVEL"];
+
+/// Legacy key prefixes for backward compatibility.
+const LEGACY_PREFIXES: &[&str] = &["EVOT_ANTHROPIC_", "EVOT_OPENAI_"];
+
+/// Provider field suffixes.
+const PROVIDER_FIELDS: &[&str] = &["_API_KEY", "_BASE_URL", "_MODEL", "_PROTOCOL"];
+
+/// Non-LLM keys we still care about.
+const OTHER_RELEVANT_PREFIXES: &[&str] = &[
+    "EVOT_SERVER_",
+    "EVOT_STORAGE_",
+    "EVOT_CHANNEL_",
+    "EVOT_SANDBOX",
+    "EVOT_SKILLS_DIRS",
+    "EVOT_ID",
+    "EVOT_THINKING_LEVEL",
+];
+
+fn is_relevant_key(key: &str) -> bool {
+    if key.starts_with("EVOT_LLM_") {
+        return true;
+    }
+    for prefix in LEGACY_PREFIXES {
+        if key.starts_with(prefix) {
+            return true;
+        }
+    }
+    for prefix in OTHER_RELEVANT_PREFIXES {
+        if key.starts_with(prefix) {
+            return true;
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// Env parsing: extract provider profiles from EVOT_LLM_{NAME}_{FIELD}
+// ---------------------------------------------------------------------------
+
+/// Convert env NAME encoding to provider name: uppercase + underscore → lowercase + hyphen.
+/// e.g. "MY_CORP" → "my-corp", "OPENROUTER" → "openrouter"
+fn env_name_to_provider(name: &str) -> String {
+    name.to_lowercase().replace('_', "-")
+}
+
+/// Try to parse a key as EVOT_LLM_{NAME}_{FIELD}.
+/// Returns (provider_name, field_suffix) if matched.
+fn parse_provider_env_key(key: &str) -> Option<(String, &'static str)> {
+    let rest = key.strip_prefix("EVOT_LLM_")?;
+
+    // Skip global keys
+    for gk in GLOBAL_ENV_KEYS {
+        if key == *gk {
+            return None;
+        }
     }
 
-    let content = std::fs::read(path)
-        .map_err(|e| EvotError::Conf(format!("failed to read {}: {e}", path.display())))?;
-    let mut vars = HashMap::new();
-
-    for line in content.lines() {
-        let line = line.map_err(|e| {
-            EvotError::Conf(format!("failed to read line in {}: {e}", path.display()))
-        })?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
+    // Try each field suffix (longest first to avoid partial matches)
+    for suffix in PROVIDER_FIELDS {
+        if let Some(name_part) = rest.strip_suffix(suffix) {
+            if !name_part.is_empty() {
+                return Some((env_name_to_provider(name_part), suffix));
+            }
         }
+    }
+    None
+}
 
-        let trimmed = match trimmed.strip_prefix("export ") {
-            Some(value) => value,
-            None => trimmed,
+/// Parse legacy EVOT_ANTHROPIC_* / EVOT_OPENAI_* keys.
+fn parse_legacy_env_key(key: &str) -> Option<(&'static str, &'static str)> {
+    if let Some(field) = key.strip_prefix("EVOT_ANTHROPIC_") {
+        let suffix = match field {
+            "API_KEY" => "_API_KEY",
+            "BASE_URL" => "_BASE_URL",
+            "MODEL" => "_MODEL",
+            _ => return None,
         };
-
-        if let Some((key, value)) = trimmed.split_once('=') {
-            let key = key.trim().to_string();
-            let value = value
-                .trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .to_string();
-            if !value.is_empty() {
-                vars.insert(key, value);
-            }
-        }
+        return Some(("anthropic", suffix));
     }
-
-    Ok(vars)
-}
-
-fn load_process_env() -> HashMap<String, String> {
-    let mut vars = HashMap::new();
-    for &key in RELEVANT_KEYS {
-        if let Ok(value) = std::env::var(key) {
-            if !value.is_empty() {
-                vars.insert(key.to_string(), value);
-            }
-        }
-    }
-    vars
-}
-
-fn provider_keys(provider: &ProviderKind) -> (&'static str, &'static str, &'static str) {
-    match provider {
-        ProviderKind::Anthropic => (
-            "EVOT_ANTHROPIC_API_KEY",
-            "EVOT_ANTHROPIC_BASE_URL",
-            "EVOT_ANTHROPIC_MODEL",
-        ),
-        ProviderKind::OpenAi => (
-            "EVOT_OPENAI_API_KEY",
-            "EVOT_OPENAI_BASE_URL",
-            "EVOT_OPENAI_MODEL",
-        ),
-    }
-}
-
-fn apply_provider_env(config: &mut Config, provider: ProviderKind, vars: &HashMap<String, String>) {
-    let provider_config = config.provider_config_mut(&provider);
-    let (api_key_key, base_url_key, model_key) = provider_keys(&provider);
-
-    if let Some(api_key) = vars.get(api_key_key) {
-        provider_config.api_key = api_key.clone();
-    }
-    if let Some(base_url) = vars.get(base_url_key) {
-        provider_config.base_url = Some(base_url.clone());
-    }
-    if let Some(model) = vars.get(model_key) {
-        provider_config.model = model.clone();
-    }
-}
-
-fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> {
-    if let Some(provider) = vars.get("EVOT_LLM_PROVIDER") {
-        config.llm.provider = ProviderKind::from_str_loose(provider)?;
-    }
-
-    if let Some(level) = vars.get("EVOT_THINKING_LEVEL") {
-        config.llm.thinking_level = thinking_level_from_str(level)?;
-    }
-
-    apply_provider_env(config, ProviderKind::Anthropic, vars);
-    apply_provider_env(config, ProviderKind::OpenAi, vars);
-
-    if let Some(host) = vars.get("EVOT_SERVER_HOST") {
-        config.server.host = host.clone();
-    }
-    if let Some(port) = vars.get("EVOT_SERVER_PORT") {
-        config.server.port = port
-            .parse::<u16>()
-            .map_err(|e| EvotError::Conf(format!("invalid EVOT_SERVER_PORT value {port}: {e}")))?;
-    }
-
-    if let Some(backend) = vars.get("EVOT_STORAGE_BACKEND") {
-        config.storage.backend = match backend.as_str() {
-            "fs" => StorageBackend::Fs,
-            "cloud" => StorageBackend::Cloud,
-            other => {
-                return Err(EvotError::Conf(format!(
-                    "unknown EVOT_STORAGE_BACKEND: {other}"
-                )))
-            }
+    if let Some(field) = key.strip_prefix("EVOT_OPENAI_") {
+        let suffix = match field {
+            "API_KEY" => "_API_KEY",
+            "BASE_URL" => "_BASE_URL",
+            "MODEL" => "_MODEL",
+            _ => return None,
         };
+        return Some(("openai", suffix));
     }
-    if let Some(root_dir) = vars.get("EVOT_STORAGE_FS_ROOT_DIR") {
-        config.storage.fs.root_dir = paths::expand_home_path(root_dir)?;
+    None
+}
+
+fn apply_provider_field(
+    providers: &mut IndexMap<String, ProviderProfile>,
+    name: &str,
+    field: &str,
+    value: &str,
+) -> Result<()> {
+    validate_provider_name(name)?;
+    let profile = providers
+        .entry(name.to_string())
+        .or_insert_with(|| ProviderProfile {
+            protocol: infer_protocol(name),
+            api_key: String::new(),
+            base_url: String::new(),
+            model: String::new(),
+        });
+    match field {
+        "_API_KEY" => profile.api_key = value.to_string(),
+        "_BASE_URL" => profile.base_url = value.to_string(),
+        "_MODEL" => profile.model = value.to_string(),
+        "_PROTOCOL" => profile.protocol = parse_protocol(value)?,
+        _ => {}
     }
-    if let Some(endpoint) = vars.get("EVOT_STORAGE_CLOUD_ENDPOINT") {
-        config.storage.cloud.endpoint = endpoint.clone();
-    }
-    if let Some(api_key) = vars.get("EVOT_STORAGE_CLOUD_API_KEY") {
-        config.storage.cloud.api_key = api_key.clone();
-    }
-    if let Some(workspace) = vars.get("EVOT_STORAGE_CLOUD_WORKSPACE") {
-        config.storage.cloud.workspace = Some(workspace.clone());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// apply_env — process ordered key-value pairs into Config
+// ---------------------------------------------------------------------------
+
+fn apply_env(config: &mut Config, vars: &[(String, String)]) -> Result<()> {
+    // First pass: legacy keys (lower priority)
+    for (key, value) in vars {
+        if let Some((provider_name, field)) = parse_legacy_env_key(key) {
+            // Only apply if no new-format key has set this provider yet
+            if !has_new_format_provider(vars, provider_name) {
+                apply_provider_field(&mut config.providers, provider_name, field, value)?;
+            }
+        }
     }
 
-    // Feishu channel from env
-    if let Some(app_id) = vars.get("EVOT_CHANNEL_FEISHU_APP_ID") {
-        let app_secret = vars
+    // Second pass: new format EVOT_LLM_{NAME}_{FIELD}
+    for (key, value) in vars {
+        if let Some((provider_name, field)) = parse_provider_env_key(key) {
+            apply_provider_field(&mut config.providers, &provider_name, field, value)?;
+        }
+    }
+
+    // Global LLM keys
+    for (key, value) in vars {
+        match key.as_str() {
+            "EVOT_LLM_PROVIDER" => config.llm.provider = value.clone(),
+            "EVOT_LLM_THINKING_LEVEL" => {
+                config.llm.thinking_level = thinking_level_from_str(value)?;
+            }
+            // Legacy thinking level key
+            "EVOT_THINKING_LEVEL" => {
+                config.llm.thinking_level = thinking_level_from_str(value)?;
+            }
+            _ => {}
+        }
+    }
+
+    // Server
+    for (key, value) in vars {
+        match key.as_str() {
+            "EVOT_SERVER_HOST" => config.server.host = value.clone(),
+            "EVOT_SERVER_PORT" => {
+                config.server.port = value.parse::<u16>().map_err(|e| {
+                    EvotError::Conf(format!("invalid EVOT_SERVER_PORT value {value}: {e}"))
+                })?;
+            }
+            _ => {}
+        }
+    }
+
+    // Storage
+    for (key, value) in vars {
+        match key.as_str() {
+            "EVOT_STORAGE_BACKEND" => {
+                config.storage.backend = match value.as_str() {
+                    "fs" => StorageBackend::Fs,
+                    "cloud" => StorageBackend::Cloud,
+                    other => {
+                        return Err(EvotError::Conf(format!(
+                            "unknown EVOT_STORAGE_BACKEND: {other}"
+                        )))
+                    }
+                };
+            }
+            "EVOT_STORAGE_FS_ROOT_DIR" => {
+                config.storage.fs.root_dir = paths::expand_home_path(value)?;
+            }
+            "EVOT_STORAGE_CLOUD_ENDPOINT" => {
+                config.storage.cloud.endpoint = value.clone();
+            }
+            "EVOT_STORAGE_CLOUD_API_KEY" => {
+                config.storage.cloud.api_key = value.clone();
+            }
+            "EVOT_STORAGE_CLOUD_WORKSPACE" => {
+                config.storage.cloud.workspace = Some(value.clone());
+            }
+            _ => {}
+        }
+    }
+
+    // Feishu channel
+    let feishu_app_id = vars.iter().find(|(k, _)| k == "EVOT_CHANNEL_FEISHU_APP_ID");
+    if let Some((_, app_id)) = feishu_app_id {
+        let vars_map: HashMap<&str, &str> =
+            vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let app_secret = vars_map
             .get("EVOT_CHANNEL_FEISHU_APP_SECRET")
-            .cloned()
-            .unwrap_or_default();
-        let mention_only = vars
+            .copied()
+            .unwrap_or_default()
+            .to_string();
+        let mention_only = vars_map
             .get("EVOT_CHANNEL_FEISHU_MENTION_ONLY")
-            .map(|v| v != "0" && v.to_lowercase() != "false")
+            .map(|v| *v != "0" && v.to_lowercase() != "false")
             .unwrap_or(true);
         config.channels.feishu = Some(FeishuChannelConfig {
             app_id: app_id.clone(),
@@ -376,49 +527,73 @@ fn apply_env(config: &mut Config, vars: &HashMap<String, String>) -> Result<()> 
     }
 
     // Sandbox
-    if let Some(val) = vars.get("EVOT_SANDBOX") {
-        config.sandbox.enabled = val == "true" || val == "1";
-    }
-    if let Some(val) = vars.get("EVOT_SANDBOX_ALLOWED_DIRS") {
-        let mut dirs = Vec::new();
-        for d in val.split(':') {
-            let d = d.trim();
-            if !d.is_empty() {
-                dirs.push(paths::expand_home_path(d)?);
+    for (key, value) in vars {
+        match key.as_str() {
+            "EVOT_SANDBOX" => {
+                config.sandbox.enabled = value == "true" || value == "1";
             }
-        }
-        if !dirs.is_empty() {
-            config.sandbox.allowed_dirs = dirs;
+            "EVOT_SANDBOX_ALLOWED_DIRS" => {
+                let mut dirs = Vec::new();
+                for d in value.split(':') {
+                    let d = d.trim();
+                    if !d.is_empty() {
+                        dirs.push(paths::expand_home_path(d)?);
+                    }
+                }
+                if !dirs.is_empty() {
+                    config.sandbox.allowed_dirs = dirs;
+                }
+            }
+            _ => {}
         }
     }
 
     // Skills
-    if let Some(val) = vars.get("EVOT_SKILLS_DIRS") {
-        for d in val.split(':') {
-            let d = d.trim();
-            if !d.is_empty() {
-                config.skills_dirs.push(paths::expand_home_path(d)?);
+    for (key, value) in vars {
+        if key == "EVOT_SKILLS_DIRS" {
+            for d in value.split(':') {
+                let d = d.trim();
+                if !d.is_empty() {
+                    config.skills_dirs.push(paths::expand_home_path(d)?);
+                }
             }
         }
     }
 
-    // Instance ID — isolates storage under ~/.evotai/<id>/
-    if let Some(val) = vars.get("EVOT_ID") {
-        let val = val.trim();
-        if !val.is_empty() {
-            config.id = Some(val.to_string());
+    // Instance ID
+    for (key, value) in vars {
+        if key == "EVOT_ID" {
+            let val = value.trim();
+            if !val.is_empty() {
+                config.id = Some(val.to_string());
+            }
         }
     }
 
     Ok(())
 }
 
+/// Check if any new-format key (EVOT_LLM_{NAME}_*) exists for a given provider name.
+fn has_new_format_provider(vars: &[(String, String)], provider_name: &str) -> bool {
+    let prefix = format!(
+        "EVOT_LLM_{}_",
+        provider_name.to_uppercase().replace('-', "_")
+    );
+    vars.iter().any(|(k, _)| k.starts_with(&prefix))
+}
+
+// ---------------------------------------------------------------------------
+// load_config_inner
+// ---------------------------------------------------------------------------
+
 pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     let mut config = default_config()?;
 
+    // 1. TOML
     let file_source = load_file_source(&paths::config_file_path()?)?;
     file_source.apply(&mut config)?;
 
+    // 2. Env file
     let (env_path, is_custom_env) = match env_file {
         Some(path) => (paths::expand_home_path(path)?, true),
         None => (paths::default_env_file_path()?, false),
@@ -438,6 +613,7 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
 
     config.env_file_path = env_path;
 
+    // 3. Process env (highest priority)
     let process_vars = load_process_env();
     apply_env(&mut config, &process_vars)?;
 
@@ -446,8 +622,6 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
         let isolated_root = paths::state_root_dir()?.join(id);
         config.storage.fs.root_dir = isolated_root;
     }
-
-    config.validate()?;
 
     Ok(config)
 }

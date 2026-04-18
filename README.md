@@ -77,21 +77,27 @@ evot
 Create `~/.evotai/evot.env`:
 
 ```env
-# Provider: "anthropic" or "openai"
+# Active provider: anthropic, openai, deepseek and others
 EVOT_LLM_PROVIDER=anthropic
 
 # Anthropic
-EVOT_ANTHROPIC_API_KEY=sk-ant-...
-EVOT_ANTHROPIC_BASE_URL=https://your-api-endpoint.com
-EVOT_ANTHROPIC_MODEL=claude-opus-4-6
+EVOT_LLM_ANTHROPIC_API_KEY=sk-ant-...
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com or custom URL
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6
 
 # OpenAI
-EVOT_OPENAI_API_KEY=sk-...
-EVOT_OPENAI_BASE_URL=https://your-api-endpoint.com/api/v1
-EVOT_OPENAI_MODEL=gpt-5.4
+# EVOT_LLM_OPENAI_API_KEY=sk-...
+# EVOT_LLM_OPENAI_BASE_URL=https://api.openai.com/v1 or custom URL
+# EVOT_LLM_OPENAI_MODEL=gpt-5.4
+
+# DeepSeek
+# EVOT_LLM_DEEPSEEK_API_KEY=sk-ds-...
+# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
+# EVOT_LLM_DEEPSEEK_MODEL=deepseek-chat
 ```
 
-Only the active provider's keys are required. Set `EVOT_LLM_PROVIDER` to switch.
+Configure as many providers as you need. Set `EVOT_LLM_PROVIDER` to switch the active one.
+Use `--model <name>` to switch by model name, or `--model provider:model` for precise control.
 
 ```bash
 evot                              # interactive REPL

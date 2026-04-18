@@ -9,11 +9,12 @@ use crate::error::EvotError;
 use crate::error::Result;
 
 pub async fn start(conf: Config) -> Result<()> {
+    let llm = conf.active_llm()?;
     tracing::info!(
         id = ?conf.id,
         env_file = %conf.env_file_path.display(),
-        provider = %conf.active_llm().provider,
-        model = %conf.active_llm().model,
+        provider = %llm.provider,
+        model = %llm.model,
         storage = ?conf.storage.backend,
         storage_root = %conf.storage.fs.root_dir.display(),
         skills_dirs = ?conf.skills_dirs,
@@ -27,7 +28,7 @@ pub async fn start(conf: Config) -> Result<()> {
     // Long-lived channels (feishu, telegram, ...)
     let channel_handles = super::registry::spawn_all(&conf.channels, agent.clone(), cancel.clone());
 
-    print_banner(&conf, &channel_handles);
+    print_banner(&conf, &channel_handles)?;
 
     // HTTP channel (blocking)
     super::channels::http::Server::new(agent)
@@ -70,8 +71,8 @@ pub fn build_agent(conf: &Config) -> Result<Arc<Agent>> {
         .with_skills_dirs(skills_dirs))
 }
 
-fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) {
-    let llm = conf.active_llm();
+fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) -> Result<()> {
+    let llm = conf.active_llm()?;
     let addr = format!("{}:{}", conf.server.host, conf.server.port);
     let storage_backend = match conf.storage.backend {
         crate::conf::StorageBackend::Fs => "fs",
@@ -88,10 +89,8 @@ fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) 
     eprintln!("  address:  http://{addr}");
     eprintln!("  provider: {}", llm.provider);
     eprintln!("  model:    {}", llm.model);
-    if let Some(ref base_url) = llm.base_url {
-        if !base_url.is_empty() {
-            eprintln!("  base_url: {base_url}");
-        }
+    if !llm.base_url.is_empty() {
+        eprintln!("  base_url: {}", llm.base_url);
     }
     eprintln!("  storage:  {storage_backend} ({storage_target})");
     if !channel_handles.is_empty() {
@@ -103,4 +102,5 @@ fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) 
     }
     eprintln!("  ───────────────────────────────────");
     eprintln!();
+    Ok(())
 }

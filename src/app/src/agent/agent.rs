@@ -129,7 +129,7 @@ impl Agent {
         let storage = open_storage(&config.storage)?;
         let system_prompt = format!("You are a helpful assistant. Working directory: {cwd}");
         Ok(Arc::new(Self {
-            llm: RwLock::new(config.active_llm()),
+            llm: RwLock::new(config.active_llm()?),
             system_prompt: RwLock::new(system_prompt),
             limits: RwLock::new(ExecutionLimits::default()),
             skills_dirs: RwLock::new(Vec::new()),
@@ -209,10 +209,6 @@ impl Agent {
 
     pub fn set_model(&self, model: String) {
         self.llm.write().model = model;
-    }
-
-    pub fn set_provider(&self, provider: crate::conf::ProviderKind) {
-        self.llm.write().provider = provider;
     }
 
     pub fn set_llm(&self, llm: LlmConfig) {
@@ -516,10 +512,10 @@ impl Agent {
 
         Ok(runtime::TurnInput {
             options: runtime::EngineOptions {
-                provider: llm.provider,
+                protocol: llm.protocol,
                 model: llm.model,
                 api_key: llm.api_key,
-                base_url: llm.base_url,
+                base_url: Some(llm.base_url),
                 system_prompt,
                 limits: self.limits.read().clone(),
                 skills_dirs: skill_dirs,

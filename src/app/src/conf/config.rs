@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use evot_engine::ThinkingLevel;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -9,12 +10,102 @@ use crate::error::EvotError;
 use crate::error::Result;
 use crate::gateway::channels::feishu::FeishuChannelConfig;
 
+// ---------------------------------------------------------------------------
+// Protocol — determines which LLM provider implementation to use
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Protocol {
+    Anthropic,
+    OpenAi,
+}
+
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Anthropic => write!(f, "anthropic"),
+            Self::OpenAi => write!(f, "openai"),
+        }
+    }
+}
+
+/// Infer protocol from provider name. Only "anthropic" maps to Anthropic;
+/// everything else defaults to OpenAI-compatible.
+pub fn infer_protocol(name: &str) -> Protocol {
+    if name == "anthropic" {
+        Protocol::Anthropic
+    } else {
+        Protocol::OpenAi
+    }
+}
+
+pub fn parse_protocol(value: &str) -> Result<Protocol> {
+    match value.to_lowercase().as_str() {
+        "anthropic" => Ok(Protocol::Anthropic),
+        "openai" => Ok(Protocol::OpenAi),
+        other => Err(EvotError::Conf(format!(
+            "unknown protocol: {other} (valid: anthropic, openai)"
+        ))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ProviderProfile — static config for one provider
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct ProviderProfile {
+    pub protocol: Protocol,
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+}
+
+// ---------------------------------------------------------------------------
+// LlmSelection — which provider is active + runtime overrides
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct LlmSelection {
+    pub provider: String,
+    pub model_override: Option<String>,
+    pub thinking_level: ThinkingLevel,
+}
+
+impl Default for LlmSelection {
+    fn default() -> Self {
+        Self {
+            provider: "anthropic".to_string(),
+            model_override: None,
+            thinking_level: ThinkingLevel::Off,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LlmConfig — resolved runtime config passed to Agent / Engine
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct LlmConfig {
+    pub provider: String,
+    pub protocol: Protocol,
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    pub thinking_level: ThinkingLevel,
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub id: Option<String>,
     pub llm: LlmSelection,
-    pub anthropic: ProviderConfig,
-    pub openai: ProviderConfig,
+    pub providers: IndexMap<String, ProviderProfile>,
     pub server: ServerConfig,
     pub storage: StorageConfig,
     pub channels: ChannelsConfig,
@@ -29,8 +120,7 @@ impl Config {
         Self {
             id: None,
             llm: LlmSelection::default(),
-            anthropic: ProviderConfig::anthropic(),
-            openai: ProviderConfig::openai(),
+            providers: IndexMap::new(),
             server: ServerConfig::default(),
             storage: StorageConfig::fs(state_root),
             channels: ChannelsConfig::default(),
@@ -40,31 +130,87 @@ impl Config {
         }
     }
 
-    pub fn active_llm(&self) -> LlmConfig {
-        let provider = self.llm.provider.clone();
-        let config = self.provider_config(&provider).clone();
-
-        LlmConfig {
-            provider,
-            api_key: config.api_key,
-            base_url: config.base_url,
-            model: config.model,
+    /// Resolve the active provider into a runtime LlmConfig.
+    pub fn active_llm(&self) -> Result<LlmConfig> {
+        let profile = self.providers.get(&self.llm.provider).ok_or_else(|| {
+            EvotError::Conf(format!(
+                "provider '{}' not found, available: {}",
+                self.llm.provider,
+                self.providers
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })?;
+        Ok(LlmConfig {
+            provider: self.llm.provider.clone(),
+            protocol: profile.protocol.clone(),
+            api_key: profile.api_key.clone(),
+            base_url: profile.base_url.clone(),
+            model: self
+                .llm
+                .model_override
+                .clone()
+                .unwrap_or_else(|| profile.model.clone()),
             thinking_level: self.llm.thinking_level,
+        })
+    }
+
+    /// Parse a model spec and return (provider_name, optional_model_override).
+    ///
+    /// Formats:
+    /// - `"deepseek-chat"` — find first provider whose model matches
+    /// - `"openrouter:google/gemini-2.5-pro"` — exact provider + model override
+    pub fn resolve_model_spec(&self, spec: &str) -> Result<(String, Option<String>)> {
+        if let Some((provider, model)) = spec.split_once(':') {
+            if model.is_empty() {
+                return Err(EvotError::Conf(format!(
+                    "empty model in spec '{spec}', expected provider:model"
+                )));
+            }
+            if !self.providers.contains_key(provider) {
+                return Err(EvotError::Conf(format!(
+                    "provider '{}' not found, available: {}",
+                    provider,
+                    self.providers
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+            Ok((provider.to_string(), Some(model.to_string())))
+        } else {
+            let found = self
+                .providers
+                .iter()
+                .find(|(_, p)| p.model == spec)
+                .map(|(name, _)| name.clone());
+            match found {
+                Some(name) => Ok((name, None)),
+                None => Err(EvotError::Conf(format!(
+                    "no provider with model '{}', available: {}",
+                    spec,
+                    self.providers
+                        .iter()
+                        .map(|(n, p)| format!("{}:{}", n, p.model))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))),
+            }
         }
     }
 
-    pub fn provider_config(&self, provider: &ProviderKind) -> &ProviderConfig {
-        match provider {
-            ProviderKind::Anthropic => &self.anthropic,
-            ProviderKind::OpenAi => &self.openai,
-        }
-    }
-
-    pub fn provider_config_mut(&mut self, provider: &ProviderKind) -> &mut ProviderConfig {
-        match provider {
-            ProviderKind::Anthropic => &mut self.anthropic,
-            ProviderKind::OpenAi => &mut self.openai,
-        }
+    /// Apply `--model` CLI argument. Must be called before `validate()`.
+    pub fn with_model(mut self, model: Option<String>) -> Result<Self> {
+        let Some(value) = model else {
+            return Ok(self);
+        };
+        let (provider, model_override) = self.resolve_model_spec(&value)?;
+        self.llm.provider = provider;
+        self.llm.model_override = model_override;
+        Ok(self)
     }
 
     pub fn load() -> Result<Self> {
@@ -75,38 +221,34 @@ impl Config {
         super::load::load_config_inner(env_file)
     }
 
-    pub fn with_model(mut self, model: Option<String>) -> Self {
-        if let Some(m) = model {
-            let provider = self.llm.provider.clone();
-            self.provider_config_mut(&provider).model = m;
-        }
-        self
-    }
-
     pub fn with_port(mut self, port: u16) -> Self {
         self.server.port = port;
         self
     }
 
     pub fn validate(&self) -> Result<()> {
-        let llm = self.active_llm();
-        if llm.api_key.is_empty() {
-            let provider = &self.llm.provider;
-            let (key_name, _, _) = match provider {
-                ProviderKind::Anthropic => (
-                    "EVOT_ANTHROPIC_API_KEY",
-                    "EVOT_ANTHROPIC_BASE_URL",
-                    "EVOT_ANTHROPIC_MODEL",
-                ),
-                ProviderKind::OpenAi => (
-                    "EVOT_OPENAI_API_KEY",
-                    "EVOT_OPENAI_BASE_URL",
-                    "EVOT_OPENAI_MODEL",
-                ),
-            };
-            let env_path = self.env_file_path.display();
+        let profile = self.providers.get(&self.llm.provider).ok_or_else(|| {
+            EvotError::Conf(format!("provider '{}' not found", self.llm.provider))
+        })?;
+        if profile.api_key.is_empty() {
             return Err(EvotError::Conf(format!(
-                "{key_name} not set (provider: {provider:?}, env file: {env_path})"
+                "{}.api_key not set (env file: {})",
+                self.llm.provider,
+                self.env_file_path.display()
+            )));
+        }
+        if profile.base_url.is_empty() {
+            return Err(EvotError::Conf(format!(
+                "{}.base_url not set (env file: {})",
+                self.llm.provider,
+                self.env_file_path.display()
+            )));
+        }
+        if profile.model.is_empty() && self.llm.model_override.is_none() {
+            return Err(EvotError::Conf(format!(
+                "{}.model not set (env file: {})",
+                self.llm.provider,
+                self.env_file_path.display()
             )));
         }
 
@@ -130,54 +272,9 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LlmSelection {
-    pub provider: ProviderKind,
-    pub thinking_level: ThinkingLevel,
-}
-
-impl Default for LlmSelection {
-    fn default() -> Self {
-        Self {
-            provider: ProviderKind::default(),
-            thinking_level: ThinkingLevel::Off,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LlmConfig {
-    pub provider: ProviderKind,
-    pub api_key: String,
-    pub base_url: Option<String>,
-    pub model: String,
-    pub thinking_level: ThinkingLevel,
-}
-
-#[derive(Debug, Clone)]
-pub struct ProviderConfig {
-    pub api_key: String,
-    pub base_url: Option<String>,
-    pub model: String,
-}
-
-impl ProviderConfig {
-    pub fn anthropic() -> Self {
-        Self {
-            api_key: String::new(),
-            base_url: None,
-            model: default_model(&ProviderKind::Anthropic).to_string(),
-        }
-    }
-
-    pub fn openai() -> Self {
-        Self {
-            api_key: String::new(),
-            base_url: None,
-            model: default_model(&ProviderKind::OpenAi).to_string(),
-        }
-    }
-}
+// ---------------------------------------------------------------------------
+// Server / Storage / Channels / Sandbox — unchanged
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -231,32 +328,9 @@ pub struct CloudStorageConfig {
     pub workspace: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderKind {
-    #[default]
-    Anthropic,
-    OpenAi,
-}
-
-impl ProviderKind {
-    pub fn from_str_loose(value: &str) -> Result<Self> {
-        match value.to_lowercase().as_str() {
-            "anthropic" => Ok(Self::Anthropic),
-            "openai" => Ok(Self::OpenAi),
-            other => Err(EvotError::Conf(format!("unknown provider: {other}"))),
-        }
-    }
-}
-
-impl std::fmt::Display for ProviderKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Anthropic => write!(f, "anthropic"),
-            Self::OpenAi => write!(f, "openai"),
-        }
-    }
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 pub fn thinking_level_from_str(value: &str) -> Result<ThinkingLevel> {
     match value.to_lowercase().as_str() {
@@ -268,13 +342,6 @@ pub fn thinking_level_from_str(value: &str) -> Result<ThinkingLevel> {
         other => Err(EvotError::Conf(format!(
             "unknown thinking level: {other} (valid: off, minimal, low, medium, high)"
         ))),
-    }
-}
-
-pub fn default_model(provider: &ProviderKind) -> &'static str {
-    match provider {
-        ProviderKind::Anthropic => "claude-sonnet-4-20250514",
-        ProviderKind::OpenAi => "gpt-4o",
     }
 }
 

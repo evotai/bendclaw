@@ -19,7 +19,7 @@ use super::event::RunEventContext;
 use super::event::RunEventPayload;
 use super::run::Run;
 use crate::agent::session::Session;
-use crate::conf::ProviderKind;
+use crate::conf::Protocol;
 use crate::error::Result;
 use crate::types::ContextCompactionCompletedStats;
 use crate::types::ContextCompactionStartedStats;
@@ -37,7 +37,7 @@ use crate::types::UsageSummary;
 // ---------------------------------------------------------------------------
 
 pub struct EngineOptions {
-    pub provider: ProviderKind,
+    pub protocol: Protocol,
     pub model: String,
     pub api_key: String,
     pub base_url: Option<String>,
@@ -676,17 +676,17 @@ pub(crate) fn build_agent(
     use evot_engine::provider::ModelConfig;
     use evot_engine::provider::OpenAiCompatProvider;
 
-    let mut model_config = match options.provider {
-        ProviderKind::Anthropic => ModelConfig::anthropic(&options.model, &options.model),
-        ProviderKind::OpenAi => ModelConfig::openai(&options.model, &options.model),
+    let mut model_config = match options.protocol {
+        Protocol::Anthropic => ModelConfig::anthropic(&options.model, &options.model),
+        Protocol::OpenAi => ModelConfig::openai(&options.model, &options.model),
     };
     if let Some(base_url) = &options.base_url {
         model_config.base_url = base_url.clone();
     }
 
-    let provider_agent = match options.provider {
-        ProviderKind::Anthropic => evot_engine::Agent::new(AnthropicProvider),
-        ProviderKind::OpenAi => evot_engine::Agent::new(OpenAiCompatProvider),
+    let provider_agent = match options.protocol {
+        Protocol::Anthropic => evot_engine::Agent::new(AnthropicProvider),
+        Protocol::OpenAi => evot_engine::Agent::new(OpenAiCompatProvider),
     };
 
     let limits = evot_engine::context::ExecutionLimits {

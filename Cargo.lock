@@ -827,6 +827,7 @@ dependencies = [
  "crossterm 0.28.1",
  "evotengine",
  "futures",
+ "indexmap",
  "insta",
  "native-tls",
  "parking_lot",

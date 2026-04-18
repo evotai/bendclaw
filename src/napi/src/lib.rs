@@ -210,7 +210,7 @@ impl NapiAgent {
             cached_session_id: sid,
             aborted: Arc::new(AtomicBool::new(false)),
             abort_notify: Arc::new(Notify::new()),
-            ask_event_rx: Mutex::new(ask_event_rx),
+            ask_event_rx: Mutex::new(Some(ask_event_rx)),
             ask_responder,
         })
     }
@@ -449,7 +449,9 @@ pub struct NapiRun {
     aborted: Arc<AtomicBool>,
     abort_notify: Arc<Notify>,
     /// Receives ask_user event JSON strings injected by the AskUserFn callback.
-    ask_event_rx: Mutex<tokio_mpsc::UnboundedReceiver<String>>,
+    /// Set to `None` once the channel is fully drained (`recv() == None`),
+    /// so subsequent `next()` calls skip the ask branch entirely.
+    ask_event_rx: Mutex<Option<tokio_mpsc::UnboundedReceiver<String>>>,
     /// Shared slot: the AskUserFn callback stores a oneshot::Sender here;
     /// `respond_ask_user()` takes it out and sends the answer.
     ask_responder: AskResponder,
@@ -474,27 +476,68 @@ impl NapiRun {
             return Ok(None);
         }
         let mut run = self.inner.lock().await;
-        let mut ask_rx = self.ask_event_rx.lock().await;
-        tokio::select! {
-            ask_json = ask_rx.recv() => {
-                Ok(ask_json)
-            }
-            event = run.next() => {
-                if self.aborted.load(Ordering::Relaxed) {
-                    return Ok(None);
-                }
-                match event {
-                    Some(event) => {
-                        let json = serde_json::to_string(&event)
-                            .map_err(|e| Error::from_reason(format!("serialize event: {e}")))?;
-                        Ok(Some(json))
+        let mut ask_rx_slot = self.ask_event_rx.lock().await;
+
+        // Helper: serialize a RunEvent to JSON.
+        fn serialize_event(event: evot::agent::RunEvent) -> Result<Option<String>> {
+            let json = serde_json::to_string(&event)
+                .map_err(|e| Error::from_reason(format!("serialize event: {e}")))?;
+            Ok(Some(json))
+        }
+
+        // Select next run event or abort — used whenever the ask branch is
+        // absent or has just been drained.
+        macro_rules! next_run_or_abort {
+            ($run:expr, $notify:expr) => {
+                tokio::select! {
+                    event = $run.next() => {
+                        match event {
+                            Some(e) => serialize_event(e),
+                            None => Ok(None),
+                        }
                     }
-                    None => Ok(None),
+                    _ = $notify.notified() => {
+                        $run.abort();
+                        Ok(None)
+                    }
                 }
+            };
+        }
+
+        // Two-path select:
+        // - When the ask channel is still alive, listen for ask events,
+        //   run events, and abort.
+        // - Once `recv()` returns `None` (channel fully drained), permanently
+        //   remove the ask branch so it never produces a spurious EOF.
+        match ask_rx_slot.as_mut() {
+            None => {
+                // ask channel already drained in a prior call.
+                next_run_or_abort!(run, self.abort_notify)
             }
-            _ = self.abort_notify.notified() => {
-                run.abort();
-                Ok(None)
+            Some(ask_rx) => {
+                tokio::select! {
+                    ask_json = ask_rx.recv() => {
+                        match ask_json {
+                            Some(json) => Ok(Some(json)),
+                            None => {
+                                // Sender dropped and buffer empty — permanently
+                                // disable the ask branch, then read from run.
+                                *ask_rx_slot = None;
+                                next_run_or_abort!(run, self.abort_notify)
+                            }
+                        }
+                    }
+                    event = run.next() => {
+                        match event {
+                            Some(e) => serialize_event(e),
+                            None => Ok(None),
+                        }
+                    }
+                    _ = self.abort_notify.notified() => {
+                        run.abort();
+                        Ok(None)
+                    }
+                }
             }
         }
     }
@@ -592,7 +635,7 @@ impl NapiForkedAgent {
             cached_session_id: sid,
             aborted: Arc::new(AtomicBool::new(false)),
             abort_notify: Arc::new(Notify::new()),
-            ask_event_rx: Mutex::new(ask_rx),
+            ask_event_rx: Mutex::new(Some(ask_rx)),
             ask_responder: Arc::new(Mutex::new(None)),
         })
     }

@@ -139,9 +139,9 @@ make install      # compile standalone binary to ~/.evotai/bin/evot
 
 ## Community
 
-| &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**GitHub Issues**](https://github.com/evotai/evot/issues) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**Twitter @Evot_AI**](https://twitter.com/Evot_AI) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**team@evot.ai**](mailto:team@evot.ai) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; |
-|:---:|:---:|:---:|
-| Bug reports / Feature | Announcements | Reach the team directly |
+- [**GitHub Issues**](https://github.com/evotai/evot/issues) — Bug reports / Feature
+- [**Twitter @Evot_AI**](https://twitter.com/Evot_AI) — Announcements
+- [**team@evot.ai**](mailto:team@evot.ai) — Reach the team directly
 
 ## License
 

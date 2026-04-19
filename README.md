@@ -137,22 +137,11 @@ make install      # compile standalone binary to ~/.evotai/bin/evot
 
 ## Community
 
-<table width="100%">
-  <tr>
-    <td align="center" width="33%">
-      <a href="https://github.com/evotai/evot/issues"><b>GitHub Issues</b></a><br>
-      <sub>Bug reports / Feature</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="https://twitter.com/Evot_AI"><b>Twitter @Evot_AI</b></a><br>
-      <sub>Announcements</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="mailto:team@evot.ai"><b>team@evot.ai</b></a><br>
-      <sub>Reach the team directly</sub>
-    </td>
-  </tr>
-</table>
+## Community
+
+| &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**GitHub Issues**](https://github.com/evotai/evot/issues) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**Twitter @Evot_AI**](https://twitter.com/Evot_AI) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; | &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [**team@evot.ai**](mailto:team@evot.ai) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; |
+|:---:|:---:|:---:|
+| Bug reports / Feature | Announcements | Reach the team directly |
 
 ## License
 

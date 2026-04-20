@@ -107,6 +107,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let sessionId: string | null = null
   let planning = false
   let logMode: import('../native/index.js').ForkedAgent | null = null
+  let typedSlash = false  // true only when user hand-typed '/' as first char
   let exitHint = false
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
@@ -222,7 +223,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function setTerminalTitle(suffix?: string) {
-    const base = 'evot'
+    const base = 'Evot'
     const portPart = serverState ? ` · :${serverState.port}` : ''
     const title = suffix ? `${suffix} ${base}${portPart}` : `${base}${portPart}`
     process.stdout.write(`\x1b]0;${title}\x07`)
@@ -280,6 +281,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     editor = clearEditor(editor)
     pastedChunks.clear()
     pastedImages.clear()
+    typedSlash = false
   }
 
   /** Insert pasted text, collapsing large pastes into refs. */
@@ -579,7 +581,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (!expandedText && !imageBlocks) return
         clearAll()
         renderStatus()
-        if (isSlashCommand(expandedText || rawText)) {
+        if (typedSlash && isSlashCommand(expandedText || rawText)) {
           handleSlashInput(expandedText || rawText)
         } else if (logMode) {
           // In log mode, send to forked agent
@@ -620,6 +622,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         break
       }
       case 'char':
+        if (event.char === '/' && isEditorEmpty(editor)) {
+          typedSlash = true
+        }
         editor = insertText(editor, event.char)
         editor = refreshGhostHint(editor)
         renderStatus()
@@ -693,6 +698,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (result.changed) {
           historyState = result.history
           editor = result.editor
+          typedSlash = getEditorText(editor).trimStart().startsWith('/')
           renderStatus()
         }
         break
@@ -709,6 +715,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (result.changed) {
           historyState = result.history
           editor = result.editor
+          typedSlash = getEditorText(editor).trimStart().startsWith('/')
           renderStatus()
         }
         break

@@ -1,8 +1,11 @@
 import { formatSpinnerLine, type SpinnerState } from '../spinner.js'
 import { line, block, plain, dim, type ViewBlock, type StyledLine } from './types.js'
+import { renderMarkdownCached } from '../../render/markdown.js'
 
 const MAX_PROGRESS_LINES = 5
 const MAX_PROGRESS_LINE_WIDTH = 120
+/** Lines reserved for spinner + prompt + padding */
+const RESERVED_LINES = 8
 
 export interface ActiveResponseInput {
   isLoading: boolean
@@ -18,13 +21,17 @@ export function buildActiveResponseBlocks(input: ActiveResponseInput): ViewBlock
   const blocks: ViewBlock[] = []
 
   if (input.pendingText) {
-    // Show only the last line of pending text to keep status area height stable.
-    // Completed markdown blocks are committed to scroll area by the stream machine;
-    // this just shows the in-progress trailing fragment.
-    const lastNewline = input.pendingText.lastIndexOf('\n')
-    const lastLine = lastNewline >= 0 ? input.pendingText.slice(lastNewline + 1) : input.pendingText
-    if (lastLine.trim()) {
-      blocks.push(block([line(plain(`  ${lastLine}`))]))
+    // Render the full pending markdown (tables, code blocks, lists, etc.)
+    // and show the last N lines so the user sees content as it streams in.
+    const rendered = renderMarkdownCached(input.pendingText).replace(/\n+$/, '')
+    const allLines = rendered.split('\n')
+    const maxHeight = Math.max(input.termRows - RESERVED_LINES, 4)
+    const visible = allLines.length <= maxHeight ? allLines : allLines.slice(-maxHeight)
+    const styledLines: StyledLine[] = visible
+      .filter(l => l.trim())
+      .map(l => line(plain(`  ${l}`)))
+    if (styledLines.length > 0) {
+      blocks.push(block(styledLines))
     }
   }
 

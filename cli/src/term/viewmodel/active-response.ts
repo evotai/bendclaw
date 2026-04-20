@@ -18,13 +18,16 @@ export function buildActiveResponseBlocks(input: ActiveResponseInput): ViewBlock
   const blocks: ViewBlock[] = []
 
   if (input.pendingText) {
-    // Show only the last line of pending text to keep status area height stable.
+    // Show the trailing fragment of in-progress streaming text.
     // Completed markdown blocks are committed to scroll area by the stream machine;
-    // this just shows the in-progress trailing fragment.
-    const lastNewline = input.pendingText.lastIndexOf('\n')
-    const lastLine = lastNewline >= 0 ? input.pendingText.slice(lastNewline + 1) : input.pendingText
-    if (lastLine.trim()) {
-      blocks.push(block([line(plain(`  ${lastLine}`))]))
+    // this shows the current incomplete block being streamed.
+    const lines = input.pendingText.split('\n')
+    // Reserve space for spinner + prompt; show as many trailing lines as fit
+    const maxLines = Math.max(1, input.termRows - 10)
+    const visible = lines.slice(-maxLines)
+    const styledLines: StyledLine[] = visible.map(l => line(plain(`  ${l}`)))
+    if (styledLines.length > 0) {
+      blocks.push(block(styledLines))
     }
   }
 

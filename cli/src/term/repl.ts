@@ -222,7 +222,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function setTerminalTitle(suffix?: string) {
-    const base = 'evot'
+    const base = 'Evot'
     const portPart = serverState ? ` · :${serverState.port}` : ''
     const title = suffix ? `${suffix} ${base}${portPart}` : `${base}${portPart}`
     process.stdout.write(`\x1b]0;${title}\x07`)

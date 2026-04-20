@@ -64,19 +64,12 @@ impl RetryPolicy {
 /// Whether this provider error is safe to retry.
 ///
 /// Retryable: rate limits (429), network/transient errors, API errors
-/// (5xx, 529 overloaded), and auth errors (401/403).
-/// Not retryable: context overflow, cancellation, client errors (400 etc.).
-///
-/// Note: auth errors are retried to preserve existing behaviour, but the
-/// engine does not currently perform token refresh or credential recovery.
-/// If auth recovery is added later, consider moving Auth to non-retryable
-/// and letting the recovery layer handle re-auth before retry.
+/// (5xx, 529 overloaded).
+/// Not retryable: auth (401/403), context overflow, cancellation,
+/// client errors (400 etc.).
 pub fn should_retry(error: &ProviderError) -> bool {
     matches!(
         error,
-        ProviderError::RateLimited { .. }
-            | ProviderError::Network(_)
-            | ProviderError::Api(_)
-            | ProviderError::Auth(_)
+        ProviderError::RateLimited { .. } | ProviderError::Network(_) | ProviderError::Api(_)
     )
 }

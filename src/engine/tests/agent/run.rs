@@ -664,7 +664,7 @@ async fn test_retry_exhausted_returns_error() {
 }
 
 #[tokio::test]
-async fn test_retry_on_auth_error_succeeds() {
+async fn test_auth_error_not_retried() {
     let provider: std::sync::Arc<FailThenSucceedProvider> =
         std::sync::Arc::new(FailThenSucceedProvider {
             fail_count: std::sync::atomic::AtomicUsize::new(0),
@@ -710,16 +710,13 @@ async fn test_retry_on_auth_error_succeeds() {
 
     agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
 
-    // Should have retried after the auth error and succeeded on 2nd attempt
-    // fail_count is incremented on every call (fail + success), so 1 fail + 1 success = 2
+    // Auth error should NOT be retried — only 1 call made
     assert_eq!(
         provider
             .fail_count
             .load(std::sync::atomic::Ordering::SeqCst),
-        2
+        1
     );
-    // Context should have the recovered response
-    assert!(!context.messages.is_empty());
 }
 
 #[tokio::test]

@@ -85,8 +85,10 @@ fn classify_rate_limit_with_retry_after() {
 fn classify_auth_error() {
     let err = ProviderError::classify(401, "invalid api key", None);
     assert!(matches!(err, ProviderError::Auth(_)));
+    assert!(!evotengine::retry::should_retry(&err));
     let err = ProviderError::classify(403, "forbidden", None);
     assert!(matches!(err, ProviderError::Auth(_)));
+    assert!(!evotengine::retry::should_retry(&err));
 }
 
 #[test]

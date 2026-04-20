@@ -258,8 +258,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const messages = transcriptToMessages(transcript as any)
       commitLines(messagesToOutputLines(messages))
       commitLines([
-        { id: 'sys-resumed', kind: 'system', text: chalk.dim(`  resumed session ${session.session_id.slice(0, 8)}`) },
         { id: 'sys-resumed-gap', kind: 'system', text: '' },
+        { id: 'sys-resumed', kind: 'system', text: chalk.dim(`  resumed session ${session.session_id.slice(0, 8)}`) },
       ])
     } catch (err: any) {
       commitLines([{ id: 'sys-err', kind: 'error', text: `Failed to resume: ${err?.message ?? err}` }])

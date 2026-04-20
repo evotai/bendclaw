@@ -14,7 +14,7 @@ import {
   skipRefOnMove,
   shouldCollapse,
   cleanPastedText,
-} from '../src/input/paste_refs.js'
+} from '../src/term/input/paste_refs.js'
 
 // ---------------------------------------------------------------------------
 // formatPastedTextRef

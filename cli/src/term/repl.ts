@@ -73,8 +73,8 @@ import {
   deleteRefBackspace,
   skipRefOnMove,
   snapCursor,
-} from '../input/paste_refs.js'
-import { getImageFromClipboard, type ClipboardImage } from '../input/clipboard_image.js'
+} from './input/paste_refs.js'
+import { getImageFromClipboard, type ClipboardImage } from './input/clipboard_image.js'
 import type { ContentBlock } from '../native/index.js'
 import { tryStartServer, formatUptime, type ServerState } from './app/server.js'
 

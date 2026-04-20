@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { PasteAccumulator } from '../src/input/paste_accumulator.js'
+import { PasteAccumulator } from '../src/term/input/paste_accumulator.js'
 
 describe('PasteAccumulator', () => {
   let flushed: string[]

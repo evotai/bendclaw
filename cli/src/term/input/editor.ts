@@ -1,5 +1,5 @@
 import { complete, getGhostHint } from '../../commands/completion.js'
-import { needsContinuation } from '../../input/continuation.js'
+import { needsContinuation } from './continuation.js'
 
 export interface EditorState {
   lines: string[]

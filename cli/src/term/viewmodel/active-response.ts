@@ -32,18 +32,15 @@ export function buildActiveResponseBlocks(input: ActiveResponseInput): ViewBlock
     }
   }
 
-  if (input.toolProgress) {
+  if (input.toolProgress && !input.expanded) {
     const progLines = input.toolProgress.split('\n')
-    const maxLines = input.expanded ? Math.max(1, input.termRows - 10) : MAX_PROGRESS_LINES
     const tail = progLines
-      .slice(-maxLines)
+      .slice(-MAX_PROGRESS_LINES)
       .map(l => l.length > MAX_PROGRESS_LINE_WIDTH ? l.slice(0, MAX_PROGRESS_LINE_WIDTH - 1) + '…' : l)
-    if (!input.expanded) {
-      while (tail.length < MAX_PROGRESS_LINES) tail.unshift('')
-    }
+    while (tail.length < MAX_PROGRESS_LINES) tail.unshift('')
     const styledLines: StyledLine[] = tail.map(l => line(dim(`  ${l}`)))
     // Show extra line count
-    const extraLines = Math.max(0, progLines.length - maxLines)
+    const extraLines = Math.max(0, progLines.length - MAX_PROGRESS_LINES)
     if (extraLines > 0) {
       styledLines.push(line(dim(`  +${extraLines} lines`)))
     }

@@ -114,6 +114,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let expanded = false
   const compactLines: OutputLine[] = []
   const expandedLines: OutputLine[] = []
+  let lastProgressLineCount = 0
 
   // Server state
   let serverState: ServerState | null = null
@@ -406,9 +407,36 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
         if (!update.suppressToolStarted && event.kind === 'tool_started') {
           commitLines(buildToolStartedLines(event))
+          lastProgressLineCount = 0
         }
         if (!update.suppressToolFinished && event.kind === 'tool_finished') {
           commitToolFinished(event)
+          lastProgressLineCount = 0
+        }
+
+        // In expanded mode, commit tool progress lines to scroll area
+        if (expanded && event.kind === 'tool_progress') {
+          const text = ((event.payload ?? {}) as Record<string, any>).text as string | undefined
+          if (text) {
+            const allLines = text.split('\n')
+            const newLines = allLines.slice(lastProgressLineCount)
+            lastProgressLineCount = allLines.length
+            if (newLines.length > 0) {
+              const outputLines: OutputLine[] = newLines.map(l => ({
+                id: `prog-${Date.now()}`,
+                kind: 'tool_result' as const,
+                text: `  ${l}`,
+              }))
+              // Commit to both arrays but only render to scroll
+              compactLines.push(...outputLines)
+              expandedLines.push(...outputLines)
+              const blocks = buildOutputBlocks(outputLines)
+              renderer.beginBatch()
+              renderer.appendScroll(blocksToLines(blocks).join('\n'))
+              renderStatus()
+              renderer.flushBatch()
+            }
+          }
         }
 
         if (update.commitLines.length > 0) {

@@ -15,8 +15,9 @@ export function buildOutputBlocks(lines: OutputLine[]): ViewBlock[] {
 
       case 'assistant': {
         const isBlockStart = prevKind !== 'assistant'
+        const dot = isBlockStart ? colored('⏺ ', 'cyan') : plain('  ')
         blocks.push(block([
-          line(plain(`  ${ol.text}`)),
+          line(dot, plain(ol.text)),
         ], isBlockStart ? 1 : 0))
         break
       }

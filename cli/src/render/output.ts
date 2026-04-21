@@ -161,6 +161,7 @@ export function buildRunSummary(stats: RunStats): OutputLine[] {
   const barWidth = 20
 
   // Header
+  line('')
   line('─── run summary ──────────────────────────────────')
   line(`${dur} · ${stats.turnCount} ${pl(stats.turnCount, 'turn')} · ${stats.llmCalls} llm ${pl(stats.llmCalls, 'call')} · ${stats.toolCallCount} tool ${pl(stats.toolCallCount, 'call')} · ${humanTokens(totalTokens)} tokens`)
 
@@ -223,11 +224,16 @@ export function buildRunSummary(stats: RunStats): OutputLine[] {
       }
       const sorted = [...agg.entries()].sort((a, b) => b[1].tokens - a[1].tokens)
       const callWord = (n: number) => n === 1 ? 'call' : 'calls'
-      const maxNameLen = Math.max(...sorted.map(([n]) => n.length), 4)
-      for (const [name, a] of sorted) {
+      // Compute column width to align bars with role rows
+      const toolPrefixes = sorted.map(([name, a]) =>
+        `      ${name} ${a.calls} ${callWord(a.calls)} ~${humanTokens(a.tokens)}`
+      )
+      const barCol = Math.max(25, ...toolPrefixes.map(p => p.length + 1))
+      for (let i = 0; i < sorted.length; i++) {
+        const [, a] = sorted[i]!
         const pct = totalInput > 0 ? (a.tokens / totalInput * 100).toFixed(0) : '0'
         const bar = renderBar(a.tokens, totalInput, barWidth)
-        line(`      ${name.padEnd(maxNameLen)}  ${a.calls} ${callWord(a.calls).padEnd(5)}  ~${humanTokens(a.tokens).padEnd(5)}  ${bar} ${pct.padStart(3)}%`)
+        line(`${toolPrefixes[i]!.padEnd(barCol)}${bar} ${pct.padStart(3)}%`)
       }
     }
   }
@@ -286,6 +292,7 @@ export function buildRunSummary(stats: RunStats): OutputLine[] {
     }
   }
 
+  line('')
   return lines
 }
 

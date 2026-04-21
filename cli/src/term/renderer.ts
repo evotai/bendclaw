@@ -194,6 +194,20 @@ export class TermRenderer {
     if (!outerBatch) this.flushBatch()
   }
 
+  /**
+   * Clear the entire screen and reset status state.
+   * Used for mode switches (e.g. verbose toggle) where all content
+   * is re-rendered from scratch.
+   */
+  clearScreen(): void {
+    const outerBatch = this.buffering
+    if (!outerBatch) this.beginBatch()
+    this.statusHeight = 0
+    this.prevStatusLines = []
+    this.write('\x1b[2J\x1b[H')
+    if (!outerBatch) this.flushBatch()
+  }
+
   /** Truncate a line to terminal width to prevent wrapping artifacts. */
   private truncateLine(line: string): string {
     // Fast path: if visible width fits, return as-is

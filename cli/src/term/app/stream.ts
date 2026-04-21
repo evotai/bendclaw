@@ -197,14 +197,14 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   }
 }
 
-export function buildToolFinishedLines(event: RunEvent): OutputLine[] {
+export function buildToolFinishedLines(event: RunEvent, expanded?: boolean): OutputLine[] {
   const p = (event.payload ?? {}) as Record<string, any>
   const toolName = (p.tool_name as string) ?? 'unknown'
   const args = (p.args as Record<string, unknown>) ?? {}
   const details = p.details as Record<string, any> | undefined
   const mergedArgs = details?.diff ? { ...args, diff: details.diff } : args
   const status = p.is_error ? 'error' as const : 'done' as const
-  return buildToolResult(toolName, mergedArgs, status, p.content as string | undefined, p.duration_ms as number | undefined)
+  return buildToolResult(toolName, mergedArgs, status, p.content as string | undefined, p.duration_ms as number | undefined, expanded)
 }
 
 export function buildToolStartedLines(event: RunEvent): OutputLine[] {

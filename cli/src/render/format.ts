@@ -159,10 +159,8 @@ export function summarizeInline(value: string, maxChars: number): string {
   return truncate(collapsed, maxChars)
 }
 
-export function toolResultLines(content: string, isError: boolean, _toolName?: string): string[] {
-  const HEAD_LINES = 2
-  const TAIL_LINES = 2
-  const COMPACT_THRESHOLD = HEAD_LINES + TAIL_LINES + 2
+export function toolResultLines(content: string, isError: boolean, _toolName?: string, expanded?: boolean): string[] {
+  const TAIL_LINES = 5
   const MAX_LINE_WIDTH = 256
 
   const capLine = (l: string) => truncateHeadTail(l, MAX_LINE_WIDTH)
@@ -179,11 +177,11 @@ export function toolResultLines(content: string, isError: boolean, _toolName?: s
     const trimmed = normalized.replace(/\n+$/, '')
     if (!trimmed) return [summarize()]
     const allLines = trimmed.split('\n')
-    if (allLines.length > COMPACT_THRESHOLD) {
+    if (expanded) return allLines.map(capLine)
+    if (allLines.length > TAIL_LINES) {
+      const omitted = allLines.length - TAIL_LINES
       const result: string[] = []
-      result.push(...allLines.slice(0, HEAD_LINES).map(capLine))
-      const omitted = allLines.length - HEAD_LINES - TAIL_LINES
-      result.push(`... (${omitted} more lines)`)
+      result.push(`... (+${omitted} lines)`)
       result.push(...allLines.slice(-TAIL_LINES).map(capLine))
       return result
     }

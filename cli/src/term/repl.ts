@@ -111,6 +111,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
   let streamMachine: StreamMachineState | null = null
+  let expanded = false
+  const compactLines: OutputLine[] = []
+  const expandedLines: OutputLine[] = []
 
   // Server state
   let serverState: ServerState | null = null
@@ -216,9 +219,40 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function commitLines(outputLines: OutputLine[]) {
     if (outputLines.length === 0) return
-    const blocks = buildOutputBlocks(outputLines)
+    compactLines.push(...outputLines)
+    expandedLines.push(...outputLines)
+    const visible = expanded ? expandedLines.slice(-outputLines.length) : outputLines
+    const blocks = buildOutputBlocks(visible)
     renderer.beginBatch()
     renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    renderStatus()
+    renderer.flushBatch()
+  }
+
+  /** Commit tool_finished with both compact and expanded versions. */
+  function commitToolFinished(event: import('../native/index.js').RunEvent): void {
+    const compact = buildToolFinishedLines(event)
+    const exp = buildToolFinishedLines(event, true)
+    compactLines.push(...compact)
+    expandedLines.push(...exp)
+    const visible = expanded ? exp : compact
+    const blocks = buildOutputBlocks(visible)
+    renderer.beginBatch()
+    renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    renderStatus()
+    renderer.flushBatch()
+  }
+
+  /** Toggle expanded view and redraw. */
+  function toggleExpanded(): void {
+    expanded = !expanded
+    const lines = expanded ? expandedLines : compactLines
+    renderer.beginBatch()
+    renderer.clearScreen()
+    if (lines.length > 0) {
+      const blocks = buildOutputBlocks(lines)
+      renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    }
     renderStatus()
     renderer.flushBatch()
   }
@@ -373,7 +407,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           commitLines(buildToolStartedLines(event))
         }
         if (!update.suppressToolFinished && event.kind === 'tool_finished') {
-          commitLines(buildToolFinishedLines(event))
+          commitToolFinished(event)
         }
 
         if (update.commitLines.length > 0) {
@@ -558,9 +592,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           tryPasteImage()
           return
         case 'o':
-          appState = { ...appState, verbose: !appState.verbose }
-          commitLines([{ id: 'sys-v', kind: 'system', text: `  verbose: ${appState.verbose ? 'on' : 'off'}` }])
-          renderStatus()
+          toggleExpanded()
           return
         default:
           return
@@ -1077,7 +1109,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           if (streamingText.trim()) { commitLines(buildAssistantLines(streamingText)); streamingText = '' }
           commitLines(buildToolStartedLines(event))
         } else if (event.kind === 'tool_finished') {
-          commitLines(buildToolFinishedLines(event))
+          commitToolFinished(event)
         }
       }
       if (streamingText.trim()) commitLines(buildAssistantLines(streamingText))

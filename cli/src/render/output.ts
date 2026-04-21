@@ -92,6 +92,7 @@ export function buildToolResult(
   status: 'done' | 'error',
   result?: string,
   durationMs?: number,
+  expanded?: boolean,
 ): OutputLine[] {
   const lines: OutputLine[] = []
   const isError = status === 'error'
@@ -127,13 +128,24 @@ export function buildToolResult(
         text: `  ${humanSize} read`,
       })
     } else {
-      const resultLines = toolResultLines(result, isError, name)
+      const resultLines = toolResultLines(result, isError, name, expanded)
       for (const rl of resultLines) {
         lines.push({
           id: genId('tool-res'),
           kind: isError ? 'error' : 'tool_result',
           text: `  ${rl}`,
         })
+      }
+      // Show expand hint in compact mode when content was truncated
+      if (!expanded && result.includes('\n')) {
+        const allLines = result.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
+        if (allLines.length > 5) {
+          lines.push({
+            id: genId('tool-hint'),
+            kind: 'tool_result',
+            text: '  \x1b[2m(ctrl+o to expand)\x1b[0m',
+          })
+        }
       }
     }
   }

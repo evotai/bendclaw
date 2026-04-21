@@ -38,6 +38,11 @@ export function buildActiveResponseBlocks(input: ActiveResponseInput): ViewBlock
       .map(l => l.length > MAX_PROGRESS_LINE_WIDTH ? l.slice(0, MAX_PROGRESS_LINE_WIDTH - 1) + '…' : l)
     while (tail.length < MAX_PROGRESS_LINES) tail.unshift('')
     const styledLines: StyledLine[] = tail.map(l => line(dim(`  ${l}`)))
+    // Show extra line count like claudecode
+    const extraLines = Math.max(0, progLines.length - MAX_PROGRESS_LINES)
+    if (extraLines > 0) {
+      styledLines.push(line(dim(`  +${extraLines} lines`)))
+    }
     blocks.push(block(styledLines, 1))
   }
 

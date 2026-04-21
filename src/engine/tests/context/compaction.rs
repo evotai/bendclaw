@@ -1391,3 +1391,321 @@ fn test_compact_triggers_when_provider_estimate_exceeds_char_estimate() {
         result_compact.stats.after_estimated_tokens,
     );
 }
+
+// ---------------------------------------------------------------------------
+// Oversized user message truncation (L0)
+// ---------------------------------------------------------------------------
+
+/// Old oversized user message should be truncated when over budget.
+#[test]
+fn test_oversized_old_user_message_truncated() {
+    let big_text = (1..=2000)
+        .map(|i| format!("line {} with padding to make it large enough", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Budget smaller than the big user message but large enough that
+    // L1/L2 don't interfere (only 5 messages, keep_recent=3 keeps the tail).
+    let char_tokens = big_text.len() / 4;
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Text {
+                text: big_text.clone(),
+            }],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("q3")),
+        AgentMessage::Llm(Message::user("q4")),
+        AgentMessage::Llm(Message::user("q5")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: char_tokens / 2,
+        system_prompt_tokens: 0,
+        keep_recent: 3,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    let budget_state = CompactionBudgetState::from_messages(&messages);
+    let result = compact_messages(messages, &config, &budget_state);
+
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[1] {
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.len() < big_text.len(),
+                "oversized old user message should be truncated"
+            );
+            assert!(
+                text.contains("truncated"),
+                "truncated text should contain truncation marker"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected user message at index 1");
+    }
+}
+
+/// Recent user message should NOT be truncated even if oversized.
+#[test]
+fn test_recent_oversized_user_message_kept() {
+    let big_text = (1..=2000)
+        .map(|i| format!("line {} with padding to make it large enough", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // All messages are recent (keep_recent=10 > 2 messages), so L0 user
+    // truncation won't fire. Budget is large enough that L1/L2 don't trigger.
+    let char_tokens = big_text.len() / 4;
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Text {
+                text: big_text.clone(),
+            }],
+            timestamp: 0,
+        }),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: char_tokens * 2,
+        system_prompt_tokens: 0,
+        keep_recent: 10,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    let budget_state = CompactionBudgetState::from_messages(&messages);
+    let result = compact_messages(messages, &config, &budget_state);
+
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[1] {
+        if let Content::Text { text } = &content[0] {
+            assert_eq!(
+                text.len(),
+                big_text.len(),
+                "recent user message should not be truncated"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected user message at index 1");
+    }
+}
+
+/// Pinned (keep_first) user message should NOT be truncated by L0 even if oversized.
+#[test]
+fn test_pinned_oversized_user_message_kept() {
+    let big_text = (1..=2000)
+        .map(|i| format!("line {} with padding to make it large enough", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // All messages are recent and within chars/4 budget, so L1/L2 are no-ops.
+    // We inflate the provider estimate so L0 sees over-budget, but the pinned
+    // message (index 0) must survive L0 due to keep_first.
+    let messages = vec![
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Text {
+                text: big_text.clone(),
+            }],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("q2")),
+        AgentMessage::Llm(Message::user("q3")),
+        AgentMessage::Llm(Message::user("q4")),
+        AgentMessage::Llm(Message::user("q5")),
+    ];
+
+    let char_tokens = total_tokens(&messages);
+
+    let config = ContextConfig {
+        // Budget above chars/4 total so L1/L2 gates don't fire.
+        max_context_tokens: char_tokens + 10_000,
+        system_prompt_tokens: 0,
+        keep_recent: 10,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    // Provider estimate far exceeds budget → L0 sees over-budget.
+    let budget_state = CompactionBudgetState {
+        estimated_tokens: char_tokens * 4,
+    };
+    let result = compact_messages(messages, &config, &budget_state);
+
+    // The pinned message at index 0 must be unchanged by L0.
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[0] {
+        if let Content::Text { text } = &content[0] {
+            assert_eq!(
+                text.len(),
+                big_text.len(),
+                "pinned user message should not be truncated"
+            );
+        } else {
+            panic!("expected text content");
+        }
+    } else {
+        panic!("expected user message at index 0");
+    }
+}
+
+/// Oversized user message with multiple text blocks should be merged and truncated as a whole.
+#[test]
+fn test_oversized_user_multi_block_merged() {
+    let block = (1..=1000)
+        .map(|i| format!("block line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let char_tokens = block.len() / 2; // two blocks total
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![
+                Content::Text {
+                    text: block.clone(),
+                },
+                Content::Text {
+                    text: block.clone(),
+                },
+            ],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("q3")),
+        AgentMessage::Llm(Message::user("q4")),
+        AgentMessage::Llm(Message::user("q5")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: char_tokens / 2,
+        system_prompt_tokens: 0,
+        keep_recent: 3,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    let budget_state = CompactionBudgetState::from_messages(&messages);
+    let result = compact_messages(messages, &config, &budget_state);
+
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[1] {
+        // Should be merged into a single text block
+        assert_eq!(
+            content.len(),
+            1,
+            "multiple text blocks should be merged into one, got {}",
+            content.len()
+        );
+        if let Content::Text { text } = &content[0] {
+            assert!(
+                text.contains("truncated"),
+                "merged text should be truncated"
+            );
+        }
+    } else {
+        panic!("expected user message at index 1");
+    }
+}
+
+/// Oversized user message with images should strip images and truncate text.
+#[test]
+fn test_oversized_user_with_images_truncated() {
+    let big_text = (1..=2000)
+        .map(|i| format!("line {} with padding to make it large enough", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let char_tokens = big_text.len() / 4;
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Text { text: big_text }, Content::Image {
+                data: "base64data".into(),
+                mime_type: "image/png".into(),
+            }],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("q3")),
+        AgentMessage::Llm(Message::user("q4")),
+        AgentMessage::Llm(Message::user("q5")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: char_tokens / 2,
+        system_prompt_tokens: 0,
+        keep_recent: 3,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    let budget_state = CompactionBudgetState::from_messages(&messages);
+    let result = compact_messages(messages, &config, &budget_state);
+
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[1] {
+        // Text block (truncated) + image marker
+        assert_eq!(content.len(), 2, "expected text + image marker");
+        if let Content::Text { text } = &content[0] {
+            assert!(text.contains("truncated"), "text should be truncated");
+        }
+        if let Content::Text { text } = &content[1] {
+            assert!(
+                text.contains("image") && text.contains("omitted"),
+                "image should be replaced with marker"
+            );
+        }
+    } else {
+        panic!("expected user message at index 1");
+    }
+}
+
+/// User message under budget should not be truncated regardless of size.
+#[test]
+fn test_user_message_under_budget_not_truncated() {
+    let big_text = (1..=500)
+        .map(|i| format!("line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Text {
+                text: big_text.clone(),
+            }],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("q3")),
+        AgentMessage::Llm(Message::user("q4")),
+        AgentMessage::Llm(Message::user("q5")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 999_999,
+        system_prompt_tokens: 0,
+        keep_recent: 3,
+        keep_first: 1,
+        tool_output_max_lines: 20,
+    };
+
+    let budget_state = CompactionBudgetState::from_messages(&messages);
+    let result = compact_messages(messages, &config, &budget_state);
+
+    if let AgentMessage::Llm(Message::User { content, .. }) = &result.messages[1] {
+        if let Content::Text { text } = &content[0] {
+            assert_eq!(
+                text.len(),
+                big_text.len(),
+                "under-budget user message should not be truncated"
+            );
+        }
+    } else {
+        panic!("expected user message at index 1");
+    }
+}

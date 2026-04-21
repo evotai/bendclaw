@@ -1,8 +1,13 @@
-//! Shrink oversized tool results using policy-driven truncation.
+//! Shrink oversized messages using policy-driven truncation.
 //!
 //! **L0 — always-on cleanup**. Runs unconditionally; budget-gated tiers
 //! (AgeEvict, NormalTrunc) only fire when over budget and stop as soon as
 //! the running token count fits.
+//!
+//! Handles two message types:
+//! - **User messages**: truncate oversized old (non-pinned, non-recent) user
+//!   text (budget-gated) and strip images from old messages.
+//! - **Tool results**: policy-driven truncation via `ToolPolicy`.
 //!
 //! Strategy: `ToolPolicy` from `policy::tool_policy()`.
 //! Global thresholds control *when* a result is oversized; per-tool policy
@@ -37,19 +42,78 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
         let is_recent = idx >= recent_boundary;
         let is_pinned = idx < ctx.keep_first;
 
-        // Strip images from old user messages (but preserve keep_first)
-        if !is_recent && !is_pinned {
-            if let AgentMessage::Llm(Message::User { content, timestamp }) = msg {
-                let has_image = content.iter().any(|c| matches!(c, Content::Image { .. }));
-                if has_image {
-                    let before_tokens = content_tokens(&content);
+        // --- User messages: oversized truncation + old image stripping ---
+        if let AgentMessage::Llm(Message::User { content, timestamp }) = &msg {
+            let action = classify_user_action(
+                is_pinned,
+                is_recent,
+                running_tokens,
+                ctx.budget,
+                content,
+                oversize_token_threshold,
+            );
+            match action {
+                UserAction::TruncateOversized => {
+                    let before_tokens = content_tokens(content);
+                    let max_lines = ctx.tool_output_max_lines;
+
+                    // Concatenate all text blocks, truncate as a whole, then byte-cap.
+                    let mut combined_text = String::new();
+                    let mut has_image = false;
+                    for c in content {
+                        match c {
+                            Content::Text { text } => {
+                                if !combined_text.is_empty() {
+                                    combined_text.push('\n');
+                                }
+                                combined_text.push_str(text);
+                            }
+                            Content::Image { .. } => has_image = true,
+                            _ => {}
+                        }
+                    }
+                    let truncated_text = truncate_text_head_tail(&combined_text, max_lines);
+                    let truncated_text = crate::tools::validation::truncate_tool_text(
+                        &truncated_text,
+                        COMPACTION_MAX_BYTES,
+                    );
+
+                    let mut truncated = vec![Content::Text {
+                        text: truncated_text,
+                    }];
+                    if has_image {
+                        truncated.push(Content::Text {
+                            text: "[image(s) omitted during compaction]".into(),
+                        });
+                    }
+                    let after_tokens = content_tokens(&truncated);
+                    if after_tokens < before_tokens {
+                        running_tokens -= before_tokens - after_tokens;
+                        actions.push(CompactionAction {
+                            index: idx,
+                            tool_name: "user".into(),
+                            method: CompactionMethod::OversizeCapped,
+                            before_tokens,
+                            after_tokens,
+                            end_index: None,
+                            related_count: None,
+                        });
+                    }
+                    result.push(AgentMessage::Llm(Message::User {
+                        content: truncated,
+                        timestamp: *timestamp,
+                    }));
+                    continue;
+                }
+                UserAction::StripOldImages => {
+                    let before_tokens = content_tokens(content);
                     let stripped: Vec<Content> = content
-                        .into_iter()
+                        .iter()
                         .map(|c| match c {
                             Content::Image { .. } => Content::Text {
                                 text: "[image omitted during compaction]".into(),
                             },
-                            other => other,
+                            other => other.clone(),
                         })
                         .collect();
                     let after_tokens = content_tokens(&stripped);
@@ -67,12 +131,11 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
                     }
                     result.push(AgentMessage::Llm(Message::User {
                         content: stripped,
-                        timestamp,
+                        timestamp: *timestamp,
                     }));
-                } else {
-                    result.push(AgentMessage::Llm(Message::User { content, timestamp }));
+                    continue;
                 }
-                continue;
+                UserAction::Keep => {}
             }
         }
 
@@ -221,6 +284,42 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
         messages: result,
         actions,
     }
+}
+
+// ---------------------------------------------------------------------------
+// User message classification
+// ---------------------------------------------------------------------------
+
+/// What to do with a user message during shrink.
+enum UserAction {
+    /// Over budget + oversized: truncate text and strip images
+    TruncateOversized,
+    /// Old (non-recent) message with images: strip images only
+    StripOldImages,
+    /// No action needed
+    Keep,
+}
+
+/// Classify the action for a user message based on position and size.
+fn classify_user_action(
+    is_pinned: bool,
+    is_recent: bool,
+    running_tokens: usize,
+    budget: usize,
+    content: &[Content],
+    oversize_threshold: usize,
+) -> UserAction {
+    if is_pinned || is_recent {
+        return UserAction::Keep;
+    }
+    let tokens = content_tokens(content);
+    if running_tokens > budget && tokens > oversize_threshold {
+        return UserAction::TruncateOversized;
+    }
+    if content.iter().any(|c| matches!(c, Content::Image { .. })) {
+        return UserAction::StripOldImages;
+    }
+    UserAction::Keep
 }
 
 // ---------------------------------------------------------------------------

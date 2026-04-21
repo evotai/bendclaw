@@ -32,6 +32,8 @@ export class TermRenderer {
   private cols: number
   private destroyed = false
   private resizeHandler: (() => void) | null = null
+  private buf = ''
+  private buffering = false
 
   constructor(opts?: TermRendererOptions) {
     this.stdout = opts?.stdout ?? process.stdout
@@ -73,6 +75,8 @@ export class TermRenderer {
    */
   appendScroll(text: string): void {
     if (!text) return
+    const outerBatch = this.buffering
+    if (!outerBatch) this.beginBatch()
     // Clear status area first
     this.clearStatusArea()
     // Write content (it scrolls naturally)
@@ -81,6 +85,7 @@ export class TermRenderer {
     if (!text.endsWith('\n')) this.write('\n')
     // Do NOT redraw status here — caller is responsible for calling
     // setStatus() after appendScroll to avoid stale content being redrawn.
+    if (!outerBatch) this.flushBatch()
   }
 
   /**
@@ -93,18 +98,24 @@ export class TermRenderer {
 
     // If height changed, full redraw
     if (next.length !== prev.length) {
+      const outerBatch = this.buffering
+      if (!outerBatch) this.beginBatch()
       this.clearStatusArea()
       this.prevStatusLines = [...next]
       this.statusHeight = next.length
       this.drawStatus()
+      if (!outerBatch) this.flushBatch()
       return
     }
 
     // Line-level diff: only update changed lines
     if (this.statusHeight === 0) {
+      const outerBatch = this.buffering
+      if (!outerBatch) this.beginBatch()
       this.prevStatusLines = [...next]
       this.statusHeight = next.length
       this.drawStatus()
+      if (!outerBatch) this.flushBatch()
       return
     }
 
@@ -119,10 +130,28 @@ export class TermRenderer {
     if (!needsUpdate) return
 
     // Full redraw — line-level diff is unreliable when lines wrap
+    const outerBatch = this.buffering
+    if (!outerBatch) this.beginBatch()
     this.clearStatusArea()
     this.prevStatusLines = [...next]
     this.statusHeight = next.length
     this.drawStatus()
+    if (!outerBatch) this.flushBatch()
+  }
+
+  /** Begin a batch — all writes are buffered until flushBatch(). */
+  beginBatch(): void {
+    this.buffering = true
+    this.buf = ''
+  }
+
+  /** Flush buffered writes as a single stdout.write(). */
+  flushBatch(): void {
+    this.buffering = false
+    if (this.buf) {
+      this.stdout.write(this.buf)
+      this.buf = ''
+    }
   }
 
   /** Calculate actual screen rows a set of lines occupies (accounting for wrapping). */
@@ -156,10 +185,13 @@ export class TermRenderer {
   private redrawStatus(): void {
     if (this.prevStatusLines.length === 0) return
     const lines = [...this.prevStatusLines]
+    const outerBatch = this.buffering
+    if (!outerBatch) this.beginBatch()
     this.clearStatusArea()
     this.prevStatusLines = lines
     this.statusHeight = lines.length
     this.drawStatus()
+    if (!outerBatch) this.flushBatch()
   }
 
   /** Truncate a line to terminal width to prevent wrapping artifacts. */
@@ -173,7 +205,10 @@ export class TermRenderer {
   }
 
   private write(data: string): void {
-    if (!this.destroyed) {
+    if (this.destroyed) return
+    if (this.buffering) {
+      this.buf += data
+    } else {
       this.stdout.write(data)
     }
   }

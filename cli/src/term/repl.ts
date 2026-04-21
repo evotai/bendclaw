@@ -217,8 +217,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   function commitLines(outputLines: OutputLine[]) {
     if (outputLines.length === 0) return
     const blocks = buildOutputBlocks(outputLines)
+    renderer.beginBatch()
     renderer.appendScroll(blocksToLines(blocks).join('\n'))
     renderStatus()
+    renderer.flushBatch()
   }
 
   function setTerminalTitle(suffix?: string) {

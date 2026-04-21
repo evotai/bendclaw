@@ -210,6 +210,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       toolProgress,
       spinner: spinnerState,
       termRows: renderer.termRows,
+      expanded,
     })
     const overlayBlocks = buildOverlayBlocks(overlay, renderer.termCols)
     const promptBlocks = buildPromptBlocks(getPromptVM())

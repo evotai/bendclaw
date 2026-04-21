@@ -92,6 +92,7 @@ export function buildToolResult(
   status: 'done' | 'error',
   result?: string,
   durationMs?: number,
+  expanded?: boolean,
 ): OutputLine[] {
   const lines: OutputLine[] = []
   const isError = status === 'error'
@@ -127,7 +128,7 @@ export function buildToolResult(
         text: `  ${humanSize} read`,
       })
     } else {
-      const resultLines = toolResultLines(result, isError, name)
+      const resultLines = toolResultLines(result, isError, name, expanded)
       for (const rl of resultLines) {
         lines.push({
           id: genId('tool-res'),

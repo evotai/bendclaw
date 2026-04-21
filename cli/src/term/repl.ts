@@ -111,6 +111,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
   let streamMachine: StreamMachineState | null = null
+  const committedLines: OutputLine[] = []
 
   // Server state
   let serverState: ServerState | null = null
@@ -216,11 +217,34 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function commitLines(outputLines: OutputLine[]) {
     if (outputLines.length === 0) return
-    const blocks = buildOutputBlocks(outputLines)
+    committedLines.push(...outputLines)
+    // In non-verbose mode, skip verbose/run_summary lines
+    const visible = appState.verbose ? outputLines : outputLines.filter(l => l.kind !== 'verbose' && l.kind !== 'run_summary')
+    if (visible.length === 0) return
+    const blocks = buildOutputBlocks(visible)
     renderer.beginBatch()
     renderer.appendScroll(blocksToLines(blocks).join('\n'))
     renderStatus()
     renderer.flushBatch()
+  }
+
+  /** Redraw all committed lines with current verbose filter. */
+  function redrawCommitted(): void {
+    const visible = appState.verbose ? committedLines : committedLines.filter(l => l.kind !== 'verbose' && l.kind !== 'run_summary')
+    renderer.beginBatch()
+    renderer.clearScreen()
+    if (visible.length > 0) {
+      const blocks = buildOutputBlocks(visible)
+      renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    }
+    renderStatus()
+    renderer.flushBatch()
+  }
+
+  /** Toggle verbose and redraw. */
+  function toggleVerbose(): void {
+    appState = { ...appState, verbose: !appState.verbose }
+    redrawCommitted()
   }
 
   function setTerminalTitle(suffix?: string) {
@@ -558,9 +582,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           tryPasteImage()
           return
         case 'o':
-          appState = { ...appState, verbose: !appState.verbose }
-          commitLines([{ id: 'sys-v', kind: 'system', text: `  verbose: ${appState.verbose ? 'on' : 'off'}` }])
-          renderStatus()
+          toggleVerbose()
           return
         default:
           return
@@ -1052,7 +1074,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     startSpinner()
     renderStatus()
     commitLines(buildUserMessage(prompt))
-
     try {
       const stream = await forked.query(prompt)
       streamRef = stream

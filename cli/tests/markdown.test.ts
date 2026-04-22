@@ -76,7 +76,9 @@ describe('renderMarkdown', () => {
   test('renders links', () => {
     const result = render('[click](https://example.com)')
     expect(result).toContain('click')
-    expect(result).toContain('https://example.com')
+    // URL may be inside an OSC 8 hyperlink (stripped by stripAnsi) or shown as fallback text
+    const raw = renderMarkdown('[click](https://example.com)')
+    expect(raw).toContain('https://example.com')
   })
 
   test('renders horizontal rules', () => {

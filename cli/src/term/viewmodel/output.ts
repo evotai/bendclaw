@@ -82,10 +82,8 @@ function buildVerboseBlock(text: string): ViewBlock {
     const isCompleted = rest.startsWith('completed') || rest.startsWith('·')
     const isFailed = rest.startsWith('failed')
     let color: 'red' | 'green' | 'yellow' | 'cyan' | 'magenta' = 'yellow'
-    if (badge === 'LLM') {
-      color = isCall ? 'cyan' : isCompleted ? 'green' : isFailed ? 'red' : 'yellow'
-    } else if (badge === 'COMPACT') {
-      color = isCall ? 'cyan' : isCompleted ? 'green' : isFailed ? 'red' : 'yellow'
+    if (badge === 'LLM' || badge === 'COMPACT') {
+      color = isFailed ? 'red' : 'green'
     } else if (isCompleted) {
       color = 'green'
     } else if (isFailed) {

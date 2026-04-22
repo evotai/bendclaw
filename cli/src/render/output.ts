@@ -119,14 +119,26 @@ export function buildToolResult(
   // Tool result content (head/tail truncated)
   if (result) {
     if (name === 'read_file' || name === 'read_code') {
-      // Just show size, no content
-      const size = Buffer.byteLength(result, 'utf-8')
-      const humanSize = size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
-      lines.push({
-        id: genId('tool-res'),
-        kind: 'tool_result',
-        text: `  ${humanSize} read`,
-      })
+      if (isError) {
+        // Show error content for failed reads
+        const resultLines = toolResultLines(result, isError, name, expanded)
+        for (const rl of resultLines) {
+          lines.push({
+            id: genId('tool-res'),
+            kind: 'error',
+            text: `  ${rl}`,
+          })
+        }
+      } else {
+        // Just show size, no content
+        const size = Buffer.byteLength(result, 'utf-8')
+        const humanSize = size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
+        lines.push({
+          id: genId('tool-res'),
+          kind: 'tool_result',
+          text: `  ${humanSize} read`,
+        })
+      }
     } else {
       const resultLines = toolResultLines(result, isError, name, expanded)
       for (const rl of resultLines) {

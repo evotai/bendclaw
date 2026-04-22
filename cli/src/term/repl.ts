@@ -899,8 +899,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     } else if (name === '/resume') {
       // Load sessions (default 20; fetch all only when searching by id)
       try {
+        const isHexPrefix = args ? /^[0-9a-f]{1,36}$/i.test(args) : false
         const allSessions: SessionMeta[] = await agent.listSessions(args ? 0 : 20)
-        if (args) {
+        if (args && isHexPrefix) {
           // Resume specific session by id prefix
           const match = allSessions.find(
             (s) => s.session_id === args || s.session_id.startsWith(args)
@@ -910,6 +911,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           } else {
             commitLines([{ id: 'sys-r', kind: 'system', text: chalk.red(`  Session not found: ${args}`) }])
           }
+        } else if (args && !isHexPrefix) {
+          // Semantic search: send session list to agent and let LLM find matches
+          const sessionList = allSessions.map(s => {
+            const title = s.title || '(untitled)'
+            const time = relativeTime(s.updated_at)
+            return `${s.session_id.slice(0, 8)}  ${title}  [${s.cwd}]  ${time}`
+          }).join('\n')
+          const searchPrompt = `Search the following session list for sessions related to "${args}". List matching session IDs (8-char prefix) with their titles. If no match, say "No matching sessions".\n\nSessions:\n${sessionList}`
+          await runQuery(searchPrompt)
         } else {
           // Prefer sessions from current project, fall back to all
           const cwdSessions = allSessions.filter(s => s.cwd === agent.cwd)

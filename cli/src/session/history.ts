@@ -30,6 +30,7 @@ function unescape(s: string): string {
 export interface HistoryItem {
   label: string
   detail: string
+  role: 'user' | 'assistant'
 }
 
 /** Parse `/history` command output into selector items.
@@ -39,12 +40,14 @@ export function parseHistoryItems(message: string): HistoryItem[] {
   for (const line of message.split('\n')) {
     const numbered = line.match(/#(\d+)\s+(user|assistant)\s+(.*)/)
     if (numbered) {
-      items.push({ label: `#${numbered[1]}`, detail: `${numbered[2]}  ${numbered[3]!.trim()}` })
+      const role = numbered[2] as 'user' | 'assistant'
+      items.push({ label: `#${numbered[1]}`, detail: `${role}  ${numbered[3]!.trim()}`, role })
       continue
     }
     const snapshot = line.match(/…\s+(user|assistant)\s+(.*)/)
     if (snapshot) {
-      items.push({ label: '…', detail: `${snapshot[1]}  ${snapshot[2]!.trim()}` })
+      const role = snapshot[1] as 'user' | 'assistant'
+      items.push({ label: '…', detail: `${role}  ${snapshot[2]!.trim()}`, role })
     }
   }
   return items

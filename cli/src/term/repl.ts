@@ -12,7 +12,7 @@ import { HistoryManager, parseHistoryItems } from '../session/history.js'
 import { ScreenLog } from '../session/screen-log.js'
 import { isSlashCommand, resolveCommand } from '../commands/index.js'
 import { renderBanner } from './banner.js'
-import { relativeTime } from '../render/format.js'
+import { relativeTime, padRight } from '../render/format.js'
 import {
   buildOutputBlocks,
   buildActiveResponseBlocks,
@@ -888,16 +888,25 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
     } else if (name === '/history') {
       try {
-        const histCmd = args ? `/history ${args}` : '/history'
-        const outcome = await agent.submit(histCmd, sessionId ?? undefined)
+        // Fetch a large set for search, display only the most recent entries
+        const displayLimit = args ? parseInt(args, 10) : 20
+        const searchLimit = Math.max(displayLimit, 200)
+        const searchCmd = `/history ${searchLimit}`
+        const outcome = await agent.submit(searchCmd, sessionId ?? undefined)
         if (outcome.kind === 'command') {
-          const items = parseHistoryItems(outcome.message)
-          if (items.length === 0) {
+          const allItems = parseHistoryItems(outcome.message)
+          if (allItems.length === 0) {
             commitLines([{ id: 'sys-hist', kind: 'system', text: `  ${outcome.message}` }])
           } else {
+            // Mark user entries as goto-able, assistant as preview-only
+            const annotate = (items: typeof allItems) => items.map(item => ({
+              ...item,
+              detail: item.role === 'user' ? `↩ ${item.detail}` : `  ${item.detail}`,
+            }))
+            const displayItems = allItems.slice(-displayLimit)
             overlay = {
               kind: 'selector',
-              state: createSelectorState('History', items),
+              state: createSelectorState('History  (↩ goto · enter preview)', annotate(displayItems), annotate(allItems)),
             }
           }
         }
@@ -940,7 +949,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           const sessionList = allSessions.map(s => {
             const title = s.title || '(untitled)'
             const time = relativeTime(s.updated_at)
-            return `${s.session_id.slice(0, 8)}  ${title}  [${s.cwd}]  ${time}`
+            const turns = s.turns ? `[${s.turns} turns]` : ''
+            return `${s.session_id.slice(0, 8)}  ${title}  [${s.cwd}]  ${turns}  ${time}`
           }).join('\n')
           const searchPrompt = `Search the following session list for sessions related to "${args}". List matching session IDs (8-char prefix) with their titles. If no match, say "No matching sessions".\n\nSessions:\n${sessionList}`
           await runQuery(searchPrompt)
@@ -959,19 +969,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               : allForSearch
             overlay = {
               kind: 'selector',
-              state: createSelectorState('Resume session', displaySessions.map(s => {
-                const title = s.title || '(untitled)'
-                const short = title.length > 50 ? title.slice(0, 49) + '…' : title
-                const tag = s.source ? `[${s.source}] ` : ''
-                const time = relativeTime(s.updated_at)
-                return { label: s.session_id.slice(0, 8), detail: `${tag}${short}  ${time}` }
-              }), searchSessions.map(s => {
-                const title = s.title || '(untitled)'
-                const short = title.length > 50 ? title.slice(0, 49) + '…' : title
-                const tag = s.source ? `[${s.source}] ` : ''
-                const time = relativeTime(s.updated_at)
-                return { label: s.session_id.slice(0, 8), detail: `${tag}${short}  ${time}` }
-              })),
+              state: createSelectorState('Resume session',
+                formatSessionItems(displaySessions),
+                formatSessionItems(searchSessions)),
             }
           }
         }
@@ -995,6 +995,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
 
     renderStatus()
+  }
+
+  function formatSessionItems(sessions: SessionMeta[]): import('./selector.js').SelectorItem[] {
+    return sessions.map(s => {
+      const tag = s.source ? `[${s.source}] ` : ''
+      const title = padRight(tag + (s.title || '(untitled)'), 42)
+      const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
+      const time = relativeTime(s.updated_at)
+      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}` }
+    })
   }
 
   function handleEnvCommand(args: string) {
@@ -1269,11 +1279,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             // Resume selector result — find session by id prefix
             const match = preloadedSessions.find(s => s.session_id.startsWith(selected.label))
             if (match) resumeSession(match)
-          } else if (state.title === 'History') {
-            // History selector result — goto selected seq (skip snapshot entries)
+          } else if (state.title.startsWith('History')) {
+            // History selector result — goto for user, preview for assistant
             if (selected.label !== '…') {
-              const seq = selected.label.replace('#', '')
-              handleSlashInput(`/goto ${seq}`)
+              const role = (selected as any).role as string | undefined
+              if (role === 'assistant') {
+                // Preview assistant message content
+                const detail = selected.detail ?? ''
+                const text = detail.replace(/^\s*assistant\s+/, '')
+                commitLines([{ id: 'sys-hist-preview', kind: 'system', text: `  ${selected.label} assistant: ${text}` }])
+              } else {
+                const seq = selected.label.replace('#', '')
+                handleSlashInput(`/goto ${seq}`)
+              }
             }
           } else {
             // Model selector result

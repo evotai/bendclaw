@@ -28,9 +28,9 @@ export interface SessionMeta {
   model: string
   cwd: string
   source: string
+  turns: number
   created_at: string
   updated_at: string
-  turn_count: number
 }
 
 export interface TranscriptItem {

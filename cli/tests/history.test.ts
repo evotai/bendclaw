@@ -123,9 +123,9 @@ describe('parseHistoryItems', () => {
       '    #3    user       thanks',
     ].join('\n')
     expect(parseHistoryItems(msg)).toEqual([
-      { label: '#1', detail: 'user  hello world' },
-      { label: '#2', detail: 'assistant  I can help with that' },
-      { label: '#3', detail: 'user  thanks' },
+      { label: '#1', detail: 'user  hello world', role: 'user' },
+      { label: '#2', detail: 'assistant  I can help with that', role: 'assistant' },
+      { label: '#3', detail: 'user  thanks', role: 'user' },
     ])
   })
 
@@ -140,14 +140,14 @@ describe('parseHistoryItems', () => {
     ].join('\n')
     const items = parseHistoryItems(msg)
     expect(items).toEqual([
-      { label: '…', detail: 'user  old message' },
-      { label: '#5', detail: 'user  new message' },
+      { label: '…', detail: 'user  old message', role: 'user' },
+      { label: '#5', detail: 'user  new message', role: 'user' },
     ])
   })
 
   test('handles single entry', () => {
     expect(parseHistoryItems('  #42   assistant  done')).toEqual([
-      { label: '#42', detail: 'assistant  done' },
+      { label: '#42', detail: 'assistant  done', role: 'assistant' },
     ])
   })
 
@@ -162,9 +162,9 @@ describe('parseHistoryItems', () => {
       '    …   user       thanks',
     ].join('\n')
     expect(parseHistoryItems(msg)).toEqual([
-      { label: '…', detail: 'user  hello world' },
-      { label: '…', detail: 'assistant  I can help with that' },
-      { label: '…', detail: 'user  thanks' },
+      { label: '…', detail: 'user  hello world', role: 'user' },
+      { label: '…', detail: 'assistant  I can help with that', role: 'assistant' },
+      { label: '…', detail: 'user  thanks', role: 'user' },
     ])
   })
 })

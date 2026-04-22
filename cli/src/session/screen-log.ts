@@ -1,8 +1,13 @@
 /**
  * ScreenLog — writes OutputLines to ~/.evotai/logs/{session_id}.screen.log.
  *
- * Records exactly what appears on screen (1:1 with <Static> output).
- * Each OutputLine is written as a single timestamped line.
+ * Session-level logger that records the expanded (full) version of all
+ * screen output for post-hoc debugging.  Callers use:
+ *
+ *   screenLog.bind(sessionId)   — attach to a session (lazy, idempotent)
+ *   screenLog.log(lines)        — append OutputLines
+ *
+ * All I/O errors are silently swallowed so callers never need try/catch.
  */
 
 import { appendFileSync, mkdirSync } from 'fs'
@@ -13,19 +18,26 @@ import type { OutputLine } from '../render/output.js'
 const LOGS_DIR = join(homedir(), '.evotai', 'logs')
 
 export class ScreenLog {
-  private path: string
+  private path: string | null = null
+  private boundSessionId: string | null = null
 
-  constructor(sessionId: string) {
-    mkdirSync(LOGS_DIR, { recursive: true })
-    this.path = join(LOGS_DIR, `${sessionId}.screen.log`)
+  /** Bind (or re-bind) to a session. No-op if already bound to the same id. */
+  bind(sessionId: string): void {
+    if (this.boundSessionId === sessionId) return
+    try {
+      mkdirSync(LOGS_DIR, { recursive: true })
+      this.path = join(LOGS_DIR, `${sessionId}.screen.log`)
+      this.boundSessionId = sessionId
+    } catch { /* silently ignore */ }
   }
 
-  get filePath(): string {
+  get filePath(): string | null {
     return this.path
   }
 
-  /** Write one or more OutputLines to the log. */
-  writeLines(lines: OutputLine[]): void {
+  /** Append OutputLines to the log. Ignored if not yet bound. */
+  log(lines: OutputLine[]): void {
+    if (!this.path || lines.length === 0) return
     const ts = formatTimestamp()
     for (const line of lines) {
       const prefix = formatPrefix(line.kind)
@@ -34,6 +46,7 @@ export class ScreenLog {
   }
 
   private appendLine(line: string): void {
+    if (!this.path) return
     try {
       appendFileSync(this.path, line + '\n', { mode: 0o600 })
     } catch { /* silently ignore */ }

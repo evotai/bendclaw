@@ -116,6 +116,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const compactLines: OutputLine[] = []
   const expandedLines: OutputLine[] = []
   let lastProgressLineCount = 0
+  const screenLog = new ScreenLog()
 
   // Server state
   let serverState: ServerState | null = null
@@ -235,6 +236,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     renderer.appendScroll(blocksToLines(blocks).join('\n'))
     renderStatus()
     renderer.flushBatch()
+    screenLog.log(outputLines)
   }
 
   /** Commit tool_finished with both compact and expanded versions. */
@@ -250,6 +252,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     renderer.appendScroll(blocksToLines(blocks).join('\n'))
     renderStatus()
     renderer.flushBatch()
+    screenLog.log(exp)
   }
 
   /** Toggle expanded view and redraw. */
@@ -379,14 +382,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     startSpinner()
     renderStatus()
 
-    let screenLog: ScreenLog | null = null
-
     try {
       const stream = await agent.query(text, sessionId ?? undefined, planning ? 'planning_interactive' : 'interactive', contentJson)
       streamRef = stream
       sessionId = stream.sessionId ?? sessionId
       appState = { ...appState, sessionId: sessionId }
-      try { screenLog = new ScreenLog(stream.sessionId) } catch {}
+      screenLog.bind(stream.sessionId)
 
       for await (const event of stream) {
         if (destroyed) break
@@ -446,15 +447,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               renderer.appendScroll(blocksToLines(blocks).join('\n'))
               renderStatus()
               renderer.flushBatch()
+              screenLog.log(outputLines)
             }
           }
         }
 
         if (update.commitLines.length > 0) {
           commitLines(update.commitLines)
-          if (screenLog) {
-            try { screenLog.writeLines(update.writeLines) } catch {}
-          }
         }
 
         if (update.rerenderStatus) renderStatus()
@@ -464,7 +463,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const final = flushStreaming(streamMachine)
         if (final.lines.length > 0) {
           commitLines(final.lines)
-          if (screenLog) { try { screenLog.writeLines(final.lines) } catch {} }
         }
         streamMachine = final.state
         appState = final.state.appState
@@ -573,6 +571,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const expandedText = getExpandedText()
         const displayText = getDisplayText()
         const imageBlocks = buildImageContentBlocks()
+
+        // /log (no args) works during execution — show screen log path
+        const trimmed = (expandedText || '').trim()
+        if (trimmed === '/log') {
+          clearAll()
+          const logPath = screenLog.filePath
+          if (logPath) commitLines([{ id: 'sys-log', kind: 'system', text: `  Log: ${logPath}` }])
+          else commitLines([{ id: 'sys-log', kind: 'system', text: '  No active screen log.' }])
+          renderStatus()
+          return
+        }
 
         // Allow text, images, or both
         if ((expandedText || imageBlocks) && streamRef) {
@@ -1103,7 +1112,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         commitLines([{ id: 'sys-log-err', kind: 'system', text: chalk.red(`  Import failed: ${err?.message ?? err}`) }])
       }
     } else if (!query) {
-      if (sid) commitLines([{ id: 'sys-log', kind: 'system', text: `  Log: ${join(logDir, `${sid}.screen.log`)}` }])
+      const logPath = screenLog.filePath
+      if (logPath) commitLines([{ id: 'sys-log', kind: 'system', text: `  Log: ${logPath}` }])
+      else if (sid) commitLines([{ id: 'sys-log', kind: 'system', text: `  Log: ${join(logDir, `${sid}.screen.log`)}` }])
       else commitLines([{ id: 'sys-log', kind: 'system', text: `  Log dir: ${logDir} (no active session)` }])
     } else if (!sid) {
       commitLines([{ id: 'sys-log-err', kind: 'system', text: '  No active session to analyze.' }])

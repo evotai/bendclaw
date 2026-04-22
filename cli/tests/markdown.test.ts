@@ -54,26 +54,6 @@ describe('renderMarkdown', () => {
     expect(result).toContain('const x = 1')
   })
 
-  test('renders code blocks with line numbers', () => {
-    const result = render('```js\nconst x = 1\nconst y = 2\n```')
-    expect(result).toContain('1│ const x = 1')
-    expect(result).toContain('2│ const y = 2')
-  })
-
-  test('code block line numbers pad to widest number', () => {
-    const lines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`)
-    const md = '```\n' + lines.join('\n') + '\n```'
-    const result = render(md)
-    // Single-digit lines should be right-padded: " 1│"
-    expect(result).toContain(' 1│ line 1')
-    expect(result).toContain('12│ line 12')
-  })
-
-  test('single-line code block has no line numbers', () => {
-    const result = render('```\nhello\n```')
-    expect(result).not.toContain('1│')
-  })
-
   test('renders unordered lists', () => {
     const result = render('- one\n- two\n- three')
     expect(result).toContain('- one')

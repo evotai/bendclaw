@@ -103,7 +103,7 @@ export function formatToken(
           // fallback
         }
       }
-      return addLineNumbers(highlighted) + EOL
+      return highlighted + EOL
     }
     case 'codespan':
       return chalk.cyan(token.text)
@@ -408,32 +408,6 @@ function padAligned(
     return ' '.repeat(padding) + content
   }
   return content + ' '.repeat(padding)
-}
-
-// ---------------------------------------------------------------------------
-// Code block line numbers
-// ---------------------------------------------------------------------------
-
-const LINE_NUMBER_THRESHOLD = 1 // show line numbers for all code blocks
-
-/**
- * Add dim line numbers to a code block.
- * Only adds numbers when the block has more than LINE_NUMBER_THRESHOLD lines.
- */
-function addLineNumbers(code: string): string {
-  const lines = code.split('\n')
-  // Strip trailing empty line from highlighted output
-  if (lines.length > 0 && lines[lines.length - 1]!.trim() === '') {
-    lines.pop()
-  }
-  if (lines.length <= LINE_NUMBER_THRESHOLD) return code
-  const gutterWidth = lines.length.toString().length
-  return lines
-    .map((line, i) => {
-      const num = (i + 1).toString().padStart(gutterWidth)
-      return `${chalk.dim(num)}${chalk.dim('│')} ${line}`
-    })
-    .join('\n')
 }
 
 // ---------------------------------------------------------------------------

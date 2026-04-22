@@ -225,6 +225,22 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         if (dist.length > 0) detailLines.push(`  ${dist.join(' · ')}`)
       }
 
+      // Per-tool token breakdown
+      if (msgStats && msgStats.toolDetails.length >= 2) {
+        const agg = new Map<string, number>()
+        for (const [name, tokens] of msgStats.toolDetails) {
+          agg.set(name, (agg.get(name) ?? 0) + tokens)
+        }
+        const sorted = [...agg.entries()].sort((a, b) => b[1] - a[1])
+        const total = msgStats.toolResultTokens || 1
+        const maxNameLen = Math.max(...sorted.map(([n]) => n.length), 4)
+        for (const [name, tokens] of sorted) {
+          const pct = ((tokens / total) * 100).toFixed(0)
+          const bar = renderBar(tokens, total, 20)
+          detailLines.push(`      ${name.padEnd(maxNameLen)}  ~${humanTokensInline(tokens).padEnd(6)} (${pct.padStart(3)}%)  ${bar}`)
+        }
+      }
+
       const text = `[LLM] call  ${model}  turn ${turn}${retryStr}${injectedStr}\n${detailLines.join('\n')}`
 
       // Accumulate cumulative stats across all LLM calls

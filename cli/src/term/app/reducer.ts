@@ -3,7 +3,7 @@
  */
 
 import type { RunEvent } from '../../native/index.js'
-import { humanTokens as humanTokensInline, renderBar } from '../../render/format.js'
+import { humanTokens as humanTokensInline, renderBar, renderPositionBar } from '../../render/format.js'
 import { emptyRunStats, type AppState } from './state.js'
 import type { CompactRecord, MessageStats, UIMessage, UIToolCall } from './types.js'
 
@@ -305,10 +305,13 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       let text: string
       if (error) {
         const durSec = (durationMs / 1000).toFixed(1)
-        text = `[LLM] failed  ${durSec}s  ${error}`
+        text = `[LLM] failed · ${durSec}s\n  ${error}`
       } else {
         const durSec = (durationMs / 1000).toFixed(1)
-        text = `[LLM] completed  ${durSec}s  ${tokPerSec.toFixed(0)} tok/s  ${humanTokensInline(inputTok)} in · ${outputTok} out\n  ttfb ${(ttfbMs / 1000).toFixed(1)}s · stream ${(streamingMs / 1000).toFixed(1)}s`
+        const dur = durationMs || 1
+        const ttfbPct = ((ttfbMs / dur) * 100).toFixed(0)
+        const streamPct = ((streamingMs / dur) * 100).toFixed(0)
+        text = `[LLM] completed · ${durSec}s · ${tokPerSec.toFixed(0)} tok/s\n  tokens  ${humanTokensInline(inputTok)} in · ${outputTok} out\n  timing  ttfb ${(ttfbMs / 1000).toFixed(1)}s (${ttfbPct}%) · stream ${(streamingMs / 1000).toFixed(1)}s (${streamPct}%)`
       }
 
       return {
@@ -382,6 +385,8 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
               })
           : []
 
+        const { bar: posBar, legend } = renderPositionBar(beforeMsgs, sorted, level)
+
         let summary: string
         if (level === 1) {
           const outlineCount = sorted.filter((a: any) => a.method === 'Outline').length
@@ -401,9 +406,62 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
           summary = '↓ no changes'
         }
 
-        // Compact single-line summary
-        const compactBar = renderBar(saved, before || 1, 12)
-        action = `L${level}  ${beforeMsgs} msgs ~${humanTokensInline(before)} → ${afterMsgs} msgs ~${humanTokensInline(after)}  (−${humanTokensInline(saved)}, ${savedPct}%)  ${compactBar}  ${summary}`
+        const lines: string[] = []
+        lines.push(`L${level}`)
+        lines.push(`  ${beforeMsgs} msgs ~${humanTokensInline(before)} → ${afterMsgs} msgs ~${humanTokensInline(after)}  (saved ~${humanTokensInline(saved)}, ${savedPct}%)`)
+        lines.push(`  ${posBar}`)
+        if (legend) lines.push(`  ${legend}`)
+        lines.push(`  ${summary}`)
+
+        if (sorted.length > 0) {
+          const totalActions = allActions?.length ?? 0
+          const changed = sorted.length
+          let header: string
+          if (level === 1) {
+            header = `  actions: (${changed} of ${totalActions} changed)`
+          } else if (level === 2) {
+            const totalMsgs = sorted.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
+            header = `  actions: (${changed} turns, ${totalMsgs} msgs → ${changed} summaries)`
+          } else if (level === 3) {
+            const kept = Math.max(afterMsgs - 1, 0)
+            header = `  actions: (${msgsDropped} dropped, ${kept} kept, 1 marker)`
+          } else {
+            header = `  actions: (${changed} changed)`
+          }
+          lines.push(header)
+
+          const TOP = 3
+          const TAIL = 2
+          const fmtAction = (a: any) => {
+            const idx = (a.index as number) ?? 0
+            const toolName = (a.tool_name as string) ?? ''
+            const method = (a.method as string) ?? 'unknown'
+            const bTok = (a.before_tokens as number) ?? 0
+            const aTok = (a.after_tokens as number) ?? 0
+            const aSaved = bTok - aTok
+            if (method === 'Summarized') {
+              const rc = (a.related_count as number) ?? 0
+              return `    #${String(idx).padEnd(3)} turn(${1 + rc} msgs)  ~${humanTokensInline(bTok)} → ~${humanTokensInline(aTok)}  (−${humanTokensInline(aSaved)})`
+            }
+            if (method === 'Dropped') {
+              const endIdx = a.end_index as number | undefined
+              const idxStr = endIdx != null ? `#${idx}..#${String(endIdx).padEnd(3)}` : `#${String(idx).padEnd(3)}`
+              return `    ${idxStr}  ~${humanTokensInline(bTok)} → ~${humanTokensInline(aTok)}  (−${humanTokensInline(aSaved)})`
+            }
+            return `    #${String(idx).padEnd(3)} ${toolName.padEnd(12)} ${method.padEnd(12)} ~${humanTokensInline(bTok)} → ~${humanTokensInline(aTok)}  (−${humanTokensInline(aSaved)})`
+          }
+
+          if (sorted.length <= TOP + TAIL) {
+            for (const a of sorted) lines.push(fmtAction(a))
+          } else {
+            for (const a of sorted.slice(0, TOP)) lines.push(fmtAction(a))
+            const omitted = sorted.length - TOP - TAIL
+            lines.push(`    ... ${omitted} more ...`)
+            for (const a of sorted.slice(sorted.length - TAIL)) lines.push(fmtAction(a))
+          }
+        }
+
+        action = lines.join('\n')
       }
 
       const compactRecord: CompactRecord | null =

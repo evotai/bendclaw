@@ -167,5 +167,14 @@ pub fn new_client() -> Result<reqwest::Client, ProviderError> {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .build()
-        .map_err(|e| ProviderError::Other(format!("Failed to build HTTP client: {e}")))
+        .map_err(|e| {
+            let mut detail = format!("Failed to build HTTP client: {e}");
+            let mut source = std::error::Error::source(&e);
+            while let Some(cause) = source {
+                detail.push_str(" -> ");
+                detail.push_str(&cause.to_string());
+                source = cause.source();
+            }
+            ProviderError::Other(detail)
+        })
 }

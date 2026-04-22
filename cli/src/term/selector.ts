@@ -11,8 +11,8 @@ export interface SelectorState {
   query: string
 }
 
-export function createSelectorState(title: string, items: SelectorItem[]): SelectorState {
-  return { items, allItems: items, focusIndex: 0, title, query: '' }
+export function createSelectorState(title: string, items: SelectorItem[], allItems?: SelectorItem[]): SelectorState {
+  return { items, allItems: allItems ?? items, focusIndex: 0, title, query: '' }
 }
 
 export function selectorUp(state: SelectorState): SelectorState {

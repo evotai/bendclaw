@@ -59,10 +59,21 @@ pub fn classify_response(response: &reqwest::Response) -> StreamResponseKind {
 pub async fn send_stream_request(
     builder: reqwest::RequestBuilder,
 ) -> Result<reqwest::Response, ProviderError> {
-    builder
-        .send()
-        .await
-        .map_err(|e| ProviderError::Network(e.to_string()))
+    let url = builder
+        .try_clone()
+        .and_then(|b| b.build().ok())
+        .map(|r| r.url().to_string())
+        .unwrap_or_default();
+    builder.send().await.map_err(|e| {
+        let mut detail = format!("{e} (url: {url})");
+        let mut source = std::error::Error::source(&e);
+        while let Some(cause) = source {
+            detail.push_str(" -> ");
+            detail.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        ProviderError::Network(detail)
+    })
 }
 
 /// Check the HTTP status code. Non-2xx responses are read and classified.

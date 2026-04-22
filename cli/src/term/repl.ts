@@ -910,9 +910,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           if (sessions.length === 0) {
             commitLines([{ id: 'sys-r', kind: 'system', text: '  No sessions found' }])
           } else {
+            // Load all sessions for search scope, but display only first 20
+            const displaySessions = sessions.slice(0, 20)
+            const allForSearch = await agent.listSessions(0)
+            const searchSessions = allForSearch.filter(s => s.cwd === agent.cwd).length > 0
+              ? allForSearch.filter(s => s.cwd === agent.cwd)
+              : allForSearch
             overlay = {
               kind: 'selector',
-              state: createSelectorState('Resume session', sessions.map(s => {
+              state: createSelectorState('Resume session', displaySessions.map(s => {
+                const title = s.title || '(untitled)'
+                const short = title.length > 50 ? title.slice(0, 49) + '…' : title
+                const tag = s.source ? `[${s.source}] ` : ''
+                const time = relativeTime(s.updated_at)
+                return { label: s.session_id.slice(0, 8), detail: `${tag}${short}  ${time}` }
+              }), searchSessions.map(s => {
                 const title = s.title || '(untitled)'
                 const short = title.length > 50 ? title.slice(0, 49) + '…' : title
                 const tag = s.source ? `[${s.source}] ` : ''

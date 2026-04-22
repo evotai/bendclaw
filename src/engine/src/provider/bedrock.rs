@@ -65,11 +65,16 @@ impl StreamProvider for BedrockProvider {
             request = request.header("authorization", format!("Bearer {}", config.api_key));
         }
 
-        let response = request
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        let response = request.json(&body).send().await.map_err(|e| {
+            let mut detail = format!("{e} (url: {url})");
+            let mut source = std::error::Error::source(&e);
+            while let Some(cause) = source {
+                detail.push_str(" -> ");
+                detail.push_str(&cause.to_string());
+                source = cause.source();
+            }
+            ProviderError::Network(detail)
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();

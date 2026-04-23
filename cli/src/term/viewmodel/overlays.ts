@@ -66,6 +66,19 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
   return [block(lines, 1)]
 }
 
+function highlightSpans(text: string, query: string, base: Partial<StyledSpan>): StyledSpan[] {
+  if (!query) return [{ text, ...base }]
+  const lower = text.toLowerCase()
+  const lowerQuery = query.toLowerCase()
+  const idx = lower.indexOf(lowerQuery)
+  if (idx === -1) return [{ text, ...base }]
+  const spans: StyledSpan[] = []
+  if (idx > 0) spans.push({ text: text.slice(0, idx), ...base })
+  spans.push({ text: text.slice(idx, idx + lowerQuery.length), fg: 'yellow', bold: true })
+  if (idx + lowerQuery.length < text.length) spans.push({ text: text.slice(idx + lowerQuery.length), ...base })
+  return spans
+}
+
 function buildSelectorBlocks(state: SelectorState): ViewBlock[] {
   const lines = [
     line(bold(state.title)),
@@ -98,9 +111,13 @@ function buildSelectorBlocks(state: SelectorState): ViewBlock[] {
       const item = state.items[i]!
       const focused = i === state.focusIndex
       const prefix: StyledSpan = focused ? colored('❯ ', 'cyan') : plain('  ')
-      const label: StyledSpan = focused ? bold(item.label) : plain(item.label)
-      const detail: StyledSpan = item.detail ? dim(` ${item.detail}`) : plain('')
-      lines.push(line(prefix, label, detail))
+      const labelSpans = state.query
+        ? highlightSpans(item.label, state.query, focused ? { bold: true } : {})
+        : [focused ? bold(item.label) : plain(item.label)]
+      const detailSpans = item.detail && state.query
+        ? highlightSpans(` ${item.detail}`, state.query, { dim: true })
+        : [item.detail ? dim(` ${item.detail}`) : plain('')]
+      lines.push(line(prefix, ...labelSpans, ...detailSpans))
     }
     if (end < state.items.length) {
       lines.push(line(dim(`  ↓ ${state.items.length - end} more`)))

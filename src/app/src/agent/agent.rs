@@ -516,6 +516,14 @@ impl Agent {
         storage.list_sessions(ListSessions { limit }).await
     }
 
+    pub async fn list_sessions_with_text(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<crate::search::SessionWithText>> {
+        let storage = self.storage.read().clone();
+        storage.list_sessions_with_text(limit).await
+    }
+
     pub async fn find_session(&self, id: &str) -> Result<Option<SessionMeta>> {
         let storage = self.storage.read().clone();
         storage.get_session(id).await

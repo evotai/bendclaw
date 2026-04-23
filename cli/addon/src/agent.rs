@@ -156,6 +156,16 @@ impl NapiAgent {
         serde_json::to_string(&sessions).map_err(|e| Error::from_reason(format!("serialize: {e}")))
     }
 
+    #[napi]
+    pub async fn list_sessions_with_text(&self, limit: Option<u32>) -> Result<String> {
+        let items = self
+            .agent
+            .list_sessions_with_text(limit.unwrap_or(0) as usize)
+            .await
+            .map_err(|e| Error::from_reason(format!("list sessions with text: {e}")))?;
+        serde_json::to_string(&items).map_err(|e| Error::from_reason(format!("serialize: {e}")))
+    }
+
     /// Load transcript for a session.
     #[napi]
     pub async fn load_transcript(&self, session_id: String) -> Result<String> {

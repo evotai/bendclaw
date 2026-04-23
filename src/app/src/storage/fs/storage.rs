@@ -6,6 +6,8 @@ use tokio::fs;
 
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::search::collect_search_text;
+use crate::search::SessionWithText;
 use crate::storage::Storage;
 use crate::types::ListSessions;
 use crate::types::ListTranscriptEntries;
@@ -178,5 +180,33 @@ impl Storage for FsStorage {
             variables,
         };
         self.write_json(self.variables_path(), &doc).await
+    }
+
+    async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
+        let sessions = self.list_sessions(ListSessions { limit }).await?;
+        let mut result = Vec::with_capacity(sessions.len());
+
+        for session in &sessions {
+            let entries: Vec<TranscriptEntry> = match self
+                .read_jsonl(&self.transcript_path(&session.session_id))
+                .await
+            {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!(
+                        session_id = %session.session_id,
+                        "skipping transcript: {e}"
+                    );
+                    vec![]
+                }
+            };
+            let search_text = collect_search_text(session, &entries);
+            result.push(SessionWithText {
+                session: session.clone(),
+                search_text,
+            });
+        }
+
+        Ok(result)
     }
 }

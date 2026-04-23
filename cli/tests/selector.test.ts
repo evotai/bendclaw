@@ -6,6 +6,7 @@ import {
   selectorSelect,
   selectorType,
   selectorBackspace,
+  selectorExpandItems,
 } from '../src/term/selector.js'
 import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
@@ -141,6 +142,19 @@ describe('renderSelector via viewmodel', () => {
     const text = lines.map(l => stripAnsi(l)).join('\n')
     expect(text).toContain('No matches')
   })
+
+  test('highlights matching query in items', () => {
+    let state = createSelectorState('T', items)
+    state = selectorType(state, 'gpt')
+    const lines = blocksToLines(buildOverlayBlocks({ kind: 'selector', state }, 80))
+    const raw = lines.join('')
+    // Should contain ANSI bold+yellow around "gpt"
+    expect(raw).toContain('\x1b[1m')
+    expect(raw).toContain('gpt')
+    // Plain text should still have the label
+    const text = lines.map(l => stripAnsi(l)).join('\n')
+    expect(text).toContain('gpt-4o')
+  })
 })
 
 describe('selectorType', () => {
@@ -181,9 +195,10 @@ describe('selectorBackspace', () => {
     let state = createSelectorState('T', items)
     state = selectorType(state, 'g')
     state = selectorType(state, 'p')
+    state = selectorType(state, 't')
     expect(state.items.map(i => i.label)).toEqual(['gpt-4o'])
     state = selectorBackspace(state)
-    expect(state.query).toBe('g')
+    expect(state.query).toBe('gp')
     expect(state.items.map(i => i.label)).toEqual(['gpt-4o', 'gemini-pro'])
   })
 
@@ -199,5 +214,146 @@ describe('selectorBackspace', () => {
     const state = createSelectorState('T', items)
     const next = selectorBackspace(state)
     expect(next).toBe(state)
+  })
+})
+
+describe('fuzzy subsequence matching', () => {
+  test('subsequence match finds non-contiguous chars', () => {
+    let state = createSelectorState('T', items)
+    state = selectorType(state, 'c')
+    state = selectorType(state, 'o')
+    state = selectorType(state, 'p')
+    // "cop" is a subsequence of "claude-opus" (c...o...p) but not a substring
+    expect(state.items.map(i => i.label)).toContain('claude-opus')
+  })
+
+  test('exact substring matches come before subsequence matches', () => {
+    const testItems = [
+      { label: 'deploy-service' },
+      { label: 'deep-learning' },
+      { label: 'data-pipeline' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'd')
+    state = selectorType(state, 'p')
+    // "dp" is substring of none, but subsequence of all three
+    // "deploy-service" and "deep-learning" and "data-pipeline" all match as subsequence
+    expect(state.items.length).toBeGreaterThan(0)
+  })
+
+  test('substring matches rank before subsequence matches', () => {
+    const testItems = [
+      { label: 'abc-xyz', detail: 'no match here' },
+      { label: 'hello', detail: 'contains op inside' },
+      { label: 'opus', detail: 'exact' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'o')
+    state = selectorType(state, 'p')
+    // "op" is substring of "opus" and "contains op inside"
+    // "abc-xyz" has no match at all
+    const labels = state.items.map(i => i.label)
+    expect(labels).toContain('opus')
+    expect(labels).toContain('hello')
+    expect(labels).not.toContain('abc-xyz')
+  })
+})
+
+describe('searchText field', () => {
+  test('searches searchText when provided', () => {
+    const testItems = [
+      { label: 'abc12345', detail: 'My Project', searchText: 'abc12345 My Project /home/user/myproject rust' },
+      { label: 'def67890', detail: 'Other Work', searchText: 'def67890 Other Work /tmp/job golang' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'r')
+    state = selectorType(state, 'u')
+    state = selectorType(state, 's')
+    state = selectorType(state, 't')
+    expect(state.items.map(i => i.label)).toEqual(['abc12345'])
+  })
+
+  test('falls back to label+detail when no searchText', () => {
+    const mixed = [
+      { label: 'with-search', detail: 'visible', searchText: 'hidden keyword' },
+      { label: 'no-search', detail: 'keyword here' },
+    ]
+    let state = createSelectorState('T', mixed)
+    state = selectorType(state, 'k')
+    state = selectorType(state, 'e')
+    state = selectorType(state, 'y')
+    expect(state.items.map(i => i.label)).toEqual(['with-search', 'no-search'])
+  })
+})
+
+describe('context extraction on match', () => {
+  test('replaces detail with searchText context when matched', () => {
+    const testItems = [
+      { label: 'abc12345', detail: 'Original Title', searchText: 'abc12345 some long text about databend documentation and queries' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'd')
+    state = selectorType(state, 'a')
+    state = selectorType(state, 't')
+    state = selectorType(state, 'a')
+    state = selectorType(state, 'b')
+    state = selectorType(state, 'e')
+    state = selectorType(state, 'n')
+    state = selectorType(state, 'd')
+    expect(state.items.length).toBe(1)
+    expect(state.items[0]!.detail).toContain('databend')
+    expect(state.items[0]!.detail).not.toBe('Original Title')
+  })
+
+  test('restores original detail when query cleared', () => {
+    const testItems = [
+      { label: 'abc12345', detail: 'Original Title', searchText: 'abc12345 databend docs' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'd')
+    state = selectorType(state, 'a')
+    state = selectorType(state, 't')
+    state = selectorBackspace(state)
+    state = selectorBackspace(state)
+    state = selectorBackspace(state)
+    expect(state.items[0]!.detail).toBe('Original Title')
+  })
+
+  test('keeps original detail when no searchText', () => {
+    const testItems = [
+      { label: 'gpt-4o', detail: 'OpenAI' },
+    ]
+    let state = createSelectorState('T', testItems)
+    state = selectorType(state, 'g')
+    state = selectorType(state, 'p')
+    state = selectorType(state, 't')
+    expect(state.items[0]!.detail).toBe('OpenAI')
+  })
+})
+
+describe('selectorExpandItems', () => {
+  test('replaces allItems and re-filters with current query', () => {
+    const initial = [
+      { label: 'abc', detail: 'old' },
+    ]
+    let state = createSelectorState('T', initial)
+    state = selectorType(state, 'x')
+    expect(state.items.length).toBe(0)
+
+    const expanded = [
+      { label: 'abc', detail: 'old' },
+      { label: 'xyz', detail: 'new', searchText: 'xyz new extra' },
+    ]
+    state = selectorExpandItems(state, expanded)
+    expect(state.items.length).toBe(1)
+    expect(state.items[0]!.label).toBe('xyz')
+  })
+
+  test('shows all expanded items when no query', () => {
+    const initial = [{ label: 'a' }]
+    let state = createSelectorState('T', initial)
+    const expanded = [{ label: 'a' }, { label: 'b' }, { label: 'c' }]
+    state = selectorExpandItems(state, expanded)
+    expect(state.items.length).toBe(3)
   })
 })

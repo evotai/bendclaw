@@ -2,10 +2,10 @@ import { TermRenderer } from './renderer.js'
 import { parseInput, enableRawMode, type KeyEvent } from './input.js'
 import { installBracketedPaste } from './bracketed-paste.js'
 import { createSpinnerState, advanceSpinner, type SpinnerState } from './spinner.js'
-import { createSelectorState, selectorUp, selectorDown, selectorSelect, selectorType, selectorBackspace, type SelectorState } from './selector.js'
+import { createSelectorState, selectorUp, selectorDown, selectorSelect, selectorType, selectorBackspace, selectorExpandItems, selectorClearQuery, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskState, type AskQuestion } from './ask.js'
 import { buildUserMessage, buildAssistantLines, type OutputLine } from '../render/output.js'
-import { Agent, QueryStream, type SessionMeta, type ConfigInfo } from '../native/index.js'
+import { Agent, QueryStream, type SessionMeta, type SessionWithText, type ConfigInfo } from '../native/index.js'
 import { createInitialState, type AppState } from './app/state.js'
 import type { AskUserRequest } from './app/types.js'
 import { HistoryManager, parseHistoryItems } from '../session/history.js'
@@ -546,6 +546,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           renderStatus()
           return
         }
+        if (overlay.kind === 'selector' && overlay.state.query) {
+          overlay = { kind: 'selector', state: selectorClearQuery(overlay.state) }
+          renderStatus()
+          return
+        }
         overlay = { kind: 'none' }
         renderStatus()
         return
@@ -930,50 +935,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     } else if (name === '/log') {
       await handleLogCommand(args)
     } else if (name === '/resume') {
-      // Load sessions (default 20; fetch all only when searching by id)
       try {
         const isHexPrefix = args ? /^[0-9a-f]{1,36}$/i.test(args) : false
-        const allSessions: SessionMeta[] = await agent.listSessions(args ? 0 : 20)
         if (args && isHexPrefix) {
-          // Resume specific session by id prefix
+          const allSessions: SessionMeta[] = await agent.listSessions(0)
           const match = allSessions.find(
             (s) => s.session_id === args || s.session_id.startsWith(args)
           )
           if (match) {
             await resumeSession(match)
           } else {
-            commitLines([{ id: 'sys-r', kind: 'system', text: chalk.red(`  Session not found: ${args}`) }])
+            openResumeSelector(args)
           }
-        } else if (args && !isHexPrefix) {
-          // Semantic search: send session list to agent and let LLM find matches
-          const sessionList = allSessions.map(s => {
-            const title = s.title || '(untitled)'
-            const time = relativeTime(s.updated_at)
-            const turns = s.turns ? `[${s.turns} turns]` : ''
-            return `${s.session_id.slice(0, 8)}  ${title}  [${s.cwd}]  ${turns}  ${time}`
-          }).join('\n')
-          const searchPrompt = `Search the following session list for sessions related to "${args}". List matching session IDs (8-char prefix) with their titles. If no match, say "No matching sessions".\n\nSessions:\n${sessionList}`
-          await runQuery(searchPrompt)
         } else {
-          // Prefer sessions from current project, fall back to all
-          const cwdSessions = allSessions.filter(s => s.cwd === agent.cwd)
-          const sessions = cwdSessions.length > 0 ? cwdSessions : allSessions
-          if (sessions.length === 0) {
-            commitLines([{ id: 'sys-r', kind: 'system', text: '  No sessions found' }])
-          } else {
-            // Load all sessions for search scope, but display only first 20
-            const displaySessions = sessions.slice(0, 20)
-            const allForSearch = await agent.listSessions(0)
-            const searchSessions = allForSearch.filter(s => s.cwd === agent.cwd).length > 0
-              ? allForSearch.filter(s => s.cwd === agent.cwd)
-              : allForSearch
-            overlay = {
-              kind: 'selector',
-              state: createSelectorState('Resume session',
-                formatSessionItems(displaySessions),
-                formatSessionItems(searchSessions)),
-            }
-          }
+          openResumeSelector(args || undefined)
         }
       } catch (err: any) {
         commitLines([{ id: 'sys-r-err', kind: 'system', text: chalk.red(`  Failed to list sessions: ${err?.message ?? err}`) }])
@@ -1003,7 +978,49 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const title = padRight(tag + (s.title || '(untitled)'), 42)
       const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
       const time = relativeTime(s.updated_at)
-      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}` }
+      const searchText = `${s.session_id} ${s.title} ${s.cwd} ${s.source} ${s.model}`
+      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}`, searchText }
+    })
+  }
+
+  function formatSessionWithTextItems(items: SessionWithText[]): import('./selector.js').SelectorItem[] {
+    return items.map(s => {
+      const tag = s.source ? `[${s.source}] ` : ''
+      const title = padRight(tag + (s.title || '(untitled)'), 42)
+      const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
+      const time = relativeTime(s.updated_at)
+      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}`, searchText: s.search_text }
+    })
+  }
+
+  function openResumeSelector(initialQuery?: string) {
+    agent.listSessions(0).then(allSessions => {
+      const cwdSessions = allSessions.filter(s => s.cwd === agent.cwd)
+      const pool = cwdSessions.length > 0 ? cwdSessions : allSessions
+      if (pool.length === 0) {
+        commitLines([{ id: 'sys-r', kind: 'system', text: '  No sessions found' }])
+        return
+      }
+      const metaItems = formatSessionItems(pool.slice(0, 20))
+      const allMetaItems = formatSessionItems(pool)
+      overlay = {
+        kind: 'selector',
+        state: createSelectorState('Resume session', metaItems, allMetaItems, initialQuery),
+      }
+      renderStatus()
+      agent.listSessionsWithText(0).then(allWithText => {
+        if (overlay.kind !== 'selector' || overlay.state.title !== 'Resume session') return
+        const cwdItems = allWithText.filter(s => s.cwd === agent.cwd)
+        const fullPool = cwdItems.length > 0 ? cwdItems : allWithText
+        const fullItems = formatSessionWithTextItems(fullPool)
+        overlay = {
+          kind: 'selector',
+          state: selectorExpandItems(overlay.state, fullItems),
+        }
+        renderStatus()
+      }).catch(() => {})
+    }).catch((err: any) => {
+      commitLines([{ id: 'sys-r-err', kind: 'system', text: chalk.red(`  Failed to list sessions: ${err?.message ?? err}`) }])
     })
   }
 
@@ -1276,9 +1293,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         overlay = { kind: 'none' }
         if (selected) {
           if (state.title === 'Resume session') {
-            // Resume selector result — find session by id prefix
-            const match = preloadedSessions.find(s => s.session_id.startsWith(selected.label))
-            if (match) resumeSession(match)
+            // Resume by id prefix — works for both preloaded and search-hit sessions
+            handleSlashInput(`/resume ${selected.label}`)
           } else if (state.title.startsWith('History')) {
             // History selector result — goto for user, preview for assistant
             if (selected.label !== '…') {

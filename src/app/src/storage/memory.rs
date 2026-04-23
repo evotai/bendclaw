@@ -11,6 +11,8 @@ use async_trait::async_trait;
 
 use super::Storage;
 use crate::error::Result;
+use crate::search::collect_search_text;
+use crate::search::SessionWithText;
 use crate::types::ListSessions;
 use crate::types::ListTranscriptEntries;
 use crate::types::SessionMeta;
@@ -63,7 +65,13 @@ impl Storage for MemoryStorage {
             .sessions
             .lock()
             .ok()
-            .map(|map| map.values().take(params.limit).cloned().collect())
+            .map(|map| {
+                let mut sessions: Vec<_> = map.values().cloned().collect();
+                if params.limit > 0 {
+                    sessions.truncate(params.limit);
+                }
+                sessions
+            })
             .unwrap_or_default();
         Ok(result)
     }
@@ -97,5 +105,43 @@ impl Storage for MemoryStorage {
 
     async fn save_variables(&self, _variables: Vec<VariableRecord>) -> Result<()> {
         Ok(())
+    }
+
+    async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
+        let sessions: Vec<SessionMeta> = self
+            .sessions
+            .lock()
+            .ok()
+            .map(|map| {
+                let mut s: Vec<_> = map.values().cloned().collect();
+                if limit > 0 {
+                    s.truncate(limit);
+                }
+                s
+            })
+            .unwrap_or_default();
+
+        let entries: Vec<TranscriptEntry> = self
+            .entries
+            .lock()
+            .ok()
+            .map(|e| e.clone())
+            .unwrap_or_default();
+
+        let mut result = Vec::with_capacity(sessions.len());
+        for session in &sessions {
+            let session_entries: Vec<_> = entries
+                .iter()
+                .filter(|e| e.session_id == session.session_id)
+                .cloned()
+                .collect();
+            let search_text = collect_search_text(session, &session_entries);
+            result.push(SessionWithText {
+                session: session.clone(),
+                search_text,
+            });
+        }
+
+        Ok(result)
     }
 }

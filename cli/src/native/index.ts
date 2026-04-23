@@ -37,6 +37,10 @@ export interface TranscriptItem {
   [key: string]: unknown
 }
 
+export interface SessionWithText extends SessionMeta {
+  search_text: string
+}
+
 export interface VariableInfo {
   key: string
   value: string
@@ -184,6 +188,11 @@ export class Agent {
   async listSessions(limit?: number): Promise<SessionMeta[]> {
     const json = await this.raw.listSessions(limit ?? null)
     return JSON.parse(json) as SessionMeta[]
+  }
+
+  async listSessionsWithText(limit?: number): Promise<SessionWithText[]> {
+    const json = await this.raw.listSessionsWithText(limit ?? null)
+    return JSON.parse(json) as SessionWithText[]
   }
 
   async loadTranscript(sessionId: string): Promise<TranscriptItem[]> {

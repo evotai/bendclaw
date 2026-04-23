@@ -27,6 +27,10 @@
   <a href="#community">Community</a>
 </p>
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/0c089005-51db-48da-977e-6339b5fb9093"></video>
+</p>
+
 ## 📢 News
 
 - **2026-04-23** 🔍 [Search] Full-text session search — `/resume <query>` to find any past conversation.
@@ -34,9 +38,6 @@
 - **2026-04-17** 📋 [REPL] Ctrl+V image paste support.
 - **2026-04-13** 🏷️ Project renamed from BendClaw to Evot.
 - **2026-04-13** 🔌 [Skills] Auto-load Claude Code skills.
-- **2026-04-11** 🧠 [Memory] Auto-load Claude Code memories for the current project.
-- **2026-04-10** 🎯 [Plan Mode] Add `ask_user` tool for interactive option selection.
-- **2026-04-10** 🌐 [Web Fetch] SPA support via headless Chrome fallback.
 
 ---
 
@@ -49,14 +50,6 @@ Evot doesn't waste a single token — and proves it.
 - **Clean context, always.** Every prompt to the LLM is minimal, high-signal, zero-waste.
 - **Blazing fast.** Fewer wasted tokens → fewer turns → complex tasks done in half the time.
 - **Fully observable.** Every LLM call, tool execution, and compaction tracked end-to-end. This data feeds back into the engine — Evot evolves its strategy so the next prompt is always leaner than the last.
-
-Not a CLI wrapper. The agent engine you build on — ships with interactive REPL, CLI, and server.
-
-Built on a Rust engine with a TypeScript CLI powered by Ink.
-
-<p align="center">
-  <img width="815" height="768" alt="Evot in action" src="https://github.com/user-attachments/assets/f0f14c8c-37f2-4aff-a91a-c30768488b3d" />
-</p>
 
 ## Installation
 

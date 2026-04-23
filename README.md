@@ -29,6 +29,7 @@
 
 ## 📢 News
 
+- **2026-04-23** 🔍 [Search] Full-text session search — `/resume <query>` to find any past conversation.
 - **2026-04-18** 📜 [REPL] `/history` + `/goto` — time-travel through conversation context.
 - **2026-04-17** 📋 [REPL] Ctrl+V image paste support.
 - **2026-04-13** 🏷️ Project renamed from BendClaw to Evot.

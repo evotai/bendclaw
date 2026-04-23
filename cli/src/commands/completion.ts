@@ -128,7 +128,7 @@ const SUB_COMMANDS: Record<string, string[]> = {
   '/skill': ['install', 'list', 'remove'],
   '/env': ['set', 'del', 'load'],
   '/log': ['up', 'dl', 'query'],
-  '/resume': ['<id>'],
+  '/resume': ['<id>', '<query>'],
   '/model': ['<name>'],
 }
 

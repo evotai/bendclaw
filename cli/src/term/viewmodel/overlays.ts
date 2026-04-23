@@ -38,7 +38,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['Ctrl+O', 'Toggle verbose mode'],
     ['/help', 'Show this help'],
     ['/model <name>', 'Switch model'],
-    ['/resume [id]', 'Resume session'],
+    ['/resume [id|query]', 'Resume session'],
     ['/new', 'Start new session'],
     ['/goto <n>', 'Go to message'],
     ['/history [n]', 'Show recent messages'],

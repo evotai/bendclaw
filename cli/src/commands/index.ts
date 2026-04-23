@@ -12,7 +12,7 @@ export interface SlashCommand {
 
 export const COMMANDS: SlashCommand[] = [
   { name: '/help', description: 'Show help information', usage: '/help [command]', handler: 'builtin' },
-  { name: '/resume', description: 'Resume a session', usage: '/resume [id]', handler: 'builtin' },
+  { name: '/resume', description: 'Resume a session', usage: '/resume [id | query]', handler: 'builtin' },
   { name: '/new', description: 'Start a new session', handler: 'builtin' },
   { name: '/goto', description: 'Go to a message', usage: '/goto <message_number>', handler: 'builtin' },
   { name: '/history', description: 'Show recent messages with seq numbers', usage: '/history [count]', handler: 'builtin' },

@@ -190,6 +190,10 @@ export class Agent {
     return JSON.parse(json) as SessionMeta[]
   }
 
+  async deleteSession(sessionId: string): Promise<boolean> {
+    return this.raw.deleteSession(sessionId)
+  }
+
   async listSessionsWithText(limit?: number): Promise<SessionWithText[]> {
     const json = await this.raw.listSessionsWithText(limit ?? null)
     return JSON.parse(json) as SessionWithText[]

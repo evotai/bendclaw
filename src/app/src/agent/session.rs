@@ -217,7 +217,7 @@ impl Session {
         let entries = self.load_all_entries().await?;
         Ok(entries
             .iter()
-            .any(|e| e.seq == seq && is_history_visible(&e.item)))
+            .any(|e| e.seq == seq && is_goto_target(&e.item)))
     }
 
     /// Get the transcript item at a specific seq number.
@@ -288,13 +288,19 @@ impl Session {
 }
 
 /// Whether an item should appear in `/history` output.
-/// Only non-empty user and assistant messages — these are the ones addressable by `/goto`.
+/// Non-empty user and assistant messages are shown, but only user messages are
+/// addressable by `/goto` (see [`is_goto_target`]).
 fn is_history_visible(item: &TranscriptItem) -> bool {
     match item {
         TranscriptItem::User { text, .. } => !text.trim().is_empty(),
         TranscriptItem::Assistant { text, .. } => !text.trim().is_empty(),
         _ => false,
     }
+}
+
+/// Whether an item is a valid `/goto` target — only non-empty user messages.
+fn is_goto_target(item: &TranscriptItem) -> bool {
+    matches!(item, TranscriptItem::User { text, .. } if !text.trim().is_empty())
 }
 
 /// Build a title from the first and last user messages.

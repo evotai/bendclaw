@@ -76,6 +76,21 @@ impl Storage for MemoryStorage {
         Ok(result)
     }
 
+    async fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let removed = self
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(session_id))
+            .is_some();
+        if removed {
+            if let Ok(mut entries) = self.entries.lock() {
+                entries.retain(|e| e.session_id != session_id);
+            }
+        }
+        Ok(removed)
+    }
+
     async fn append_entry(&self, entry: TranscriptEntry) -> Result<()> {
         if let Ok(mut entries) = self.entries.lock() {
             entries.push(entry);

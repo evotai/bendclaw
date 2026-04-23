@@ -1,6 +1,7 @@
 import chalk from 'chalk'
 import stringWidth from 'string-width'
 import { version, type SessionMeta, type ConfigInfo } from '../native/index.js'
+import { padRight as formatPadRight, relativeTime } from '../render/format.js'
 
 function truncatePath(path: string, maxWidth: number): string {
   if (path.length <= maxWidth) return path
@@ -39,19 +40,6 @@ function getGitBranch(cwd: string): string | null {
   return null
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diffMs = now - then
-  const mins = Math.floor(diffMs / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
-  return `${Math.floor(days / 30)}mo ago`
-}
 
 export function renderBanner(
   model: string,
@@ -123,10 +111,12 @@ export function renderBanner(
       rightLines.push(chalk.dim('  No recent sessions'))
     } else {
       for (const s of sessions) {
-        const title = s.title || '(untitled)'
-        const short = truncate(title, rightWidth - 12)
-        const time = formatRelativeTime(s.updated_at)
-        rightLines.push(`  ${chalk.dim(short)}  ${chalk.dim(time)}`)
+        const id = s.session_id.slice(0, 8)
+        const tag = s.source ? `[${s.source}] ` : ''
+        const title = formatPadRight(tag + (s.title || '(untitled)'), 50)
+        const turns = formatPadRight(s.turns ? `[${s.turns} turns]` : '', 12)
+        const time = relativeTime(s.updated_at)
+        rightLines.push(`  ${chalk.dim(id)} ${chalk.dim(title)} ${chalk.dim(turns)} ${chalk.dim(time)}`)
       }
       rightLines.push(chalk.dim('  /resume for more'))
     }

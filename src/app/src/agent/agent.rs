@@ -376,7 +376,7 @@ impl Agent {
                 if !session.is_valid_context_seq(seq).await? {
                     let max = session.max_seq().await;
                     return Ok(Some(format!(
-                        "Invalid message number. Valid range: 1-{max}."
+                        "Invalid message number. Only user messages (1-{max}) are valid goto targets."
                     )));
                 }
                 let session_id = session.session_id().await;
@@ -527,6 +527,11 @@ impl Agent {
     pub async fn find_session(&self, id: &str) -> Result<Option<SessionMeta>> {
         let storage = self.storage.read().clone();
         storage.get_session(id).await
+    }
+
+    pub async fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let storage = self.storage.read().clone();
+        storage.delete_session(session_id).await
     }
 
     pub async fn load_transcript(&self, id: &str) -> Result<Vec<TranscriptItem>> {
@@ -684,6 +689,7 @@ impl Agent {
 // ---------------------------------------------------------------------------
 
 fn format_history_entry(seq: u64, item: &crate::types::TranscriptItem) -> String {
+    let is_user = matches!(item, crate::types::TranscriptItem::User { .. });
     let role = match item {
         crate::types::TranscriptItem::User { .. } => "user",
         crate::types::TranscriptItem::Assistant { .. } => "assistant",
@@ -693,7 +699,7 @@ fn format_history_entry(seq: u64, item: &crate::types::TranscriptItem) -> String
         }
     };
     let preview = crate::types::entry_preview(item);
-    if seq == 0 {
+    if seq == 0 || !is_user {
         format!("  …   {:<10} {}", role, preview)
     } else {
         format!("#{:<4} {:<10} {}", seq, role, preview)

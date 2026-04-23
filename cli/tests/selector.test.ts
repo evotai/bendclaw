@@ -357,3 +357,62 @@ describe('selectorExpandItems', () => {
     expect(state.items.length).toBe(3)
   })
 })
+
+describe('focusable items', () => {
+  const mixed = [
+    { label: '#1', detail: 'user  hello', focusable: true },
+    { label: '…', detail: 'assistant  reply', focusable: false },
+    { label: '#3', detail: 'user  thanks', focusable: true },
+    { label: '…', detail: 'assistant  bye', focusable: false },
+  ]
+
+  test('createSelectorState focuses first focusable item', () => {
+    const nonFocusFirst = [
+      { label: 'a', focusable: false },
+      { label: 'b', focusable: true },
+      { label: 'c', focusable: true },
+    ]
+    const state = createSelectorState('T', nonFocusFirst)
+    expect(state.focusIndex).toBe(1)
+  })
+
+  test('selectorDown skips non-focusable items', () => {
+    let state = createSelectorState('T', mixed)
+    expect(state.focusIndex).toBe(0)
+    state = selectorDown(state)
+    expect(state.focusIndex).toBe(2)
+  })
+
+  test('selectorUp skips non-focusable items', () => {
+    let state = createSelectorState('T', mixed)
+    state = { ...state, focusIndex: 2 }
+    state = selectorUp(state)
+    expect(state.focusIndex).toBe(0)
+  })
+
+  test('selectorDown stays if no focusable item below', () => {
+    let state = createSelectorState('T', mixed)
+    state = { ...state, focusIndex: 2 }
+    const next = selectorDown(state)
+    expect(next.focusIndex).toBe(2)
+    expect(next).toBe(state)
+  })
+
+  test('selectorUp stays if no focusable item above', () => {
+    const state = createSelectorState('T', mixed)
+    const next = selectorUp(state)
+    expect(next.focusIndex).toBe(0)
+    expect(next).toBe(state)
+  })
+
+  test('items without focusable field are focusable by default', () => {
+    const plain = [
+      { label: 'a' },
+      { label: 'b' },
+    ]
+    let state = createSelectorState('T', plain)
+    expect(state.focusIndex).toBe(0)
+    state = selectorDown(state)
+    expect(state.focusIndex).toBe(1)
+  })
+})

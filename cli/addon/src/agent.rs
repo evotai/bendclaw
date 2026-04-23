@@ -166,6 +166,14 @@ impl NapiAgent {
         serde_json::to_string(&items).map_err(|e| Error::from_reason(format!("serialize: {e}")))
     }
 
+    #[napi]
+    pub async fn delete_session(&self, session_id: String) -> Result<bool> {
+        self.agent
+            .delete_session(&session_id)
+            .await
+            .map_err(|e| Error::from_reason(format!("delete session: {e}")))
+    }
+
     /// Load transcript for a session.
     #[napi]
     pub async fn load_transcript(&self, session_id: String) -> Result<String> {

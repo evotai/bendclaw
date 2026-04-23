@@ -1300,12 +1300,12 @@ async fn is_valid_context_seq_rejects_empty_assistant() -> TestResult {
         ])
         .await?;
 
-    // seq 1 = user "hello" → valid
+    // seq 1 = user "hello" → valid (user message)
     assert!(session.is_valid_context_seq(1).await?);
-    // seq 2 = empty assistant → invalid
+    // seq 2 = empty assistant → invalid (not a user message)
     assert!(!session.is_valid_context_seq(2).await?);
-    // seq 3 = assistant "real answer" → valid
-    assert!(session.is_valid_context_seq(3).await?);
+    // seq 3 = assistant "real answer" → invalid (not a user message)
+    assert!(!session.is_valid_context_seq(3).await?);
 
     Ok(())
 }

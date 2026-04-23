@@ -15,6 +15,8 @@ pub trait Storage: Send + Sync {
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>>;
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>>;
 
+    async fn delete_session(&self, session_id: &str) -> Result<bool>;
+
     async fn append_entry(&self, entry: TranscriptEntry) -> Result<()>;
     async fn list_entries(&self, params: ListTranscriptEntries) -> Result<Vec<TranscriptEntry>>;
 

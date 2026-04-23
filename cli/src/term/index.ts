@@ -16,6 +16,7 @@ export {
   selectorSelect,
   selectorType,
   selectorBackspace,
+  selectorRemoveItem,
   type SelectorItem,
   type SelectorState,
 } from './selector.js'

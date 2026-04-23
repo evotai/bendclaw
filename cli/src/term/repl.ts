@@ -2,7 +2,7 @@ import { TermRenderer } from './renderer.js'
 import { parseInput, enableRawMode, type KeyEvent } from './input.js'
 import { installBracketedPaste } from './bracketed-paste.js'
 import { createSpinnerState, advanceSpinner, type SpinnerState } from './spinner.js'
-import { createSelectorState, selectorUp, selectorDown, selectorSelect, selectorType, selectorBackspace, selectorExpandItems, selectorClearQuery, type SelectorState } from './selector.js'
+import { createSelectorState, selectorUp, selectorDown, selectorSelect, selectorType, selectorBackspace, selectorExpandItems, selectorClearQuery, selectorRemoveItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskState, type AskQuestion } from './ask.js'
 import { buildUserMessage, buildAssistantLines, type OutputLine } from '../render/output.js'
 import { Agent, QueryStream, type SessionMeta, type SessionWithText, type ConfigInfo } from '../native/index.js'
@@ -150,7 +150,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let preloadedSessions: SessionMeta[] = []
   try { preloadedSessions = await agent.listSessions(20) } catch {}
 
-  const bannerText = renderBanner(agent.model, agent.cwd, configInfo, preloadedSessions, renderer.termCols, serverState)
+  const cwdSessions = preloadedSessions.filter(s => s.cwd === agent.cwd)
+  const bannerSessions = cwdSessions.length > 0 ? cwdSessions : preloadedSessions
+
+  const bannerText = renderBanner(agent.model, agent.cwd, configInfo, bannerSessions, renderer.termCols, serverState)
   renderer.appendScroll(bannerText)
   setTerminalTitle('✳')
 
@@ -870,7 +873,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       compactLines.length = 0
       expandedLines.length = 0
       try { preloadedSessions = await agent.listSessions(20) } catch {}
-      const banner = renderBanner(agent.model, agent.cwd, configInfo, preloadedSessions, renderer.termCols, serverState)
+      const cwdSessions2 = preloadedSessions.filter(s => s.cwd === agent.cwd)
+      const bannerSessions2 = cwdSessions2.length > 0 ? cwdSessions2 : preloadedSessions
+      const banner = renderBanner(agent.model, agent.cwd, configInfo, bannerSessions2, renderer.termCols, serverState)
       renderer.appendScroll(banner)
       // Show previous session hint (same as startup)
       const match = preloadedSessions.find((s) => s.cwd === agent.cwd)
@@ -935,6 +940,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             const annotate = (items: typeof allItems) => items.map(item => ({
               ...item,
               detail: item.role === 'user' ? `↩ ${item.detail}` : `  ${item.detail}`,
+              focusable: item.role === 'user',
             }))
             const displayItems = allItems.slice(-displayLimit)
             overlay = {
@@ -1006,21 +1012,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   function formatSessionItems(sessions: SessionMeta[]): import('./selector.js').SelectorItem[] {
     return sessions.map(s => {
       const tag = s.source ? `[${s.source}] ` : ''
-      const title = padRight(tag + (s.title || '(untitled)'), 42)
+      const title = padRight(tag + (s.title || '(untitled)'), 50)
       const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
       const time = relativeTime(s.updated_at)
       const searchText = `${s.session_id} ${s.title} ${s.cwd} ${s.source} ${s.model}`
-      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}`, searchText }
+      return { label: s.session_id.slice(0, 8), id: s.session_id, detail: `${title} ${turns} ${time}`, searchText }
     })
   }
 
   function formatSessionWithTextItems(items: SessionWithText[]): import('./selector.js').SelectorItem[] {
     return items.map(s => {
       const tag = s.source ? `[${s.source}] ` : ''
-      const title = padRight(tag + (s.title || '(untitled)'), 42)
+      const title = padRight(tag + (s.title || '(untitled)'), 50)
       const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
       const time = relativeTime(s.updated_at)
-      return { label: s.session_id.slice(0, 8), detail: `${title} ${turns} ${time}`, searchText: s.search_text }
+      return { label: s.session_id.slice(0, 8), id: s.session_id, detail: `${title} ${turns} ${time}`, searchText: s.search_text }
     })
   }
 
@@ -1036,11 +1042,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const allMetaItems = formatSessionItems(pool)
       overlay = {
         kind: 'selector',
-        state: createSelectorState('Resume session', metaItems, allMetaItems, initialQuery),
+        state: createSelectorState('Resume session  (^D delete)', metaItems, allMetaItems, initialQuery),
       }
       renderStatus()
       agent.listSessionsWithText(0).then(allWithText => {
-        if (overlay.kind !== 'selector' || overlay.state.title !== 'Resume session') return
+        if (overlay.kind !== 'selector' || !overlay.state.title.startsWith('Resume session')) return
         const cwdItems = allWithText.filter(s => s.cwd === agent.cwd)
         const fullPool = cwdItems.length > 0 ? cwdItems : allWithText
         const fullItems = formatSessionWithTextItems(fullPool)
@@ -1323,7 +1329,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const selected = selectorSelect(state)
         overlay = { kind: 'none' }
         if (selected) {
-          if (state.title === 'Resume session') {
+          if (state.title.startsWith('Resume session')) {
             // Resume by id prefix — works for both preloaded and search-hit sessions
             handleSlashInput(`/resume ${selected.label}`)
           } else if (state.title.startsWith('History')) {
@@ -1355,6 +1361,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         overlay = { kind: 'none' }
         renderStatus()
         return
+      case 'delete':
+      case 'ctrl': {
+        if (event.type === 'ctrl' && event.key !== 'd') break
+        if (!state.title.startsWith('Resume session')) break
+        const target = selectorSelect(state)
+        if (!target || !target.id) break
+        const sessionId = target.id
+        state = selectorRemoveItem(state, state.focusIndex)
+        agent.deleteSession(sessionId).then(ok => {
+          if (ok) {
+            commitLines([{ id: 'sys-del', kind: 'system', text: `  Deleted session ${target.label}` }])
+          }
+        })
+        break
+      }
       default:
         break
     }

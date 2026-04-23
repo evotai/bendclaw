@@ -119,12 +119,12 @@ describe('parseHistoryItems', () => {
   test('parses typical history output', () => {
     const msg = [
       '    #1    user       hello world',
-      '    #2    assistant  I can help with that',
+      '    …   assistant  I can help with that',
       '    #3    user       thanks',
     ].join('\n')
     expect(parseHistoryItems(msg)).toEqual([
       { label: '#1', detail: 'user  hello world', role: 'user' },
-      { label: '#2', detail: 'assistant  I can help with that', role: 'assistant' },
+      { label: '…', detail: 'assistant  I can help with that', role: 'assistant' },
       { label: '#3', detail: 'user  thanks', role: 'user' },
     ])
   })
@@ -146,8 +146,8 @@ describe('parseHistoryItems', () => {
   })
 
   test('handles single entry', () => {
-    expect(parseHistoryItems('  #42   assistant  done')).toEqual([
-      { label: '#42', detail: 'assistant  done', role: 'assistant' },
+    expect(parseHistoryItems('    …   assistant  done')).toEqual([
+      { label: '…', detail: 'assistant  done', role: 'assistant' },
     ])
   })
 

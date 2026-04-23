@@ -141,6 +141,15 @@ impl Storage for FsStorage {
         Ok(sessions)
     }
 
+    async fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let dir = self.session_dir(session_id);
+        match fs::remove_dir_all(&dir).await {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(EvotError::Io(e)),
+        }
+    }
+
     async fn append_entry(&self, entry: TranscriptEntry) -> Result<()> {
         self.append_jsonl(self.transcript_path(&entry.session_id), &entry)
             .await

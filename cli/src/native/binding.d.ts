@@ -5,6 +5,7 @@ export interface NapiAgent {
   readonly cwd: string
   query(prompt: string, sessionId?: string | null, toolMode?: string | null, contentJson?: string | null): Promise<NapiSubmitOutcome>
   listSessions(limit?: number | null): Promise<string>
+  deleteSession(sessionId: string): Promise<boolean>
   loadTranscript(sessionId: string): Promise<string>
   fork(systemPrompt: string): NapiForkedAgent
   listVariables(): string

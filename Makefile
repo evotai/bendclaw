@@ -95,7 +95,7 @@ dev-env:
 	@if [ ! -f $(DEV_CONFIG) ]; then \
 		echo "==> creating dev config at $(DEV_CONFIG)"; \
 		mkdir -p $$(dirname $(DEV_CONFIG)); \
-		cp configs/evot.env.example $(DEV_CONFIG); \
+		printf 'EVOT_LLM_PROVIDER=anthropic\nEVOT_LLM_ANTHROPIC_API_KEY=\nEVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com\nEVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6\n' > $(DEV_CONFIG); \
 	fi
 	@echo ""
 	@echo "  DEV MODE"
@@ -135,7 +135,7 @@ install: build-cli
 	echo "  ✓ Copied .node bindings to $(HOME)/.evotai/lib/"; \
 	echo ""; \
 	if [ ! -f "$$ENV_FILE" ]; then \
-		cp configs/evot.env.example "$$ENV_FILE"; \
+		printf 'EVOT_LLM_PROVIDER=anthropic\nEVOT_LLM_ANTHROPIC_API_KEY=\nEVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com\nEVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6\n' > "$$ENV_FILE"; \
 		echo "  ✓ Created config at $$ENV_FILE"; \
 		echo "    Edit it to set your API keys and provider settings."; \
 		echo ""; \

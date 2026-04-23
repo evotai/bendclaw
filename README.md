@@ -7,11 +7,11 @@
 </p>
 
 <p align="center">
-  A self-evolving agent engine — fully observable, token-efficient, built for long-running complex work.
+  Building software just got 10× faster and token-efficient.
 </p>
 
 <p align="center">
-  Everything Claude Code / Codex can do — half the tokens, fully observable, in 20k+ lines of Rust.
+  A self-evolving agent engine — fully observable, built for long-running complex work.
 </p>
 
 <p align="center">
@@ -43,13 +43,14 @@
 
 ## ⚡ Why Evot
 
-Claude Code and Codex dump everything into context — bloated outputs, stale history, noise. Tokens wasted. Quality drops. No visibility into why.
+Most agents dump everything into context — bloated outputs, stale history, invisible decisions. Tokens burn. Quality drifts.
 
-Evot doesn't waste a single token — and proves it.
+Evot does the opposite:
 
-- **Clean context, always.** Every prompt to the LLM is minimal, high-signal, zero-waste.
-- **Blazing fast.** Fewer wasted tokens → fewer turns → complex tasks done in half the time.
-- **Fully observable.** Every LLM call, tool execution, and compaction tracked end-to-end. This data feeds back into the engine — Evot evolves its strategy so the next prompt is always leaner than the last.
+- **Zero-waste context.** Every prompt is minimal, high-signal, rebuilt from scratch each turn.
+- **Half the tokens, half the time.** Less noise → fewer turns → complex tasks done faster.
+- **Self-evolving.** Full observability into every LLM call and tool execution feeds back into the engine — each prompt gets leaner automatically.
+- **Everything searchable.** Full-text index over all sessions — `/resume <query>` to find any past conversation, decision, or code snippet instantly.
 
 ## Installation
 
@@ -70,30 +71,25 @@ evot
 
 ## Quickstart
 
+**1. Set your API key**
+
 Create `~/.evotai/evot.env`:
 
 ```env
-# Active provider: anthropic, openai, deepseek and others
+# Anthropic (default)
 EVOT_LLM_PROVIDER=anthropic
-
-# Anthropic
 EVOT_LLM_ANTHROPIC_API_KEY=sk-ant-...
-EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com or custom URL
-EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6
+EVOT_LLM_ANTHROPIC_BASE_URL=your-anthropic-base-url
 
-# OpenAI
+# Or OpenAI
+# EVOT_LLM_PROVIDER=openai
 # EVOT_LLM_OPENAI_API_KEY=sk-...
-# EVOT_LLM_OPENAI_BASE_URL=https://api.openai.com/v1 or custom URL
-# EVOT_LLM_OPENAI_MODEL=gpt-5.4
-
-# DeepSeek
-# EVOT_LLM_DEEPSEEK_API_KEY=sk-ds-...
-# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
-# EVOT_LLM_DEEPSEEK_MODEL=deepseek-chat
+# EVOT_LLM_OPENAI_BASE_URL=your-openai-base-url/v1
 ```
 
-Configure as many providers as you need. Set `EVOT_LLM_PROVIDER` to switch the active one.
-Use `--model <name>` to switch by model name, or `--model provider:model` for precise control.
+> Switch active provider anytime with `EVOT_LLM_PROVIDER`, or use `--model provider:model` for one-off overrides. Also supports DeepSeek and others.
+
+**2. Run**
 
 ```bash
 evot                                          # interactive REPL
@@ -108,15 +104,9 @@ evot -p "continue work" -r my-session         # resume or create session
 | Flag | Description |
 |------|-------------|
 | `-p, --prompt` | Run a single prompt and exit |
-| `-f, --file <path>` | Attach file/directory context (repeatable) |
-| `-r, --resume <id>` | Resume or create a session by ID |
+| `-f, --file <path>` | Attach file/directory context |
+| `-r, --resume <id>` | Resume or create a session |
 | `--model <model>` | Override the configured model |
-| `--output-format text\|stream-json` | Output format (default: text) |
-| `--max-turns <n>` | Limit agent turns (default: 512) |
-| `--max-tokens <n>` | Limit total tokens |
-| `--max-duration <secs>` | Session timeout in seconds (default: 3600) |
-| `--append-system-prompt "..."` | Inject extra system instructions |
-| `--skills <dir>` | Skills directory (repeatable) |
 | `--verbose` | Enable info-level logging |
 
 </details>

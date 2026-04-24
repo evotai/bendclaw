@@ -11,24 +11,28 @@ import {
 } from 'fs'
 import type { ForkedAgent } from '../native/index.js'
 
-const SKILLS_DIR = join(homedir(), '.evotai', 'skills')
+const SKILLS_DIRS = [
+  join(homedir(), '.evotai', 'skills'),
+  join(homedir(), '.claude', 'skills'),
+]
+const SKILLS_DIR = SKILLS_DIRS[0]!
 
 // ---------------------------------------------------------------------------
 // /skill list
 // ---------------------------------------------------------------------------
 
 export function skillList(): string {
-  if (!existsSync(SKILLS_DIR)) return '  no skills installed'
-
-  const entries = readdirSync(SKILLS_DIR).filter((name) => {
-    const skillMd = join(SKILLS_DIR, name, 'SKILL.md')
-    return existsSync(skillMd)
-  }).sort()
+  const entries = SKILLS_DIRS.flatMap((dir) => {
+    if (!existsSync(dir)) return []
+    return readdirSync(dir)
+      .filter((name) => existsSync(join(dir, name, 'SKILL.md')))
+      .map((name) => ({ name, dir: join(dir, name) }))
+  }).sort((a, b) => a.name.localeCompare(b.name))
 
   if (entries.length === 0) return '  no skills installed'
 
   return `\n  Skills:\n${entries
-    .map((name) => `  • [${name}] ${join(SKILLS_DIR, name)}`)
+    .map(({ name, dir }) => `  • [${name}] ${dir}`)
     .join('\n')}`
 }
 

@@ -401,12 +401,19 @@ impl Agent {
                 Ok(Some(lines.join("\n")))
             }
             Command::History(limit) => {
-                let entries = session.recent_context_entries(limit).await?;
-                if entries.is_empty() {
+                let entries = session.recent_context_entries(usize::MAX).await?;
+                let user_entries: Vec<_> = entries
+                    .iter()
+                    .filter(|(_, item)| {
+                        matches!(item, crate::types::TranscriptItem::User { text, .. } if !text.starts_with("[Summary]"))
+                    })
+                    .collect();
+                if user_entries.is_empty() {
                     return Ok(Some("No messages in session.".into()));
                 }
+                let start = user_entries.len().saturating_sub(limit);
                 let mut lines = Vec::new();
-                for (seq, item) in &entries {
+                for (seq, item) in &user_entries[start..] {
                     lines.push(format!("  {}", format_history_entry(*seq, item)));
                 }
                 Ok(Some(lines.join("\n")))

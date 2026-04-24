@@ -7,10 +7,10 @@ use crate::types::AgentMessage;
 /// Shared read-only context passed to every pass.
 pub struct CompactContext {
     pub budget: usize,
-    /// L1 collapse target: trigger and stop threshold for turn summarization.
-    /// Set below `budget` so L1 runs before hitting the hard limit and
-    /// compresses enough to avoid per-turn "toothpaste squeezing".
-    pub l1_target: usize,
+    /// L1 collapse trigger: when context exceeds this, L1 runs.
+    pub compact_trigger: usize,
+    /// Compaction target: L1 and L2 both aim to reduce context to this.
+    pub compact_target: usize,
     pub keep_recent: usize,
     pub keep_first: usize,
     pub tool_output_max_lines: usize,

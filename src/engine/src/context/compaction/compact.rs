@@ -195,14 +195,17 @@ pub fn compact_messages(
         .max_context_tokens
         .saturating_sub(config.system_prompt_tokens);
 
-    // L1 target: configurable percentage of budget. This gives L1 room to
-    // compress old turns before hitting the hard limit, avoiding per-turn
-    // "toothpaste squeezing" where L0 barely saves enough and L1 never triggers.
-    let l1_target = budget * (config.l1_target_pct.min(100) as usize) / 100;
+    // Trigger: L1 starts summarizing when context exceeds this.
+    let compact_trigger = budget * (config.compact_trigger_pct.min(100) as usize) / 100;
+
+    // Target: L1 and L2 both aim to reduce context to this fraction of budget.
+    let compact_target_pct = config.compact_target_pct.min(config.compact_trigger_pct);
+    let compact_target = budget * (compact_target_pct as usize) / 100;
 
     let ctx = CompactContext {
         budget,
-        l1_target,
+        compact_trigger,
+        compact_target,
         keep_recent: config.keep_recent,
         keep_first: config.keep_first,
         tool_output_max_lines: config.tool_output_max_lines,
@@ -219,12 +222,11 @@ pub fn compact_messages(
 
     for level in LEVELS {
         // L0 always runs.
-        // L1 triggers at l1_target (92% of budget) — early collapse to avoid
-        // per-turn toothpaste squeezing where L0 barely saves enough.
+        // L1 triggers at compact_trigger (92% of budget) — early collapse.
         // L2 triggers at budget (hard limit) — last resort eviction.
         let threshold = match level {
             Level::L0Cleanup => 0,
-            Level::L1Collapse => ctx.l1_target,
+            Level::L1Collapse => ctx.compact_trigger,
             Level::L2Evict => ctx.budget,
         };
         if !matches!(level, Level::L0Cleanup) && current_tokens <= threshold {

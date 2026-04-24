@@ -45,9 +45,9 @@ describe('repl selector control', () => {
     expect(handleSelectorControl(createSelectorState('T', items), key('escape')).kind).toBe('close')
   })
 
-  test('resume enter returns resume action', () => {
+  test('resume enter returns selected session id', () => {
     const action = handleSelectorControl(createSelectorState(RESUME_SELECTOR_TITLE, items), key('enter'))
-    expect(action).toEqual({ kind: 'resume', sessionPrefix: 'one' })
+    expect(action).toEqual({ kind: 'resume', sessionId: 'session-one' })
   })
 
   test('history user enter returns goto action', () => {

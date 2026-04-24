@@ -1,17 +1,23 @@
-//! Token estimation — fast, no external deps.
+//! Token estimation — tiktoken-based for accuracy and consistency.
+//!
+//! Uses `o200k_base` (GPT-4o / o1 / o3 / GPT-5 family encoding) as the
+//! universal tokenizer. This is a reasonable approximation for non-OpenAI
+//! models and ensures all subsystems (compaction, call stats, context
+//! tracking) agree on token counts.
 
 use crate::types::*;
 
 /// Conservative fixed token estimate for images.
 /// Claude's actual cost is `width * height / 750` (up to ~5333 for 2000×2000).
 /// Using a fixed 2000 avoids underestimation that causes compaction to fire
-/// too late. Matches Claude Code's `IMAGE_MAX_TOKEN_SIZE`.
+/// too late.
 const IMAGE_FIXED_TOKEN_ESTIMATE: usize = 2_000;
 
-/// Rough token estimate: ~4 chars per token for English text.
-/// Good enough for context budgeting. Use tiktoken-rs for precision.
+/// Estimate tokens for a text string using the tiktoken `o200k_base` encoding.
 pub fn estimate_tokens(text: &str) -> usize {
-    text.len().div_ceil(4)
+    tiktoken_rs::o200k_base_singleton()
+        .encode_with_special_tokens(text)
+        .len()
 }
 
 /// Estimate tokens for a single message

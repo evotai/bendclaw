@@ -1745,22 +1745,21 @@ fn test_user_message_under_budget_not_truncated() {
 }
 
 // ---------------------------------------------------------------------------
-// L1 target: long-session "toothpaste squeezing" prevention
+// Compact trigger/target: long-session "toothpaste squeezing" prevention
 // ---------------------------------------------------------------------------
 
 /// Simulate a long session where context hovers near budget.
 ///
-/// Before the l1_target fix, L0 would barely save enough tokens each turn
-/// and L1 would never trigger, leaving message count monotonically growing.
-/// With l1_target at 92% of budget, L1 triggers and collapses old turns,
-/// keeping the context healthy.
+/// Before the compact_target fix, L1 would stop as soon as context dipped
+/// below the trigger threshold (92%), leading to per-turn "toothpaste squeezing".
+/// With compact_target at 75%, L1 summarizes enough turns to push context
+/// well below the trigger, keeping the context healthy.
 #[test]
-fn test_l1_triggers_before_budget_ceiling() {
-    // Build a conversation with many tool turns that fills ~95% of budget.
-    // Each turn: assistant(tool_call) + tool_result with ~500 chars ≈ 125 tokens.
-    // We use a small budget so 40 turns can fill it.
-    let budget = 5_000;
-    let l1_target_expected = budget * 92 / 100; // 4600
+fn test_l1_compacts_to_target() {
+    // Build a conversation with many tool turns.
+    let budget = 8_000;
+    let trigger_expected = budget * 92 / 100;
+    let target_expected = budget * 75 / 100;
 
     let mut messages = Vec::new();
     let mut tool_id = 0usize;
@@ -1768,7 +1767,7 @@ fn test_l1_triggers_before_budget_ceiling() {
     // Initial user message
     messages.push(AgentMessage::Llm(Message::user("implement the feature")));
 
-    // Build turns to fill context above l1_target
+    // Build turns to fill context above trigger
     for i in 0..80 {
         tool_id += 1;
         let id = format!("tc-{}", tool_id);
@@ -1817,13 +1816,13 @@ fn test_l1_triggers_before_budget_ceiling() {
 
     let est_tokens = total_tokens(&messages);
 
-    // Only run the test if we're actually near/above the l1_target
+    // Only run the test if we're actually near/above the trigger
     // (otherwise the test setup doesn't match the scenario)
     assert!(
-        est_tokens > l1_target_expected,
-        "test setup: need est_tokens ({}) > l1_target ({})",
+        est_tokens > trigger_expected,
+        "test setup: need est_tokens ({}) > trigger ({})",
         est_tokens,
-        l1_target_expected
+        trigger_expected
     );
 
     let budget_state = CompactionBudgetState {
@@ -1834,20 +1833,20 @@ fn test_l1_triggers_before_budget_ceiling() {
     // L1 should have triggered: turns_summarized > 0
     assert!(
         result.stats.turns_summarized > 0,
-        "L1 should trigger when context is above l1_target ({}): \
+        "L1 should trigger when context is above trigger ({}): \
          est_tokens={}, level={}, turns_summarized={}",
-        l1_target_expected,
+        trigger_expected,
         est_tokens,
         result.stats.level,
         result.stats.turns_summarized,
     );
 
-    // After compaction, tokens should be at or below l1_target
+    // After compaction, tokens should be at or below compact_target (75%)
     assert!(
-        result.stats.after_estimated_tokens <= l1_target_expected,
-        "after L1, tokens ({}) should be <= l1_target ({})",
+        result.stats.after_estimated_tokens <= target_expected,
+        "after L1, tokens ({}) should be <= target ({})",
         result.stats.after_estimated_tokens,
-        l1_target_expected,
+        target_expected,
     );
 
     // Message count should have decreased
@@ -1963,7 +1962,7 @@ fn test_multi_round_compaction_prevents_toothpaste_squeezing() {
     );
 }
 
-/// When context is below l1_target, L1 should NOT trigger.
+/// When context is below trigger, L1 should NOT trigger.
 /// This ensures we don't over-compact healthy sessions.
 #[test]
 fn test_l1_does_not_trigger_below_target() {
@@ -2406,8 +2405,9 @@ fn test_l1_to_l2_escalation_single_call() {
 fn test_multi_round_repeated_l2_escalation() {
     // Very tight budget with keep_recent covering most messages.
     // L1 boundary (len - keep_recent) is tiny, so L1 has almost nothing to
-    // collapse. L2 must drop messages to stay within budget.
-    let budget = 1_200;
+    // collapse. L2 must drop messages to stay within compact_target (75%).
+    let budget = 3_000;
+    let _target = budget * 75 / 100;
     let config = ContextConfig {
         max_context_tokens: budget,
         system_prompt_tokens: 0,
@@ -2422,12 +2422,13 @@ fn test_multi_round_repeated_l2_escalation() {
 
     let mut l2_count = 0;
 
-    for i in 0..30 {
-        // Add large user messages — L1 doesn't collapse user messages
+    for i in 0..40 {
+        // Add user messages — L1 doesn't collapse user messages
+        // Need enough text per message to fill budget with tiktoken counting
         messages.push(AgentMessage::Llm(Message::user(format!(
-            "question {} {}",
+            "question {} about the architecture of the system {}",
             i,
-            "padding ".repeat(60)
+            "the quick brown fox jumps over the lazy dog. ".repeat(20)
         ))));
 
         let est = total_tokens(&messages);
@@ -2449,14 +2450,19 @@ fn test_multi_round_repeated_l2_escalation() {
     );
 
     let final_tokens = total_tokens(&messages);
-    // Allow small overshoot due to chars/4 estimation rounding
-    let tolerance = budget / 20;
+    // After repeated L2 eviction, context should be well below original budget.
+    // May exceed compact_target if keep_recent messages are individually large.
     assert!(
-        final_tokens <= budget + tolerance,
-        "final tokens ({}) should be near budget ({}, tolerance={})",
+        final_tokens <= budget,
+        "final tokens ({}) should be <= budget ({}) after L2 eviction",
         final_tokens,
         budget,
-        tolerance,
+    );
+    // Verify compaction actually reduced context
+    assert!(
+        messages.len() < 30,
+        "should have dropped messages: got {} messages",
+        messages.len(),
     );
 }
 

@@ -24,7 +24,7 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
     let recent_start = len.saturating_sub(ctx.keep_recent);
 
     if first_end >= recent_start {
-        let result = keep_within_budget(&messages, first_end, ctx.budget);
+        let result = keep_within_budget(&messages, first_end, ctx.compact_target);
         let dropped = len.saturating_sub(result.len());
         let actions = if dropped > 0 {
             vec![CompactionAction {
@@ -69,8 +69,8 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
     result.push(marker);
     result.extend_from_slice(recent_msgs);
 
-    if total_tokens(&result) > ctx.budget {
-        let result = keep_within_budget(&result, first_end, ctx.budget);
+    if total_tokens(&result) > ctx.compact_target {
+        let result = keep_within_budget(&result, first_end, ctx.compact_target);
         let dropped = len.saturating_sub(result.len());
         let actions = if dropped > 0 {
             vec![CompactionAction {

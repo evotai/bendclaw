@@ -13,7 +13,7 @@ import { isResumeSelectorTitle } from './resume.js'
 export type SelectorControlAction =
   | { kind: 'update'; state: SelectorState }
   | { kind: 'close' }
-  | { kind: 'resume'; sessionPrefix: string }
+  | { kind: 'resume'; sessionId: string }
   | { kind: 'history-goto'; seq: string }
   | { kind: 'history-preview'; label: string; text: string }
   | { kind: 'select-model'; model: string }
@@ -47,7 +47,7 @@ function selectAction(state: SelectorState): SelectorControlAction {
   const selected = selectorSelect(state)
   if (!selected) return { kind: 'close' }
 
-  if (isResumeSelectorTitle(state.title)) return { kind: 'resume', sessionPrefix: selected.label }
+  if (isResumeSelectorTitle(state.title)) return { kind: 'resume', sessionId: selected.id ?? selected.label }
 
   if (state.title.startsWith('History')) {
     if (selected.label === '…') return { kind: 'close' }

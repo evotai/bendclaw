@@ -1265,7 +1265,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         return
       case 'resume':
         overlay = { kind: 'none' }
-        handleSlashInput(`/resume ${action.sessionPrefix}`)
+        resumeSession({ session_id: action.sessionId } as SessionMeta).then(() => renderStatus())
         renderStatus()
         return
       case 'history-goto':

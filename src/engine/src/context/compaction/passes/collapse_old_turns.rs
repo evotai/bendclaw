@@ -38,8 +38,8 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
 
     let mut i = 0;
     while i < boundary {
-        // Already fits within L1 target — copy remaining pre-boundary messages as-is
-        if running_tokens <= ctx.l1_target {
+        // Already fits within compact target — copy remaining pre-boundary messages as-is
+        if running_tokens <= ctx.compact_target {
             while i < boundary {
                 result.push(messages[i].clone());
                 i += 1;

@@ -52,12 +52,19 @@ describe('buildActiveResponseBlocks', () => {
     expect(result).toContain('output line 2')
   })
 
-  test('tool progress pads to fixed height', () => {
+  test('tool progress omits expand hint when all lines are visible', () => {
     const result = renderPlain(defaultInput({ toolProgress: 'single line' }))
     const lines = result.split('\n')
     expect(lines).toContain('  single line')
-    expect(lines).toContain('  (ctrl+o to expand)')
-    expect(lines.length).toBeGreaterThanOrEqual(7) // margin + 5 progress rows + hint + spinner
+    expect(result).not.toContain('ctrl+o to expand')
+  })
+
+  test('tool progress shows expand hint only when truncated', () => {
+    const progress = Array.from({ length: 7 }, (_, i) => `line ${i}`).join('\n')
+    const result = renderPlain(defaultInput({ toolProgress: progress }))
+    expect(result).toContain('  line 6')
+    expect(result).toContain('  +2 lines  (ctrl+o to expand)')
+    expect(result).not.toContain('  line 0')
   })
 
   test('shows Executing when tool phase', () => {

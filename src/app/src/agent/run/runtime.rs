@@ -470,7 +470,7 @@ fn map_agent_event(
                 .map(|msg| serialize_or_placeholder(msg, "message").to_string().len())
                 .sum();
 
-            // Convert engine LlmCallStats → app LlmMessageStats (transparent passthrough)
+            // Convert engine LlmCallStats → app LlmMessageStats
             let message_stats = Some(LlmMessageStats {
                 user_count: stats.user_count,
                 assistant_count: stats.assistant_count,

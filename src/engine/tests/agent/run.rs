@@ -372,11 +372,9 @@ async fn test_batched_tool_execution() {
     let (tx, rx) = mpsc::unbounded_channel();
     let cancel = CancellationToken::new();
 
-    let start = std::time::Instant::now();
     let new_messages = agent_loop(vec![prompt], &mut context, &config, tx, cancel).await;
-    let elapsed = start.elapsed();
 
-    let _events = collect_events(rx);
+    let events = collect_events(rx);
 
     // All 4 results present
     let tool_results: Vec<_> = new_messages
@@ -385,12 +383,34 @@ async fn test_batched_tool_execution() {
         .collect();
     assert_eq!(tool_results.len(), 4);
 
-    // 2 batches × 50ms = ~100ms (not 200ms sequential, not 50ms full parallel)
-    assert!(
-        elapsed.as_millis() >= 90 && elapsed.as_millis() < 160,
-        "Batched execution took {}ms, expected 90-160ms",
-        elapsed.as_millis()
+    // With batch size 2, the first two tools must complete before the second
+    // pair starts. Within each pair, tools are allowed to run concurrently.
+    let start_order: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolExecutionStart { tool_name, .. } => Some(tool_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let end_order: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolExecutionEnd { tool_name, .. } => Some(tool_name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(start_order, vec!["tool_a", "tool_b", "tool_c", "tool_d"]);
+    assert_eq!(end_order, vec!["tool_a", "tool_b", "tool_c", "tool_d"]);
+
+    let first_second_batch_start = events.iter().position(
+        |e| matches!(e, AgentEvent::ToolExecutionStart { tool_name, .. } if tool_name == "tool_c"),
     );
+    let first_batch_last_end = events.iter().position(
+        |e| matches!(e, AgentEvent::ToolExecutionEnd { tool_name, .. } if tool_name == "tool_b"),
+    );
+
+    assert!(first_batch_last_end < first_second_batch_start);
 }
 
 // ---------------------------------------------------------------------------

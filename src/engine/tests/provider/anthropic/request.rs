@@ -32,6 +32,42 @@ fn cache_config(cache: CacheConfig) -> StreamConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Thinking
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_adaptive_thinking_sent_for_anthropic() {
+    let config = StreamConfigBuilder::anthropic()
+        .thinking(ThinkingLevel::Adaptive)
+        .build();
+
+    let body = build_request_body(&config, false);
+    assert_eq!(body["thinking"]["type"], "adaptive");
+    assert!(body["thinking"].get("budget_tokens").is_none());
+}
+
+#[test]
+fn test_non_off_thinking_sent_as_adaptive_for_anthropic() {
+    let config = StreamConfigBuilder::anthropic()
+        .thinking(ThinkingLevel::High)
+        .build();
+
+    let body = build_request_body(&config, false);
+    assert_eq!(body["thinking"]["type"], "adaptive");
+    assert!(body["thinking"].get("budget_tokens").is_none());
+}
+
+#[test]
+fn test_off_thinking_omits_anthropic_thinking() {
+    let config = StreamConfigBuilder::anthropic()
+        .thinking(ThinkingLevel::Off)
+        .build();
+
+    let body = build_request_body(&config, false);
+    assert!(body.get("thinking").is_none());
+}
+
+// ---------------------------------------------------------------------------
 // Cache breakpoint tests
 // ---------------------------------------------------------------------------
 

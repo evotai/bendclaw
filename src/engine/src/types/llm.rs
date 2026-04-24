@@ -146,10 +146,11 @@ pub enum CacheStrategy {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ThinkingLevel {
-    #[default]
     Off,
     Minimal,
     Low,
     Medium,
     High,
+    #[default]
+    Adaptive,
 }

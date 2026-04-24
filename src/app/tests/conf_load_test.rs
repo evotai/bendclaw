@@ -267,9 +267,17 @@ fn thinking_level_from_str_valid() -> TestResult {
     assert_eq!(thinking_level_from_str("low")?, ThinkingLevel::Low);
     assert_eq!(thinking_level_from_str("medium")?, ThinkingLevel::Medium);
     assert_eq!(thinking_level_from_str("high")?, ThinkingLevel::High);
+    assert_eq!(
+        thinking_level_from_str("adaptive")?,
+        ThinkingLevel::Adaptive
+    );
     // case-insensitive
     assert_eq!(thinking_level_from_str("HIGH")?, ThinkingLevel::High);
     assert_eq!(thinking_level_from_str("Medium")?, ThinkingLevel::Medium);
+    assert_eq!(
+        thinking_level_from_str("Adaptive")?,
+        ThinkingLevel::Adaptive
+    );
     Ok(())
 }
 
@@ -280,9 +288,9 @@ fn thinking_level_from_str_rejects_invalid() {
 }
 
 #[test]
-fn default_thinking_level_is_off() {
+fn default_thinking_level_is_adaptive() {
     let config = Config::new(std::path::PathBuf::from("/tmp"));
-    assert_eq!(config.llm.thinking_level, ThinkingLevel::Off);
+    assert_eq!(config.llm.thinking_level, ThinkingLevel::Adaptive);
 }
 
 #[test]

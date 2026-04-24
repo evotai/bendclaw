@@ -173,16 +173,8 @@ pub fn build_request_body(config: &StreamConfig, is_oauth: bool) -> serde_json::
     }
 
     if config.thinking_level != ThinkingLevel::Off {
-        let budget = match config.thinking_level {
-            ThinkingLevel::Minimal => 128,
-            ThinkingLevel::Low => 512,
-            ThinkingLevel::Medium => 2048,
-            ThinkingLevel::High => 8192,
-            ThinkingLevel::Off => 0,
-        };
         body["thinking"] = serde_json::json!({
-            "type": "enabled",
-            "budget_tokens": budget,
+            "type": "adaptive",
         });
     }
 

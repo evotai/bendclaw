@@ -294,7 +294,9 @@ fn ensure_env_file(path: &Path) -> Result<()> {
 
 fn default_env_content() -> &'static str {
     r#"# EVOT_LLM_PROVIDER=anthropic
-# EVOT_LLM_THINKING_LEVEL=off
+# EVOT_LLM_THINKING_LEVEL=adaptive
+# Anthropic: off disables thinking; all other levels use adaptive thinking.
+# OpenAI-compatible: adaptive/high=high, medium=medium, minimal/low=low.
 
 # EVOT_LLM_ANTHROPIC_API_KEY=
 # EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com

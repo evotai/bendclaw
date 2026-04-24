@@ -146,7 +146,7 @@ pub fn build_request_body(
         let effort = match config.thinking_level {
             ThinkingLevel::Minimal | ThinkingLevel::Low => "low",
             ThinkingLevel::Medium => "medium",
-            ThinkingLevel::High => "high",
+            ThinkingLevel::High | ThinkingLevel::Adaptive => "high",
             ThinkingLevel::Off => unreachable!(),
         };
         body["reasoning_effort"] = serde_json::json!(effort);

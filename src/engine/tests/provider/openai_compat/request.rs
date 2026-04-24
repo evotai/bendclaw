@@ -7,6 +7,66 @@ use evotengine::types::*;
 use super::super::fixtures::stream_config::*;
 
 #[test]
+fn test_adaptive_thinking_maps_to_high_reasoning_effort() {
+    let model_config = ModelConfig::openai("gpt-5", "GPT-5");
+    let config = StreamConfigBuilder::openai()
+        .model("gpt-5")
+        .thinking(ThinkingLevel::Adaptive)
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::openai());
+    assert_eq!(body["reasoning_effort"], "high");
+}
+
+#[test]
+fn test_medium_thinking_maps_to_medium_reasoning_effort() {
+    let model_config = ModelConfig::openai("gpt-5", "GPT-5");
+    let config = StreamConfigBuilder::openai()
+        .model("gpt-5")
+        .thinking(ThinkingLevel::Medium)
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::openai());
+    assert_eq!(body["reasoning_effort"], "medium");
+}
+
+#[test]
+fn test_low_thinking_maps_to_low_reasoning_effort() {
+    let model_config = ModelConfig::openai("gpt-5", "GPT-5");
+    let config = StreamConfigBuilder::openai()
+        .model("gpt-5")
+        .thinking(ThinkingLevel::Low)
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::openai());
+    assert_eq!(body["reasoning_effort"], "low");
+}
+
+#[test]
+fn test_off_thinking_omits_reasoning_effort() {
+    let model_config = ModelConfig::openai("gpt-5", "GPT-5");
+    let config = StreamConfigBuilder::openai()
+        .model("gpt-5")
+        .thinking(ThinkingLevel::Off)
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::openai());
+    assert!(body.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn test_compat_without_reasoning_support_omits_reasoning_effort() {
+    let model_config = ModelConfig::openai("gpt-5", "GPT-5");
+    let config = StreamConfigBuilder::openai()
+        .model("gpt-5")
+        .thinking(ThinkingLevel::Adaptive)
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::default());
+    assert!(body.get("reasoning_effort").is_none());
+}
+
+#[test]
 fn test_build_request_body_basic() {
     let model_config = ModelConfig::openai("gpt-4o", "GPT-4o");
     let config = StreamConfigBuilder::openai()

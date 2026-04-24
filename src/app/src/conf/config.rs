@@ -78,7 +78,7 @@ impl Default for LlmSelection {
         Self {
             provider: "anthropic".to_string(),
             model_override: None,
-            thinking_level: ThinkingLevel::Off,
+            thinking_level: ThinkingLevel::Adaptive,
         }
     }
 }
@@ -339,8 +339,9 @@ pub fn thinking_level_from_str(value: &str) -> Result<ThinkingLevel> {
         "low" => Ok(ThinkingLevel::Low),
         "medium" => Ok(ThinkingLevel::Medium),
         "high" => Ok(ThinkingLevel::High),
+        "adaptive" => Ok(ThinkingLevel::Adaptive),
         other => Err(EvotError::Conf(format!(
-            "unknown thinking level: {other} (valid: off, minimal, low, medium, high)"
+            "unknown thinking level: {other} (valid: off, minimal, low, medium, high, adaptive)"
         ))),
     }
 }

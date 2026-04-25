@@ -159,9 +159,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let preloadedSessions: SessionMeta[] = []
   try { preloadedSessions = await agent.listSessions(20) } catch {}
 
-  const bannerSessions = chooseBannerSessions(preloadedSessions, agent.cwd)
-
-  const bannerText = renderBanner(agent.model, agent.cwd, configInfo, bannerSessions, renderer.termCols, serverState)
+  const bannerText = currentBannerText()
   renderer.appendScroll(bannerText)
   setTerminalTitle('✳')
 
@@ -208,6 +206,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     return streamMachine?.toolProgress || streamMachine?.lastToolProgress || ''
   }
 
+  function currentBannerText(): string {
+    const sessions = chooseBannerSessions(preloadedSessions, agent.cwd)
+    return renderBanner(agent.model, agent.cwd, configInfo, sessions, renderer.termCols, serverState)
+  }
+
   function renderStatus() {
     if (destroyed) return
     const pendingText = streamMachine?.pendingText ?? ''
@@ -229,6 +232,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const promptBlocks = buildPromptBlocks(getPromptVM())
     const statusLines = blocksToLines([...activeBlocks, ...overlayBlocks, ...promptBlocks])
     renderer.setStatus(statusLines)
+  }
+
+  function restoreCurrentViewport() {
+    const lines = expanded ? expandedLines : compactLines
+    const output = lines.length > 0 ? blocksToLines(buildOutputBlocks(lines)).join('\n') : ''
+    const text = [currentBannerText().trimEnd(), output].filter(Boolean).join('\n')
+    renderer.restoreViewport()
+    if (text) renderer.appendScroll(text)
   }
 
   function commitLines(outputLines: OutputLine[]) {
@@ -565,10 +576,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (overlay.kind === 'selector') overlay = { kind: 'selector', state: selectorClearQuery(overlay.state) }
         renderStatus()
         return true
-      case 'close-overlay':
+      case 'close-overlay': {
+        const redraw = overlay.kind === 'selector'
         overlay = { kind: 'none' }
-        renderStatus()
+        if (redraw) {
+          renderer.beginBatch()
+          restoreCurrentViewport()
+          renderStatus()
+          renderer.flushBatch()
+        } else {
+          renderStatus()
+        }
         return true
+      }
       case 'exit-log-mode':
         logMode = null
         commitLines([{ id: 'sys-log-exit', kind: 'system', text: '  [log mode] exited' }])
@@ -877,8 +897,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       compactLines.length = 0
       expandedLines.length = 0
       try { preloadedSessions = await agent.listSessions(20) } catch {}
-      const bannerSessions2 = chooseBannerSessions(preloadedSessions, agent.cwd)
-      const banner = renderBanner(agent.model, agent.cwd, configInfo, bannerSessions2, renderer.termCols, serverState)
+      const banner = currentBannerText()
       renderer.appendScroll(banner)
       const match = findPreviousSession(preloadedSessions, agent.cwd)
       if (match) commitLines([previousSessionLine(match)])

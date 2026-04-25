@@ -215,6 +215,32 @@ describe('TermRenderer', () => {
       expect(matches).toBe(1)
       renderer.destroy()
     })
+    test('selector close restore flow re-appends content before drawing prompt', () => {
+      const { renderer, stdout } = createRenderer()
+      renderer.init()
+      renderer.setStatus(['selector row 1', 'selector row 2', 'selector row 3', 'prompt'])
+      stdout.clear()
+
+      renderer.beginBatch()
+      renderer.restoreViewport()
+      renderer.appendScroll('banner\nprevious output')
+      renderer.setStatus(['prompt'])
+      renderer.flushBatch()
+
+      const out = stdout.output
+      const restoreIndex = out.indexOf('\x1b[1;1H\x1b[J')
+      const contentIndex = out.indexOf('banner\nprevious output\n')
+      const promptIndex = out.lastIndexOf('prompt\n')
+
+      expect(restoreIndex).toBeGreaterThanOrEqual(0)
+      expect(contentIndex).toBeGreaterThan(restoreIndex)
+      expect(promptIndex).toBeGreaterThan(contentIndex)
+      expect(out).not.toContain('selector row 1')
+      expect(out).not.toContain('selector row 2')
+      expect(out).not.toContain('selector row 3')
+      renderer.destroy()
+    })
+
     test('redrawViewport redraws normal screen without pushing blank rows or alternate buffer', () => {
       const { renderer, stdout } = createRenderer()
       renderer.init()

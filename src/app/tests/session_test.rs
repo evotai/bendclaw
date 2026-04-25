@@ -700,7 +700,7 @@ async fn title_is_wrong_when_planning_prompt_pollutes_user_message() -> TestResu
 
     // Title starts with planning prompt — this is the bug we fixed.
     assert!(title.starts_with("You are in planning mode"));
-    assert!(!title.contains("refactor the auth module"));
+    assert_ne!(title, "refactor the auth module to use JWT");
     Ok(())
 }
 

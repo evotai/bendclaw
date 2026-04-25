@@ -77,17 +77,15 @@ Create `~/.evotai/evot.env`:
 
 ```env
 # Anthropic (default)
-EVOT_LLM_PROVIDER=anthropic
 EVOT_LLM_ANTHROPIC_API_KEY=sk-ant-...
 EVOT_LLM_ANTHROPIC_BASE_URL=your-anthropic-base-url
 
 # Or OpenAI
-# EVOT_LLM_PROVIDER=openai
 # EVOT_LLM_OPENAI_API_KEY=sk-...
 # EVOT_LLM_OPENAI_BASE_URL=your-openai-base-url/v1
 ```
 
-> Switch active provider anytime with `EVOT_LLM_PROVIDER`, or use `--model provider:model` for one-off overrides. Also supports DeepSeek and others.
+> Use `--model provider:model` for one-off overrides.
 
 **2. Run**
 

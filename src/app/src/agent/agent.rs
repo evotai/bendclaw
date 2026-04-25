@@ -544,7 +544,10 @@ impl Agent {
     pub async fn load_transcript(&self, id: &str) -> Result<Vec<TranscriptItem>> {
         let storage = self.storage.read().clone();
         match Session::open(id, storage).await? {
-            Some(session) => Ok(session.transcript().await),
+            Some(session) => {
+                let entries = session.load_all_entries().await?;
+                Ok(entries.into_iter().map(|e| e.item).collect())
+            }
             None => Ok(Vec::new()),
         }
     }

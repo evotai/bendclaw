@@ -317,9 +317,9 @@ fn keep_within_budget_prefers_user_over_tool_result() {
 /// the first user message (task goal) was dropped entirely.
 #[test]
 fn huge_tool_result_does_not_erase_task_goal() {
-    // Simulate: user(small) → search_call → search_result(1.25M chars) → user(small)
-    // tool_output of 1_250_000 chars ≈ the 1,251,126 tokens from the bug.
-    let messages = pat("u tr u").pad(10).tool_output(1_250_000).build();
+    // Simulate: user(small) → search_call → search_result(large) → user(small)
+    // 50K chars is enough to trigger all compaction levels with a 40K budget.
+    let messages = pat("u tr u").pad(10).tool_output(50_000).build();
     let config = ContextConfig {
         max_context_tokens: 40_000, // ~156K / 4 (token estimate ratio)
         system_prompt_tokens: 1_000,

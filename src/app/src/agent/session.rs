@@ -232,7 +232,7 @@ impl Session {
     }
 
     /// Load all raw transcript entries from storage.
-    async fn load_all_entries(&self) -> Result<Vec<TranscriptEntry>> {
+    pub async fn load_all_entries(&self) -> Result<Vec<TranscriptEntry>> {
         let session_id = self.meta.read().await.session_id.clone();
         self.storage
             .list_entries(ListTranscriptEntries {

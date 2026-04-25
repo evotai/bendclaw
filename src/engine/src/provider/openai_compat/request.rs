@@ -61,6 +61,13 @@ pub fn build_request_body(
                     }
                 }
 
+                // Skip empty assistant messages that have neither content nor tool_calls.
+                // Some providers (e.g. mimo-v2.5-pro) reject assistant messages without
+                // at least one of content, reasoning_content, or tool_calls.
+                if parts.is_empty() && tool_calls.is_empty() {
+                    continue;
+                }
+
                 let mut msg_obj = serde_json::json!({"role": "assistant"});
                 if !parts.is_empty() {
                     msg_obj["content"] = serde_json::json!(parts);

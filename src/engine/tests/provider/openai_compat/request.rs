@@ -227,6 +227,43 @@ fn test_tool_result_text_only_uses_string() {
 }
 
 #[test]
+fn test_empty_assistant_message_is_skipped() {
+    let model_config = ModelConfig::openai("gpt-4o", "GPT-4o");
+    let compat = OpenAiCompat::openai();
+    let config = StreamConfigBuilder::openai()
+        .messages(vec![
+            Message::user("hello"),
+            Message::Assistant {
+                content: vec![Content::Text { text: "".into() }],
+                stop_reason: StopReason::Stop,
+                model: "test".into(),
+                provider: "test".into(),
+                usage: Usage::default(),
+                timestamp: 0,
+                error_message: None,
+            },
+            Message::user("world"),
+        ])
+        .build();
+
+    let body = build_request_body(&config, &model_config, &compat);
+    let msgs = body["messages"].as_array().unwrap();
+    // user("hello") + user("world") = 2, empty assistant skipped (no system prompt)
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0]["role"], "user");
+    assert_eq!(msgs[1]["role"], "user");
+    // No message should have role "assistant" with missing content
+    for msg in msgs {
+        if msg["role"] == "assistant" {
+            assert!(
+                msg.get("content").is_some() || msg.get("tool_calls").is_some(),
+                "assistant message must have content or tool_calls"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_chunk_with_inline_error_parses_error_field() {
     let data = r#"{"choices":[],"error":{"message":"upstream failed"}}"#;
     let chunk: OpenAiChunk = serde_json::from_str(data).unwrap();

@@ -5,22 +5,19 @@
 
 # Architecture
 
-- Keep design simple, clear, and decoupled
-- Promote code reuse
-- Use OOP principles without over-engineering
-- Design for testability
-- `mod.rs` files must only contain module declarations (`mod`), re-exports (`pub use`), and `use` statements — no code logic
-- `lib.rs` files follow the same rule: only module declarations, re-exports, and `use` statements — no business logic
-- `bend-agent` lives in `crates/bend-agent` as a workspace member — the core agent runtime engine
+- **Workspace members**: `src/engine`, `src/app`, `cli/addon`
+  - `evotengine` (src/engine) — agent runtime: provider abstraction, agent loop, context, tools, retry
+  - `evot` (src/app) — application layer: session, storage, config, server, commands, skills, delivery, search
+  - `evotaddon` (cli/addon) — Rust NAPI addon bridging engine/app to the TypeScript CLI
+- **CLI**: TypeScript (Bun) in `cli/src/`, renders TUI, handles input, sessions, updates
+- `mod.rs` / `lib.rs`: only module declarations, re-exports, and `use` statements — no business logic
 
 # Testing
 
-- Feel free to refactor tests aggressively; write tests based on the new code
-- Avoid glue test code; write clear and explicit tests
-- Fast iteration is expected
-- All tests must go in the `tests/` directory, never inline in source files
-- Focus on core logic coverage, not overall coverage
+- All tests go in the crate's `tests/` directory, never inline
+- Rust: `cargo test`; TS: `cd cli && bun test`
+- Keep tests explicit and fast; focus on core logic
 
 # Pre-commit
 
-- Always run `make check` before committing — it runs `cargo fmt --check` and `cargo clippy`
+- Always run `make check` before committing

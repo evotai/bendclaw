@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use evot_engine::provider::CompatCaps;
 use evot_engine::ThinkingLevel;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -60,6 +61,7 @@ pub struct ProviderProfile {
     pub api_key: String,
     pub base_url: String,
     pub model: String,
+    pub compat_caps: CompatCaps,
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,7 @@ pub struct LlmConfig {
     pub base_url: String,
     pub model: String,
     pub thinking_level: ThinkingLevel,
+    pub compat_caps: CompatCaps,
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +157,7 @@ impl Config {
                 .clone()
                 .unwrap_or_else(|| profile.model.clone()),
             thinking_level: self.llm.thinking_level,
+            compat_caps: profile.compat_caps,
         })
     }
 

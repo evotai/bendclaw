@@ -349,3 +349,59 @@ fn test_thinking_only_assistant_not_skipped() {
     assert_eq!(asst["reasoning_content"], "internal reasoning only");
     assert!(asst.get("content").is_none());
 }
+
+#[test]
+fn test_tool_call_assistant_includes_empty_reasoning_content() {
+    let model_config = ModelConfig::openai("gpt-4o", "GPT-4o");
+    let config = StreamConfigBuilder::openai()
+        .messages(vec![Message::user("test"), Message::Assistant {
+            content: vec![Content::ToolCall {
+                id: "call_1".into(),
+                name: "read_file".into(),
+                arguments: serde_json::json!({"path": "/tmp/a"}),
+            }],
+            stop_reason: StopReason::ToolUse,
+            model: "claude-opus-4-6".into(),
+            provider: "anthropic".into(),
+            usage: Usage::default(),
+            timestamp: 0,
+            error_message: None,
+        }])
+        .build();
+
+    let body = build_request_body(&config, &model_config, &OpenAiCompat::deepseek());
+    let msgs = body["messages"].as_array().unwrap();
+    let asst = &msgs[1];
+    assert_eq!(asst["role"], "assistant");
+    assert_eq!(asst["reasoning_content"], "");
+    assert!(asst["tool_calls"].is_array());
+}
+
+#[test]
+fn test_tool_call_assistant_omits_empty_reasoning_content_without_cap() {
+    let model_config = ModelConfig::openai("gpt-4o", "GPT-4o");
+    let config = StreamConfigBuilder::openai()
+        .messages(vec![Message::user("test"), Message::Assistant {
+            content: vec![Content::ToolCall {
+                id: "call_1".into(),
+                name: "read_file".into(),
+                arguments: serde_json::json!({"path": "/tmp/a"}),
+            }],
+            stop_reason: StopReason::ToolUse,
+            model: "claude-opus-4-6".into(),
+            provider: "anthropic".into(),
+            usage: Usage::default(),
+            timestamp: 0,
+            error_message: None,
+        }])
+        .build();
+
+    let compat = OpenAiCompat::openai();
+    // OpenAI doesn't have this cap by default, so no need to remove it.
+    let body = build_request_body(&config, &model_config, &compat);
+    let msgs = body["messages"].as_array().unwrap();
+    let asst = &msgs[1];
+    assert_eq!(asst["role"], "assistant");
+    assert!(asst.get("reasoning_content").is_none());
+    assert!(asst["tool_calls"].is_array());
+}

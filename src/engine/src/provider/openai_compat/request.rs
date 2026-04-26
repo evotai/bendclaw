@@ -1,5 +1,6 @@
 //! OpenAI-compatible request body building and content conversion.
 
+use crate::provider::model::CompatCaps;
 use crate::provider::model::MaxTokensField;
 use crate::provider::model::ModelConfig;
 use crate::provider::model::OpenAiCompat;
@@ -80,9 +81,7 @@ pub fn build_request_body(
                 if !tool_calls.is_empty() {
                     msg_obj["tool_calls"] = serde_json::json!(tool_calls);
                 }
-                if !reasoning.is_empty() {
-                    msg_obj["reasoning_content"] = serde_json::json!(reasoning);
-                }
+                apply_assistant_compat(&mut msg_obj, compat, &reasoning);
                 messages.push(msg_obj);
             }
             Message::ToolResult {
@@ -109,9 +108,7 @@ pub fn build_request_body(
                     "tool_call_id": tool_call_id,
                     "content": content_val,
                 });
-                if compat.requires_tool_result_name {
-                    msg_obj["name"] = serde_json::json!(tool_name);
-                }
+                apply_tool_result_compat(&mut msg_obj, compat, tool_name);
                 messages.push(msg_obj);
             }
         }
@@ -121,9 +118,12 @@ pub fn build_request_body(
     let mut body = serde_json::json!({
         "model": config.model,
         "stream": true,
-        "stream_options": {"include_usage": true},
         "messages": messages,
     });
+
+    if compat.has_cap(CompatCaps::USAGE_IN_STREAMING) {
+        body["stream_options"] = serde_json::json!({"include_usage": true});
+    }
 
     match compat.max_tokens_field {
         MaxTokensField::MaxCompletionTokens => {
@@ -152,21 +152,49 @@ pub fn build_request_body(
         body["tools"] = serde_json::json!(tools);
     }
 
-    if config.thinking_level != ThinkingLevel::Off && compat.supports_reasoning_effort {
-        let effort = match config.thinking_level {
-            ThinkingLevel::Minimal | ThinkingLevel::Low => "low",
-            ThinkingLevel::Medium => "medium",
-            ThinkingLevel::High | ThinkingLevel::Adaptive => "high",
-            ThinkingLevel::Off => unreachable!(),
-        };
-        body["reasoning_effort"] = serde_json::json!(effort);
-    }
+    apply_reasoning_effort(&mut body, config, compat);
 
     if let Some(temp) = config.temperature {
         body["temperature"] = serde_json::json!(temp);
     }
 
     body
+}
+
+fn apply_assistant_compat(msg_obj: &mut serde_json::Value, compat: &OpenAiCompat, reasoning: &str) {
+    if !reasoning.is_empty() || compat.has_cap(CompatCaps::REASONING_CONTENT_REQUIRED) {
+        msg_obj["reasoning_content"] = serde_json::json!(reasoning);
+    }
+}
+
+fn apply_tool_result_compat(
+    msg_obj: &mut serde_json::Value,
+    compat: &OpenAiCompat,
+    tool_name: &str,
+) {
+    if compat.has_cap(CompatCaps::TOOL_RESULT_NAME) {
+        msg_obj["name"] = serde_json::json!(tool_name);
+    }
+}
+
+fn apply_reasoning_effort(
+    body: &mut serde_json::Value,
+    config: &StreamConfig,
+    compat: &OpenAiCompat,
+) {
+    match config.thinking_level {
+        ThinkingLevel::Off => {}
+        level if compat.has_cap(CompatCaps::REASONING_EFFORT) => {
+            let effort = match level {
+                ThinkingLevel::Minimal | ThinkingLevel::Low => "low",
+                ThinkingLevel::Medium => "medium",
+                ThinkingLevel::High | ThinkingLevel::Adaptive => "high",
+                ThinkingLevel::Off => unreachable!(),
+            };
+            body["reasoning_effort"] = serde_json::json!(effort);
+        }
+        _ => {}
+    }
 }
 
 pub fn content_to_openai(content: &[Content]) -> serde_json::Value {

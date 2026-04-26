@@ -15,6 +15,7 @@ pub use bedrock::BedrockProvider;
 pub use error::*;
 pub use mock::MockProvider;
 pub use model::ApiProtocol;
+pub use model::CompatCaps;
 pub use model::CostConfig;
 pub use model::ModelConfig;
 pub use model::OpenAiCompat;

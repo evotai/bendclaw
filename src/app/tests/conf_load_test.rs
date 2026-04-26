@@ -457,6 +457,7 @@ fn resolve_model_spec_by_model_name() -> TestResult {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     config
         .providers
@@ -465,6 +466,7 @@ fn resolve_model_spec_by_model_name() -> TestResult {
             api_key: "ds-key".into(),
             base_url: "https://api.deepseek.com".into(),
             model: "deepseek-chat".into(),
+            compat_caps: Default::default(),
         });
 
     let (name, override_model) = config.resolve_model_spec("deepseek-chat")?;
@@ -493,6 +495,7 @@ fn with_model_sets_override() -> TestResult {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
 
     // provider:model sets override
@@ -519,6 +522,7 @@ fn with_model_none_is_noop() -> TestResult {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     let config = config.with_model(None)?;
     assert_eq!(config.llm.provider, "");
@@ -544,6 +548,7 @@ fn validate_missing_api_key() {
             api_key: String::new(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
     let err = config.validate().unwrap_err();
@@ -560,6 +565,7 @@ fn validate_missing_base_url() {
             api_key: "key".into(),
             base_url: String::new(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
     let err = config.validate().unwrap_err();
@@ -576,6 +582,7 @@ fn validate_missing_model() {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: String::new(),
+            compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
     let err = config.validate().unwrap_err();
@@ -592,6 +599,7 @@ fn validate_model_override_bypasses_empty_profile_model() {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: String::new(),
+            compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
     config.llm.model_override = Some("override-model".into());
@@ -699,6 +707,7 @@ fn make_multi_provider_config() -> Config {
             api_key: "ant-key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     config
         .providers
@@ -707,6 +716,7 @@ fn make_multi_provider_config() -> Config {
             api_key: "oai-key".into(),
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-5.4".into(),
+            compat_caps: Default::default(),
         });
     config
         .providers
@@ -715,6 +725,7 @@ fn make_multi_provider_config() -> Config {
             api_key: "ds-key".into(),
             base_url: "https://api.deepseek.com".into(),
             model: "deepseek-chat".into(),
+            compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
     config
@@ -737,6 +748,7 @@ fn resolve_llm_config(
         base_url: profile.base_url.clone(),
         model: model_override.unwrap_or_else(|| profile.model.clone()),
         thinking_level: config.llm.thinking_level,
+        compat_caps: Default::default(),
     })
 }
 
@@ -817,6 +829,7 @@ fn set_provider_validates_incomplete_provider() {
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
             model: "claude-sonnet-4-20250514".into(),
+            compat_caps: Default::default(),
         });
     config
         .providers
@@ -825,8 +838,8 @@ fn set_provider_validates_incomplete_provider() {
             api_key: String::new(), // missing
             base_url: "https://example.com".into(),
             model: "some-model".into(),
+            compat_caps: Default::default(),
         });
-    config.llm.provider = "anthropic".into();
 
     // Resolving the broken provider succeeds at spec level
     let llm = resolve_llm_config(&config, "some-model");

@@ -65,24 +65,106 @@ pub enum ThinkingFormat {
     Qwen,
 }
 
+/// Bitflag set of OpenAI-compatible provider capabilities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CompatCaps(u16);
+
+impl CompatCaps {
+    pub const NONE: Self = Self(0);
+    pub const STORE: Self = Self(1 << 0);
+    pub const DEVELOPER_ROLE: Self = Self(1 << 1);
+    pub const REASONING_EFFORT: Self = Self(1 << 2);
+    pub const USAGE_IN_STREAMING: Self = Self(1 << 3);
+    pub const TOOL_RESULT_NAME: Self = Self(1 << 4);
+    pub const ASSISTANT_AFTER_TOOL_RESULT: Self = Self(1 << 5);
+    pub const REASONING_CONTENT_REQUIRED: Self = Self(1 << 6);
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+impl std::ops::BitOr for CompatCaps {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for CompatCaps {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl Serialize for CompatCaps {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let all = [
+            (Self::STORE, "store"),
+            (Self::DEVELOPER_ROLE, "developer_role"),
+            (Self::REASONING_EFFORT, "reasoning_effort"),
+            (Self::USAGE_IN_STREAMING, "usage_in_streaming"),
+            (Self::TOOL_RESULT_NAME, "tool_result_name"),
+            (
+                Self::ASSISTANT_AFTER_TOOL_RESULT,
+                "assistant_after_tool_result",
+            ),
+            (
+                Self::REASONING_CONTENT_REQUIRED,
+                "reasoning_content_required",
+            ),
+        ];
+        let count = all.iter().filter(|(f, _)| self.contains(*f)).count();
+        let mut seq = serializer.serialize_seq(Some(count))?;
+        for (flag, name) in &all {
+            if self.contains(*flag) {
+                seq.serialize_element(name)?;
+            }
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CompatCaps {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let names: Vec<String> = Vec::deserialize(deserializer)?;
+        let mut caps = Self::NONE;
+        for name in &names {
+            caps |= match name.as_str() {
+                "store" => Self::STORE,
+                "developer_role" => Self::DEVELOPER_ROLE,
+                "reasoning_effort" => Self::REASONING_EFFORT,
+                "usage_in_streaming" => Self::USAGE_IN_STREAMING,
+                "tool_result_name" => Self::TOOL_RESULT_NAME,
+                "assistant_after_tool_result" => Self::ASSISTANT_AFTER_TOOL_RESULT,
+                "reasoning_content_required" => Self::REASONING_CONTENT_REQUIRED,
+                other => {
+                    return Err(serde::de::Error::unknown_variant(other, &[
+                        "store",
+                        "developer_role",
+                        "reasoning_effort",
+                        "usage_in_streaming",
+                        "tool_result_name",
+                        "assistant_after_tool_result",
+                        "reasoning_content_required",
+                    ]))
+                }
+            };
+        }
+        Ok(caps)
+    }
+}
+
 /// Compatibility flags for OpenAI-compatible providers.
 /// Different providers have different quirks even though they share the same base API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAiCompat {
-    /// Supports the `store` parameter for conversation persistence.
-    pub supports_store: bool,
-    /// Supports `developer` role (system-level instructions).
-    pub supports_developer_role: bool,
-    /// Supports `reasoning_effort` parameter.
-    pub supports_reasoning_effort: bool,
-    /// Includes usage data in streaming responses.
-    pub supports_usage_in_streaming: bool,
+    /// Provider capabilities/quirks.
+    #[serde(default)]
+    pub caps: CompatCaps,
     /// Which field name to use for max tokens.
     pub max_tokens_field: MaxTokensField,
-    /// Tool results must include a `name` field.
-    pub requires_tool_result_name: bool,
-    /// Must insert an assistant message after tool results.
-    pub requires_assistant_after_tool_result: bool,
     /// How thinking/reasoning content is formatted in streaming.
     pub thinking_format: ThinkingFormat,
 }
@@ -90,26 +172,25 @@ pub struct OpenAiCompat {
 impl Default for OpenAiCompat {
     fn default() -> Self {
         Self {
-            supports_store: false,
-            supports_developer_role: false,
-            supports_reasoning_effort: false,
-            supports_usage_in_streaming: true,
+            caps: CompatCaps::USAGE_IN_STREAMING,
             max_tokens_field: MaxTokensField::MaxTokens,
-            requires_tool_result_name: false,
-            requires_assistant_after_tool_result: false,
             thinking_format: ThinkingFormat::OpenAi,
         }
     }
 }
 
 impl OpenAiCompat {
+    pub fn has_cap(&self, cap: CompatCaps) -> bool {
+        self.caps.contains(cap)
+    }
+
     /// Compat flags for native OpenAI.
     pub fn openai() -> Self {
         Self {
-            supports_store: true,
-            supports_developer_role: true,
-            supports_reasoning_effort: true,
-            supports_usage_in_streaming: true,
+            caps: CompatCaps::STORE
+                | CompatCaps::DEVELOPER_ROLE
+                | CompatCaps::REASONING_EFFORT
+                | CompatCaps::USAGE_IN_STREAMING,
             max_tokens_field: MaxTokensField::MaxCompletionTokens,
             ..Default::default()
         }
@@ -118,7 +199,6 @@ impl OpenAiCompat {
     /// Compat flags for xAI (Grok).
     pub fn xai() -> Self {
         Self {
-            supports_usage_in_streaming: true,
             thinking_format: ThinkingFormat::Xai,
             ..Default::default()
         }
@@ -126,10 +206,7 @@ impl OpenAiCompat {
 
     /// Compat flags for Groq.
     pub fn groq() -> Self {
-        Self {
-            supports_usage_in_streaming: true,
-            ..Default::default()
-        }
+        Self::default()
     }
 
     /// Compat flags for Cerebras.
@@ -140,7 +217,6 @@ impl OpenAiCompat {
     /// Compat flags for OpenRouter.
     pub fn openrouter() -> Self {
         Self {
-            supports_usage_in_streaming: true,
             max_tokens_field: MaxTokensField::MaxCompletionTokens,
             ..Default::default()
         }
@@ -149,7 +225,6 @@ impl OpenAiCompat {
     /// Compat flags for Mistral.
     pub fn mistral() -> Self {
         Self {
-            supports_usage_in_streaming: true,
             max_tokens_field: MaxTokensField::MaxTokens,
             ..Default::default()
         }
@@ -158,7 +233,7 @@ impl OpenAiCompat {
     /// Compat flags for DeepSeek.
     pub fn deepseek() -> Self {
         Self {
-            supports_usage_in_streaming: true,
+            caps: CompatCaps::USAGE_IN_STREAMING | CompatCaps::REASONING_CONTENT_REQUIRED,
             max_tokens_field: MaxTokensField::MaxCompletionTokens,
             ..Default::default()
         }
@@ -166,18 +241,12 @@ impl OpenAiCompat {
 
     /// Compat flags for Z.ai (Zhipu AI).
     pub fn zai() -> Self {
-        Self {
-            supports_usage_in_streaming: true,
-            ..Default::default()
-        }
+        Self::default()
     }
 
     /// Compat flags for MiniMax.
     pub fn minimax() -> Self {
-        Self {
-            supports_usage_in_streaming: true,
-            ..Default::default()
-        }
+        Self::default()
     }
 }
 

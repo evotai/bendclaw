@@ -13,8 +13,8 @@ fn model_config_openai() {
     let config = ModelConfig::openai("gpt-4o", "GPT-4o");
     assert_eq!(config.api, ApiProtocol::OpenAiCompletions);
     let compat = config.compat.unwrap();
-    assert!(compat.supports_store);
-    assert!(compat.supports_developer_role);
+    assert!(compat.caps.contains(CompatCaps::STORE));
+    assert!(compat.caps.contains(CompatCaps::DEVELOPER_ROLE));
     assert_eq!(compat.max_tokens_field, MaxTokensField::MaxCompletionTokens);
 }
 
@@ -22,11 +22,11 @@ fn model_config_openai() {
 fn openai_compat_variants() {
     let xai = OpenAiCompat::xai();
     assert_eq!(xai.thinking_format, ThinkingFormat::Xai);
-    assert!(!xai.supports_store);
+    assert!(!xai.caps.contains(CompatCaps::STORE));
 
     let groq = OpenAiCompat::groq();
-    assert!(groq.supports_usage_in_streaming);
-    assert!(!groq.supports_store);
+    assert!(groq.caps.contains(CompatCaps::USAGE_IN_STREAMING));
+    assert!(!groq.caps.contains(CompatCaps::STORE));
 
     let deepseek = OpenAiCompat::deepseek();
     assert_eq!(
@@ -35,12 +35,12 @@ fn openai_compat_variants() {
     );
 
     let zai = OpenAiCompat::zai();
-    assert!(zai.supports_usage_in_streaming);
-    assert!(!zai.supports_store);
+    assert!(zai.caps.contains(CompatCaps::USAGE_IN_STREAMING));
+    assert!(!zai.caps.contains(CompatCaps::STORE));
 
     let minimax = OpenAiCompat::minimax();
-    assert!(minimax.supports_usage_in_streaming);
-    assert!(!minimax.supports_store);
+    assert!(minimax.caps.contains(CompatCaps::USAGE_IN_STREAMING));
+    assert!(!minimax.caps.contains(CompatCaps::STORE));
 }
 
 #[test]

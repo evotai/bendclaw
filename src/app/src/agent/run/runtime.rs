@@ -48,6 +48,7 @@ pub struct EngineOptions {
     pub skills_dirs: Vec<std::path::PathBuf>,
     pub tools: Vec<Box<dyn evot_engine::AgentTool>>,
     pub thinking_level: evot_engine::ThinkingLevel,
+    pub compat_caps: evot_engine::provider::CompatCaps,
     pub cwd: std::path::PathBuf,
     pub path_guard: std::sync::Arc<evot_engine::PathGuard>,
 }
@@ -709,17 +710,36 @@ pub(crate) fn build_agent(
 ) -> evot_engine::Agent {
     use evot_engine::provider::AnthropicProvider;
     use evot_engine::provider::ModelConfig;
+    use evot_engine::provider::OpenAiCompat;
     use evot_engine::provider::OpenAiCompatProvider;
 
     let mut model_config = match options.protocol {
         Protocol::Anthropic => ModelConfig::anthropic(&options.model, &options.model),
-        Protocol::OpenAi if options.provider == "openai" => {
-            ModelConfig::openai(&options.model, &options.model)
+        Protocol::OpenAi => {
+            let mut mc = ModelConfig::local("", &options.model);
+            mc.compat = Some(match options.provider.as_str() {
+                "openai" => OpenAiCompat::openai(),
+                "deepseek" => OpenAiCompat::deepseek(),
+                "xai" => OpenAiCompat::xai(),
+                "groq" => OpenAiCompat::groq(),
+                "cerebras" => OpenAiCompat::cerebras(),
+                "openrouter" => OpenAiCompat::openrouter(),
+                "mistral" => OpenAiCompat::mistral(),
+                "zai" => OpenAiCompat::zai(),
+                "minimax" => OpenAiCompat::minimax(),
+                _ => OpenAiCompat::default(),
+            });
+            mc
         }
-        Protocol::OpenAi => ModelConfig::local("", &options.model),
     };
     if let Some(base_url) = &options.base_url {
         model_config.base_url = base_url.clone();
+    }
+
+    if options.protocol == Protocol::OpenAi {
+        if let Some(compat) = &mut model_config.compat {
+            compat.caps |= options.compat_caps;
+        }
     }
 
     let provider_agent = match options.protocol {

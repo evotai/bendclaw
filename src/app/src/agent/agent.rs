@@ -238,6 +238,7 @@ impl Agent {
                     base_url: profile.base_url.clone(),
                     model: model_override.unwrap_or_else(|| profile.model.clone()),
                     thinking_level: config.llm.thinking_level,
+                    compat_caps: profile.compat_caps,
                 };
                 self.set_llm(llm);
                 return;
@@ -261,6 +262,7 @@ impl Agent {
             base_url: profile.base_url.clone(),
             model: model_override.unwrap_or_else(|| profile.model.clone()),
             thinking_level: config.llm.thinking_level,
+            compat_caps: profile.compat_caps,
         };
         self.set_llm(llm);
         Ok(())
@@ -683,6 +685,7 @@ impl Agent {
                 skills_dirs: skill_dirs,
                 tools,
                 thinking_level: llm.thinking_level,
+                compat_caps: llm.compat_caps,
                 cwd: cwd_path.to_path_buf(),
                 path_guard: sandbox_rt.path_guard,
             },

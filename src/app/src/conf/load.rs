@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::Path;
 
+use evot_engine::provider::CompatCaps;
 use indexmap::IndexMap;
 
 use crate::conf::default_config;
@@ -52,6 +53,7 @@ struct ProviderSource {
     api_key: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
+    compat_caps: Option<CompatCaps>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -204,6 +206,9 @@ fn merge_provider_source(
         if let Some(model) = src.model {
             profile.model = model;
         }
+        if let Some(compat_caps) = src.compat_caps {
+            profile.compat_caps = compat_caps;
+        }
     } else {
         let protocol = match src.protocol {
             Some(p) => parse_protocol(&p)?,
@@ -214,6 +219,7 @@ fn merge_provider_source(
             api_key: src.api_key.unwrap_or_default(),
             base_url: src.base_url.unwrap_or_default(),
             model: src.model.unwrap_or_default(),
+            compat_caps: src.compat_caps.unwrap_or_default(),
         });
     }
     Ok(())
@@ -314,7 +320,13 @@ const GLOBAL_ENV_KEYS: &[&str] = &["EVOT_LLM_PROVIDER", "EVOT_LLM_THINKING_LEVEL
 const LEGACY_PREFIXES: &[&str] = &["EVOT_ANTHROPIC_", "EVOT_OPENAI_"];
 
 /// Provider field suffixes.
-const PROVIDER_FIELDS: &[&str] = &["_API_KEY", "_BASE_URL", "_MODEL", "_PROTOCOL"];
+const PROVIDER_FIELDS: &[&str] = &[
+    "_API_KEY",
+    "_BASE_URL",
+    "_MODEL",
+    "_PROTOCOL",
+    "_COMPAT_CAPS",
+];
 
 /// Non-LLM keys we still care about.
 const OTHER_RELEVANT_PREFIXES: &[&str] = &[
@@ -400,6 +412,27 @@ fn parse_legacy_env_key(key: &str) -> Option<(&'static str, &'static str)> {
     None
 }
 
+fn parse_compat_caps(value: &str) -> Result<CompatCaps> {
+    let mut caps = CompatCaps::NONE;
+    for part in value.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        caps |= match part {
+            "store" => CompatCaps::STORE,
+            "developer_role" => CompatCaps::DEVELOPER_ROLE,
+            "reasoning_effort" => CompatCaps::REASONING_EFFORT,
+            "usage_in_streaming" => CompatCaps::USAGE_IN_STREAMING,
+            "tool_result_name" => CompatCaps::TOOL_RESULT_NAME,
+            "assistant_after_tool_result" => CompatCaps::ASSISTANT_AFTER_TOOL_RESULT,
+            "reasoning_content_required" => CompatCaps::REASONING_CONTENT_REQUIRED,
+            other => return Err(EvotError::Conf(format!("unknown compat cap: {other}"))),
+        };
+    }
+    Ok(caps)
+}
+
 fn apply_provider_field(
     providers: &mut IndexMap<String, ProviderProfile>,
     name: &str,
@@ -414,12 +447,14 @@ fn apply_provider_field(
             api_key: String::new(),
             base_url: String::new(),
             model: String::new(),
+            compat_caps: CompatCaps::default(),
         });
     match field {
         "_API_KEY" => profile.api_key = value.to_string(),
         "_BASE_URL" => profile.base_url = value.to_string(),
         "_MODEL" => profile.model = value.to_string(),
         "_PROTOCOL" => profile.protocol = parse_protocol(value)?,
+        "_COMPAT_CAPS" => profile.compat_caps = parse_compat_caps(value)?,
         _ => {}
     }
     Ok(())

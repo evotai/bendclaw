@@ -5,7 +5,7 @@
  * screen output for post-hoc debugging.  Callers use:
  *
  *   screenLog.bind(sessionId)   — attach to a session (lazy, idempotent)
- *   screenLog.log(lines)        — append OutputLines
+ *   screenLog.logLines(rendered) — append rendered text lines (ANSI-stripped)
  *
  * All I/O errors are silently swallowed so callers never need try/catch.
  */
@@ -13,21 +13,26 @@
 import { appendFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import type { OutputLine } from '../render/output.js'
 
 const LOGS_DIR = join(homedir(), '.evotai', 'logs')
 
 export class ScreenLog {
   private path: string | null = null
   private boundSessionId: string | null = null
+  private buffer: string[] = []
 
-  /** Bind (or re-bind) to a session. No-op if already bound to the same id. */
+  /** Bind (or re-bind) to a session. Flushes any buffered lines. */
   bind(sessionId: string): void {
     if (this.boundSessionId === sessionId) return
     try {
       mkdirSync(LOGS_DIR, { recursive: true })
       this.path = join(LOGS_DIR, `${sessionId}.screen.log`)
       this.boundSessionId = sessionId
+      // Flush lines that were logged before bind
+      if (this.buffer.length > 0) {
+        for (const line of this.buffer) this.appendLine(line)
+        this.buffer = []
+      }
     } catch { /* silently ignore */ }
   }
 
@@ -35,43 +40,42 @@ export class ScreenLog {
     return this.path
   }
 
-  /** Append OutputLines to the log. Ignored if not yet bound. */
-  log(lines: OutputLine[]): void {
-    if (!this.path || lines.length === 0) return
-    const ts = formatTimestamp()
-    for (const line of lines) {
-      const prefix = formatPrefix(line.kind)
-      this.appendLine(`[${ts}] ${prefix}${line.text}`)
+  /** Append rendered lines (with ANSI-stripped) to the log. Buffers if not yet bound. */
+  logLines(rendered: string[]): void {
+    if (rendered.length === 0) return
+    for (const raw of rendered) {
+      const line = stripAnsi(raw)
+      if (this.path) {
+        this.appendLine(line)
+      } else {
+        this.buffer.push(line)
+      }
     }
   }
 
   private appendLine(line: string): void {
     if (!this.path) return
     try {
-      appendFileSync(this.path, line + '\n', { mode: 0o600 })
+      const ts = formatTimestamp()
+      appendFileSync(this.path, `[${ts}] ${line}\n`, { mode: 0o600 })
     } catch { /* silently ignore */ }
   }
 }
 
-function formatTimestamp(): string {
-  const d = new Date()
-  const h = d.getHours().toString().padStart(2, '0')
-  const m = d.getMinutes().toString().padStart(2, '0')
-  const s = d.getSeconds().toString().padStart(2, '0')
-  const ms = d.getMilliseconds().toString().padStart(3, '0')
-  return `${h}:${m}:${s}.${ms}`
+/** Strip ANSI escape codes from a string. */
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '')
 }
 
-function formatPrefix(kind: OutputLine['kind']): string {
-  switch (kind) {
-    case 'user': return '❯ '
-    case 'assistant': return '  '
-    case 'tool': return ''
-    case 'tool_result': return '  '
-    case 'verbose': return '  '
-    case 'error': return 'ERROR: '
-    case 'system': return '  '
-    case 'run_summary': return '  '
-    default: return ''
-  }
+/** Format current time as YYYY-MM-DD HH:MM:SS.mmm */
+function formatTimestamp(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const mo = (d.getMonth() + 1).toString().padStart(2, '0')
+  const day = d.getDate().toString().padStart(2, '0')
+  const h = d.getHours().toString().padStart(2, '0')
+  const mi = d.getMinutes().toString().padStart(2, '0')
+  const s = d.getSeconds().toString().padStart(2, '0')
+  const ms = d.getMilliseconds().toString().padStart(3, '0')
+  return `${y}-${mo}-${day} ${h}:${mi}:${s}.${ms}`
 }

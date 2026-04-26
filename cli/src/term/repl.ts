@@ -260,11 +260,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     expandedLines.push(...outputLines)
     const visible = expanded ? expandedLines.slice(-outputLines.length) : outputLines
     const blocks = buildOutputBlocks(visible, prevKind)
+    const rendered = blocksToLines(blocks)
     renderer.beginBatch()
-    renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    renderer.appendScroll(rendered.join('\n'))
     renderStatus()
     renderer.flushBatch()
-    screenLog.log(outputLines)
+    screenLog.logLines(rendered)
   }
 
   /** Commit tool_finished with both compact and expanded versions. */
@@ -276,11 +277,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     expandedLines.push(...exp)
     const visible = expanded ? exp : compact
     const blocks = buildOutputBlocks(visible, prevKind)
+    const rendered = blocksToLines(blocks)
     renderer.beginBatch()
-    renderer.appendScroll(blocksToLines(blocks).join('\n'))
+    renderer.appendScroll(rendered.join('\n'))
     renderStatus()
     renderer.flushBatch()
-    screenLog.log(exp)
+    screenLog.logLines(rendered)
   }
 
   /** Toggle expanded view and redraw. */
@@ -499,11 +501,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               // In expanded mode, commit tool progress lines to the expanded view only.
               expandedLines.push(...outputLines)
               const blocks = buildOutputBlocks(outputLines)
+              const rendered = blocksToLines(blocks)
               renderer.beginBatch()
-              renderer.appendScroll(blocksToLines(blocks).join('\n'))
+              renderer.appendScroll(rendered.join('\n'))
               renderStatus()
               renderer.flushBatch()
-              screenLog.log(outputLines)
+              screenLog.logLines(rendered)
             }
           }
         }

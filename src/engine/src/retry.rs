@@ -66,10 +66,16 @@ impl RetryPolicy {
 /// Retryable: rate limits (429), network/transient errors, API errors
 /// (5xx, 529 overloaded).
 /// Not retryable: auth (401/403), context overflow, cancellation,
-/// client errors (400 etc.).
+/// client errors (400 etc.), not found (404).
 pub fn should_retry(error: &ProviderError) -> bool {
-    matches!(
-        error,
-        ProviderError::RateLimited { .. } | ProviderError::Network(_) | ProviderError::Api(_)
-    )
+    match error {
+        ProviderError::RateLimited { .. } | ProviderError::Network(_) => true,
+        ProviderError::Api(message) => !is_404_message(message),
+        _ => false,
+    }
+}
+
+fn is_404_message(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("404") || lower.contains("not found")
 }

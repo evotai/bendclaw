@@ -110,6 +110,19 @@ fn classify_no_message_uses_full_json() {
     assert!(evotengine::retry::should_retry(&err));
 }
 
+#[test]
+fn classify_json_404_is_not_retryable() {
+    let value = serde_json::json!({
+        "error": {
+            "type": "not_found_error",
+            "message": "model not found"
+        }
+    });
+    let err = classify_json_error(&value);
+    assert!(matches!(err, ProviderError::Api(_)));
+    assert!(!evotengine::retry::should_retry(&err));
+}
+
 // ---------------------------------------------------------------------------
 // StreamResponseKind (via classify_response — tested indirectly through
 // the public enum since classify_response takes a reqwest::Response)

@@ -75,10 +75,20 @@ Create `~/.evotai/evot.env`:
 # Anthropic (default)
 EVOT_LLM_ANTHROPIC_API_KEY=sk-ant-...
 EVOT_LLM_ANTHROPIC_BASE_URL=your-anthropic-base-url
+EVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6
 
 # Or OpenAI
 # EVOT_LLM_OPENAI_API_KEY=sk-...
 # EVOT_LLM_OPENAI_BASE_URL=your-openai-base-url/v1
+# EVOT_LLM_OPENAI_MODEL=gpt-5.5
+
+# Or DeepSeek
+# EVOT_LLM_DEEPSEEK_API_KEY=sk-...
+# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
+# EVOT_LLM_DEEPSEEK_MODEL=deepseek-v4-pro
+
+# Multiple models under one provider (first is the default)
+# EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6,claude-opus-4-6
 ```
 
 > Use `--model provider:model` for one-off overrides.

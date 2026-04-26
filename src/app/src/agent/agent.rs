@@ -236,7 +236,7 @@ impl Agent {
                     protocol: profile.protocol.clone(),
                     api_key: profile.api_key.clone(),
                     base_url: profile.base_url.clone(),
-                    model: model_override.unwrap_or_else(|| profile.model.clone()),
+                    model: model_override.unwrap_or_else(|| profile.model().to_string()),
                     thinking_level: config.llm.thinking_level,
                     compat_caps: profile.compat_caps,
                 };
@@ -260,7 +260,7 @@ impl Agent {
             protocol: profile.protocol.clone(),
             api_key: profile.api_key.clone(),
             base_url: profile.base_url.clone(),
-            model: model_override.unwrap_or_else(|| profile.model.clone()),
+            model: model_override.unwrap_or_else(|| profile.model().to_string()),
             thinking_level: config.llm.thinking_level,
             compat_caps: profile.compat_caps,
         };

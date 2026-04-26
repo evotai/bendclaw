@@ -52,8 +52,28 @@ struct ProviderSource {
     protocol: Option<String>,
     api_key: Option<String>,
     base_url: Option<String>,
-    model: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_one_or_many")]
+    model: Option<Vec<String>>,
     compat_caps: Option<CompatCaps>,
+}
+
+/// Deserialize a TOML value as either a single string or an array of strings.
+fn deserialize_one_or_many<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<String>>, D::Error>
+where D: serde::Deserializer<'de> {
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    let val = Option::<OneOrMany>::deserialize(deserializer)?;
+    Ok(val.map(|v| match v {
+        OneOrMany::One(s) => vec![s],
+        OneOrMany::Many(v) => v,
+    }))
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -204,7 +224,7 @@ fn merge_provider_source(
             profile.base_url = base_url;
         }
         if let Some(model) = src.model {
-            profile.model = model;
+            profile.models = model;
         }
         if let Some(compat_caps) = src.compat_caps {
             profile.compat_caps = compat_caps;
@@ -218,7 +238,7 @@ fn merge_provider_source(
             protocol,
             api_key: src.api_key.unwrap_or_default(),
             base_url: src.base_url.unwrap_or_default(),
-            model: src.model.unwrap_or_default(),
+            models: src.model.unwrap_or_default(),
             compat_caps: src.compat_caps.unwrap_or_default(),
         });
     }
@@ -306,6 +326,7 @@ fn default_env_content() -> &'static str {
 # EVOT_LLM_ANTHROPIC_API_KEY=
 # EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
 # EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-20250514
+# Multiple models: EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6,claude-opus-4-6
 "#
 }
 
@@ -446,13 +467,19 @@ fn apply_provider_field(
             protocol: infer_protocol(name),
             api_key: String::new(),
             base_url: String::new(),
-            model: String::new(),
+            models: Vec::new(),
             compat_caps: CompatCaps::default(),
         });
     match field {
         "_API_KEY" => profile.api_key = value.to_string(),
         "_BASE_URL" => profile.base_url = value.to_string(),
-        "_MODEL" => profile.model = value.to_string(),
+        "_MODEL" => {
+            profile.models = value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
         "_PROTOCOL" => profile.protocol = parse_protocol(value)?,
         "_COMPAT_CAPS" => profile.compat_caps = parse_compat_caps(value)?,
         _ => {}

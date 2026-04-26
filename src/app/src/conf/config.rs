@@ -60,8 +60,16 @@ pub struct ProviderProfile {
     pub protocol: Protocol,
     pub api_key: String,
     pub base_url: String,
-    pub model: String,
+    /// Available models; `models[0]` is the default.
+    pub models: Vec<String>,
     pub compat_caps: CompatCaps,
+}
+
+impl ProviderProfile {
+    /// The default (first) model.
+    pub fn model(&self) -> &str {
+        self.models.first().map(|s| s.as_str()).unwrap_or("")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +163,7 @@ impl Config {
                 .llm
                 .model_override
                 .clone()
-                .unwrap_or_else(|| profile.model.clone()),
+                .unwrap_or_else(|| profile.model().to_string()),
             thinking_level: self.llm.thinking_level,
             compat_caps: profile.compat_caps,
         })
@@ -189,16 +197,23 @@ impl Config {
             let found = self
                 .providers
                 .iter()
-                .find(|(_, p)| p.model == spec)
-                .map(|(name, _)| name.clone());
+                .find(|(_, p)| p.models.iter().any(|m| m == spec))
+                .map(|(name, p)| {
+                    let override_model = if p.model() == spec {
+                        None
+                    } else {
+                        Some(spec.to_string())
+                    };
+                    (name.clone(), override_model)
+                });
             match found {
-                Some(name) => Ok((name, None)),
+                Some((name, override_model)) => Ok((name, override_model)),
                 None => Err(EvotError::Conf(format!(
                     "no provider with model '{}', available: {}",
                     spec,
                     self.providers
                         .iter()
-                        .map(|(n, p)| format!("{}:{}", n, p.model))
+                        .flat_map(|(n, p)| { p.models.iter().map(move |m| format!("{}:{}", n, m)) })
                         .collect::<Vec<_>>()
                         .join(", ")
                 ))),
@@ -248,7 +263,7 @@ impl Config {
                 self.env_file_path.display()
             )));
         }
-        if profile.model.is_empty() && self.llm.model_override.is_none() {
+        if profile.models.is_empty() && self.llm.model_override.is_none() {
             return Err(EvotError::Conf(format!(
                 "{}.model not set (env file: {})",
                 self.llm.provider,

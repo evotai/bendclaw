@@ -456,7 +456,7 @@ fn resolve_model_spec_by_model_name() -> TestResult {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     config
@@ -465,7 +465,7 @@ fn resolve_model_spec_by_model_name() -> TestResult {
             protocol: Protocol::OpenAi,
             api_key: "ds-key".into(),
             base_url: "https://api.deepseek.com".into(),
-            model: "deepseek-chat".into(),
+            models: vec!["deepseek-chat".into()],
             compat_caps: Default::default(),
         });
 
@@ -494,7 +494,7 @@ fn with_model_sets_override() -> TestResult {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
 
@@ -521,7 +521,7 @@ fn with_model_none_is_noop() -> TestResult {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     let config = config.with_model(None)?;
@@ -547,7 +547,7 @@ fn validate_missing_api_key() {
             protocol: Protocol::Anthropic,
             api_key: String::new(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
@@ -564,7 +564,7 @@ fn validate_missing_base_url() {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: String::new(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
@@ -581,7 +581,7 @@ fn validate_missing_model() {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: String::new(),
+            models: Vec::new(),
             compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
@@ -598,7 +598,7 @@ fn validate_model_override_bypasses_empty_profile_model() {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: String::new(),
+            models: Vec::new(),
             compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
@@ -706,7 +706,7 @@ fn make_multi_provider_config() -> Config {
             protocol: Protocol::Anthropic,
             api_key: "ant-key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     config
@@ -715,7 +715,7 @@ fn make_multi_provider_config() -> Config {
             protocol: Protocol::OpenAi,
             api_key: "oai-key".into(),
             base_url: "https://api.openai.com/v1".into(),
-            model: "gpt-5.4".into(),
+            models: vec!["gpt-5.4".into()],
             compat_caps: Default::default(),
         });
     config
@@ -724,7 +724,7 @@ fn make_multi_provider_config() -> Config {
             protocol: Protocol::OpenAi,
             api_key: "ds-key".into(),
             base_url: "https://api.deepseek.com".into(),
-            model: "deepseek-chat".into(),
+            models: vec!["deepseek-chat".into()],
             compat_caps: Default::default(),
         });
     config.llm.provider = "anthropic".into();
@@ -746,7 +746,7 @@ fn resolve_llm_config(
         protocol: profile.protocol.clone(),
         api_key: profile.api_key.clone(),
         base_url: profile.base_url.clone(),
-        model: model_override.unwrap_or_else(|| profile.model.clone()),
+        model: model_override.unwrap_or_else(|| profile.model().to_string()),
         thinking_level: config.llm.thinking_level,
         compat_caps: Default::default(),
     })
@@ -828,7 +828,7 @@ fn set_provider_validates_incomplete_provider() {
             protocol: Protocol::Anthropic,
             api_key: "key".into(),
             base_url: "https://api.anthropic.com".into(),
-            model: "claude-sonnet-4-20250514".into(),
+            models: vec!["claude-sonnet-4-20250514".into()],
             compat_caps: Default::default(),
         });
     config
@@ -837,7 +837,7 @@ fn set_provider_validates_incomplete_provider() {
             protocol: Protocol::OpenAi,
             api_key: String::new(), // missing
             base_url: "https://example.com".into(),
-            model: "some-model".into(),
+            models: vec!["some-model".into()],
             compat_caps: Default::default(),
         });
 
@@ -846,4 +846,83 @@ fn set_provider_validates_incomplete_provider() {
     assert!(llm.is_ok());
     // But the resulting LlmConfig has empty api_key — NAPI set_provider would reject this
     assert!(llm.as_ref().is_ok_and(|l| l.api_key.is_empty()));
+}
+
+#[test]
+fn multi_model_env_comma_separated() {
+    let dir = tempfile::tempdir().unwrap();
+    let env_path = dir.path().join(".env");
+    std::fs::write(
+        &env_path,
+        "\
+EVOT_LLM_PROVIDER=anthropic
+EVOT_LLM_ANTHROPIC_API_KEY=sk-test
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6,claude-opus-4-6
+",
+    )
+    .unwrap();
+
+    let config = Config::load_with_env_file(Some(env_path.to_str().unwrap())).unwrap();
+    let profile = config.providers.get("anthropic").unwrap();
+    assert_eq!(profile.models, vec!["claude-sonnet-4-6", "claude-opus-4-6"]);
+    assert_eq!(profile.model(), "claude-sonnet-4-6");
+}
+
+#[test]
+fn multi_model_bare_lookup_resolves_non_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let env_path = dir.path().join(".env");
+    std::fs::write(
+        &env_path,
+        "\
+EVOT_LLM_PROVIDER=anthropic
+EVOT_LLM_ANTHROPIC_API_KEY=sk-test
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6,claude-opus-4-6
+",
+    )
+    .unwrap();
+
+    let config = Config::load_with_env_file(Some(env_path.to_str().unwrap())).unwrap();
+
+    let (provider, model_override) = config.resolve_model_spec("claude-opus-4-6").unwrap();
+    assert_eq!(provider, "anthropic");
+    assert_eq!(model_override, Some("claude-opus-4-6".to_string()));
+}
+
+#[test]
+fn multi_model_toml_array() -> TestResult {
+    let _guard = env_lock()
+        .lock()
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    let temp = tempfile::tempdir()?;
+    let env_home = temp.path().join("home");
+    std::fs::create_dir_all(env_home.join(".evotai"))?;
+    std::fs::write(
+        env_home.join(".evotai").join("evot.toml"),
+        r#"
+[llm]
+provider = "anthropic"
+
+[providers.anthropic]
+api_key = "test-key"
+base_url = "https://api.anthropic.com"
+model = ["claude-sonnet-4-6", "claude-opus-4-6"]
+"#,
+    )?;
+
+    let original_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+
+    restore_env_var("HOME", original_home);
+
+    let config = result?;
+    let profile = config.providers.get("anthropic").unwrap();
+    assert_eq!(profile.models, vec!["claude-sonnet-4-6", "claude-opus-4-6"]);
+    assert_eq!(profile.model(), "claude-sonnet-4-6");
+    Ok(())
 }

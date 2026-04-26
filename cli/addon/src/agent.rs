@@ -285,9 +285,11 @@ impl NapiAgent {
         let llm = self.agent.llm();
         let mut models = Vec::new();
         for (_, profile) in &self.config.providers {
-            let trimmed = profile.model.trim();
-            if !trimmed.is_empty() && !models.contains(&trimmed.to_string()) {
-                models.push(trimmed.to_string());
+            for m in &profile.models {
+                let trimmed = m.trim();
+                if !trimmed.is_empty() && !models.contains(&trimmed.to_string()) {
+                    models.push(trimmed.to_string());
+                }
             }
         }
         let trimmed = llm.model.trim();

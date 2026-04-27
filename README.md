@@ -84,7 +84,7 @@ EVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6
 
 # Or DeepSeek
 # EVOT_LLM_DEEPSEEK_API_KEY=sk-...
-# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com
+# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 # EVOT_LLM_DEEPSEEK_MODEL=deepseek-v4-pro
 
 # Multiple models under one provider (first is the default)

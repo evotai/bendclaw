@@ -87,6 +87,11 @@ EVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6
 # EVOT_LLM_DEEPSEEK_API_KEY=sk-...
 # EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 # EVOT_LLM_DEEPSEEK_MODEL=deepseek-v4-pro
+
+# Or Xiaomi MiMo-V2.5-Pro
+# EVOT_LLM_MI_API_KEY=tp-...
+# EVOT_LLM_MI_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+# EVOT_LLM_MI_MODEL=mimo-v2.5-pro
 ```
 
 > Use `--model provider:model` for one-off overrides.

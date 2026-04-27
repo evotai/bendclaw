@@ -612,6 +612,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'selector-key':
         handleSelectorKey(event)
         return true
+      case 'ask-key':
+        handleAskKey(event)
+        return true
       case 'toggle-expanded':
         toggleExpanded()
         return true

@@ -24,6 +24,7 @@ export type ReplControlAction =
   | { kind: 'close-overlay' }
   | { kind: 'exit-log-mode' }
   | { kind: 'selector-key' }
+  | { kind: 'ask-key' }
   | { kind: 'toggle-expanded' }
   | { kind: 'loading-enter' }
   | { kind: 'loading-char' }

@@ -206,7 +206,7 @@ export class TermRenderer {
     // the user has scrolled up and auto-scroll is off.
     this.statusHeight = 0
     this.prevStatusLines = []
-    this.write(cursorTo(1, 1) + eraseDown())
+    this.write(cursorTo(1, 1) + eraseDown() + '\x1b[0m')
     const lines = text ? text.split('\n') : []
     if (text) {
       this.write(text)
@@ -228,7 +228,7 @@ export class TermRenderer {
     // Reset state directly — cursorTo(1,1)+eraseDown handles clearing.
     this.statusHeight = 0
     this.prevStatusLines = []
-    this.write(cursorTo(1, 1) + eraseDown())
+    this.write(cursorTo(1, 1) + eraseDown() + '\x1b[0m')
     if (text) {
       this.write(text)
       if (!text.endsWith('\n')) this.write('\n')
@@ -242,7 +242,7 @@ export class TermRenderer {
     if (!outerBatch) this.beginBatch()
     this.statusHeight = 0
     this.prevStatusLines = []
-    this.write(cursorTo(1, 1) + eraseDown())
+    this.write(cursorTo(1, 1) + eraseDown() + '\x1b[0m')
     this.write('\n'.repeat(this.rows))
     if (!outerBatch) this.flushBatch()
   }

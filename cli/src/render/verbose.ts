@@ -41,11 +41,18 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
 
   // Context window bar
   const contextWindow = (data.context_window as number) ?? 0
-  if (contextWindow > 0 && ms) {
-    const total = sysTok + (ms.user_tokens ?? 0) + (ms.assistant_tokens ?? 0) + (ms.tool_result_tokens ?? 0) + (ms.image_tokens ?? 0)
-    const pct = ((total / contextWindow) * 100).toFixed(0)
-    const bar = renderBar(total, contextWindow, 20)
-    detailLines.push(`  ctx  ${bar}  ~${humanTokens(total)} / ${humanTokens(contextWindow)} (${pct}%)`)
+  const estimatedContextTokens = (data.estimated_context_tokens as number) ?? 0
+  if (contextWindow > 0) {
+    const total = estimatedContextTokens > 0
+      ? estimatedContextTokens
+      : ms
+        ? sysTok + (ms.user_tokens ?? 0) + (ms.assistant_tokens ?? 0) + (ms.tool_result_tokens ?? 0) + (ms.image_tokens ?? 0)
+        : 0
+    if (total > 0) {
+      const pct = ((total / contextWindow) * 100).toFixed(0)
+      const bar = renderBar(total, contextWindow, 20)
+      detailLines.push(`  ctx  ${bar}  ~${humanTokens(total)} / ${humanTokens(contextWindow)} (${pct}%)`)
+    }
   }
 
   // Token distribution by role

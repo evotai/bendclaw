@@ -50,3 +50,34 @@ fn invalid_base64_returns_error() {
     let result = resize_image("not-valid-base64!@#", "image/png");
     assert!(result.is_err());
 }
+
+#[test]
+fn large_within_dimensions_gets_compressed() {
+    // 1500×1500 noise PNG — fits dimensions but base64 will be >5MB
+    // Should be compressed to JPEG q60 → under 5MB base64
+    let mut img = image::RgbImage::new(1500, 1500);
+    for pixel in img.pixels_mut() {
+        *pixel = image::Rgb([
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+        ]);
+    }
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
+    let data = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+    assert!(
+        data.len() > 5 * 1024 * 1024,
+        "noise PNG should be >5MB base64"
+    );
+
+    let (compressed_data, mime) = resize_image(&data, "image/png").unwrap();
+    assert_eq!(mime, "image/jpeg", "large PNG should become JPEG");
+    assert!(
+        compressed_data.len() <= 5 * 1024 * 1024,
+        "compressed should be ≤5MB base64: was {}",
+        compressed_data.len()
+    );
+}

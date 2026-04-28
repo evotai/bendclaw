@@ -83,15 +83,17 @@ EVOT_LLM_ANTHROPIC_MODEL=claude-opus-4-6
 # EVOT_LLM_OPENAI_BASE_URL=your-openai-base-url/v1
 # EVOT_LLM_OPENAI_MODEL=gpt-5.5
 
-# Or DeepSeek
+# Or DeepSeek (Anthropic-compatible)
 # EVOT_LLM_DEEPSEEK_API_KEY=sk-...
-# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+# EVOT_LLM_DEEPSEEK_BASE_URL=https://api.deepseek.com/anthropic
+# EVOT_LLM_DEEPSEEK_PROTOCOL=anthropic
 # EVOT_LLM_DEEPSEEK_MODEL=deepseek-v4-pro
 
-# Or Xiaomi MiMo-V2.5-Pro
-# EVOT_LLM_MI_API_KEY=tp-...
-# EVOT_LLM_MI_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-# EVOT_LLM_MI_MODEL=mimo-v2.5-pro
+# Or Xiaomi MiMo-V2.5-Pro (Anthropic-compatible)
+# EVOT_LLM_XIAOMI_API_KEY=tp-...
+# EVOT_LLM_XIAOMI_BASE_URL=https://token-plan-cn.xiaomimimo.com/anthropic
+# EVOT_LLM_XIAOMI_PROTOCOL=anthropic
+# EVOT_LLM_XIAOMI_MODEL=mimo-v2.5-pro
 ```
 
 > Use `--model provider:model` for one-off overrides.
@@ -125,8 +127,6 @@ make setup        # install Rust toolchain, git hooks
 make test         # all tests (engine + CLI)
 make install      # compile standalone binary to ~/.evotai/bin/evot
 ```
-
-## Community
 
 ## Community
 

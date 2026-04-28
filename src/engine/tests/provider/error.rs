@@ -96,6 +96,9 @@ fn classify_400_not_retryable() {
     let err = ProviderError::classify(400, "invalid request format", None);
     assert!(matches!(err, ProviderError::Other(_)));
     assert!(!evotengine::retry::should_retry(&err));
+
+    let err = ProviderError::Api("HTTP 400 Bad Request: missing text field".into());
+    assert!(!evotengine::retry::should_retry(&err));
 }
 
 #[test]

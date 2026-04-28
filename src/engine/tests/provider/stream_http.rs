@@ -123,6 +123,19 @@ fn classify_json_404_is_not_retryable() {
     assert!(!evotengine::retry::should_retry(&err));
 }
 
+#[test]
+fn classify_json_400_bad_request_is_not_retryable() {
+    let value = serde_json::json!({
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Bad request: missing required parameter text"
+        }
+    });
+    let err = classify_json_error(&value);
+    assert!(matches!(err, ProviderError::Api(_)));
+    assert!(!evotengine::retry::should_retry(&err));
+}
+
 // ---------------------------------------------------------------------------
 // StreamResponseKind (via classify_response — tested indirectly through
 // the public enum since classify_response takes a reqwest::Response)

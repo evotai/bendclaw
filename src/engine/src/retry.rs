@@ -70,12 +70,37 @@ impl RetryPolicy {
 pub fn should_retry(error: &ProviderError) -> bool {
     match error {
         ProviderError::RateLimited { .. } | ProviderError::Network(_) => true,
-        ProviderError::Api(message) => !is_404_message(message),
+        ProviderError::Api(message) => is_retryable_api_message(message),
         _ => false,
     }
 }
 
-fn is_404_message(message: &str) -> bool {
+fn is_retryable_api_message(message: &str) -> bool {
     let lower = message.to_lowercase();
-    lower.contains("404") || lower.contains("not found")
+
+    if lower.contains("overloaded")
+        || lower.contains("overloaded_error")
+        || lower.contains("rate limit")
+        || lower.contains("temporarily unavailable")
+        || lower.contains("timeout")
+    {
+        return true;
+    }
+
+    if lower.contains("400")
+        || lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("404")
+        || lower.contains("405")
+        || lower.contains("422")
+        || lower.contains("bad request")
+        || lower.contains("invalid request")
+        || lower.contains("not found")
+        || lower.contains("method not allowed")
+        || lower.contains("unprocessable")
+    {
+        return false;
+    }
+
+    true
 }

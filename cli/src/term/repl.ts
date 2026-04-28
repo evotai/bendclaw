@@ -323,7 +323,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         titleFrame++
         setTerminalTitle(glyphs[idx])
       }
-      if (!spinnerState.streaming) renderStatus()
+      renderStatus()
     }, SPINNER_INTERVAL_MS)
   }
 

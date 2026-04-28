@@ -67,11 +67,10 @@ import {
   formatPastedTextRef,
   formatImageRef,
   parsePasteRefs,
-  expandPasteRefs,
   stripImageRefs,
-  stripResolvedImageRefs,
   deleteRefBackspace,
   skipRefOnMove,
+  resolveSubmitText,
 } from './input/paste_refs.js'
 import { getImageFromClipboard } from './input/clipboard_image.js'
 import { storeImage, formatImageSourceText } from './input/image_store.js'
@@ -366,12 +365,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   /** Get expanded text — resolves paste refs, strips only resolved image refs. */
   function getExpandedText(resolvedImageIds?: Set<number>): string {
-    const raw = getEditorText(editor)
-    const expanded = expandPasteRefs(raw, pastedChunks)
-    if (resolvedImageIds && resolvedImageIds.size > 0) {
-      return stripResolvedImageRefs(expanded, resolvedImageIds).trim()
-    }
-    return expanded.trim()
+    return resolveSubmitText(getEditorText(editor), pastedChunks, resolvedImageIds ?? null)
   }
 
   /** Get display text (raw with refs intact). */
@@ -670,7 +664,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const imageBlocks = imageResult?.blocks ?? null
     const expandedText = imageResult
       ? getExpandedText(imageResult.resolvedIds)
-      : getDisplayText()
+      : getExpandedText()
 
     const trimmed = (expandedText || '').trim()
     if (trimmed === '/log') {
@@ -758,7 +752,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // Unresolved ones (e.g. from history) stay as [Image #N] text markers.
         const expandedText = imageResult
           ? getExpandedText(imageResult.resolvedIds)
-          : getDisplayText()
+          : getExpandedText()
         // Allow image-only or text-only submissions
         if (!expandedText && !imageBlocks) return
         clearAll()

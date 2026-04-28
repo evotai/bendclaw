@@ -172,3 +172,20 @@ export function cleanPastedText(text: string): string {
     .replace(/\r/g, '\n')                   // CR → LF
     .replace(/\t/g, '    ')                 // tab → 4 spaces
 }
+
+/**
+ * Resolve the text to submit by expanding paste refs and optionally stripping
+ * resolved image refs. This is the canonical submit-text resolution used by
+ * the REPL when Enter is pressed.
+ */
+export function resolveSubmitText(
+  rawText: string,
+  pastedChunks: Map<number, string>,
+  resolvedImageIds: Set<number> | null,
+): string {
+  const expanded = expandPasteRefs(rawText, pastedChunks)
+  if (resolvedImageIds && resolvedImageIds.size > 0) {
+    return stripResolvedImageRefs(expanded, resolvedImageIds)
+  }
+  return expanded.trim()
+}

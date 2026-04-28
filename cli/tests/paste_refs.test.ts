@@ -14,6 +14,7 @@ import {
   skipRefOnMove,
   shouldCollapse,
   cleanPastedText,
+  resolveSubmitText,
 } from '../src/term/input/paste_refs.js'
 
 // ---------------------------------------------------------------------------
@@ -395,5 +396,56 @@ describe('cursor operations with image refs', () => {
 
   test('skipRefOnMove left at image ref end → skip to start', () => {
     expect(skipRefOnMove(16, 'left', refs)).toBe(6)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveSubmitText
+// ---------------------------------------------------------------------------
+
+describe('resolveSubmitText', () => {
+  test('no paste refs, no images → returns text as-is', () => {
+    const chunks = new Map<number, string>()
+    expect(resolveSubmitText('hello world', chunks, null)).toBe('hello world')
+  })
+
+  test('expands paste ref when no images', () => {
+    const chunks = new Map([[1, 'line1\nline2\nline3']])
+    expect(resolveSubmitText('[Pasted text #1 +3 lines]', chunks, null))
+      .toBe('line1\nline2\nline3')
+  })
+
+  test('expands paste refs and strips resolved image refs', () => {
+    const chunks = new Map([[1, 'pasted content']])
+    const resolvedIds = new Set([2])
+    expect(resolveSubmitText('[Pasted text #1] [Image #2]', chunks, resolvedIds))
+      .toBe('pasted content')
+  })
+
+  test('keeps unresolved image refs intact', () => {
+    const chunks = new Map([[1, 'pasted content']])
+    const resolvedIds = new Set<number>() // empty — image #2 not resolved
+    expect(resolveSubmitText('[Pasted text #1] [Image #2]', chunks, resolvedIds))
+      .toBe('pasted content [Image #2]')
+  })
+
+  test('expands paste refs even with null resolvedImageIds', () => {
+    const chunks = new Map([[1, 'actual text']])
+    expect(resolveSubmitText('prefix [Pasted text #1] suffix', chunks, null))
+      .toBe('prefix actual text suffix')
+  })
+
+  test('missing paste ref left as-is', () => {
+    const chunks = new Map<number, string>()
+    expect(resolveSubmitText('[Pasted text #99]', chunks, null))
+      .toBe('[Pasted text #99]')
+  })
+
+  test('text-only with paste refs, no images → paste refs expanded (regression)', () => {
+    // This is the exact scenario from the bug: text paste without images.
+    // The old code used getDisplayText() which left [Pasted text #N] placeholders.
+    const chunks = new Map([[3, 'fn main() {\n    println!("hello");\n}']])
+    expect(resolveSubmitText('[Pasted text #3 +3 lines]', chunks, null))
+      .toBe('fn main() {\n    println!("hello");\n}')
   })
 })

@@ -1,4 +1,4 @@
-import { buildError, buildRunSummary, buildToolCall, buildToolResult, buildVerboseEvent, buildAssistantLines, findSafeSplitPoint, type OutputLine } from '../../render/output.js'
+import { buildError, buildRunSummary, buildToolCall, buildToolProgress, buildToolResult, buildVerboseEvent, buildAssistantLines, findSafeSplitPoint, type OutputLine } from '../../render/output.js'
 import { splitMarkdownBlocks } from '../../render/markdown.js'
 import { setSpinnerPhase, type SpinnerState } from '../spinner.js'
 import { applyEvent } from './reducer.js'
@@ -234,6 +234,13 @@ export function buildToolStartedLines(event: RunEvent): OutputLine[] {
   const toolName = (p.tool_name as string) ?? 'unknown'
   const previewCommand = p.preview_command as string | undefined
   return buildToolCall(toolName, (p.args as Record<string, unknown>) ?? {}, previewCommand)
+}
+
+export function buildToolProgressLines(event: RunEvent, expanded?: boolean): OutputLine[] {
+  const p = (event.payload ?? {}) as Record<string, any>
+  const toolName = (p.tool_name as string) ?? 'unknown'
+  const text = (p.text as string) ?? ''
+  return text ? buildToolProgress(toolName, text, expanded) : []
 }
 
 export function flushStreaming(state: StreamMachineState): { state: StreamMachineState; lines: OutputLine[] } {

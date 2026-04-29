@@ -60,14 +60,24 @@ function buildToolBlock(text: string): ViewBlock {
   if (badgeMatch) {
     const badge = badgeMatch[1]!
     const rest = badgeMatch[2] ?? ''
-    const isCompleted = rest.startsWith('completed')
-    const isFailed = rest.startsWith('failed')
-    const color: 'red' | 'green' = isFailed ? 'red' : 'green'
-    const spans = [colored(`[${badge}]`, color, { bold: true })]
-    if (rest) spans.push(dim(` ${rest}`))
+    const statusMatch = rest.match(/^([●✓✗])\s*(.*)$/)
+    const spans = [colored(`[${badge}]`, 'cyan', { bold: true })]
+
+    if (statusMatch) {
+      spans.push(colored(` ${statusMatch[1]}`, 'cyan', { bold: true }))
+      const tail = statusMatch[2] ?? ''
+      if (tail) spans.push(dim(tail.startsWith(' ') ? tail : ` ${tail}`))
+    } else if (rest) {
+      spans.push(dim(` ${rest}`))
+    }
+
     return block([line(...spans)], 1)
   }
   if (text.startsWith('  ')) {
+    const trimmed = text.trimStart()
+    if (/^[{}\[\],]/.test(trimmed) || /^"[^"\\]*(?:\\.[^"\\]*)*"\s*:/.test(trimmed)) {
+      return block([line(plain(text))])
+    }
     return block([line(dim(text))])
   }
   return block([line(plain(text))])
@@ -78,26 +88,21 @@ function buildVerboseBlock(text: string): ViewBlock {
   if (badgeMatch) {
     const badge = badgeMatch[1]!
     const rest = badgeMatch[2] ?? ''
-    const isCall = rest.startsWith('call')
-    const isCompleted = rest.startsWith('completed') || rest.startsWith('·')
-    const isFailed = rest.startsWith('failed')
-    let color: 'red' | 'green' | 'yellow' | 'cyan' | 'magenta' = 'yellow'
-    if (badge === 'LLM' || badge === 'COMPACT') {
-      color = isFailed ? 'red' : 'green'
-    } else if (isCompleted) {
-      color = 'green'
-    } else if (isFailed) {
-      color = 'red'
-    }
+    const statusMatch = rest.match(/^([●✓✗])\s*(.*)$/)
+    const color = verboseStatusColor()
     const spans = [colored(`[${badge}]`, color, { bold: true })]
-    if (rest) {
-      if (isFailed) {
-        spans.push(colored(` ${rest}`, 'red'))
-      } else {
-        spans.push(dim(` ${rest}`))
-      }
+    if (statusMatch) {
+      spans.push(colored(` ${statusMatch[1]}`, color, { bold: true }))
+      const tail = statusMatch[2] ?? ''
+      if (tail) spans.push(dim(` ${tail}`))
+    } else if (rest) {
+      spans.push(dim(` ${rest}`))
     }
     return block([line(...spans)], 1)
   }
   return block([line(dim(text))])
+}
+
+function verboseStatusColor(): 'cyan' {
+  return 'cyan'
 }

@@ -55,6 +55,7 @@ import {
   flushStreaming,
   buildToolStartedLines,
   buildToolFinishedLines,
+  buildToolProgressLines,
   type StreamMachineState,
 } from './app/stream.js'
 import { handleSlashCommand } from './app/commands.js'
@@ -498,14 +499,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             const newLines = allLines.slice(baseline)
             lastProgressLineCount = allLines.length
             if (newLines.length > 0) {
-              const outputLines: OutputLine[] = newLines.map(l => ({
-                id: `prog-${Date.now()}`,
-                kind: 'tool_result' as const,
-                text: `  ${l}`,
-              }))
-              // In expanded mode, commit tool progress lines to the expanded view only.
-              expandedLines.push(...outputLines)
-              const blocks = buildOutputBlocks(outputLines)
+              const compactProgress = buildToolProgressLines({ ...event, payload: { ...(event.payload ?? {}), text: newLines.join('\n') } })
+              const expandedProgress = buildToolProgressLines({ ...event, payload: { ...(event.payload ?? {}), text: newLines.join('\n') } }, true)
+              expandedLines.push(...expandedProgress)
+              const blocks = buildOutputBlocks(expandedProgress)
               const rendered = blocksToLines(blocks)
               renderer.beginBatch()
               renderer.appendScroll(rendered.join('\n'))
@@ -1301,6 +1298,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         } else if (event.kind === 'tool_started') {
           if (streamingText.trim()) { commitLines(buildAssistantLines(streamingText)); streamingText = '' }
           commitLines(buildToolStartedLines(event))
+        } else if (event.kind === 'tool_progress') {
+          if (streamingText.trim()) { commitLines(buildAssistantLines(streamingText)); streamingText = '' }
+          commitLines(buildToolProgressLines(event, true))
         } else if (event.kind === 'tool_finished') {
           commitToolFinished(event)
         }

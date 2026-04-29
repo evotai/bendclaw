@@ -10,7 +10,7 @@
 
 import { renderMarkdown } from './markdown.js'
 import { colorizeUnifiedDiff } from './diff.js'
-import { truncate, truncateResult, humanTokens, formatDuration, renderBar, toolResultLines } from './format.js'
+import { truncate, humanTokens, formatDuration, renderBar, toolResultLines } from './format.js'
 import type { RunStats, UIMessage } from '../term/app/types.js'
 
 // ---------------------------------------------------------------------------
@@ -65,11 +65,11 @@ export function buildToolCall(
   previewCommand?: string,
 ): OutputLine[] {
   const lines: OutputLine[] = []
-  // Badge line: [tool_name] call
+  const inputInfo = formatToolInputInfo(args, previewCommand)
   lines.push({
     id: genId('tool'),
     kind: 'tool',
-    text: `[${name.toUpperCase()}] call`,
+    text: `[${name.toUpperCase()}] ●${inputInfo}`,
   })
   // Detail: preview command takes priority (shown in full), otherwise show args
   if (previewCommand) {
@@ -97,9 +97,10 @@ export function buildToolResult(
   const lines: OutputLine[] = []
   const isError = status === 'error'
 
-  const dur = durationMs !== undefined ? ` · ${durationMs}ms` : ''
+  const dur = durationMs !== undefined ? ` · ${formatDuration(durationMs)}` : ''
   const badge = name.toUpperCase()
-  const label = isError ? `[${badge}] failed${dur}` : `[${badge}] completed${dur}`
+  const resultInfo = result ? formatToolResultInfo(result) : ''
+  const label = isError ? `[${badge}] ✗${dur}${resultInfo}` : `[${badge}] ✓${dur}${resultInfo}`
   lines.push({
     id: genId('tool'),
     kind: 'tool',
@@ -140,7 +141,8 @@ export function buildToolResult(
         })
       }
     } else {
-      const resultLines = toolResultLines(result, isError, name, expanded)
+      const formattedResult = formatToolResultContent(result)
+      const resultLines = toolResultLines(formattedResult, isError, name, expanded)
       for (const rl of resultLines) {
         lines.push({
           id: genId('tool-res'),
@@ -149,9 +151,9 @@ export function buildToolResult(
         })
       }
       // Show expand hint in compact mode when content was truncated
-      if (!expanded && result.includes('\n')) {
-        const allLines = result.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
-        if (allLines.length > 5) {
+      if (!expanded) {
+        const allLines = formattedResult.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
+        if (allLines.length > 5 && !resultLines.some(l => l.includes('ctrl+o to expand'))) {
           lines.push({
             id: genId('tool-hint'),
             kind: 'tool_result',
@@ -165,6 +167,22 @@ export function buildToolResult(
   return lines
 }
 
+export function buildToolProgress(name: string, text: string, expanded?: boolean): OutputLine[] {
+  const progressLines = text.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n')
+  const total = progressLines.length
+  const visible = expanded ? progressLines : progressLines.slice(-5)
+  const hidden = expanded ? 0 : Math.max(0, total - visible.length)
+  const header = `[${name.toUpperCase()}] ● · ${total} ${total === 1 ? 'line' : 'lines'}`
+  const lines: OutputLine[] = [{ id: genId('tool'), kind: 'tool', text: header }]
+  for (const l of visible) {
+    lines.push({ id: genId('tool-res'), kind: 'tool_result', text: `  ${l}` })
+  }
+  if (hidden > 0) {
+    lines.push({ id: genId('tool-hint'), kind: 'tool_result', text: `  \x1b[2m... (+${hidden} lines, ctrl+o to expand)\x1b[0m` })
+  }
+  return lines
+}
+
 export function buildVerboseEvent(eventText: string): OutputLine[] {
   return eventText.split('\n').map((line) => ({
     id: genId('verb'),
@@ -172,6 +190,7 @@ export function buildVerboseEvent(eventText: string): OutputLine[] {
     text: line,
   }))
 }
+
 
 export function buildRunSummary(stats: RunStats): OutputLine[] {
   const lines: OutputLine[] = []
@@ -476,16 +495,82 @@ export class AssistantStreamBuffer {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function parseJsonResult(content: string): unknown | undefined {
+  const trimmed = content.trim()
+  if (!trimmed) return undefined
+  const first = trimmed[0]
+  if (first !== '{' && first !== '[') return undefined
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return undefined
+  }
+}
+
+function formatToolResultInfo(content: string): string {
+  const bytes = Buffer.byteLength(content, 'utf-8')
+  const parsed = parseJsonResult(content)
+  if (parsed !== undefined) {
+    if (Array.isArray(parsed)) return ` · JSON · ${parsed.length} items · ${humanBytes(bytes)}`
+    if (parsed && typeof parsed === 'object') return ` · JSON · ${Object.keys(parsed).length} keys · ${humanBytes(bytes)}`
+    return ` · JSON · ${humanBytes(bytes)}`
+  }
+  const lineCount = content.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n').length
+  return lineCount > 1 ? ` · ${lineCount} lines · ${humanBytes(bytes)}` : ` · ${humanBytes(bytes)}`
+}
+
+function formatToolResultContent(content: string): string {
+  const parsed = parseJsonResult(content)
+  if (parsed === undefined) return content
+  return JSON.stringify(parsed, null, 2)
+}
+
+function formatToolInputInfo(args: Record<string, unknown>, previewCommand?: string): string {
+  if (previewCommand) {
+    const lines = previewCommand.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n').filter(Boolean)
+    return lines.length > 1 ? ` · command · ${lines.length} lines` : ' · command'
+  }
+  const entries = Object.entries(args ?? {}).filter(([k]) => k !== 'diff')
+  if (entries.length === 0) return ''
+  return ` · ${entries.length} arg${entries.length === 1 ? '' : 's'}`
+}
+
 /** Format all args as key: value lines (matching Rust REPL's format_tool_input_lines). */
 function formatToolInputLines(args: Record<string, unknown>): string[] {
   if (!args || typeof args !== 'object') return []
   const entries = Object.entries(args).filter(([k]) => k !== 'diff')
   if (entries.length === 0) return []
-  return entries.map(([k, v]) => {
-    let val: string
-    if (typeof v === 'string') val = truncate(v, 120)
-    else if (Array.isArray(v)) val = truncate(v.map(String).join(', '), 120)
-    else val = truncate(String(v), 120)
-    return `${k}: ${val}`
-  })
+  const lines: string[] = []
+  for (const [k, v] of entries) {
+    if (typeof v === 'string') {
+      lines.push(`${k}: ${truncate(v, 120)}`)
+    } else {
+      const formatted = formatJsonValue(v)
+      const formattedLines = formatted.split('\n')
+      if (formatted.includes('\n')) {
+        lines.push(`${k}:`)
+        for (const line of formattedLines.slice(0, 12)) {
+          lines.push(`  ${line}`)
+        }
+        const total = formattedLines.length
+        if (total > 12) lines.push(`  ... (+${total - 12} lines)`)
+      } else {
+        lines.push(`${k}: ${truncate(formatted, 120)}`)
+      }
+    }
+  }
+  return lines
+}
+
+function formatJsonValue(value: unknown): string {
+  if (Array.isArray(value) || (value && typeof value === 'object')) {
+    return JSON.stringify(value, null, 2)
+  }
+  return String(value)
 }

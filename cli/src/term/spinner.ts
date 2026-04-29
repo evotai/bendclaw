@@ -76,11 +76,12 @@ export function formatSpinnerLine(state: SpinnerState, now: number): string {
   const char = SPINNER_FRAMES[state.frame]!
 
   const isTool = state.phase === 'executing'
+  const tool = state.toolName ? ` [${state.toolName.toUpperCase()}]` : ''
   let label: string
   if (slow) {
-    label = isTool ? 'Executing slow…' : 'LLM slow…'
+    label = isTool ? `Executing${tool} slow…` : 'LLM slow…'
   } else {
-    label = isTool ? 'Executing…' : 'Thinking…'
+    label = isTool ? `Executing${tool}…` : 'Thinking…'
   }
 
   const status = humanDuration(elapsed)

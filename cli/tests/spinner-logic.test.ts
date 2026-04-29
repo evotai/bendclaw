@@ -134,7 +134,7 @@ describe('formatSpinnerLine', () => {
   test('contains Executing label when executing', () => {
     const state = setSpinnerPhase(createSpinnerState(), 'executing', 'bash')
     const line = stripAnsi(formatSpinnerLine(state, Date.now()))
-    expect(line).toContain('Executing…')
+    expect(line).toContain('Executing [BASH]…')
   })
 
   test('contains slow label after threshold', () => {
@@ -153,7 +153,7 @@ describe('formatSpinnerLine', () => {
       toolName: 'bash',
     }
     const line = stripAnsi(formatSpinnerLine(state, now))
-    expect(line).toContain('Executing slow…')
+    expect(line).toContain('Executing [BASH] slow…')
   })
 
   test('contains duration', () => {

@@ -162,7 +162,7 @@ export function toolResultLines(content: string, isError: boolean, _toolName?: s
   const TAIL_LINES = 5
   const MAX_LINE_WIDTH = 256
 
-  const capLine = (l: string) => truncateHeadTail(l, MAX_LINE_WIDTH)
+  const capLine = (l: string) => l.length <= MAX_LINE_WIDTH ? l : truncateHeadTail(l, MAX_LINE_WIDTH)
 
   const summarize = (): string => {
     if (!content.trim()) {
@@ -180,8 +180,8 @@ export function toolResultLines(content: string, isError: boolean, _toolName?: s
     if (allLines.length > TAIL_LINES) {
       const omitted = allLines.length - TAIL_LINES
       const result: string[] = []
-      result.push(`... (+${omitted} lines)`)
-      result.push(...allLines.slice(-TAIL_LINES).map(capLine))
+      result.push(...allLines.slice(0, TAIL_LINES).map(capLine))
+      result.push(`... (+${omitted} lines, ctrl+o to expand)`)
       return result
     }
     return allLines.map(capLine)

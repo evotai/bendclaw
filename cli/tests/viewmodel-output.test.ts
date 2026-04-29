@@ -53,7 +53,7 @@ describe('buildOutputBlocks', () => {
   test('tool badge has marginTop=1', () => {
     const result = renderPlain([
       { id: 'a1', kind: 'assistant', text: 'text' },
-      { id: 't1', kind: 'tool', text: '[bash] call' },
+      { id: 't1', kind: 'tool', text: '[bash] ●' },
     ])
     const lines = result.split('\n')
     const toolIdx = lines.findIndex(l => l.includes('[bash]'))
@@ -62,7 +62,7 @@ describe('buildOutputBlocks', () => {
 
   test('tool detail lines have no margin', () => {
     const result = renderPlain([
-      { id: 't1', kind: 'tool', text: '[bash] call' },
+      { id: 't1', kind: 'tool', text: '[bash] ●' },
       { id: 't2', kind: 'tool', text: '  ls -la' },
     ])
     const lines = result.split('\n')
@@ -80,14 +80,51 @@ describe('buildOutputBlocks', () => {
     expect(lines[verboseIdx - 1]).toBe('')
   })
 
-  test('tool completed badge is green', () => {
-    const result = render([{ id: 't1', kind: 'tool', text: '[bash] completed 1.2s' }])
-    expect(result).toContain('\x1b[32m')
+  test('verbose status colors are unified', () => {
+    const result = render([
+      { id: 'v1', kind: 'verbose', text: '[COMPACT] ● compacting · 1 msgs' },
+      { id: 'v2', kind: 'verbose', text: '[COMPACT] ✓ skipped · within budget' },
+      { id: 'v3', kind: 'verbose', text: '[LLM] ✓ gpt-5.5 · turn 1 · 3.1s' },
+    ])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[32m')
+    expect(result).not.toContain('\x1b[31m')
   })
 
-  test('tool failed badge is red', () => {
-    const result = render([{ id: 't1', kind: 'tool', text: '[bash] failed exit=1' }])
-    expect(result).toContain('\x1b[31m')
+  test('tool badge and status symbol use one unified color', () => {
+    const result = render([{ id: 't1', kind: 'tool', text: '[bash] ✓ · 1.2s' }])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[32m')
+  })
+
+  test('tool failed symbol also uses unified color', () => {
+    const result = render([{ id: 't1', kind: 'tool', text: '[bash] ✗ · exit=1' }])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[31m')
+  })
+
+  test('tool running symbol also uses unified color', () => {
+    const result = render([{ id: 't1', kind: 'tool', text: '[bash] ● · command' }])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[33m')
+  })
+
+  test('tool skipped text no longer changes tool color', () => {
+    const result = render([{ id: 't1', kind: 'tool', text: '[bash] ● · skipped · cached' }])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[33m')
+    expect(result).not.toContain('\x1b[90m')
+  })
+
+  test('tool cancelled text no longer changes tool color', () => {
+    const result = render([{ id: 't1', kind: 'tool', text: '[bash] ● · cancelled' }])
+    expect(result).toContain('\x1b[36m')
+    expect(result).not.toContain('\x1b[33m')
+  })
+
+  test('JSON result body is not dimmed', () => {
+    const result = render([{ id: 'r1', kind: 'tool_result', text: '  {"status":"ok"}' }])
+    expect(result).not.toContain('\x1b[2m')
   })
 
   test('system lines are dim', () => {

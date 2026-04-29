@@ -3,6 +3,7 @@ import {
   buildUserMessage,
   buildAssistantLines,
   buildToolResult,
+  buildToolProgress,
   buildVerboseEvent,
   buildRunSummary,
   buildError,
@@ -10,6 +11,7 @@ import {
   findSafeSplitPoint,
   resetIdCounter,
 } from '../src/render/output.js'
+import { formatLlmCallStarted, formatLlmCallCompleted, formatCompactionStarted, formatCompactionCompleted } from '../src/render/verbose.js'
 
 beforeEach(() => {
   resetIdCounter()
@@ -68,20 +70,48 @@ describe('buildAssistantLines', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildToolResult', () => {
-  test('creates tool badge with uppercase name and duration', () => {
+  test('creates tool badge with uppercase name, status dot, and duration', () => {
     const lines = buildToolResult('bash', { command: 'ls -la' }, 'done', undefined, 42)
     expect(lines.length).toBeGreaterThanOrEqual(1)
     expect(lines[0]!.kind).toBe('tool')
     expect(lines[0]!.text).toContain('[BASH]')
-    expect(lines[0]!.text).toContain('completed')
+    expect(lines[0]!.text).toContain('✓')
+    expect(lines[0]!.text).not.toContain('completed')
     expect(lines[0]!.text).toContain('42ms')
   })
 
   test('creates error tool badge', () => {
     const lines = buildToolResult('bash', { command: 'fail' }, 'error', 'command not found', 10)
     expect(lines[0]!.text).toContain('[BASH]')
-    expect(lines[0]!.text).toContain('failed')
+    expect(lines[0]!.text).toContain('✗')
+    expect(lines[0]!.text).not.toContain('failed')
     expect(lines.some((l) => l.kind === 'error')).toBe(true)
+  })
+
+  test('pretty prints JSON result and summarizes it in the badge', () => {
+    const lines = buildToolResult('web_fetch', {}, 'done', '{"status":"ok","items":[1,2]}', undefined, true)
+    expect(lines[0]!.text).toContain('[WEB_FETCH]')
+    expect(lines[0]!.text).toContain('JSON')
+    expect(lines[0]!.text).toContain('2 keys')
+    const all = lines.map(l => l.text).join('\n')
+    expect(all).toContain('  {')
+    expect(all).toContain('    "status": "ok"')
+    expect(all).toContain('    "items": [')
+  })
+
+  test('compact JSON result shows head with expand hint', () => {
+    const result = JSON.stringify({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 })
+    const lines = buildToolResult('web_fetch', {}, 'done', result)
+    const all = lines.map(l => l.text).join('\n')
+    expect(all).toContain('  {')
+    expect(all).toContain('  ... (+')
+    expect(all).toContain('ctrl+o to expand')
+  })
+
+  test('creates progress badge and preserves progress details', () => {
+    const lines = buildToolProgress('bash', 'line1\nline2\nline3')
+    expect(lines[0]!.text).toBe('[BASH] ● · 3 lines')
+    expect(lines.map(l => l.text).join('\n')).toContain('  line3')
   })
 
   test('includes diff when present', () => {
@@ -101,6 +131,86 @@ describe('buildVerboseEvent', () => {
     expect(lines.filter((l) => l.kind === 'verbose')).toHaveLength(3)
     expect(lines[0]!.text).toBe('line1')
     expect(lines[2]!.text).toBe('line3')
+  })
+
+  test('formats llm started with status symbol and full details', () => {
+    const text = formatLlmCallStarted({
+      model: 'claude-sonnet-4',
+      turn: 2,
+      message_count: 18,
+      system_prompt_tokens: 8000,
+      context_window: 200000,
+      estimated_context_tokens: 42000,
+      message_stats: {
+        user_count: 6,
+        assistant_count: 5,
+        tool_result_count: 7,
+        user_tokens: 12000,
+        assistant_tokens: 4000,
+        tool_result_tokens: 18000,
+        image_tokens: 0,
+        tool_details: [['read_file', 8000], ['search', 6000], ['bash', 4000]],
+      },
+    })
+    expect(text).toContain('[LLM] ● claude-sonnet-4 · turn 2')
+    expect(text).toContain('  msg     18 msgs  user 6 · asst 5 · tool 7')
+    expect(text).toContain('  ctx     ')
+    expect(text).toContain('  tok     sys 8k · user 12k · asst 4k · tool 18k')
+    expect(text).toContain('          read_file  ~8k')
+  })
+
+  test('formats llm completed with status symbol and timing details', () => {
+    const text = formatLlmCallCompleted({
+      model: 'claude-sonnet-4',
+      turn: 2,
+      duration_ms: 8400,
+      input_tokens: 42000,
+      output_tokens: 352,
+      context_window: 200000,
+      estimated_context_tokens: 42000,
+      time_to_first_byte_ms: 1100,
+    })
+    expect(text).toContain('[LLM] ✓ claude-sonnet-4 · turn 2 · 8.4s')
+    expect(text).toContain('  tok     42k in · 352 out')
+    expect(text).toContain('  ctx     ')
+    expect(text).toContain(' · 21% · +352 out')
+    expect(text).toContain('  timing  ttfb 1.1s · 13% · stream 7.3s · 87%')
+  })
+
+  test('formats compact verbose with status symbols and preserves details', () => {
+    const started = formatCompactionStarted({
+      level: 'L1',
+      messages_count: 48,
+      estimated_tokens: 168000,
+      context_window: 200000,
+      token_breakdown: { system: 8000, user: 24000, assistant: 18000, tool: 118000 },
+    })
+    expect(started).toContain('[COMPACT] ● compacting · L1 · 48 msgs · ctx 168k / 200k · 84%')
+    expect(started).toContain('  ctx     ')
+    expect(started).toContain('  tok     sys 8k · user 24k · asst 18k · tool 118k')
+
+    const completed = formatCompactionCompleted({
+      result: {
+        type: 'level_done',
+        level: 1,
+        messages_before: 48,
+        messages_after: 35,
+        tokens_before: 168000,
+        tokens_after: 126000,
+        context_window: 200000,
+        map: '[··OHHH··SS] ',
+        legend: '·=unchanged/kept  O=Outline  H=HeadTail  S=Summarized',
+        result: '↓ outlined 2, head-tail 3',
+        details: ['changed 5/48', '#12 read_file HeadTail ~18k → ~4k (−14k)'],
+      },
+    })
+    expect(completed).toContain('[COMPACT] ✓ L1 done · 48 → 35 msgs · −42k · 25%')
+    expect(completed).toContain('  ctx     ')
+    expect(completed).toContain('  map     [··OHHH··SS]')
+    expect(completed).toContain('  legend  ·=unchanged/kept')
+    expect(completed).toContain('  result  ↓ outlined 2, head-tail 3')
+    expect(completed).toContain('  details changed 5/48')
+    expect(completed).toContain('    #12 read_file HeadTail ~18k → ~4k (−14k)')
   })
 })
 

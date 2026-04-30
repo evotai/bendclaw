@@ -8,6 +8,7 @@ import chalk from 'chalk'
 import { marked, type Token, type Tokens } from 'marked'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'
+import wrapAnsi from 'wrap-ansi'
 import { createHyperlink, isWarpTerminal, supportsHyperlinks, wrapHyperlink } from './hyperlink.js'
 import { linkifyIssueRefs } from './linkify.js'
 
@@ -61,6 +62,187 @@ function plainTextTokens(content: string): Token[] {
 }
 
 const EOL = '\n'
+const SAFETY_MARGIN = 4
+const MAX_TABLE_ROW_LINES = 4
+const MAX_RENDER_WIDTH = 140
+const CODE_FENCE_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/
+const MARKDOWN_BOUNDARY_RE = /^(#{1,6}\s|(?:[-*+]\s)|(?:\d+\.\s)|>\s|\|.*\||-{3,}\s*$)/
+const CODE_LIKE_START_RE = /^[\[{(}\]),;]|^\/\/|^#\s*include\b/
+const CODE_KEYWORD_RE = /^(return|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|await|async|const|let|var|function|class|def|import|export|from|SELECT|CREATE|INSERT|UPDATE|DELETE|WITH|WHERE|ORDER|GROUP|LIMIT)\b/i
+const CODE_ASSIGNMENT_RE = /^[\w$.'"`-]+\s*[:=]/
+
+function terminalContentWidth(): number {
+  const columns = process.stdout.columns ?? 80
+  return Math.max(20, Math.min(columns - SAFETY_MARGIN, MAX_RENDER_WIDTH))
+}
+
+function wrapDisplayLine(line: string, width: number): string[] {
+  if (!line || width <= 0 || stringWidth(stripAnsi(line)) <= width) return [line]
+  const wrapped = wrapAnsi(line, width, { hard: true, trim: false, wordWrap: true })
+  return wrapped.split('\n')
+}
+
+function wrapDisplayText(text: string, width = terminalContentWidth()): string {
+  return text
+    .split(EOL)
+    .flatMap(line => wrapDisplayLine(line, width))
+    .join(EOL)
+}
+
+function wrapPlainTokenText(text: string): string {
+  return wrapDisplayText(linkifyIssueRefs(text))
+}
+
+function looksLikeMarkdownBoundary(line: string): boolean {
+  return MARKDOWN_BOUNDARY_RE.test(line.trimStart())
+}
+
+function isFenceLine(line: string, marker?: string, minLength?: number): boolean {
+  const match = CODE_FENCE_RE.exec(line)
+  if (!match) return false
+  if (marker && match[2]![0] !== marker) return false
+  if (minLength !== undefined && match[2]!.length < minLength) return false
+  return true
+}
+
+function fenceLanguageFromLine(line: string): string | null {
+  const match = CODE_FENCE_RE.exec(line)
+  if (!match) return null
+  const info = match[3]!.trim()
+  return /^([A-Za-z0-9_+.#-]+)\s*$/.exec(info)?.[1] ?? null
+}
+
+function isLikelyFenceClose(line: string, marker: string, minLength: number): boolean {
+  const match = CODE_FENCE_RE.exec(line)
+  return !!match && match[2]![0] === marker && match[2]!.length >= minLength
+}
+
+function looksLikeStructuredCode(lines: string[], lang: string | null): boolean {
+  const normalizedLang = lang?.toLowerCase()
+  if (normalizedLang && /^(json|jsonc|javascript|js|typescript|ts|tsx|jsx|sql|python|py|rust|rs|go|java|c|cpp|c\+\+|csharp|cs|bash|sh|zsh|yaml|yml|toml|xml|html|css|diff)$/.test(normalizedLang)) {
+    return true
+  }
+
+  const content = lines.join('\n').trim()
+  if (!content) return false
+  if (/^[\[{]/.test(content)) return true
+  if (/^(SELECT|CREATE|INSERT|UPDATE|DELETE|WITH|ALTER|DROP)\b/i.test(content)) return true
+  if (/^(import|export|const|let|var|function|class|def|async|type|interface)\b/.test(content)) return true
+  return false
+}
+
+function looksLikePlainMarkdownAfterCode(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  if (looksLikeMarkdownBoundary(line)) return true
+  if (CODE_LIKE_START_RE.test(trimmed)) return false
+  if (CODE_KEYWORD_RE.test(trimmed)) return false
+  if (CODE_ASSIGNMENT_RE.test(trimmed)) return false
+  return /[\u4e00-\u9fff]/.test(trimmed) || /^[A-Z][\w\s,;:()/-]{12,}$/.test(trimmed)
+}
+
+function countStructuralBalance(lines: string[]): number {
+  let balance = 0
+  let inString: string | null = null
+  let escaped = false
+  for (const ch of lines.join('\n')) {
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === inString) {
+        inString = null
+      }
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch
+    } else if (ch === '{' || ch === '[' || ch === '(') {
+      balance++
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      balance--
+    }
+  }
+  return balance
+}
+
+function looksLikeCodeCompleted(lines: string[], lang: string | null): boolean {
+  const nonBlank = lines.filter(line => line.trim().length > 0)
+  if (nonBlank.length === 0) return false
+  const last = nonBlank[nonBlank.length - 1]!.trim()
+  if (/^[}\]\);,]*$/.test(last)) return countStructuralBalance(nonBlank) <= 0
+  if (lang?.toLowerCase() === 'sql' && /;$/.test(last)) return true
+  return false
+}
+
+function shouldCloseOpenFenceBeforeLine(line: string, codeLines: string[], lang: string | null): boolean {
+  if (!looksLikeStructuredCode(codeLines, lang)) return false
+  if (looksLikeMarkdownBoundary(line)) return looksLikeCodeCompleted(codeLines, lang)
+  if (!looksLikeCodeCompleted(codeLines, lang)) return false
+  return looksLikePlainMarkdownAfterCode(line)
+}
+
+function repairUnclosedFences(content: string, finalClose: boolean): string {
+  const lines = content.split('\n')
+  let out = ''
+  let openMarker = ''
+  let openLength = 0
+  let openClose = ''
+  let openLang: string | null = null
+  let codeLines: string[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    const newline = i < lines.length - 1 ? '\n' : ''
+    const match = CODE_FENCE_RE.exec(line)
+
+    if (!openMarker) {
+      if (match) {
+        openMarker = match[2]![0]!
+        openLength = match[2]!.length
+        openClose = openMarker.repeat(openLength)
+        openLang = fenceLanguageFromLine(line)
+        codeLines = []
+      }
+      out += line + newline
+      continue
+    }
+
+    if (isLikelyFenceClose(line, openMarker, openLength)) {
+      openMarker = ''
+      openLength = 0
+      openClose = ''
+      openLang = null
+      codeLines = []
+      out += line + newline
+      continue
+    }
+
+    if (!isFenceLine(line) && shouldCloseOpenFenceBeforeLine(line, codeLines, openLang)) {
+      out += `${openClose}\n`
+      openMarker = ''
+      openLength = 0
+      openClose = ''
+      openLang = null
+      codeLines = []
+    }
+
+    out += line + newline
+    if (openMarker) {
+      codeLines.push(line)
+    }
+  }
+
+  if (finalClose && openMarker) {
+    out += out.endsWith('\n') ? openClose : `\n${openClose}`
+  }
+  return out
+}
+
+function prepareMarkdownForLex(text: string): string {
+  return repairUnclosedFences(text, true)
+}
 
 /**
  * Render a single marked token to an ANSI-styled string.
@@ -103,7 +285,7 @@ export function formatToken(
           // fallback
         }
       }
-      return highlighted + EOL
+      return wrapDisplayText(highlighted) + EOL
     }
     case 'codespan': {
       const raw = token.text as string
@@ -143,12 +325,12 @@ export function formatToken(
         .map(t => formatToken(t, 0, null, null))
         .join('')
       if ((token as Tokens.Heading).depth === 1) {
-        return chalk.hex('#c0c0c0').bold.italic.underline(text) + EOL + EOL
+        return chalk.hex('#c0c0c0').bold.italic.underline(text) + EOL
       }
-      return chalk.hex('#c0c0c0').bold(text) + EOL + EOL
+      return chalk.hex('#c0c0c0').bold(text) + EOL
     }
     case 'hr':
-      return '---'
+      return `---${EOL}`
     case 'link': {
       if (token.href.startsWith('mailto:')) {
         return token.href.replace(/^mailto:/, '')
@@ -190,9 +372,9 @@ export function formatToken(
         .join('')
     case 'paragraph':
       return (
-        (token.tokens ?? [])
+        wrapDisplayText((token.tokens ?? [])
           .map(t => formatToken(t, 0, null, null))
-          .join('') + EOL
+          .join('')) + EOL
       )
     case 'space':
       return EOL
@@ -214,12 +396,12 @@ export function formatToken(
       if (token.tokens) {
         return token.tokens.map(t => formatToken(t, listDepth, orderedListNumber, token)).join('')
       }
-      return linkifyIssueRefs(token.text)
+      return wrapPlainTokenText(token.text)
     }
     case 'table': {
       const tableToken = token as Tokens.Table
       const numCols = tableToken.header.length
-      const termWidth = process.stdout.columns ?? 80
+      const termWidth = terminalContentWidth()
       const MIN_COL = 3
 
       // --- helpers ---
@@ -281,54 +463,13 @@ export function formatToken(
         if (width <= 0) return [text]
         const lines: string[] = []
         for (const srcLine of text.split('\n')) {
-          const plain = stripAnsi(srcLine)
-          if (stringWidth(plain) <= width) {
-            lines.push(srcLine)
-            continue
-          }
-          const segments = srcLine.split(/(\s+)/)
-          let cur = ''
-          let curW = 0
-          for (const seg of segments) {
-            const segW = stringWidth(stripAnsi(seg))
-            // Segment fits on current line
-            if (curW + segW <= width) {
-              cur += seg
-              curW += segW
-              continue
-            }
-            // Segment doesn't fit — flush current line if non-empty
-            if (curW > 0) {
-              lines.push(cur)
-              cur = ''
-              curW = 0
-            }
-            // If segment itself fits in one line, start new line with it
-            if (segW <= width) {
-              cur = seg.trimStart()
-              curW = stringWidth(stripAnsi(cur))
-              continue
-            }
-            // Segment exceeds width — break character by character
-            for (const ch of stripAnsi(seg)) {
-              const chW = stringWidth(ch)
-              if (curW + chW > width && curW > 0) {
-                lines.push(cur)
-                cur = ch
-                curW = chW
-              } else {
-                cur += ch
-                curW += chW
-              }
-            }
-          }
-          if (cur) lines.push(cur)
+          lines.push(...wrapDisplayLine(srcLine, width))
         }
         return lines.length > 0 ? lines : ['']
       }
 
       // --- check if vertical format is needed ---
-      const MAX_ROW_LINES = 4
+      const MAX_ROW_LINES = MAX_TABLE_ROW_LINES
       let needVertical = false
       for (const row of tableToken.rows) {
         for (let ci = 0; ci < numCols; ci++) {
@@ -346,7 +487,7 @@ export function formatToken(
           for (let ci = 0; ci < numCols; ci++) {
             const header = chalk.bold(plainText(tableToken.header[ci]?.tokens))
             const value = renderCell(row[ci]?.tokens)
-            out += `${header}: ${value}${EOL}`
+            out += `${header}: ${wrapDisplayText(value)}${EOL}`
           }
         })
         return out + EOL
@@ -471,6 +612,18 @@ function numberToRoman(n: number): string {
   return result
 }
 
+function formatTokens(tokens: Token[]): string {
+  let out = ''
+
+  for (const token of tokens) {
+    const rendered = formatToken(token)
+    if (!rendered) continue
+    out += rendered
+  }
+
+  return out.trim()
+}
+
 /**
  * Render markdown text to terminal-friendly ANSI output.
  */
@@ -479,16 +632,11 @@ export function renderMarkdown(text: string): string {
 
   configureMarked()
   try {
-    const tokens = hasMarkdownSyntax(text)
-      ? marked.lexer(text)
+    const lexText = prepareMarkdownForLex(text)
+    const tokens = hasMarkdownSyntax(lexText)
+      ? marked.lexer(lexText)
       : plainTextTokens(text)
-    return insertWordBoundaries(
-      tokens
-        .map(t => formatToken(t))
-        .join('')
-        .replace(/\n{3,}/g, '\n\n')
-        .trimEnd(),
-    )
+    return insertWordBoundaries(formatTokens(tokens))
   } catch {
     return text
   }
@@ -599,68 +747,42 @@ export interface MarkdownSplit {
 export function splitMarkdownBlocks(text: string): MarkdownSplit {
   if (!text) return { completed: '', pending: '' }
 
-  // Find the last safe split point: a blank line boundary that is NOT
-  // inside an unclosed code fence.
-  let splitAt = -1
-  let inCodeFence = false
-  let i = 0
-
-  while (i < text.length) {
-    // Detect code fence lines (``` at start of line)
-    if (isAtLineStart(text, i)) {
-      const fenceLen = countFence(text, i)
-      if (fenceLen >= 3) {
-        inCodeFence = !inCodeFence
-        i += fenceLen
-        // Skip to end of line (but not past the \n — let main loop handle it
-        // so blank-line detection works after closing fences)
-        while (i < text.length && text[i] !== '\n') i++
-        continue
-      }
-    }
-
-    // Detect blank line boundary (two consecutive newlines)
-    if (!inCodeFence && text[i] === '\n') {
-      let j = i + 1
-      // Skip whitespace-only chars between newlines
-      while (j < text.length && text[j] === ' ') j++
-      if (j < text.length && text[j] === '\n') {
-        // Found a blank line boundary — this is a safe split point
-        // Include the blank line in the completed part
-        splitAt = j + 1
-        i = j + 1
-        continue
-      }
-    }
-
-    i++
-  }
-
-  // If we're inside an unclosed code fence, don't split at all
-  if (inCodeFence) {
-    // But if the text is very long, find the last split point BEFORE the code fence started
-    // For simplicity, just return everything as pending
-    return { completed: '', pending: text }
-  }
-
-  if (splitAt <= 0) {
-    return { completed: '', pending: text }
-  }
-
+  const commitPoint = findStreamingCommitPoint(text)
   return {
-    completed: text.slice(0, splitAt),
-    pending: text.slice(splitAt),
+    completed: text.slice(0, commitPoint),
+    pending: text.slice(commitPoint),
   }
 }
 
-function isAtLineStart(text: string, pos: number): boolean {
-  return pos === 0 || text[pos - 1] === '\n'
+export function findStreamingCommitPoint(text: string): number {
+  if (!text) return 0
+
+  const repaired = repairUnclosedFences(text, false)
+  if (repaired !== text) {
+    const insertedAt = firstDifferenceIndex(text, repaired)
+    return insertedAt > 0 ? insertedAt : 0
+  }
+
+  configureMarked()
+  const tokens = marked.lexer(text)
+  let lastContentIdx = tokens.length - 1
+  while (lastContentIdx >= 0 && tokens[lastContentIdx]!.type === 'space') {
+    lastContentIdx--
+  }
+  if (lastContentIdx <= 0) return text.endsWith('\n\n') ? text.length : 0
+
+  let splitAt = 0
+  for (let i = 0; i < lastContentIdx; i++) {
+    splitAt += tokens[i]!.raw.length
+  }
+  if (splitAt <= 0 || splitAt >= text.length) return text.endsWith('\n\n') ? text.length : 0
+  return splitAt
 }
 
-function countFence(text: string, pos: number): number {
-  const ch = text[pos]
-  if (ch !== '`' && ch !== '~') return 0
-  let count = 0
-  while (pos + count < text.length && text[pos + count] === ch) count++
-  return count
+function firstDifferenceIndex(a: string, b: string): number {
+  const limit = Math.min(a.length, b.length)
+  for (let i = 0; i < limit; i++) {
+    if (a[i] !== b[i]) return i
+  }
+  return limit
 }

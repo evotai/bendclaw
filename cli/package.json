@@ -27,7 +27,8 @@
     "diff": "^9.0.0",
     "marked": "^15.0.0",
     "string-width": "^8.2.0",
-    "strip-ansi": "^7.2.0"
+    "strip-ansi": "^7.2.0",
+    "wrap-ansi": "^9.0.2"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.6.1",

@@ -1,5 +1,5 @@
-import { buildError, buildRunSummary, buildToolCall, buildToolProgress, buildToolResult, buildVerboseEvent, buildAssistantLines, findSafeSplitPoint, type OutputLine } from '../../render/output.js'
-import { splitMarkdownBlocks } from '../../render/markdown.js'
+import { buildError, buildRunSummary, buildToolCall, buildToolProgress, buildToolResult, buildVerboseEvent, buildAssistantLines, type OutputLine } from '../../render/output.js'
+import { findStreamingCommitPoint } from '../../render/markdown.js'
 import { setSpinnerPhase, type SpinnerState } from '../spinner.js'
 import { applyEvent } from './reducer.js'
 import type { AppState } from './state.js'
@@ -94,8 +94,10 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
       }
 
       // Commit completed markdown blocks directly to scroll area.
-      const { completed, pending } = splitMarkdownBlocks(state.streamingText)
-      if (completed) {
+      const commitPoint = findStreamingCommitPoint(state.streamingText)
+      if (commitPoint > 0) {
+        const completed = state.streamingText.slice(0, commitPoint)
+        const pending = state.streamingText.slice(commitPoint)
         const builtLines = buildAssistantLines(completed)
         commitLines.push(...builtLines)
         writeLines.push(...builtLines)
@@ -104,17 +106,12 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
 
       // Force-split when pending text exceeds a fraction of the visible area
       // so content flows into the scroll zone (append) instead of staying in
-      // the status area (re-render in place).
+      // the status area (re-render in place). Only split at markdown-safe
+      // boundaries; otherwise keep the whole growing block dynamic.
       const pendingLineCount = state.streamingText.split('\n').length
       const forceThreshold = Math.max(4, Math.floor(ctx.termRows / 3))
       if (pendingLineCount > forceThreshold) {
-        let splitAt = findSafeSplitPoint(state.streamingText)
-        // findSafeSplitPoint returns content.length when inside a code block;
-        // fall back to the last newline so long code blocks still scroll.
-        if (splitAt >= state.streamingText.length) {
-          const lastNl = state.streamingText.lastIndexOf('\n', state.streamingText.length - 2)
-          if (lastNl > 0) splitAt = lastNl + 1
-        }
+        const splitAt = findStreamingCommitPoint(state.streamingText)
         if (splitAt > 0 && splitAt < state.streamingText.length) {
           const chunk = state.streamingText.slice(0, splitAt)
           const rest = state.streamingText.slice(splitAt)

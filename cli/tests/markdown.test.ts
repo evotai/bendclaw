@@ -49,6 +49,74 @@ describe('renderMarkdown', () => {
     expect(result).toContain('foo()')
   })
 
+  test('renders unclosed code fence as code', () => {
+    const result = render('```sql\nSELECT 1')
+    expect(result).toContain('SELECT 1')
+    expect(result).not.toContain('```')
+  })
+
+  test('renders unclosed tilde fence as code', () => {
+    const result = render('~~~sql\nSELECT 1')
+    expect(result).toContain('SELECT 1')
+    expect(result).not.toContain('~~~')
+  })
+
+  test('repairs unclosed code fence before later prose', () => {
+    const md = '```json\n[\n  {"id":"evt-001"}\n]\n\n原样保存，没有任何转换。'
+    const result = render(md)
+    expect(result).toContain('{"id":"evt-001"}')
+    expect(result).toContain('原样保存')
+    expect(result).not.toContain('```')
+  })
+
+  test('repairs unclosed fence before following markdown heading without a blank line', () => {
+    const result = render('```json\n{\n  "id": "tr-abc"\n}\n## 第 8 站：补充 input / output')
+
+    expect(result).toContain('"id": "tr-abc"')
+    expect(result.replace(/\u200b/g, '')).toContain('第 8 站：补充 input / output')
+    expect(result).not.toContain('```json')
+  })
+
+  test('repairs completed json fence before plain chinese paragraph', () => {
+    const result = render('最终合并结果：\n```json\n{\n  "id": "tr-abc",\n  "is_deleted": 0\n}\n原始事件继续说明')
+
+    expect(result).toContain('"is_deleted": 0')
+    expect(result).toContain('原始事件继续说明')
+    expect(result).not.toContain('```json')
+  })
+
+  test('repairs completed json fence before markdown hr without a blank line', () => {
+    const result = render('最终合并结果：\n```json\n{\n  "id": "tr-abc",\n  "is_deleted": 0\n}\n---\n第 8 站：补充 input / output')
+      .replace(/\u200b/g, '')
+
+    expect(result).toContain('"is_deleted": 0')
+    expect(result).toContain('---\n第 8 站：补充 input / output')
+    expect(result).not.toContain('```json')
+  })
+
+  test('keeps adjacent prose compact', () => {
+    const result = render('第一行\n第二行\n第三行')
+
+    expect(result).toBe('第一行\n第二行\n第三行')
+  })
+
+  test('keeps list items compact', () => {
+    const result = render('- 第一项\n- 第二项\n- 第三项')
+
+    expect(result).toBe('- 第一项\n- 第二项\n- 第三项')
+  })
+
+  test('wraps very long plain lines', () => {
+    const prev = process.stdout.columns
+    process.stdout.columns = 40
+    try {
+      const result = render('INSERT ' + 'x'.repeat(80))
+      expect(result.split('\n').length).toBeGreaterThan(1)
+    } finally {
+      process.stdout.columns = prev
+    }
+  })
+
   test('renders code blocks', () => {
     const result = render('```js\nconst x = 1\n```')
     expect(result).toContain('const x = 1')
@@ -251,8 +319,22 @@ describe('splitMarkdownBlocks', () => {
   test('unclosed code fence keeps everything pending', () => {
     const text = 'intro\n\n```js\nconst x = 1\nmore code'
     const result = splitMarkdownBlocks(text)
-    expect(result.completed).toBe('')
-    expect(result.pending).toBe(text)
+    expect(result.completed).toBe('intro\n\n')
+    expect(result.pending).toBe('```js\nconst x = 1\nmore code')
+  })
+
+  test('unclosed code fence can commit following markdown after heuristic repair', () => {
+    const text = '```json\n[\n  {"id":"evt-001"}\n]\n\n## next'
+    const result = splitMarkdownBlocks(text)
+    expect(result.completed).toBe('```json\n[\n  {"id":"evt-001"}\n]\n\n')
+    expect(result.pending).toBe('## next')
+  })
+
+  test('unclosed code fence can commit following horizontal rule after heuristic repair', () => {
+    const text = '最终合并结果：\n```json\n{\n  "id": "tr-abc",\n  "is_deleted": 0\n}\n---\n第 8 站：补充 input / output'
+    const result = splitMarkdownBlocks(text)
+    expect(result.completed).toBe('最终合并结果：\n```json\n{\n  "id": "tr-abc",\n  "is_deleted": 0\n}\n')
+    expect(result.pending).toBe('---\n第 8 站：补充 input / output')
   })
 
   test('trailing blank line makes everything completed', () => {

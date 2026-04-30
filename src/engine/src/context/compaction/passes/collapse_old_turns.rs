@@ -99,9 +99,14 @@ pub fn run(
                     "[Summary] [Assistant response]".into()
                 };
 
-                let summary_msg = AgentMessage::Llm(Message::User {
+                let summary_msg = AgentMessage::Llm(Message::Assistant {
                     content: vec![Content::Text { text: summary }],
+                    stop_reason: StopReason::Stop,
+                    model: "compaction".into(),
+                    provider: "evot".into(),
+                    usage: Usage::default(),
                     timestamp: now_ms(),
+                    error_message: None,
                 });
                 let after_tokens = message_tokens(&summary_msg);
 

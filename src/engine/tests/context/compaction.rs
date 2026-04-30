@@ -1293,7 +1293,7 @@ fn test_level2_summary_preserves_multiple_texts() {
     // Find the summary message
     let mut found_both = false;
     for msg in &result.messages {
-        if let AgentMessage::Llm(Message::User { content, .. }) = msg {
+        if let AgentMessage::Llm(Message::Assistant { content, .. }) = msg {
             if let Some(Content::Text { text }) = content.first() {
                 if text.contains("[Summary]")
                     && text.contains("Planning the fix")

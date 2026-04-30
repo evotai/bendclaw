@@ -65,6 +65,8 @@ pub(super) async fn stream_assistant_response(
 
         // Emit LlmCallStart before each provider attempt
         let llm_stats = crate::context::compute_call_stats(&llm_messages);
+        let (otel_provider_name, otel_server_address, otel_server_port) =
+            extract_otel_server_info(config);
         tx.send(AgentEvent::LlmCallStart {
             turn,
             attempt,
@@ -77,6 +79,9 @@ pub(super) async fn stream_assistant_response(
             },
             stats: llm_stats,
             budget: budget.clone(),
+            provider_name: otel_provider_name,
+            server_address: otel_server_address,
+            server_port: otel_server_port,
         })
         .ok();
 
@@ -327,6 +332,77 @@ pub(super) async fn stream_assistant_response(
                 usage: Usage::default(),
                 timestamp: now_ms(),
                 error_message: Some(e.to_string()),
+            }
+        }
+    }
+}
+
+/// Extract OTel-standard provider name and server address/port from config.
+fn extract_otel_server_info(config: &AgentLoopConfig) -> (String, Option<String>, Option<u16>) {
+    let (provider_name, base_url) = match &config.model_config {
+        Some(mc) => {
+            let pn = normalize_provider_name(&mc.provider, &mc.base_url);
+            (pn, Some(mc.base_url.as_str()))
+        }
+        None => ("unknown".to_string(), None),
+    };
+
+    let (address, port) = match base_url {
+        Some(url) => parse_host_port(url),
+        None => (None, None),
+    };
+
+    (provider_name, address, port)
+}
+
+/// Parse host and port from a URL string without external crate.
+fn parse_host_port(url: &str) -> (Option<String>, Option<u16>) {
+    // Strip scheme
+    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
+    // Strip path
+    let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
+    // Strip userinfo
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+
+    if let Some(colon_idx) = host_port.rfind(':') {
+        let host = &host_port[..colon_idx];
+        let port = host_port[colon_idx + 1..].parse::<u16>().ok();
+        (Some(host.to_string()), port)
+    } else {
+        let default_port = if url.starts_with("https") {
+            Some(443)
+        } else if url.starts_with("http") {
+            Some(80)
+        } else {
+            None
+        };
+        (Some(host_port.to_string()), default_port)
+    }
+}
+
+/// Map provider strings to OTel Gen AI standard values.
+fn normalize_provider_name(provider: &str, base_url: &str) -> String {
+    match provider {
+        "anthropic" => "anthropic".to_string(),
+        "bedrock" => "aws.bedrock".to_string(),
+        "openai" => "openai".to_string(),
+        "deepseek" => "deepseek".to_string(),
+        "xai" => "xai".to_string(),
+        "groq" => "groq".to_string(),
+        "mistral" => "mistral".to_string(),
+        "zai" => "zai".to_string(),
+        "minimax" => "minimax".to_string(),
+        "local" => "openai_compatible".to_string(),
+        other => {
+            // Try to infer from base_url
+            if base_url.contains("anthropic.com") {
+                "anthropic".to_string()
+            } else if base_url.contains("openai.com") {
+                "openai".to_string()
+            } else if base_url.contains("amazonaws.com") {
+                "aws.bedrock".to_string()
+            } else {
+                other.to_string()
             }
         }
     }

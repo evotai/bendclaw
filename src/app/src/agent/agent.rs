@@ -20,6 +20,7 @@ use crate::error::Result;
 use crate::storage::open_storage;
 use crate::storage::MemoryStorage;
 use crate::storage::Storage;
+use crate::telemetry::config::TelemetryConfig;
 use crate::types::ListSessions;
 use crate::types::SessionMeta;
 use crate::types::TranscriptItem;
@@ -134,6 +135,10 @@ pub struct Agent {
     sandbox: super::sandbox::SandboxPolicy,
     /// session_id → (run_id, handle, done_flag)
     active_runs: Arc<parking_lot::Mutex<HashMap<String, ActiveRun>>>,
+    /// OTel telemetry config (endpoint presence = enabled).
+    telemetry: crate::telemetry::config::TelemetryConfig,
+    /// Holds the OTel exporter alive for the agent's lifetime.
+    _telemetry_exporter: Option<crate::telemetry::exporter::TelemetryExporter>,
 }
 
 impl Agent {
@@ -141,6 +146,8 @@ impl Agent {
         let cwd = cwd.into();
         let storage = open_storage(&config.storage)?;
         let system_prompt = format!("You are a helpful assistant. Working directory: {cwd}");
+        let telemetry_exporter =
+            crate::telemetry::exporter::TelemetryExporter::init(&config.telemetry);
         Ok(Arc::new(Self {
             llm: RwLock::new(config.active_llm()?),
             system_prompt: RwLock::new(system_prompt),
@@ -155,6 +162,8 @@ impl Agent {
             variables: RwLock::new(None),
             sandbox: super::sandbox::SandboxPolicy::from_config(&config.sandbox),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            telemetry: config.telemetry.clone(),
+            _telemetry_exporter: telemetry_exporter,
         }))
     }
 
@@ -474,7 +483,7 @@ impl Agent {
             }
         });
 
-        let run = runtime::execute_turn(turn, Some(on_complete)).await?;
+        let run = runtime::execute_turn(turn, Some(on_complete), Some(&self.telemetry)).await?;
 
         // Register active run — skip if on_complete already fired
         if !done.load(Ordering::Acquire) {
@@ -503,6 +512,8 @@ impl Agent {
             variables: _,
             sandbox,
             active_runs: _,
+            telemetry: _,
+            _telemetry_exporter: _,
         } = self.as_ref();
 
         let forked = Arc::new(Self {
@@ -519,6 +530,8 @@ impl Agent {
                 extra_dirs: sandbox.extra_dirs.clone(),
             },
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            telemetry: TelemetryConfig::default(),
+            _telemetry_exporter: None,
         });
         Ok(ForkedAgent {
             agent: forked,

@@ -97,6 +97,12 @@ pub enum AgentEvent {
         stats: LlmCallStats,
         /// Context budget snapshot (same source as compaction events).
         budget: crate::context::ContextBudgetSnapshot,
+        /// OTel: standardized provider name (e.g. "anthropic", "aws.bedrock", "openai").
+        provider_name: String,
+        /// OTel: server address extracted from base_url.
+        server_address: Option<String>,
+        /// OTel: server port extracted from base_url.
+        server_port: Option<u16>,
     },
     LlmCallEnd {
         turn: usize,

@@ -31,6 +31,7 @@ struct ConfigSource {
     storage: StorageSource,
     channel: ChannelSource,
     sandbox: SandboxSource,
+    telemetry: TelemetrySource,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -112,6 +113,13 @@ struct SandboxSource {
     allowed_dirs: Option<Vec<String>>,
 }
 
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+struct TelemetrySource {
+    endpoint: Option<String>,
+    capture_content: Option<bool>,
+}
+
 fn optional_string(value: String) -> Option<String> {
     if value.trim().is_empty() {
         None
@@ -181,6 +189,14 @@ impl ConfigSource {
             if !expanded.is_empty() {
                 config.sandbox.allowed_dirs = expanded;
             }
+        }
+
+        // Telemetry
+        if let Some(endpoint) = self.telemetry.endpoint {
+            config.telemetry.endpoint = Some(endpoint);
+        }
+        if let Some(capture_content) = self.telemetry.capture_content {
+            config.telemetry.capture_content = capture_content;
         }
 
         Ok(())
@@ -358,6 +374,7 @@ const OTHER_RELEVANT_PREFIXES: &[&str] = &[
     "EVOT_SKILLS_DIRS",
     "EVOT_ID",
     "EVOT_THINKING_LEVEL",
+    "EVOT_TELEMETRY_",
 ];
 
 fn is_relevant_key(key: &str) -> bool {
@@ -630,6 +647,19 @@ fn apply_env(config: &mut Config, vars: &[(String, String)]) -> Result<()> {
             if !val.is_empty() {
                 config.id = Some(val.to_string());
             }
+        }
+    }
+
+    // Telemetry
+    for (key, value) in vars {
+        match key.as_str() {
+            "EVOT_TELEMETRY_ENDPOINT" => {
+                config.telemetry.endpoint = Some(value.clone());
+            }
+            "EVOT_TELEMETRY_CAPTURE_CONTENT" => {
+                config.telemetry.capture_content = value == "true" || value == "1";
+            }
+            _ => {}
         }
     }
 

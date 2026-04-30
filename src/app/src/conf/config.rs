@@ -124,6 +124,8 @@ pub struct Config {
     pub skills_dirs: Vec<PathBuf>,
     /// The env file path actually used during config loading.
     pub env_file_path: PathBuf,
+    /// OTel telemetry configuration.
+    pub telemetry: crate::telemetry::config::TelemetryConfig,
 }
 
 impl Config {
@@ -138,6 +140,7 @@ impl Config {
             sandbox: SandboxConfig::default(),
             skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
+            telemetry: crate::telemetry::config::TelemetryConfig::default(),
         }
     }
 

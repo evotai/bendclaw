@@ -5,4 +5,5 @@ pub mod gateway;
 pub mod log;
 pub mod search;
 pub mod storage;
+pub mod telemetry;
 pub mod types;

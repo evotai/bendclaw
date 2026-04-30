@@ -49,8 +49,7 @@ pub(super) fn compact_context(
     .ok();
 
     if did_work {
-        context_tracker
-            .record_compaction(result.stats.after_estimated_tokens, context.messages.len());
+        context_tracker.record_compaction();
     }
 
     tx.send(AgentEvent::ContextCompactionEnd {
@@ -104,10 +103,7 @@ pub(super) fn compact_for_recovery(
         &budget_state,
     );
     context.messages = compact_result.messages;
-    context_tracker.record_compaction(
-        compact_result.stats.after_estimated_tokens,
-        context.messages.len(),
-    );
+    context_tracker.record_compaction();
 
     tx.send(AgentEvent::ContextCompactionStart {
         message_count: compact_result.stats.before_message_count,

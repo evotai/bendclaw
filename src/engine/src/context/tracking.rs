@@ -28,23 +28,29 @@ impl ContextTracker {
     }
 
     /// Update baseline from provider usage (call after each assistant message).
+    ///
+    /// Only input-side tokens count toward context size. Output tokens are
+    /// excluded because the assistant message is already in `messages` and
+    /// will be estimated via chars/4 for trailing-message accounting.
     pub fn record_usage(&mut self, usage: &Usage, message_index: usize) {
-        let total = usage.input + usage.output + usage.cache_read + usage.cache_write;
+        let total = usage.input + usage.cache_read + usage.cache_write;
         if total > 0 {
             self.last_baseline_tokens = Some(total as usize);
             self.last_baseline_index = Some(message_index);
         }
     }
 
-    /// Update baseline from compaction result, anchored at the last compacted message.
-    pub fn record_compaction(&mut self, estimated_tokens: usize, message_count: usize) {
-        if message_count > 0 {
-            self.last_baseline_tokens = Some(estimated_tokens);
-            self.last_baseline_index = Some(message_count - 1);
-        } else {
-            self.last_baseline_tokens = None;
-            self.last_baseline_index = None;
-        }
+    /// Reset baseline after compaction.
+    ///
+    /// The provider baseline includes system prompt + tool definitions that
+    /// compaction cannot reduce. Carrying it forward after message drops
+    /// produces an inflated estimate (e.g. 176k for 13 messages). Resetting
+    /// forces the next `estimate_context_tokens` to fall back to chars/4,
+    /// and the next LLM call's `record_usage` will establish a fresh,
+    /// accurate baseline.
+    pub fn record_compaction(&mut self) {
+        self.last_baseline_tokens = None;
+        self.last_baseline_index = None;
     }
 
     /// Estimate current context size: baseline + chars/4 for trailing messages.

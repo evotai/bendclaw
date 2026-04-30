@@ -279,7 +279,7 @@ fn tool_text_within_limit_unchanged() {
 
 #[test]
 fn tool_text_exceeding_limit_truncated() {
-    let big = "x".repeat(60_000);
+    let big = "x".repeat(200_000);
     let result = truncate_tool_text(&big, MAX_TOOL_RESULT_BYTES);
     assert!(result.len() < big.len());
     assert!(result.contains("bytes truncated"));
@@ -287,7 +287,7 @@ fn tool_text_exceeding_limit_truncated() {
 
 #[test]
 fn tool_text_truncation_utf8_safe() {
-    let big: String = "中".repeat(20_000); // 60_000 bytes
+    let big: String = "中".repeat(50_000); // 150_000 bytes
     let result = truncate_tool_text(&big, MAX_TOOL_RESULT_BYTES);
     assert!(result.contains("bytes truncated"));
     assert!(result.starts_with("中"));

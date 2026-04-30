@@ -66,7 +66,8 @@ fn test_context_tracker_with_usage() {
     );
     let tokens = tracker.estimate_context_tokens(&messages);
     let trailing_estimate = message_tokens(&messages[2]);
-    assert_eq!(tokens, 150 + trailing_estimate);
+    // record_usage excludes output tokens: baseline = input(100) only
+    assert_eq!(tokens, 100 + trailing_estimate);
 }
 
 #[test]
@@ -110,40 +111,57 @@ fn test_execution_limits() {
 #[test]
 fn test_context_tracker_record_compaction() {
     let mut tracker = ContextTracker::new();
-    // Simulate: 3 messages, compact result says 5000 tokens
+    // Give tracker a provider baseline at the last message
+    tracker.record_usage(
+        &Usage {
+            input: 50000,
+            ..Default::default()
+        },
+        2,
+    );
     let messages = vec![
         AgentMessage::Llm(Message::user("Hello")),
         AgentMessage::Llm(Message::user("World")),
         AgentMessage::Llm(Message::user("Test")),
     ];
-    tracker.record_compaction(5000, messages.len());
+    // Before compaction: baseline dominates
+    assert_eq!(tracker.estimate_context_tokens(&messages), 50000);
 
-    // No trailing messages → should return the compaction baseline
+    // After compaction: baseline is reset, falls back to chars/4
+    tracker.record_compaction();
     let tokens = tracker.estimate_context_tokens(&messages);
-    assert_eq!(tokens, 5000);
+    assert_eq!(tokens, total_tokens(&messages));
 }
 
 #[test]
 fn test_context_tracker_record_compaction_with_trailing() {
     let mut tracker = ContextTracker::new();
-    // Compact with 2 messages, baseline 5000
-    tracker.record_compaction(5000, 2);
+    // Give tracker a large provider baseline
+    tracker.record_usage(
+        &Usage {
+            input: 176000,
+            ..Default::default()
+        },
+        0,
+    );
 
-    // Now add a trailing message
+    // After compaction, reset clears the inflated baseline
+    tracker.record_compaction();
+
     let messages = vec![
         AgentMessage::Llm(Message::user("Hello")),
         AgentMessage::Llm(Message::user("World")),
         AgentMessage::Llm(Message::user("Trailing message after compaction")),
     ];
+    // Falls back to pure chars/4 estimation
     let tokens = tracker.estimate_context_tokens(&messages);
-    let trailing_estimate = message_tokens(&messages[2]);
-    assert_eq!(tokens, 5000 + trailing_estimate);
+    assert_eq!(tokens, total_tokens(&messages));
 }
 
 #[test]
 fn test_context_tracker_record_compaction_empty() {
     let mut tracker = ContextTracker::new();
-    tracker.record_compaction(0, 0);
+    tracker.record_compaction();
     // Falls back to pure estimation
     let messages = vec![AgentMessage::Llm(Message::user("test"))];
     assert_eq!(

@@ -48,13 +48,18 @@ impl ContextTracker {
     }
 
     /// Estimate current context size: baseline + chars/4 for trailing messages.
+    ///
+    /// `total_tokens(messages)` is used as a floor — when the provider baseline
+    /// is stale (e.g. models that report `usage.input = 0`), the cheap chars/4
+    /// estimate prevents the tracker from drifting to zero and skipping compaction.
     pub fn estimate_context_tokens(&self, messages: &[AgentMessage]) -> usize {
+        let chars_floor = total_tokens(messages);
         match (self.last_baseline_tokens, self.last_baseline_index) {
             (Some(baseline_tokens), Some(idx)) if idx < messages.len() => {
                 let trailing: usize = messages[idx + 1..].iter().map(message_tokens).sum();
-                baseline_tokens + trailing
+                (baseline_tokens + trailing).max(chars_floor)
             }
-            _ => total_tokens(messages),
+            _ => chars_floor,
         }
     }
 
@@ -154,12 +159,23 @@ pub struct ContextConfig {
     pub tool_output_max_lines: usize,
     /// Compaction trigger as percentage of budget (0–100).
     /// When context exceeds this fraction, L1 starts summarizing old turns.
-    /// Set to 100 to disable early collapse. Default: 92.
+    /// Set to 100 to disable early collapse. Default: 80.
     pub compact_trigger_pct: u8,
     /// Compaction target as percentage of budget (0–100).
     /// L1 and L2 both aim to reduce context to this fraction.
     /// Must be <= compact_trigger_pct. Default: 75.
     pub compact_target_pct: u8,
+    /// Maximum messages before L1 summarization is forced, even if the
+    /// token estimate is within budget. Guards against stale provider
+    /// baselines that would otherwise skip compaction.
+    /// Set to 0 to disable message-count trigger. Default: 80.
+    pub max_messages: usize,
+    /// Hard message-count limit that forces L2 eviction (dropping middle
+    /// messages), even if the token estimate is within budget. This is the
+    /// last-resort guard against sessions that accumulate thousands of
+    /// non-compactable messages (e.g. steering prompts).
+    /// Must be >= max_messages. Set to 0 to disable. Default: 250.
+    pub max_messages_hard: usize,
 }
 
 impl Default for ContextConfig {
@@ -170,8 +186,10 @@ impl Default for ContextConfig {
             keep_recent: 10,
             keep_first: 2,
             tool_output_max_lines: 50,
-            compact_trigger_pct: 92,
+            compact_trigger_pct: 80,
             compact_target_pct: 75,
+            max_messages: 80,
+            max_messages_hard: 250,
         }
     }
 }

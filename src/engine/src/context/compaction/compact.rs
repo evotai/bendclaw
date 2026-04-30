@@ -213,25 +213,43 @@ pub fn compact_messages(
     };
 
     let before_message_count = messages.len();
-    let before_estimated_tokens = budget_state.estimated_tokens;
+    // Floor estimated tokens against chars/4 (total_tokens). When the provider
+    // baseline is stale (e.g. reports 0 input tokens), this prevents the
+    // tracker from drifting to near-zero while the real context is large.
+    let before_estimated_tokens = budget_state.estimated_tokens.max(total_tokens(&messages));
     let before_tool_details = collect_tool_details(&messages);
 
-    let mut current_tokens = budget_state.estimated_tokens;
+    let mut current_tokens = before_estimated_tokens;
     let mut messages = messages;
     let mut all_actions = Vec::new();
 
+    let max_messages = config.max_messages;
+    let max_messages_hard = config.max_messages_hard;
+
     for level in LEVELS {
         // L0 always runs.
-        // L1 triggers at compact_trigger (92% of budget) — early collapse.
-        // L2 triggers at budget (hard limit) — last resort eviction.
+        // L1 triggers at compact_trigger (80% of budget) — early collapse,
+        //   or when message count exceeds max_messages (guards stale baselines).
+        // L2 triggers at budget (hard limit) or when messages exceed
+        //   max_messages_hard (last resort for non-compactable message floods).
         let threshold = match level {
             Level::L0Cleanup => 0,
             Level::L1Collapse => ctx.compact_trigger,
             Level::L2Evict => ctx.budget,
         };
-        if !matches!(level, Level::L0Cleanup) && current_tokens <= threshold {
+
+        let over_message_limit = match level {
+            Level::L1Collapse => max_messages > 0 && messages.len() > max_messages,
+            Level::L2Evict => max_messages_hard > 0 && messages.len() > max_messages_hard,
+            _ => false,
+        };
+
+        if !matches!(level, Level::L0Cleanup) && current_tokens <= threshold && !over_message_limit
+        {
             continue;
         }
+
+        let collapse_user_runs = max_messages_hard > 0 && messages.len() > max_messages_hard;
 
         let result = match level {
             Level::L0Cleanup => {
@@ -254,7 +272,9 @@ pub fn compact_messages(
                     actions,
                 }
             }
-            Level::L1Collapse => collapse_old_turns::run(messages, &ctx, current_tokens),
+            Level::L1Collapse => {
+                collapse_old_turns::run(messages, &ctx, current_tokens, collapse_user_runs)
+            }
             Level::L2Evict => evict_stale::run(messages, &ctx),
         };
 

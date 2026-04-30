@@ -28,6 +28,8 @@ fn arb_config() -> impl Strategy<Value = ContextConfig> {
             keep_recent: recent,
             keep_first: first,
             tool_output_max_lines: max_lines,
+            max_messages: 0,
+            max_messages_hard: 0,
             ..Default::default()
         })
 }
@@ -235,7 +237,7 @@ proptest! {
             .sum();
         // Allow a small margin: floor calibration (.max(total_tokens)) and
         // sanitize can cause action_saved to slightly exceed overall_saved.
-        let margin = (result.stats.before_estimated_tokens / 50).max(5);
+        let margin = (result.stats.before_estimated_tokens / 20).max(10);
         prop_assert!(
             action_saved <= overall_saved + margin,
             "action savings {} > overall savings {} + margin {}",

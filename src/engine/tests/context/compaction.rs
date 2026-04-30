@@ -1747,14 +1747,14 @@ fn test_user_message_under_budget_not_truncated() {
 /// Simulate a long session where context hovers near budget.
 ///
 /// Before the compact_target fix, L1 would stop as soon as context dipped
-/// below the trigger threshold (92%), leading to per-turn "toothpaste squeezing".
+/// below the trigger threshold (80%), leading to per-turn "toothpaste squeezing".
 /// With compact_target at 75%, L1 summarizes enough turns to push context
 /// well below the trigger, keeping the context healthy.
 #[test]
 fn test_l1_compacts_to_target() {
     // Build a conversation with many tool turns.
     let budget = 8_000;
-    let trigger_expected = budget * 92 / 100;
+    let trigger_expected = budget * 80 / 100;
     let target_expected = budget * 75 / 100;
 
     let mut messages = Vec::new();
@@ -2239,12 +2239,11 @@ fn test_extreme_all_orphan_tool_results() {
     assert_no_orphan_tool_pairs(&result.messages);
 }
 
-/// Multi-round simulation where turns produce huge output, forcing L2.
+/// Multi-round simulation where user-only history grows past the hard message limit.
+/// In that case L1 may conservatively summarize old consecutive user messages
+/// before L2 eviction has to drop them entirely.
 #[test]
 fn test_multi_round_l2_escalation() {
-    // Use a tiny budget with keep_recent covering most messages.
-    // This makes L1's boundary (len - keep_recent) very small,
-    // so L1 has almost nothing to collapse, forcing L2.
     let budget = 800;
     let config = ContextConfig {
         max_context_tokens: budget,
@@ -2252,15 +2251,15 @@ fn test_multi_round_l2_escalation() {
         keep_recent: 2,
         keep_first: 1,
         tool_output_max_lines: 50,
+        max_messages_hard: 8,
         ..Default::default()
     };
 
     let mut messages = Vec::new();
     messages.push(AgentMessage::Llm(Message::user("start")));
 
-    let mut l2_triggered = false;
+    let mut l1_summarized = false;
 
-    // Simulate 20 turns — each adds a large user message (L1 doesn't collapse user msgs)
     for i in 0..20 {
         messages.push(AgentMessage::Llm(Message::user(format!(
             "question {} {}",
@@ -2274,16 +2273,18 @@ fn test_multi_round_l2_escalation() {
         };
         let result = compact_messages(messages, &config, &budget_state);
 
-        if result.stats.messages_dropped > 0 {
-            l2_triggered = true;
+        if result.stats.turns_summarized > 0 {
+            l1_summarized = true;
         }
 
         messages = result.messages;
     }
 
+    // L1 should collapse old consecutive user messages only after hard message pressure,
+    // preserving snippets instead of letting L2 drop them wholesale.
     assert!(
-        l2_triggered,
-        "L2 should trigger when L1 cannot reduce enough (user-only messages)"
+        l1_summarized,
+        "L1 should collapse old consecutive user messages before L2 eviction"
     );
 
     let final_tokens = total_tokens(&messages);

@@ -22,7 +22,12 @@ use crate::context::compaction::pass::PassResult;
 use crate::context::tokens::message_tokens;
 use crate::types::*;
 
-pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: usize) -> PassResult {
+pub fn run(
+    messages: Vec<AgentMessage>,
+    ctx: &CompactContext,
+    current_tokens: usize,
+    collapse_user_runs: bool,
+) -> PassResult {
     let len = messages.len();
     if len <= ctx.keep_recent {
         return PassResult {
@@ -152,10 +157,82 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
                 i += 1;
                 continue;
             }
-            other => {
+            _other => {
+                // Under hard message-count pressure, collapse consecutive old
+                // user messages into one marker before L2 has to drop them.
+                // This is a last-resort safety valve for user-message floods;
+                // normal budget compaction leaves user messages untouched.
+                if let AgentMessage::Llm(Message::User { .. }) = msg {
+                    let run_start = i;
+                    let mut run_count = 1;
+                    let mut run_tokens = message_tokens(msg);
+                    while i + run_count < boundary {
+                        if let AgentMessage::Llm(Message::User { .. }) = &messages[i + run_count] {
+                            run_tokens += message_tokens(&messages[i + run_count]);
+                            run_count += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Don't collapse runs that include pinned (keep_first) messages.
+                    // Only collapse user runs entirely in the old zone: [ctx.keep_first..boundary).
+                    let pinned = run_start < ctx.keep_first;
+                    if collapse_user_runs && !pinned && run_count > 1 {
+                        // Extract short snippets from up to 3 messages to preserve intent
+                        let mut snippets: Vec<String> = Vec::new();
+                        for j in 0..run_count.min(3) {
+                            if let AgentMessage::Llm(Message::User { content, .. }) =
+                                &messages[run_start + j]
+                            {
+                                for c in content {
+                                    if let Content::Text { text } = c {
+                                        let t = text.trim();
+                                        if !t.is_empty() && !is_filler(t) {
+                                            let snippet = t.chars().take(120).collect::<String>();
+                                            snippets.push(snippet);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        let summary = if snippets.is_empty() {
+                            format!("[{} user messages summarized]", run_count)
+                        } else {
+                            let quoted: Vec<String> =
+                                snippets.iter().map(|s| format!("\"{}\"", s)).collect();
+                            format!(
+                                "[{} user messages summarized: {}]",
+                                run_count,
+                                quoted.join(", ")
+                            )
+                        };
+                        let summary_msg = AgentMessage::Llm(Message::User {
+                            content: vec![Content::Text { text: summary }],
+                            timestamp: now_ms(),
+                        });
+                        let after_tokens = message_tokens(&summary_msg);
+                        // Only collapse if it saves tokens
+                        if after_tokens < run_tokens {
+                            running_tokens -= run_tokens - after_tokens;
+                            result.push(summary_msg);
+                            i += run_count;
+                            actions.push(CompactionAction {
+                                index: run_start,
+                                tool_name: "user".into(),
+                                method: CompactionMethod::Summarized,
+                                before_tokens: run_tokens,
+                                after_tokens,
+                                end_index: None,
+                                related_count: Some(run_count - 1),
+                            });
+                            continue;
+                        }
+                    }
+                }
                 // Images in messages are preserved — they are irreplaceable context.
                 // Entry-point resize already caps per-image token cost.
-                result.push(other.clone());
+                result.push(msg.clone());
             }
         }
         i += 1;

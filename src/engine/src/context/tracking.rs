@@ -12,8 +12,11 @@ use crate::types::*;
 // ---------------------------------------------------------------------------
 
 /// Tracks context size using provider usage as baseline, with chars/4
-/// fallback. Single authority for context budget estimation — both
-/// compaction and LLM call events source from this tracker.
+/// fallback for LLM call UI snapshots.
+///
+/// Important: the provider baseline includes system prompt + tool definitions
+/// (fixed overhead) that compaction cannot reduce. Compaction uses
+/// `total_tokens(messages)` directly instead of the tracker estimate.
 pub struct ContextTracker {
     last_baseline_tokens: Option<usize>,
     last_baseline_index: Option<usize>,
@@ -44,10 +47,8 @@ impl ContextTracker {
     ///
     /// The provider baseline includes system prompt + tool definitions that
     /// compaction cannot reduce. Carrying it forward after message drops
-    /// produces an inflated estimate (e.g. 176k for 13 messages). Resetting
-    /// forces the next `estimate_context_tokens` to fall back to chars/4,
-    /// and the next LLM call's `record_usage` will establish a fresh,
-    /// accurate baseline.
+    /// produces an inflated estimate. Resetting forces fallback to chars/4,
+    /// and the next LLM call's `record_usage` will establish a fresh baseline.
     pub fn record_compaction(&mut self) {
         self.last_baseline_tokens = None;
         self.last_baseline_index = None;
@@ -126,19 +127,18 @@ pub struct ContextBudgetSnapshot {
 
 /// Runtime token state passed into compaction.
 ///
-/// Separates dynamic state from static `ContextConfig`. The `estimated_tokens`
-/// value comes from the most accurate source available — typically
-/// `ContextTracker::estimate_context_tokens()` which uses real provider usage
-/// data when available, falling back to chars/4 estimation.
+/// Uses message-only token estimates (chars/4) so compaction decisions
+/// are based on what it can actually reduce — message content — rather
+/// than the full provider input which includes system prompt + tool
+/// definitions that compaction cannot touch.
 #[derive(Debug, Clone)]
 pub struct CompactionBudgetState {
-    /// Current estimated context tokens.
+    /// Current estimated message tokens (chars/4, excludes system/tools overhead).
     pub estimated_tokens: usize,
 }
 
 impl CompactionBudgetState {
     /// Build from a message list using pure chars/4 estimation.
-    /// Useful in tests or when no provider usage data is available.
     pub fn from_messages(messages: &[AgentMessage]) -> Self {
         Self {
             estimated_tokens: total_tokens(messages),

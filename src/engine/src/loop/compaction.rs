@@ -30,27 +30,33 @@ pub(super) fn compact_context(
     let budget = context_tracker.budget_snapshot(&context.messages, Some(ctx_config));
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    let budget_state = CompactionBudgetState {
-        estimated_tokens: budget.estimated_tokens,
+    // Compact uses message-only estimate (chars/4), not the provider baseline.
+    // Provider baseline includes system+tools overhead that compact can't reduce.
+    let budget_state = CompactionBudgetState::from_messages(&context.messages);
+    let compact_budget = crate::context::ContextBudgetSnapshot {
+        estimated_tokens: budget_state.estimated_tokens,
+        budget_tokens: budget.budget_tokens,
+        system_prompt_tokens: budget.system_prompt_tokens,
+        context_window: budget.context_window,
     };
     let result = strategy.compact(
         std::mem::take(&mut context.messages),
         ctx_config,
         &budget_state,
     );
-    let did_work = result.stats.level > 0 || result.stats.current_run_cleared > 0;
     context.messages = result.messages;
 
     tx.send(AgentEvent::ContextCompactionStart {
         message_count: original_count,
-        budget: budget.clone(),
+        budget: compact_budget,
         message_stats: pre_stats,
     })
     .ok();
 
-    if did_work {
-        context_tracker.record_compaction();
-    }
+    // Drop any provider baseline after compaction runs, even if it skipped.
+    // The baseline includes system+tools overhead that would otherwise pollute
+    // the next LLM start snapshot and immediately make the context look over budget.
+    context_tracker.record_compaction();
 
     tx.send(AgentEvent::ContextCompactionEnd {
         stats: result.stats,
@@ -83,8 +89,9 @@ pub(super) fn compact_for_recovery(
     };
 
     let budget = context_tracker.budget_snapshot(&context.messages, Some(ctx_config));
+    let message_tokens = crate::context::total_tokens(&context.messages);
 
-    if budget.estimated_tokens <= budget.budget_tokens / 2 {
+    if message_tokens <= budget.budget_tokens / 2 {
         return false;
     }
 
@@ -94,9 +101,7 @@ pub(super) fn compact_for_recovery(
 
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    let budget_state = CompactionBudgetState {
-        estimated_tokens: budget.estimated_tokens,
-    };
+    let budget_state = CompactionBudgetState::from_messages(&context.messages);
     let compact_result = strategy.compact(
         std::mem::take(&mut context.messages),
         ctx_config,

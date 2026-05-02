@@ -90,7 +90,7 @@ describe('renderMarkdown', () => {
       .replace(/\u200b/g, '')
 
     expect(result).toContain('"is_deleted": 0')
-    expect(result).toContain('---\n第 8 站：补充 input / output')
+    expect(result).toContain('---\n\n第 8 站：补充 input / output')
     expect(result).not.toContain('```json')
   })
 

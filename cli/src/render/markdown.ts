@@ -502,7 +502,7 @@ export function formatToken(
         })
         return line
       }
-      function renderRow(cells: { tokens?: Token[] }[]): string {
+      function renderRow(cells: { tokens?: Token[] }[], forceCenter = false): string {
         const wrapped = cells.map((cell, ci) =>
           wrapCell(renderCell(cell.tokens), colWidths[ci]!),
         )
@@ -511,9 +511,13 @@ export function formatToken(
         for (let li = 0; li < height; li++) {
           let line = '│'
           for (let ci = 0; ci < numCols; ci++) {
-            const content = wrapped[ci]![li] ?? ''
+            // Vertical centering: offset content lines to the middle
+            const cellLines = wrapped[ci]!
+            const vPad = Math.floor((height - cellLines.length) / 2)
+            const vi = li - vPad
+            const content = (vi >= 0 && vi < cellLines.length) ? cellLines[vi]! : ''
             const dw = stringWidth(stripAnsi(content))
-            const align = tableToken.align?.[ci]
+            const align = forceCenter ? 'center' : tableToken.align?.[ci]
             line += ' ' + padAligned(content, dw, colWidths[ci]!, align) + ' │'
           }
           lines.push(line)
@@ -522,7 +526,7 @@ export function formatToken(
       }
 
       let out = borderLine('┌', '─', '┬', '┐') + EOL
-      out += renderRow(tableToken.header) + EOL
+      out += renderRow(tableToken.header, true) + EOL
       out += borderLine('├', '─', '┼', '┤') + EOL
       tableToken.rows.forEach((row, ri) => {
         out += renderRow(row) + EOL

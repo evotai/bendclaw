@@ -853,15 +853,11 @@ pub(crate) fn build_agent(
         max_duration: std::time::Duration::from_secs(options.limits.max_duration_secs),
     };
 
-    let skills = if options.skills_dirs.is_empty() {
-        evot_engine::SkillSet::empty()
-    } else {
-        match crate::agent::prompt::skill::load_skills(&options.skills_dirs) {
-            Ok(specs) => evot_engine::SkillSet::new(specs),
-            Err(e) => {
-                tracing::warn!("failed to load skills: {e}");
-                evot_engine::SkillSet::empty()
-            }
+    let skills = match crate::agent::prompt::skill::load_skills(&options.skills_dirs) {
+        Ok(specs) => evot_engine::SkillSet::new(specs),
+        Err(e) => {
+            tracing::warn!("failed to load skills: {e}");
+            evot_engine::SkillSet::empty()
         }
     };
 

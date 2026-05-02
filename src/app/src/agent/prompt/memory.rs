@@ -7,7 +7,7 @@ use std::process::Command;
 use evot_engine::tools::memory::MemoryTool;
 
 const MAX_SANITIZED_LENGTH: usize = 200;
-const MEMORY_PROMPT: &str = include_str!("memory.md");
+const MEMORY_PROMPT: &str = include_str!("prompts/memory.md");
 const MAX_ENTRYPOINT_LINES: usize = 200;
 const MAX_ENTRYPOINT_BYTES: usize = 25_000;
 

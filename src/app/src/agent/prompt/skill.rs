@@ -5,6 +5,43 @@ use std::path::PathBuf;
 
 use evot_engine::SkillSpec;
 
+// ---------------------------------------------------------------------------
+// Builtin skills — compiled into the binary via include_str!()
+// ---------------------------------------------------------------------------
+
+struct BuiltinDef {
+    name: &'static str,
+    content: &'static str,
+}
+
+const BUILTINS: &[BuiltinDef] = &[BuiltinDef {
+    name: "review",
+    content: include_str!("prompts/review.md"),
+}];
+
+/// Parse builtin skill definitions into `SkillSpec` values.
+/// Returns specs with an empty `base_dir` (no filesystem path).
+fn builtin_specs() -> Vec<SkillSpec> {
+    let sentinel = Path::new("<builtin>");
+    BUILTINS
+        .iter()
+        .filter_map(|def| {
+            let description = parse_frontmatter(def.content, sentinel).ok()?;
+            let instructions = strip_frontmatter(def.content).to_string();
+            Some(SkillSpec {
+                name: def.name.to_string(),
+                description,
+                instructions,
+                base_dir: PathBuf::new(),
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, thiserror::Error)]
 pub enum SkillLoadError {
     #[error("IO error reading {path}: {source}")]
@@ -18,7 +55,36 @@ pub enum SkillLoadError {
     InvalidFrontmatter { path: PathBuf, detail: String },
 }
 
+// ---------------------------------------------------------------------------
+// Public loader — builtin first, then filesystem (same name overrides)
+// ---------------------------------------------------------------------------
+
 pub fn load_skills(dirs: &[impl AsRef<Path>]) -> Result<Vec<SkillSpec>, SkillLoadError> {
+    // Start with builtins
+    let mut by_name: HashMap<String, SkillSpec> = builtin_specs()
+        .into_iter()
+        .map(|s| (s.name.clone(), s))
+        .collect();
+
+    // Filesystem skills override builtins with the same name
+    for dir in dirs {
+        let dir = dir.as_ref();
+        if !dir.exists() {
+            continue;
+        }
+        let specs = load_skills_from_dir(dir)?;
+        for spec in specs {
+            by_name.insert(spec.name.clone(), spec);
+        }
+    }
+
+    let mut specs: Vec<SkillSpec> = by_name.into_values().collect();
+    specs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(specs)
+}
+
+/// Load skills from filesystem directories only (no builtins).
+pub fn load_fs_skills(dirs: &[impl AsRef<Path>]) -> Result<Vec<SkillSpec>, SkillLoadError> {
     let mut by_name: HashMap<String, SkillSpec> = HashMap::new();
 
     for dir in dirs {

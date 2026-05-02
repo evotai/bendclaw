@@ -114,7 +114,7 @@ pub enum SubmitOutcome {
 // Agent
 // ---------------------------------------------------------------------------
 
-const PLANNING_MODE_PROMPT: &str = include_str!("prompt/plan.md");
+const PLANNING_MODE_PROMPT: &str = include_str!("prompt/prompts/plan.md");
 
 struct ActiveRun {
     run_id: String,

@@ -65,12 +65,12 @@ impl AgentTool for SkillTool {
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
         let name = normalize_name(params.get("skill_name").and_then(|v| v.as_str())?);
         match self.skills.find(name) {
-            Some(skill) => Some(format!(
+            Some(skill) if !skill.base_dir.as_os_str().is_empty() => Some(format!(
                 "loading skill: {} ({})",
                 name,
                 skill.base_dir.display()
             )),
-            None => Some(format!("loading skill: {name}")),
+            _ => Some(format!("loading skill: {name}")),
         }
     }
 
@@ -99,15 +99,23 @@ impl AgentTool for SkillTool {
             ))
         })?;
 
+        let base_dir_hint = if skill.base_dir.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!(
+                "All relative paths in this skill (e.g. scripts/...) \
+                 must be resolved against: {}\n\n",
+                skill.base_dir.display(),
+            )
+        };
+
         Ok(ToolResult {
             content: vec![Content::Text {
                 text: format!(
                     "Activated skill: {name}\n\
-                     All relative paths in this skill (e.g. scripts/...) \
-                     must be resolved against: {base_dir}\n\n\
+                     {base_dir_hint}\
                      Follow the instructions below.\n\n\
                      ---\n{instructions}",
-                    base_dir = skill.base_dir.display(),
                     instructions = skill.instructions,
                 ),
             }],

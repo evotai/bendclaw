@@ -77,6 +77,13 @@ function terminalContentWidth(): number {
   return Math.max(20, Math.min(columns - SAFETY_MARGIN, MAX_RENDER_WIDTH))
 }
 
+/** Terminal width for tables — no MAX_RENDER_WIDTH cap so wide tables
+ *  can use the full terminal on large screens. */
+function terminalTableWidth(): number {
+  const columns = process.stdout.columns ?? 80
+  return Math.max(20, columns - SAFETY_MARGIN)
+}
+
 function wrapDisplayLine(line: string, width: number): string[] {
   if (!line || width <= 0 || stringWidth(stripAnsi(line)) <= width) return [line]
   const wrapped = wrapAnsi(line, width, { hard: true, trim: false, wordWrap: true })
@@ -402,7 +409,7 @@ export function formatToken(
     case 'table': {
       const tableToken = token as Tokens.Table
       const numCols = tableToken.header.length
-      const termWidth = terminalContentWidth()
+      const termWidth = terminalTableWidth()
       const MIN_COL = 3
 
       // --- helpers ---
@@ -435,16 +442,20 @@ export function formatToken(
 
       // border overhead: │ cell │ cell │ = 1 + numCols * 3
       const borderOverhead = 1 + numCols * 3
-      const available = Math.max(termWidth - borderOverhead - 2, numCols * MIN_COL)
+      const available = Math.max(termWidth - borderOverhead - SAFETY_MARGIN, numCols * MIN_COL)
       const totalIdeal = idealWidths.reduce((s, w) => s + w, 0)
       const totalMin = minWidths.reduce((s, w) => s + w, 0)
 
+      // Track whether columns are narrower than longest words (needs hard wrap)
+      let needsHardWrap = false
       let colWidths: number[]
       if (totalIdeal <= available) {
         colWidths = idealWidths
       } else if (totalMin > available) {
-        const each = Math.floor(available / numCols)
-        colWidths = minWidths.map(() => Math.max(each, MIN_COL))
+        // Table wider than terminal at minimum widths — shrink proportionally
+        needsHardWrap = true
+        const scaleFactor = available / totalMin
+        colWidths = minWidths.map(w => Math.max(Math.floor(w * scaleFactor), MIN_COL))
       } else {
         // give each column its min, distribute remaining proportionally
         colWidths = [...minWidths]
@@ -462,10 +473,13 @@ export function formatToken(
       // --- ANSI-aware word wrap (CJK-safe) ---
       function wrapCell(text: string, width: number): string[] {
         if (width <= 0) return [text]
-        const lines: string[] = []
-        for (const srcLine of text.split('\n')) {
-          lines.push(...wrapDisplayLine(srcLine, width))
-        }
+        const trimmed = text.trimEnd()
+        const wrapped = wrapAnsi(trimmed, width, {
+          hard: needsHardWrap,
+          trim: false,
+          wordWrap: true,
+        })
+        const lines = wrapped.split('\n').filter(line => line.length > 0)
         return lines.length > 0 ? lines : ['']
       }
 
@@ -480,18 +494,51 @@ export function formatToken(
         if (needVertical) break
       }
 
-      if (needVertical) {
-        // vertical key-value format
-        let out = ''
+      // --- vertical key-value format ---
+      function renderVerticalFormat(): string {
+        const headers = tableToken.header.map(h => plainText(h.tokens))
+        const separatorWidth = Math.min(termWidth - 1, 40)
+        const separator = '─'.repeat(separatorWidth)
+        const wrapIndent = '  '
+        const vLines: string[] = []
+
         tableToken.rows.forEach((row, ri) => {
-          if (ri > 0) out += EOL
-          for (let ci = 0; ci < numCols; ci++) {
-            const header = chalk.bold(plainText(tableToken.header[ci]?.tokens))
-            const value = renderCell(row[ci]?.tokens)
-            out += `${header}: ${wrapDisplayText(value)}${EOL}`
-          }
+          if (ri > 0) vLines.push(separator)
+          row.forEach((cell, ci) => {
+            const label = headers[ci] || `Column ${ci + 1}`
+            const rawValue = renderCell(cell.tokens).trimEnd()
+            const value = rawValue.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim()
+
+            // Two-pass wrap: first line is narrower (label takes space),
+            // continuation lines get the full width minus indent.
+            const firstLineWidth = termWidth - stringWidth(label) - 3
+            const subsequentLineWidth = termWidth - wrapIndent.length - 1
+            const firstPassLines = wrapCell(value, Math.max(firstLineWidth, 10))
+            const firstLine = firstPassLines[0] || ''
+
+            let wrappedValue: string[]
+            if (firstPassLines.length <= 1 || subsequentLineWidth <= firstLineWidth) {
+              wrappedValue = firstPassLines
+            } else {
+              // Re-join remaining text and re-wrap to the wider continuation width
+              const remainingText = firstPassLines.slice(1).map(l => stripAnsi(l).trim()).join(' ')
+              const rewrapped = wrapCell(remainingText, subsequentLineWidth)
+              wrappedValue = [firstLine, ...rewrapped]
+            }
+
+            vLines.push(`${chalk.bold(label)}: ${wrappedValue[0] || ''}`)
+            for (let i = 1; i < wrappedValue.length; i++) {
+              const ln = wrappedValue[i]!
+              if (!stripAnsi(ln).trim()) continue
+              vLines.push(`${wrapIndent}${ln}`)
+            }
+          })
         })
-        return out + EOL
+        return vLines.join(EOL) + EOL
+      }
+
+      if (needVertical) {
+        return renderVerticalFormat() + EOL
       }
 
       // --- horizontal table with wrapping ---
@@ -526,17 +573,26 @@ export function formatToken(
         return lines.join(EOL)
       }
 
-      let out = borderLine('┌', '─', '┬', '┐') + EOL
-      out += renderRow(tableToken.header, true) + EOL
-      out += borderLine('├', '─', '┼', '┤') + EOL
+      const tableLines: string[] = []
+      tableLines.push(borderLine('┌', '─', '┬', '┐'))
+      tableLines.push(renderRow(tableToken.header, true))
+      tableLines.push(borderLine('├', '─', '┼', '┤'))
       tableToken.rows.forEach((row, ri) => {
-        out += renderRow(row) + EOL
+        tableLines.push(renderRow(row))
         if (ri < tableToken.rows.length - 1) {
-          out += borderLine('├', '─', '┼', '┤') + EOL
+          tableLines.push(borderLine('├', '─', '┼', '┤'))
         }
       })
-      out += borderLine('└', '─', '┴', '┘') + EOL
-      return out + EOL
+      tableLines.push(borderLine('└', '─', '┴', '┘'))
+
+      // Safety check: if any line exceeds terminal width (e.g. terminal
+      // resized between calculation and render), fall back to vertical format.
+      const maxLineWidth = Math.max(...tableLines.map(l => stringWidth(stripAnsi(l))))
+      if (maxLineWidth > termWidth) {
+        return renderVerticalFormat() + EOL
+      }
+
+      return tableLines.join(EOL) + EOL + EOL
     }
     case 'escape':
       return token.text

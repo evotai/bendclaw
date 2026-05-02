@@ -71,6 +71,8 @@ const MARKDOWN_BOUNDARY_RE = /^(#{1,6}\s|(?:[-*+]\s)|(?:\d+\.\s)|>\s|\|.*\||-{3,
 const CODE_LIKE_START_RE = /^[\[{(}\]),;]|^\/\/|^#\s*include\b/
 const CODE_KEYWORD_RE = /^(return|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|await|async|const|let|var|function|class|def|import|export|from|SELECT|CREATE|INSERT|UPDATE|DELETE|WITH|WHERE|ORDER|GROUP|LIMIT)\b/i
 const CODE_ASSIGNMENT_RE = /^[\w$.'"`-]+\s*[:=]/
+// Box-drawing characters used in tree/diagram structures (U+2500–U+257F)
+const BOX_DRAWING_RE = /[\u2500-\u257f]/
 
 function terminalContentWidth(): number {
   const columns = process.stdout.columns ?? 80
@@ -86,6 +88,9 @@ function terminalTableWidth(): number {
 
 function wrapDisplayLine(line: string, width: number): string[] {
   if (!line || width <= 0 || stringWidth(stripAnsi(line)) <= width) return [line]
+  // Tree/diagram lines with box-drawing characters are structural —
+  // never wrap them; let the terminal handle overflow.
+  if (BOX_DRAWING_RE.test(stripAnsi(line))) return [line]
   const wrapped = wrapAnsi(line, width, { hard: true, trim: false, wordWrap: true })
   return wrapped.split('\n')
 }

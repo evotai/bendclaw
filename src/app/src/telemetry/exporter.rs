@@ -19,6 +19,7 @@ impl TelemetryExporter {
 
         let exporter_builder = opentelemetry_otlp::SpanExporter::builder()
             .with_http()
+            .with_protocol(opentelemetry_otlp::Protocol::HttpJson)
             .with_endpoint(endpoint);
 
         let exporter = match exporter_builder.build() {

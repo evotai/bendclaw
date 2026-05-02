@@ -1318,6 +1318,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "htmd"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2339,6 +2345,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prost",
  "reqwest 0.12.28",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tonic",
@@ -2351,9 +2358,12 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c40da242381435e18570d5b9d50aca2a4f4f4d8e146231adb4e7768023309b3"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
  "opentelemetry",
  "opentelemetry_sdk",
  "prost",
+ "serde",
  "tonic",
 ]
 

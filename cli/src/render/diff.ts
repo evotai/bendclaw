@@ -5,6 +5,7 @@
 
 import chalk, { type ChalkInstance } from 'chalk'
 import { structuredPatch, diffWordsWithSpace } from 'diff'
+import { getTheme } from './theme.js'
 
 export interface DiffResult {
   text: string
@@ -16,18 +17,21 @@ export interface DiffResult {
 // Styles
 // ---------------------------------------------------------------------------
 
-// Colors matching Claude Code's dark theme diff palette:
+// Colors adapted to dark/light theme:
 // - Line bg: very muted tint (solid bar across full terminal width)
 // - Word bg: slightly brighter to highlight changed words
 // - Context lines: dim, no background
-const style = {
-  addedBg:     chalk.bgRgb(2, 40, 0),
-  removedBg:   chalk.bgRgb(61, 1, 0),
-  addedWord:   chalk.bgRgb(4, 71, 0),
-  removedWord: chalk.bgRgb(92, 2, 0),
-  context:     chalk.dim,
-  gutter:      chalk.gray,
-  ellipsis:    chalk.dim,
+function getStyle() {
+  const t = getTheme()
+  return {
+    addedBg:     chalk.bgRgb(...t.addedBg),
+    removedBg:   chalk.bgRgb(...t.removedBg),
+    addedWord:   chalk.bgRgb(...t.addedWord),
+    removedWord: chalk.bgRgb(...t.removedWord),
+    context:     chalk.dim,
+    gutter:      chalk.gray,
+    ellipsis:    chalk.dim,
+  }
 }
 
 const DEFAULT_WIDTH = 80
@@ -54,6 +58,7 @@ interface DiffLine {
 export function formatDiff(oldText: string, newText: string, filename = ''): DiffResult {
   const patch = structuredPatch(filename, filename, oldText, newText, '', '', { context: 3 })
   const width = process.stdout.columns || DEFAULT_WIDTH
+  const style = getStyle()
   let linesAdded = 0
   let linesRemoved = 0
   const output: string[] = []
@@ -66,7 +71,7 @@ export function formatDiff(oldText: string, newText: string, filename = ''): Dif
     for (const line of lines) {
       if (line.type === 'add') linesAdded++
       if (line.type === 'remove') linesRemoved++
-      output.push(renderLine(line, numWidth, width))
+      output.push(renderLine(line, numWidth, width, style))
     }
   }
 
@@ -80,6 +85,7 @@ export function colorizeUnifiedDiff(diff: string): string {
   const raw = diff.split('\n')
   const body = raw.filter(l => !l.startsWith('---') && !l.startsWith('+++'))
   const width = process.stdout.columns || DEFAULT_WIDTH
+  const style = getStyle()
   const output: string[] = []
 
   // Group lines by hunk
@@ -109,7 +115,7 @@ export function colorizeUnifiedDiff(diff: string): string {
     const lines = buildDiffLines(hunk.lines, startLine)
     const numW = gutterWidth(lines)
     for (const line of lines) {
-      output.push(renderLine(line, numW, width))
+      output.push(renderLine(line, numW, width, style))
     }
   }
 
@@ -194,7 +200,7 @@ function assignLineNumbers(
  * Gutter (line number + sigil) and content share the same background color
  * for visual continuity — matching Claude Code's diff rendering.
  */
-function renderLine(line: DiffLine, numWidth: number, termWidth: number): string {
+function renderLine(line: DiffLine, numWidth: number, termWidth: number, style: ReturnType<typeof getStyle>): string {
   const num = String(line.lineNum).padStart(numWidth)
   const sigil = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '
   const gutterStr = `${num} ${sigil}`

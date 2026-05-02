@@ -11,6 +11,7 @@ import stringWidth from 'string-width'
 import wrapAnsi from 'wrap-ansi'
 import { createHyperlink, isWarpTerminal, supportsHyperlinks, wrapHyperlink } from './hyperlink.js'
 import { linkifyIssueRefs } from './linkify.js'
+import { getTheme } from './theme.js'
 
 let highlighter: typeof import('cli-highlight') | null = null
 try {
@@ -295,7 +296,7 @@ export function formatToken(
       if (isFilePath && isWarpTerminal() && process.env.FORCE_HYPERLINK !== '1') {
         return raw
       }
-      const colored = chalk.hex('#5fb3b3')(raw)
+      const colored = chalk.hex(getTheme().inlineCode)(raw)
       // Make absolute file paths clickable (file:// hyperlink)
       if (supportsHyperlinks() && isFilePath) {
         const resolved = raw.startsWith('~')
@@ -325,9 +326,9 @@ export function formatToken(
         .map(t => formatToken(t, 0, null, null))
         .join('')
       if ((token as Tokens.Heading).depth === 1) {
-        return chalk.hex('#c0c0c0').bold.italic.underline(text) + EOL
+        return chalk.hex(getTheme().heading).bold.italic.underline(text) + EOL
       }
-      return chalk.hex('#c0c0c0').bold(text) + EOL
+      return chalk.hex(getTheme().heading).bold(text) + EOL
     }
     case 'hr':
       return `---${EOL}`

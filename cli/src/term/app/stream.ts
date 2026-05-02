@@ -6,6 +6,7 @@ import type { AppState } from './state.js'
 import type { RunEvent } from '../../native/index.js'
 
 const PACE_INTERVAL_MS = 30
+let sepId = 0
 
 export interface StreamMachineState {
   appState: AppState
@@ -99,6 +100,13 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
         const completed = state.streamingText.slice(0, commitPoint)
         const pending = state.streamingText.slice(commitPoint)
         const builtLines = buildAssistantLines(completed)
+        // Insert blank line between consecutive committed chunks so block
+        // spacing matches the full-document render (trim strips it otherwise).
+        if (state.assistantCommitted && builtLines.length > 0) {
+          const sep: OutputLine = { id: `sep-${sepId++}`, kind: 'assistant', text: '' }
+          commitLines.push(sep)
+          writeLines.push(sep)
+        }
         commitLines.push(...builtLines)
         writeLines.push(...builtLines)
         state = { ...state, streamingText: pending, assistantCommitted: true }
@@ -116,6 +124,11 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
           const chunk = state.streamingText.slice(0, splitAt)
           const rest = state.streamingText.slice(splitAt)
           const builtLines = buildAssistantLines(chunk)
+          if (state.assistantCommitted && builtLines.length > 0) {
+            const sep: OutputLine = { id: `sep-${sepId++}`, kind: 'assistant', text: '' }
+            commitLines.push(sep)
+            writeLines.push(sep)
+          }
           commitLines.push(...builtLines)
           writeLines.push(...builtLines)
           state = { ...state, streamingText: rest, assistantCommitted: true }
@@ -253,6 +266,9 @@ export function flushStreaming(state: StreamMachineState): { state: StreamMachin
   }
 
   const lines = buildAssistantLines(state.streamingText)
+  if (state.assistantCommitted && lines.length > 0) {
+    lines.unshift({ id: `sep-${sepId++}`, kind: 'assistant', text: '' })
+  }
   return {
     state: { ...state, streamingText: '', pendingText: '', assistantCommitted: false },
     lines,

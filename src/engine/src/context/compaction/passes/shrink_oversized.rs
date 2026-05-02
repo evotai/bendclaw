@@ -102,6 +102,36 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
                     }));
                     continue;
                 }
+                UserAction::StripImages => {
+                    let before_tokens = content_tokens(content);
+                    let stripped: Vec<Content> = content
+                        .iter()
+                        .map(|c| match c {
+                            Content::Image { .. } => Content::Text {
+                                text: "[image]".into(),
+                            },
+                            other => other.clone(),
+                        })
+                        .collect();
+                    let after_tokens = content_tokens(&stripped);
+                    if after_tokens < before_tokens {
+                        running_tokens -= before_tokens - after_tokens;
+                        actions.push(CompactionAction {
+                            index: idx,
+                            tool_name: "user".into(),
+                            method: CompactionMethod::AgeCleared,
+                            before_tokens,
+                            after_tokens,
+                            end_index: None,
+                            related_count: None,
+                        });
+                    }
+                    result.push(AgentMessage::Llm(Message::User {
+                        content: stripped,
+                        timestamp: *timestamp,
+                    }));
+                    continue;
+                }
                 UserAction::Keep => {}
             }
         }
@@ -233,6 +263,47 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
                 }
             }
 
+            // Tier 4: ImageStrip — strip images from tool results (budget-gated).
+            // When severely over budget (>150%), also strip from recent messages.
+            let severely_over = running_tokens > ctx.budget + ctx.budget / 2;
+            if over_budget && (severely_over || !is_recent) {
+                let has_images = content.iter().any(|c| matches!(c, Content::Image { .. }));
+                if has_images {
+                    let stripped: Vec<Content> = content
+                        .iter()
+                        .map(|c| match c {
+                            Content::Image { .. } => Content::Text {
+                                text: "[image]".into(),
+                            },
+                            other => other.clone(),
+                        })
+                        .collect();
+                    let after_tokens = content_tokens(&stripped);
+                    if after_tokens < tokens {
+                        running_tokens -= tokens - after_tokens;
+                        actions.push(CompactionAction {
+                            index: idx,
+                            tool_name: tool_name.clone(),
+                            method: CompactionMethod::AgeCleared,
+                            before_tokens: tokens,
+                            after_tokens,
+                            end_index: None,
+                            related_count: None,
+                        });
+
+                        result.push(AgentMessage::Llm(Message::ToolResult {
+                            tool_call_id,
+                            tool_name,
+                            content: stripped,
+                            is_error,
+                            timestamp,
+                            retention,
+                        }));
+                        continue;
+                    }
+                }
+            }
+
             // No truncation needed
             result.push(AgentMessage::Llm(Message::ToolResult {
                 tool_call_id,
@@ -261,6 +332,8 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
 enum UserAction {
     /// Over budget + oversized: truncate text
     TruncateOversized,
+    /// Over budget + has images: strip images
+    StripImages,
     /// No action needed
     Keep,
 }
@@ -274,15 +347,25 @@ fn classify_user_action(
     content: &[Content],
     oversize_threshold: usize,
 ) -> UserAction {
-    if is_pinned || is_recent {
+    if is_pinned {
         return UserAction::Keep;
     }
-    let tokens = content_tokens(content);
-    if running_tokens > budget && tokens > oversize_threshold {
-        return UserAction::TruncateOversized;
+    // Severely over budget (>150%): strip images even from recent messages.
+    // This is the last resort when images dominate context and normal
+    // compaction (text-only) cannot bring it within budget.
+    let severely_over = running_tokens > budget + budget / 2;
+    if !is_recent {
+        let tokens = content_tokens(content);
+        if running_tokens > budget && tokens > oversize_threshold {
+            return UserAction::TruncateOversized;
+        }
     }
-    // Images are never stripped — they are irreplaceable context.
-    // Entry-point resize already caps per-image token cost.
+    if (severely_over || !is_recent)
+        && running_tokens > budget
+        && content.iter().any(|c| matches!(c, Content::Image { .. }))
+    {
+        return UserAction::StripImages;
+    }
     UserAction::Keep
 }
 
@@ -334,10 +417,7 @@ fn truncate_content(
                     crate::tools::validation::truncate_tool_text(&truncated, COMPACTION_MAX_BYTES);
                 Content::Text { text: truncated }
             }
-            Content::Image { .. } => {
-                // Preserve images in tool results — they are irreplaceable.
-                c.clone()
-            }
+            Content::Image { .. } => c.clone(),
             other => other.clone(),
         })
         .collect()

@@ -43,12 +43,20 @@ impl ContextTracker {
         }
     }
 
-    /// Reset baseline after compaction.
+    /// Adjust baseline after compaction by subtracting saved tokens.
     ///
-    /// The provider baseline includes system prompt + tool definitions that
-    /// compaction cannot reduce. Carrying it forward after message drops
-    /// produces an inflated estimate. Resetting forces fallback to chars/4,
-    /// and the next LLM call's `record_usage` will establish a fresh baseline.
+    /// Resetting the baseline entirely would cause fallback to chars/4, which
+    /// severely underestimates images. Instead, subtract what compaction saved
+    /// so the baseline still reflects the real API cost of remaining content
+    /// (especially images that compaction cannot reduce).
+    pub fn record_compaction_savings(&mut self, tokens_saved: usize) {
+        if let Some(ref mut baseline) = self.last_baseline_tokens {
+            *baseline = baseline.saturating_sub(tokens_saved);
+        }
+    }
+
+    /// Reset baseline entirely. Use only when messages are replaced wholesale
+    /// (e.g., full conversation summary replacing all prior messages).
     pub fn record_compaction(&mut self) {
         self.last_baseline_tokens = None;
         self.last_baseline_index = None;
@@ -142,6 +150,31 @@ impl CompactionBudgetState {
     pub fn from_messages(messages: &[AgentMessage]) -> Self {
         Self {
             estimated_tokens: total_tokens(messages),
+        }
+    }
+
+    /// Build from the context tracker's API-baseline estimate.
+    ///
+    /// The tracker estimate includes system prompt + tool definitions overhead
+    /// that compaction cannot reduce. Subtract `system_prompt_tokens` to
+    /// approximate the message-only portion, but never go below the pure
+    /// chars/4 estimate (which is the floor compaction can actually measure).
+    ///
+    /// This matters for images: the fixed 2k/image estimate can be far below
+    /// the real API cost, so the provider baseline keeps compaction aware of
+    /// the true context size.
+    pub fn from_tracker(
+        tracker: &ContextTracker,
+        messages: &[AgentMessage],
+        system_prompt_tokens: usize,
+    ) -> Self {
+        let tracker_estimate = tracker.estimate_context_tokens(messages);
+        let message_estimate = total_tokens(messages);
+        let estimated = tracker_estimate
+            .saturating_sub(system_prompt_tokens)
+            .max(message_estimate);
+        Self {
+            estimated_tokens: estimated,
         }
     }
 }

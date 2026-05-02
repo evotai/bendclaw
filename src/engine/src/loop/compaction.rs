@@ -30,9 +30,11 @@ pub(super) fn compact_context(
     let budget = context_tracker.budget_snapshot(&context.messages, Some(ctx_config));
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    // Compact uses message-only estimate (chars/4), not the provider baseline.
-    // Provider baseline includes system+tools overhead that compact can't reduce.
-    let budget_state = CompactionBudgetState::from_messages(&context.messages);
+    let budget_state = CompactionBudgetState::from_tracker(
+        context_tracker,
+        &context.messages,
+        ctx_config.system_prompt_tokens,
+    );
     let compact_budget = crate::context::ContextBudgetSnapshot {
         estimated_tokens: budget_state.estimated_tokens,
         budget_tokens: budget.budget_tokens,
@@ -53,10 +55,17 @@ pub(super) fn compact_context(
     })
     .ok();
 
-    // Drop any provider baseline after compaction runs, even if it skipped.
-    // The baseline includes system+tools overhead that would otherwise pollute
-    // the next LLM start snapshot and immediately make the context look over budget.
-    context_tracker.record_compaction();
+    // Adjust baseline by what compaction actually saved, rather than resetting
+    // it entirely. A full reset would fall back to chars/4 which severely
+    // underestimates images. Keeping the adjusted baseline lets the next
+    // compaction check see the real cost of remaining content (especially images).
+    if result.stats.level > 0 {
+        let saved = result
+            .stats
+            .before_estimated_tokens
+            .saturating_sub(result.stats.after_estimated_tokens);
+        context_tracker.record_compaction_savings(saved);
+    }
 
     tx.send(AgentEvent::ContextCompactionEnd {
         stats: result.stats,
@@ -101,14 +110,22 @@ pub(super) fn compact_for_recovery(
 
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    let budget_state = CompactionBudgetState::from_messages(&context.messages);
+    let budget_state = CompactionBudgetState::from_tracker(
+        context_tracker,
+        &context.messages,
+        ctx_config.system_prompt_tokens,
+    );
     let compact_result = strategy.compact(
         std::mem::take(&mut context.messages),
         ctx_config,
         &budget_state,
     );
     context.messages = compact_result.messages;
-    context_tracker.record_compaction();
+    let saved = compact_result
+        .stats
+        .before_estimated_tokens
+        .saturating_sub(compact_result.stats.after_estimated_tokens);
+    context_tracker.record_compaction_savings(saved);
 
     tx.send(AgentEvent::ContextCompactionStart {
         message_count: compact_result.stats.before_message_count,

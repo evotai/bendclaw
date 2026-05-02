@@ -612,13 +612,24 @@ function numberToRoman(n: number): string {
   return result
 }
 
+const BLOCK_TYPES = new Set([
+  'paragraph', 'code', 'heading', 'list', 'blockquote', 'hr', 'table',
+])
+
 function formatTokens(tokens: Token[]): string {
   let out = ''
+  let prevWasBlock = false
 
   for (const token of tokens) {
     const rendered = formatToken(token)
     if (!rendered) continue
+    const isBlock = BLOCK_TYPES.has(token.type)
+    // Insert blank line between consecutive block-level elements
+    if (isBlock && prevWasBlock) {
+      out += EOL
+    }
     out += rendered
+    prevWasBlock = isBlock
   }
 
   return out.trim()

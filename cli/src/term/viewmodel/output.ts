@@ -14,6 +14,13 @@ export function buildOutputBlocks(lines: OutputLine[], initialPrevKind?: string)
         break
 
       case 'assistant': {
+        // Empty-text assistant lines are block-spacing separators inserted by
+        // the stream machine.  Don't give them the ⏺ dot and don't let them
+        // flip prevKind so the next non-empty line still counts as block start.
+        if (!ol.text) {
+          blocks.push(block([line(plain(''))]))
+          break   // intentionally skip prevKind update
+        }
         const isBlockStart = prevKind !== 'assistant'
         const dot = isBlockStart ? colored('⏺ ', 'cyan') : plain('  ')
         blocks.push(block([

@@ -25,18 +25,15 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
 
   const detailLines: string[] = []
 
-  // Messages breakdown
+  // Messages breakdown — merged into header as parenthetical
+  let msgBreakdown = ''
   if (ms) {
     const parts: string[] = []
     if (ms.user_count > 0) parts.push(`user ${ms.user_count}`)
     if (ms.assistant_count > 0) parts.push(`asst ${ms.assistant_count}`)
     if (ms.tool_result_count > 0) parts.push(`tool ${ms.tool_result_count}`)
-    const msgPart = parts.length > 0 ? `${msgCount} msgs  ${parts.join(' · ')}` : `${msgCount} msgs`
-    detailLines.push(`  msg     ${msgPart}`)
-  } else {
-    const bytes = (data.message_bytes as number) ?? 0
-    const kb = bytes >= 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${bytes} B`
-    detailLines.push(`  msg     ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)}`)
+    if ((ms.image_count as number) > 0) parts.push(`img ${ms.image_count}`)
+    if (parts.length > 0) msgBreakdown = ` (${parts.join(' · ')})`
   }
 
   // Context window bar
@@ -64,6 +61,10 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     if ((ms.tool_result_tokens as number) > 0) dist.push(`tool ${humanTokens(ms.tool_result_tokens)}`)
     if ((ms.image_tokens as number) > 0) dist.push(`img ${humanTokens(ms.image_tokens)}`)
     if (dist.length > 0) detailLines.push(`  tok     ${dist.join(' · ')}`)
+  } else {
+    const bytes = (data.message_bytes as number) ?? 0
+    const kb = bytes >= 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${bytes} B`
+    detailLines.push(`  tok     ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)}`)
   }
 
   // Per-tool token breakdown (top 3 + count when >= 4 tools, full list when 2-3)
@@ -99,11 +100,8 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     }
   }
 
-  const headerInfo = [`turn ${turn}`, `${msgCount} msgs`]
-  if (estimatedContextTokens > 0 && contextWindow > 0) {
-    headerInfo.push(`ctx ${humanTokens(estimatedContextTokens)}/${humanTokens(contextWindow)}`)
-  }
-  return `[LLM] ● ${model} · ${headerInfo.join(' · ')}${retryStr}${injectedStr}\n${detailLines.join('\n')}`
+  const turnStr = turn != null ? ` · turn ${turn}` : ''
+  return `[LLM] ● ${model}${turnStr} · ${msgCount} msgs${msgBreakdown}${retryStr}${injectedStr}\n${detailLines.join('\n')}`
 }
 
 // ---------------------------------------------------------------------------
@@ -117,15 +115,9 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): string {
   const usage = data.usage as Record<string, number> | undefined
   const metrics = data.metrics as Record<string, number> | undefined
   const durationMs = (data.duration_ms as number) ?? metrics?.duration_ms ?? 0
-  const durSec = (durationMs / 1000).toFixed(1)
-
-  const info: string[] = []
-  if (turn != null) info.push(`turn ${turn}`)
-  if (model) info.push(model)
-  const infoStr = info.length > 0 ? `  ${info.join(' · ')}` : ''
 
   if (error) {
-    return `[LLM] ✗ ${model ?? 'unknown'} · ${formatDuration(durationMs)}${infoStr}\n  ${error}`
+    return `[LLM] ✗ ${model ?? 'unknown'}${turn != null ? ` · turn ${turn}` : ''} · ${formatDuration(durationMs)}\n  ${error}`
   }
 
   const inputTok = usage?.input ?? (data.input_tokens as number) ?? 0
@@ -136,21 +128,10 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): string {
   const dur = durationMs || 1
   const ttfbPct = ((ttfbMs / dur) * 100).toFixed(0)
   const streamPct = ((streamingMs / dur) * 100).toFixed(0)
-  const contextWindow = (data.context_window as number) ?? 0
 
   const lines: string[] = []
   lines.push(`[LLM] ✓ ${model ?? 'unknown'}${turn != null ? ` · turn ${turn}` : ''} · ${formatDuration(durationMs)} · ${tokPerSec} tok/s`)
   lines.push(`  tok     ${humanTokens(inputTok)} in · ${humanTokens(outputTok)} out`)
-
-  // Context window bar with delta. Use the prompt snapshot from llm_call_started;
-  // provider usage can be missing/zero for input tokens and should not reset ctx.
-  const estimatedContextTokens = (data.estimated_context_tokens as number) ?? 0
-  if (contextWindow > 0 && estimatedContextTokens > 0) {
-    const pct = ((estimatedContextTokens / contextWindow) * 100).toFixed(0)
-    const bar = renderBar(estimatedContextTokens, contextWindow, 20)
-    lines.push(`  ctx     ${bar}  ~${humanTokens(estimatedContextTokens)} / ${humanTokens(contextWindow)} · ${pct}% · +${humanTokens(outputTok)} out`)
-  }
-
   lines.push(`  timing  ttfb ${(ttfbMs / 1000).toFixed(1)}s · ${ttfbPct}% · stream ${(streamingMs / 1000).toFixed(1)}s · ${streamPct}%`)
   return lines.join('\n')
 }
@@ -187,9 +168,23 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
     if (parts.length > 0) detailLines.push(`  tok     ${parts.join(' · ')}`)
   }
 
+  // Message breakdown — parenthetical, same style as LLM started
+  let msgBreakdown = ''
+  if (cms) {
+    const msgParts: string[] = []
+    const uCount = ((cms.user_count as number) ?? 0)
+    const aCount = ((cms.assistant_count as number) ?? 0)
+    const trCount = ((cms.tool_result_count as number) ?? 0)
+    const imgCount = ((cms.image_count as number) ?? 0)
+    if (uCount > 0) msgParts.push(`user ${uCount}`)
+    if (aCount > 0) msgParts.push(`asst ${aCount}`)
+    if (trCount > 0) msgParts.push(`tool ${trCount}`)
+    if (imgCount > 0) msgParts.push(`img ${imgCount}`)
+    if (msgParts.length > 0) msgBreakdown = ` (${msgParts.join(' · ')})`
+  }
+
   const level = (data.level as string | undefined) ?? (data.level_name as string | undefined)
-  const headerInfo = level ? [level, `${msgCount} msgs`] : [`${msgCount} msgs`]
-  if (contextWindow > 0) headerInfo.push(`ctx ${humanTokens(estTokens)} / ${humanTokens(contextWindow)} · ${pct}%`)
+  const headerInfo = level ? [level, `${msgCount} msgs${msgBreakdown}`] : [`${msgCount} msgs${msgBreakdown}`]
   return `[COMPACT] ● compacting · ${headerInfo.join(' · ')}\n${detailLines.join('\n')}`
 }
 

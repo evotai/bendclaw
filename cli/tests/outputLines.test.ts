@@ -152,8 +152,7 @@ describe('buildVerboseEvent', () => {
         tool_details: [['read_file', 8000], ['search', 6000], ['bash', 4000]],
       },
     })
-    expect(text).toContain('[LLM] ● claude-sonnet-4 · turn 2')
-    expect(text).toContain('  msg     18 msgs  user 6 · asst 5 · tool 7')
+    expect(text).toContain('[LLM] ● claude-sonnet-4 · turn 2 · 18 msgs (user 6 · asst 5 · tool 7)')
     expect(text).toContain('  ctx     ')
     expect(text).toContain('  tok     sys 8k · user 12k · asst 4k · tool 18k')
     expect(text).toContain('          read_file  ~8k')
@@ -172,8 +171,6 @@ describe('buildVerboseEvent', () => {
     })
     expect(text).toContain('[LLM] ✓ claude-sonnet-4 · turn 2 · 8.4s')
     expect(text).toContain('  tok     42k in · 352 out')
-    expect(text).toContain('  ctx     ')
-    expect(text).toContain(' · 21% · +352 out')
     expect(text).toContain('  timing  ttfb 1.1s · 13% · stream 7.3s · 87%')
   })
 
@@ -185,7 +182,7 @@ describe('buildVerboseEvent', () => {
       context_window: 200000,
       token_breakdown: { system: 8000, user: 24000, assistant: 18000, tool: 118000 },
     })
-    expect(started).toContain('[COMPACT] ● compacting · L1 · 48 msgs · ctx 168k / 200k · 84%')
+    expect(started).toContain('[COMPACT] ● compacting · L1 · 48 msgs')
     expect(started).toContain('  ctx     ')
     expect(started).toContain('  tok     sys 8k · user 24k · asst 18k · tool 118k')
 

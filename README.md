@@ -29,6 +29,7 @@
 
 ## 📢 News
 
+- **2026-05-02** 🧩 [Skills] Builtin skill support — `review` ships built-in, no install needed.
 - **2026-04-28** 🖼️ [Image] Resize, preserve through compaction, persist to disk.
 - **2026-04-23** 🔍 [Search] Full-text session search — `/resume <query>` to find any past conversation.
 - **2026-04-18** 📜 [REPL] `/history` + `/goto` — time-travel through conversation context.

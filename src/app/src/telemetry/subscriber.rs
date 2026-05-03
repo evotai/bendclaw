@@ -37,9 +37,13 @@ const GEN_AI_USAGE_CACHE_READ: &str = "gen_ai.usage.cache_read.input_tokens";
 const GEN_AI_USAGE_CACHE_CREATION: &str = "gen_ai.usage.cache_creation.input_tokens";
 const GEN_AI_RESPONSE_FINISH_REASONS: &str = "gen_ai.response.finish_reasons";
 const GEN_AI_OUTPUT_MESSAGES: &str = "gen_ai.output.messages";
+const GEN_AI_INPUT_MESSAGES: &str = "gen_ai.input.messages";
+const GEN_AI_TOOL_DEFINITIONS: &str = "gen_ai.tool.definitions";
 const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
 const GEN_AI_TOOL_NAME: &str = "gen_ai.tool.name";
 const GEN_AI_TOOL_CALL_ID: &str = "gen_ai.tool.call.id";
+const GEN_AI_TOOL_CALL_ARGS: &str = "gen_ai.tool.call.arguments";
+const GEN_AI_TOOL_CALL_RESULT: &str = "gen_ai.tool.call.result";
 const SERVER_ADDRESS: &str = "server.address";
 const SERVER_PORT: &str = "server.port";
 const ERROR_TYPE: &str = "error.type";
@@ -126,6 +130,8 @@ impl TelemetrySubscriber {
         server_port: Option<u16>,
         max_tokens: Option<u32>,
         temperature: Option<f32>,
+        messages: &[evot_engine::Message],
+        tools: &[evot_engine::provider::ToolDefinition],
     ) {
         let tracer = opentelemetry::global::tracer_provider().tracer("evot");
         let span_name = format!("chat {}", model);
@@ -149,6 +155,16 @@ impl TelemetrySubscriber {
         }
         if let Some(temp) = temperature {
             attrs.push(KeyValue::new(GEN_AI_REQUEST_TEMPERATURE, temp as f64));
+        }
+        if self.config.capture_content {
+            if let Ok(json) = build_input_messages(messages) {
+                attrs.push(KeyValue::new(GEN_AI_INPUT_MESSAGES, json));
+            }
+            if !tools.is_empty() {
+                if let Ok(json) = serde_json::to_string(tools) {
+                    attrs.push(KeyValue::new(GEN_AI_TOOL_DEFINITIONS, json));
+                }
+            }
         }
 
         // Parent: root span context
@@ -245,16 +261,21 @@ impl TelemetrySubscriber {
     }
 
     /// Called on ToolExecutionStart.
-    pub fn on_tool_start(&mut self, tool_call_id: &str, tool_name: &str) {
+    pub fn on_tool_start(&mut self, tool_call_id: &str, tool_name: &str, args: &serde_json::Value) {
         let tracer = opentelemetry::global::tracer_provider().tracer("evot");
         let span_name = format!("execute_tool {}", tool_name);
 
-        let attrs = vec![
+        let mut attrs = vec![
             KeyValue::new(GEN_AI_OPERATION_NAME, "execute_tool"),
             KeyValue::new(GEN_AI_TOOL_NAME, tool_name.to_string()),
             KeyValue::new(GEN_AI_TOOL_CALL_ID, tool_call_id.to_string()),
             KeyValue::new(GEN_AI_CONVERSATION_ID, self.session_id.clone()),
         ];
+        if self.config.capture_content {
+            if let Ok(args) = serde_json::to_string(args) {
+                attrs.push(KeyValue::new(GEN_AI_TOOL_CALL_ARGS, args));
+            }
+        }
 
         // Parent: current LLM span context (tools are children of the LLM call)
         let parent_cx = self
@@ -274,8 +295,21 @@ impl TelemetrySubscriber {
     }
 
     /// Called on ToolExecutionEnd.
-    pub fn on_tool_end(&mut self, tool_call_id: &str, is_error: bool, _duration_ms: u64) {
+    pub fn on_tool_end(
+        &mut self,
+        tool_call_id: &str,
+        is_error: bool,
+        _duration_ms: u64,
+        result: Option<&serde_json::Value>,
+    ) {
         if let Some(mut span) = self.tool_spans.remove(tool_call_id) {
+            if self.config.capture_content {
+                if let Some(result) = result {
+                    if let Ok(output) = serde_json::to_string(result) {
+                        span.set_attribute(KeyValue::new(GEN_AI_TOOL_CALL_RESULT, output));
+                    }
+                }
+            }
             if is_error {
                 span.set_attribute(KeyValue::new(ERROR_TYPE, "tool_error"));
                 span.set_status(Status::error("tool execution failed"));
@@ -327,6 +361,92 @@ fn classify_error(err: &str) -> &'static str {
     }
 }
 
+/// Build `gen_ai.input.messages` JSON string per OTel Gen AI semantic conventions.
+fn build_input_messages(messages: &[evot_engine::Message]) -> Result<String, serde_json::Error> {
+    let messages: Vec<_> = messages
+        .iter()
+        .map(|message| match message {
+            evot_engine::Message::User { content, .. } => serde_json::json!({
+                "role": "user",
+                "parts": content_parts(content),
+            }),
+            evot_engine::Message::Assistant {
+                content,
+                stop_reason,
+                ..
+            } => serde_json::json!({
+                "role": "assistant",
+                "parts": content_parts(content),
+                "finish_reason": finish_reason_name(stop_reason),
+            }),
+            evot_engine::Message::ToolResult {
+                tool_call_id,
+                tool_name,
+                content,
+                is_error,
+                ..
+            } => serde_json::json!({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": tool_name,
+                "is_error": is_error,
+                "parts": content_parts(content),
+            }),
+        })
+        .collect();
+
+    serde_json::to_string(&messages)
+}
+
+fn content_parts(content: &[evot_engine::Content]) -> Vec<serde_json::Value> {
+    let mut parts = Vec::new();
+    for block in content {
+        match block {
+            evot_engine::Content::Text { text } => {
+                parts.push(serde_json::json!({
+                    "type": "text",
+                    "content": text,
+                }));
+            }
+            evot_engine::Content::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
+                parts.push(serde_json::json!({
+                    "type": "tool_call",
+                    "id": id,
+                    "name": name,
+                    "arguments": arguments,
+                }));
+            }
+            evot_engine::Content::Thinking { thinking, .. } => {
+                parts.push(serde_json::json!({
+                    "type": "text",
+                    "content": thinking,
+                }));
+            }
+            evot_engine::Content::Image { mime_type, .. } => {
+                parts.push(serde_json::json!({
+                    "type": "image",
+                    "mime_type": mime_type,
+                }));
+            }
+        }
+    }
+    parts
+}
+
+fn finish_reason_name(stop_reason: &evot_engine::StopReason) -> &'static str {
+    match stop_reason {
+        evot_engine::StopReason::Stop => "stop",
+        evot_engine::StopReason::ToolUse => "tool_calls",
+        evot_engine::StopReason::Length => "length",
+        evot_engine::StopReason::Error => "error",
+        evot_engine::StopReason::Aborted => "error",
+    }
+}
+
 /// Build `gen_ai.output.messages` JSON string per OTel Gen AI semantic conventions.
 ///
 /// Format: `[{"role": "assistant", "parts": [...], "finish_reason": "..."}]`
@@ -367,13 +487,7 @@ fn build_output_messages(
         }
     }
 
-    let finish_reason = match stop_reason {
-        evot_engine::StopReason::Stop => "stop",
-        evot_engine::StopReason::ToolUse => "tool_calls",
-        evot_engine::StopReason::Length => "length",
-        evot_engine::StopReason::Error => "error",
-        evot_engine::StopReason::Aborted => "error",
-    };
+    let finish_reason = finish_reason_name(stop_reason);
 
     let message = serde_json::json!([{
         "role": "assistant",

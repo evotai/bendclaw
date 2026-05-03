@@ -312,8 +312,10 @@ fn drive_otel(
                 provider_name,
                 server_address.as_deref(),
                 *server_port,
-                None, // max_tokens extracted from config, not available here directly
-                None, // temperature
+                request.max_tokens,
+                request.temperature,
+                &request.messages,
+                &request.tools,
             );
         }
         evot_engine::AgentEvent::LlmCallEnd {
@@ -351,17 +353,24 @@ fn drive_otel(
         evot_engine::AgentEvent::ToolExecutionStart {
             tool_call_id,
             tool_name,
+            args,
             ..
         } => {
-            sub.on_tool_start(tool_call_id, tool_name);
+            sub.on_tool_start(tool_call_id, tool_name, args);
         }
         evot_engine::AgentEvent::ToolExecutionEnd {
             tool_call_id,
+            result,
             is_error,
             duration_ms,
             ..
         } => {
-            sub.on_tool_end(tool_call_id, *is_error, *duration_ms);
+            sub.on_tool_end(
+                tool_call_id,
+                *is_error,
+                *duration_ms,
+                Some(&serde_json::json!(result)),
+            );
         }
         _ => {}
     }

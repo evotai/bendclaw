@@ -86,6 +86,7 @@ impl StreamProvider for MockProvider {
                     usage: Usage::default(),
                     timestamp: now_ms(),
                     error_message: None,
+                    response_id: None,
                 }
             }
             MockResponse::ToolCalls(calls) => {
@@ -116,6 +117,7 @@ impl StreamProvider for MockProvider {
                     usage: Usage::default(),
                     timestamp: now_ms(),
                     error_message: None,
+                    response_id: None,
                 }
             }
         };

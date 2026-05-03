@@ -1759,6 +1759,7 @@ async fn test_compaction_events_emitted_when_context_exceeds_budget() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
     }
 
@@ -1942,6 +1943,7 @@ async fn test_llm_call_stats_image_tokens_separate_from_user() {
             usage: evotengine::types::Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         },
     ];
 
@@ -2010,6 +2012,7 @@ impl StreamProvider for EmptyThenSucceedProvider {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             };
             let _ = tx.send(StreamEvent::Done {
                 message: msg.clone(),

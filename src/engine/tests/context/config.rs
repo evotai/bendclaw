@@ -53,6 +53,7 @@ fn test_context_tracker_with_usage() {
             },
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::user("Follow up question here")),
     ];

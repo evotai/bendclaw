@@ -163,6 +163,7 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> evot_engine::Agen
                 usage: evot_engine::Usage::default(),
                 timestamp: evot_engine::types::now_ms(),
                 error_message: None,
+                response_id: None,
             })
         }
         TranscriptItem::ToolResult {

@@ -47,9 +47,11 @@ fn test_message_assistant_roundtrip() {
             cache_read: 10,
             cache_write: 5,
             total_tokens: 165,
+            reasoning_output: 0,
         },
         timestamp: 789,
         error_message: None,
+        response_id: None,
     };
     roundtrip(&msg);
 }
@@ -132,6 +134,7 @@ fn test_full_conversation_roundtrip() {
             usage: Usage::default(),
             timestamp: 100,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "tc-1".into(),
@@ -153,6 +156,7 @@ fn test_full_conversation_roundtrip() {
             usage: Usage::default(),
             timestamp: 300,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Extension(ExtensionMessage::new(
             "ui_event",

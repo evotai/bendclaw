@@ -9,6 +9,8 @@ pub(crate) struct AnthropicMessageStart {
 
 #[derive(Deserialize)]
 pub(crate) struct AnthropicMessageInfo {
+    #[serde(default)]
+    pub id: Option<String>,
     pub usage: AnthropicUsage,
 }
 

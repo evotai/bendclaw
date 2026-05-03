@@ -133,6 +133,7 @@ fn fallback_emitter_usage() {
         cache_read: 10,
         cache_write: 5,
         total_tokens: 165,
+        reasoning_output: 0,
     });
     let msg = emitter.finalize("model", "provider");
 

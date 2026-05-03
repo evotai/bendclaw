@@ -206,6 +206,7 @@ impl StreamProvider for BedrockProvider {
             usage,
             timestamp: now_ms(),
             error_message: None,
+            response_id: None,
         };
 
         let _ = tx.send(StreamEvent::Done {

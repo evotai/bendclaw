@@ -38,6 +38,8 @@ pub(crate) async fn decode_sse_stream(
     let mut usage = Usage::default();
     let mut stop_reason = StopReason::Stop;
     let mut tool_call_buffers: Vec<ToolCallBuffer> = Vec::new();
+    let mut response_id: Option<String> = None;
+    let mut response_model: Option<String> = None;
 
     let _ = tx.send(StreamEvent::Start);
 
@@ -61,6 +63,8 @@ pub(crate) async fn decode_sse_stream(
                             &mut stop_reason,
                             &mut tool_call_buffers,
                             compat,
+                            &mut response_id,
+                            &mut response_model,
                         )?;
                     }
                 }
@@ -101,7 +105,7 @@ pub(crate) async fn decode_sse_stream(
     let message = Message::Assistant {
         content,
         stop_reason,
-        model: config.model.clone(),
+        model: response_model.unwrap_or_else(|| config.model.clone()),
         provider: config
             .model_config
             .as_ref()
@@ -110,6 +114,7 @@ pub(crate) async fn decode_sse_stream(
         usage,
         timestamp: now_ms(),
         error_message: None,
+        response_id,
     };
 
     let _ = tx.send(StreamEvent::Done {
@@ -118,6 +123,7 @@ pub(crate) async fn decode_sse_stream(
     Ok(message)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_sse_chunk(
     sse: &SseEvent,
     tx: &mpsc::UnboundedSender<StreamEvent>,
@@ -126,6 +132,8 @@ fn process_sse_chunk(
     stop_reason: &mut StopReason,
     tool_call_buffers: &mut Vec<ToolCallBuffer>,
     compat: &OpenAiCompat,
+    response_id: &mut Option<String>,
+    response_model: &mut Option<String>,
 ) -> Result<(), ProviderError> {
     let chunk: OpenAiChunk = match serde_json::from_str(&sse.data) {
         Ok(c) => c,
@@ -146,6 +154,22 @@ fn process_sse_chunk(
         return Err(ProviderError::Api(msg));
     }
 
+    // Capture response id and model from the first chunk
+    if response_id.is_none() {
+        if let Some(id) = &chunk.id {
+            if !id.is_empty() {
+                *response_id = Some(id.clone());
+            }
+        }
+    }
+    if response_model.is_none() {
+        if let Some(m) = &chunk.model {
+            if !m.is_empty() {
+                *response_model = Some(m.clone());
+            }
+        }
+    }
+
     // Process usage
     if let Some(u) = &chunk.usage {
         usage.input = u.prompt_tokens;
@@ -153,6 +177,9 @@ fn process_sse_chunk(
         usage.total_tokens = u.total_tokens;
         if let Some(details) = &u.prompt_tokens_details {
             usage.cache_read = details.cached_tokens;
+        }
+        if let Some(details) = &u.completion_tokens_details {
+            usage.reasoning_output = details.reasoning_tokens;
         }
     }
 

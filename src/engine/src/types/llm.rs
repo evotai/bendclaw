@@ -39,6 +39,9 @@ pub struct Usage {
     pub cache_write: u64,
     #[serde(default)]
     pub total_tokens: u64,
+    /// Output tokens used for reasoning/thinking (e.g. chain-of-thought).
+    #[serde(default)]
+    pub reasoning_output: u64,
 }
 
 impl Usage {

@@ -137,6 +137,7 @@ async fn test_with_messages_builder() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
     ];
 
@@ -301,6 +302,7 @@ async fn test_resume() {
         usage: Usage::default(),
         timestamp: 0,
         error_message: Some("rate limited".into()),
+        response_id: None,
     }));
     agent.append_message(AgentMessage::Llm(Message::user("Please try again")));
 

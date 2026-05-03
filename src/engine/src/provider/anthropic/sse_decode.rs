@@ -38,6 +38,7 @@ pub(crate) async fn decode_sse_stream(
     let mut content: Vec<Content> = Vec::new();
     let mut usage = Usage::default();
     let mut stop_reason = StopReason::Stop;
+    let mut response_id: Option<String> = None;
 
     let _ = tx.send(StreamEvent::Start);
 
@@ -56,6 +57,7 @@ pub(crate) async fn decode_sse_stream(
                             &mut content,
                             &mut usage,
                             &mut stop_reason,
+                            &mut response_id,
                         )? {
                             // message_stop received
                             if err {
@@ -98,6 +100,7 @@ pub(crate) async fn decode_sse_stream(
         usage,
         timestamp: now_ms(),
         error_message: None,
+        response_id,
     };
 
     let _ = tx.send(StreamEvent::Done {
@@ -116,6 +119,7 @@ fn process_sse_event(
     content: &mut Vec<Content>,
     usage: &mut Usage,
     stop_reason: &mut StopReason,
+    response_id: &mut Option<String>,
 ) -> Result<Option<bool>, ProviderError> {
     match sse.event.as_str() {
         "message_start" => {
@@ -123,6 +127,11 @@ fn process_sse_event(
                 usage.input = data.message.usage.input_tokens;
                 usage.cache_read = data.message.usage.cache_read_input_tokens;
                 usage.cache_write = data.message.usage.cache_creation_input_tokens;
+                if let Some(id) = data.message.id {
+                    if !id.is_empty() {
+                        *response_id = Some(id);
+                    }
+                }
             }
         }
         "content_block_start" => {

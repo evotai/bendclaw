@@ -9,6 +9,10 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct OpenAiChunk {
     #[serde(default)]
+    pub(crate) id: Option<String>,
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
     pub(crate) choices: Vec<OpenAiChoice>,
     #[serde(default)]
     pub(crate) usage: Option<OpenAiUsage>,
@@ -69,12 +73,20 @@ pub(crate) struct OpenAiUsage {
     pub total_tokens: u64,
     #[serde(default)]
     pub prompt_tokens_details: Option<OpenAiPromptTokensDetails>,
+    #[serde(default)]
+    pub completion_tokens_details: Option<OpenAiCompletionTokensDetails>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct OpenAiPromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: u64,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct OpenAiCompletionTokensDetails {
+    #[serde(default)]
+    pub reasoning_tokens: u64,
 }
 
 // ---------------------------------------------------------------------------

@@ -76,6 +76,8 @@ pub(super) async fn stream_assistant_response(
                 system_prompt: context.system_prompt.clone(),
                 messages: llm_messages.clone(),
                 tools: tool_defs.clone(),
+                max_tokens: config.max_tokens,
+                temperature: config.temperature,
             },
             stats: llm_stats,
             budget: budget.clone(),
@@ -116,6 +118,7 @@ pub(super) async fn stream_assistant_response(
                             usage: Usage::default(),
                             timestamp: now_ms(),
                             error_message: None,
+                            response_id: None,
                         });
                         partial_message = Some(placeholder.clone());
                         event_tx
@@ -271,6 +274,8 @@ pub(super) async fn stream_assistant_response(
                     context_window: budget.context_window,
                     stop_reason: StopReason::Error,
                     content: vec![],
+                    response_model: None,
+                    response_id: None,
                 })
                 .ok();
                 attempt += 1;
@@ -298,14 +303,22 @@ pub(super) async fn stream_assistant_response(
 
     match result {
         Ok(ref msg) => {
-            let (usage, stop_reason, content) = match msg {
+            let (usage, stop_reason, content, response_model, response_id) = match msg {
                 Message::Assistant {
                     usage,
                     stop_reason,
                     content,
+                    model,
+                    response_id,
                     ..
-                } => (usage.clone(), stop_reason.clone(), content.clone()),
-                _ => (Usage::default(), StopReason::Stop, vec![]),
+                } => (
+                    usage.clone(),
+                    stop_reason.clone(),
+                    content.clone(),
+                    Some(model.clone()),
+                    response_id.clone(),
+                ),
+                _ => (Usage::default(), StopReason::Stop, vec![], None, None),
             };
 
             tx.send(AgentEvent::LlmCallEnd {
@@ -317,6 +330,8 @@ pub(super) async fn stream_assistant_response(
                 context_window: budget.context_window,
                 stop_reason,
                 content,
+                response_model,
+                response_id,
             })
             .ok();
             msg.clone()
@@ -331,6 +346,8 @@ pub(super) async fn stream_assistant_response(
                 context_window: budget.context_window,
                 stop_reason: StopReason::Error,
                 content: vec![],
+                response_model: None,
+                response_id: None,
             })
             .ok();
             Message::Assistant {
@@ -343,6 +360,7 @@ pub(super) async fn stream_assistant_response(
                 usage: Usage::default(),
                 timestamp: now_ms(),
                 error_message: Some(e.to_string()),
+                response_id: None,
             }
         }
     }

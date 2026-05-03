@@ -53,6 +53,7 @@ pub fn sanitize_tool_pairs(messages: Vec<AgentMessage>) -> Vec<AgentMessage> {
                 usage,
                 timestamp,
                 error_message,
+                response_id,
             }) => {
                 let filtered: Vec<Content> = content
                     .into_iter()
@@ -71,6 +72,7 @@ pub fn sanitize_tool_pairs(messages: Vec<AgentMessage>) -> Vec<AgentMessage> {
                         usage,
                         timestamp,
                         error_message,
+                        response_id,
                     }))
                 }
             }

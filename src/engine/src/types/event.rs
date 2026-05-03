@@ -116,6 +116,10 @@ pub enum AgentEvent {
         /// Response content blocks (text + tool calls). Empty on error.
         /// Used for `gen_ai.output.messages` (Opt-In) and verbose UI.
         content: Vec<super::message::Content>,
+        /// OTel: actual model name from the provider response.
+        response_model: Option<String>,
+        /// OTel: unique completion identifier from the provider (e.g. `chatcmpl-xxx`, `msg_xxx`).
+        response_id: Option<String>,
     },
     ContextCompactionStart {
         message_count: usize,
@@ -142,6 +146,8 @@ pub struct LlmCallRequest {
     pub system_prompt: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
 }
 
 /// Pre-computed message stats for an LLM call, computed at the engine layer

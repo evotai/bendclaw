@@ -68,6 +68,7 @@ impl MessagePattern {
                         usage: Usage::default(),
                         timestamp: 0,
                         error_message: None,
+                        response_id: None,
                     }));
                     msg_index += 1;
                 }
@@ -87,6 +88,7 @@ impl MessagePattern {
                         usage: Usage::default(),
                         timestamp: 0,
                         error_message: None,
+                        response_id: None,
                     }));
                     msg_index += 1;
                 }
@@ -106,6 +108,7 @@ impl MessagePattern {
                         usage: Usage::default(),
                         timestamp: 0,
                         error_message: None,
+                        response_id: None,
                     }));
                     msg_index += 1;
                 }

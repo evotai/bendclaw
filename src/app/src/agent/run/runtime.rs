@@ -620,6 +620,8 @@ fn map_agent_event(
             context_window,
             stop_reason,
             content,
+            response_model: _,
+            response_id: _,
         } => {
             let usage_summary = UsageSummary {
                 input: usage.input,

@@ -22,6 +22,7 @@ fn make_assistant_with_tool_call(tool_call_id: &str, tool_name: &str) -> AgentMe
         usage: Usage::default(),
         timestamp: 0,
         error_message: None,
+        response_id: None,
     })
 }
 
@@ -42,6 +43,7 @@ fn make_assistant_with_text_and_tool_call(
         usage: Usage::default(),
         timestamp: 0,
         error_message: None,
+        response_id: None,
     })
 }
 

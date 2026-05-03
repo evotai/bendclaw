@@ -100,6 +100,7 @@ impl FallbackEmitter {
             usage: self.usage,
             timestamp: now_ms(),
             error_message: None,
+            response_id: None,
         };
         let _ = self.tx.send(StreamEvent::Done {
             message: message.clone(),

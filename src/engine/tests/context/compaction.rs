@@ -18,6 +18,7 @@ fn make_assistant_with_tool_call(tool_call_id: &str, tool_name: &str) -> AgentMe
         usage: Usage::default(),
         timestamp: 0,
         error_message: None,
+        response_id: None,
     })
 }
 
@@ -143,6 +144,7 @@ fn make_assistant_with_tool_call_args(
         usage: Usage::default(),
         timestamp: 0,
         error_message: None,
+        response_id: None,
     })
 }
 
@@ -1059,6 +1061,7 @@ fn test_under_budget_no_age_cleared() {
             timestamp: 0,
             stop_reason: StopReason::ToolUse,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -1118,6 +1121,7 @@ fn test_tool_output_max_lines_caps_policy() {
             timestamp: 0,
             stop_reason: StopReason::ToolUse,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -1179,6 +1183,7 @@ fn test_byte_cap_on_long_single_line() {
             timestamp: 0,
             stop_reason: StopReason::ToolUse,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -1251,6 +1256,7 @@ fn test_level2_summary_preserves_multiple_texts() {
             timestamp: 0,
             stop_reason: StopReason::ToolUse,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -1332,6 +1338,7 @@ fn test_tier2_oversize_read_file_records_oversize_capped() {
             timestamp: 0,
             stop_reason: StopReason::ToolUse,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -1784,6 +1791,7 @@ fn test_l1_compacts_to_target() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
         messages.push(AgentMessage::Llm(Message::ToolResult {
             tool_call_id: id,
@@ -1905,6 +1913,7 @@ fn test_multi_round_compaction_prevents_toothpaste_squeezing() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
         messages.push(AgentMessage::Llm(Message::ToolResult {
             tool_call_id: id,
@@ -2014,6 +2023,7 @@ fn test_l2_triggers_when_l1_insufficient() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
     }
     messages.push(AgentMessage::Llm(Message::user("final")));
@@ -2080,6 +2090,7 @@ fn test_l1_and_l2_cooperate() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
         messages.push(AgentMessage::Llm(Message::ToolResult {
             tool_call_id: id,
@@ -2105,6 +2116,7 @@ fn test_l1_and_l2_cooperate() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
     }
 
@@ -2333,6 +2345,7 @@ fn test_l1_to_l2_escalation_single_call() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
         messages.push(AgentMessage::Llm(Message::ToolResult {
             tool_call_id: id,
@@ -2487,6 +2500,7 @@ fn test_l2_when_keep_recent_covers_all() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }));
         messages.push(AgentMessage::Llm(Message::ToolResult {
             tool_call_id: id,

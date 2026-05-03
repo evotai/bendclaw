@@ -129,6 +129,9 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
             usage,
             error,
             metrics,
+            context_window,
+            stop_reason,
+            tool_calls,
             ..
         } => {
             let mut data = json!({
@@ -139,14 +142,19 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                 "cache_read": usage.cache_read,
                 "cache_write": usage.cache_write,
                 "error": error,
+                "context_window": context_window,
+                "stop_reason": stop_reason,
             });
-            if let Some(m) = metrics {
-                if let serde_json::Value::Object(ref mut map) = data {
+            if let serde_json::Value::Object(ref mut map) = data {
+                if let Some(m) = metrics {
                     map.insert("duration_ms".into(), json!(m.duration_ms));
                     map.insert("ttfb_ms".into(), json!(m.ttfb_ms));
                     map.insert("ttft_ms".into(), json!(m.ttft_ms));
                     map.insert("streaming_ms".into(), json!(m.streaming_ms));
                     map.insert("chunk_count".into(), json!(m.chunk_count));
+                }
+                if let Some(tc) = tool_calls {
+                    map.insert("tool_calls".into(), json!(tc));
                 }
             }
             events.push(json!({

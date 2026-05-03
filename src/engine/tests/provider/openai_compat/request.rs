@@ -165,6 +165,7 @@ fn test_tool_result_with_image() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::ToolResult {
                 tool_call_id: "call-1".into(),
@@ -219,6 +220,7 @@ fn test_tool_result_text_only_uses_string() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::ToolResult {
                 tool_call_id: "call-1".into(),
@@ -254,6 +256,7 @@ fn test_empty_assistant_message_is_skipped() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::user("world"),
         ])
@@ -316,6 +319,7 @@ fn test_reasoning_content_in_request() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::user("thanks"),
         ])
@@ -346,6 +350,7 @@ fn test_thinking_only_assistant_not_skipped() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }])
         .build();
 
@@ -379,6 +384,7 @@ fn test_tool_call_assistant_includes_empty_reasoning_content() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }])
         .build();
 
@@ -406,6 +412,7 @@ fn test_tool_call_assistant_omits_empty_reasoning_content_without_cap() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }])
         .build();
 

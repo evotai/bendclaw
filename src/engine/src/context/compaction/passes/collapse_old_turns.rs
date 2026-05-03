@@ -107,6 +107,7 @@ pub fn run(
                     usage: Usage::default(),
                     timestamp: now_ms(),
                     error_message: None,
+                    response_id: None,
                 });
                 let after_tokens = message_tokens(&summary_msg);
 

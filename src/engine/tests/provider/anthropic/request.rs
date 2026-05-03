@@ -14,6 +14,7 @@ fn assistant(text: &str) -> Message {
         usage: Usage::default(),
         timestamp: 0,
         error_message: None,
+        response_id: None,
     }
 }
 
@@ -151,6 +152,7 @@ fn test_usage_cache_hit_rate() {
         cache_read: 900,
         cache_write: 0,
         total_tokens: 1050,
+        reasoning_output: 0,
     };
     let rate = usage.cache_hit_rate();
     assert!((rate - 0.9).abs() < 0.001);
@@ -180,6 +182,7 @@ fn test_tool_result_with_image() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::ToolResult {
                 tool_call_id: "tc-1".into(),
@@ -228,6 +231,7 @@ fn test_tool_result_text_only_uses_string() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: None,
+                response_id: None,
             },
             Message::ToolResult {
                 tool_call_id: "tc-1".into(),
@@ -350,6 +354,7 @@ fn test_empty_assistant_preserved_as_placeholder() {
                 usage: Usage::default(),
                 timestamp: 0,
                 error_message: Some("Empty response".into()),
+                response_id: None,
             },
             Message::user("second"),
         ])

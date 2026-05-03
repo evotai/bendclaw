@@ -21,6 +21,7 @@ fn lifecycle_clears_current_run_after_user_message() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -76,6 +77,7 @@ fn lifecycle_preserves_current_run_without_user_after() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -129,6 +131,7 @@ fn lifecycle_does_not_affect_normal_retention() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -183,6 +186,7 @@ fn lifecycle_clears_multiple_current_run_results() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c1".into(),
@@ -207,6 +211,7 @@ fn lifecycle_clears_multiple_current_run_results() {
             usage: Usage::default(),
             timestamp: 0,
             error_message: None,
+            response_id: None,
         }),
         AgentMessage::Llm(Message::ToolResult {
             tool_call_id: "c2".into(),

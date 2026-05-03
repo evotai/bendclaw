@@ -75,6 +75,9 @@ pub enum Message {
         timestamp: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         error_message: Option<String>,
+        /// Unique completion identifier from the provider (e.g. `chatcmpl-xxx`, `msg_xxx`).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        response_id: Option<String>,
     },
     #[serde(rename = "toolResult")]
     ToolResult {

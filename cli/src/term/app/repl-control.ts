@@ -59,8 +59,10 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
   if (overlay.kind === 'selector') return actions.concat({ kind: 'selector-key' })
   if (overlay.kind === 'ask-user') return actions.concat({ kind: 'ask-key' })
 
+  // ctrl+o toggles expanded view in both loading and idle states
+  if (event.type === 'ctrl' && event.key === 'o') return actions.concat({ kind: 'toggle-expanded' })
+
   if (isLoading) {
-    if (event.type === 'ctrl' && event.key === 'o') return actions.concat({ kind: 'toggle-expanded' })
     if (event.type === 'enter') return actions.concat({ kind: 'loading-enter' })
     if (event.type === 'char') return actions.concat({ kind: 'loading-char' })
     if (event.type === 'paste') return actions.concat({ kind: 'loading-paste' })

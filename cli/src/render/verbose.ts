@@ -141,10 +141,10 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): { text: s
     const json = JSON.stringify(toolCalls)
     const maxLen = 200
     if (json.length > maxLen) {
-      lines.push(`  calls   ${json.slice(0, maxLen)}…`)
-      expandedCallsLine = `  calls   ${json}`
+      lines.push(`  output  ${json.slice(0, maxLen)}…`)
+      expandedCallsLine = `  output  ${json}`
     } else {
-      lines.push(`  calls   ${json}`)
+      lines.push(`  output  ${json}`)
     }
   }
 

@@ -261,12 +261,12 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         estimated_context_tokens: state.currentRunStats.contextTokens,
         context_window: state.currentRunStats.contextWindow,
       }
-      const text = formatLlmCallCompleted(data)
+      const result = formatLlmCallCompleted(data)
 
       return {
         ...state,
         currentRunStats: stats,
-        verboseEvents: [...state.verboseEvents, { kind: 'llm_completed', text }],
+        verboseEvents: [...state.verboseEvents, { kind: 'llm_completed', text: result.text, expandedText: result.expandedText }],
       }
     }
 

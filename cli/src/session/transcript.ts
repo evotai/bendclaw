@@ -154,10 +154,12 @@ function handleStats(item: RawItem, acc: RunAcc): void {
     case 'llm_call_started':
       acc.verboseEvents.push({ kind: 'llm_call', text: formatLlmCallStarted(data) })
       break
-    case 'llm_call_completed':
-      acc.verboseEvents.push({ kind: 'llm_completed', text: formatLlmCallCompleted(data) })
+    case 'llm_call_completed': {
+      const result = formatLlmCallCompleted(data)
+      acc.verboseEvents.push({ kind: 'llm_completed', text: result.text, expandedText: result.expandedText })
       accumulateLlmStats(data, acc)
       break
+    }
     case 'context_compaction_started':
       acc.verboseEvents.push({ kind: 'compact_call', text: formatCompactionStarted(data) })
       break

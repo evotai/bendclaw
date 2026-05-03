@@ -159,7 +159,7 @@ describe('buildVerboseEvent', () => {
   })
 
   test('formats llm completed with status symbol and timing details', () => {
-    const text = formatLlmCallCompleted({
+    const result = formatLlmCallCompleted({
       model: 'claude-sonnet-4',
       turn: 2,
       duration_ms: 8400,
@@ -169,9 +169,9 @@ describe('buildVerboseEvent', () => {
       estimated_context_tokens: 42000,
       time_to_first_byte_ms: 1100,
     })
-    expect(text).toContain('[LLM] ✓ claude-sonnet-4 · turn 2 · 8.4s')
-    expect(text).toContain('  tok     42k in · 352 out')
-    expect(text).toContain('  timing  ttfb 1.1s · 13% · stream 7.3s · 87%')
+    expect(result.text).toContain('[LLM] ✓ claude-sonnet-4 · turn 2 · 8.4s')
+    expect(result.text).toContain('  tok     42k in · 352 out')
+    expect(result.text).toContain('  timing  ttfb 1.1s · 13% · stream 7.3s · 87%')
   })
 
   test('formats compact verbose with status symbols and preserves details', () => {

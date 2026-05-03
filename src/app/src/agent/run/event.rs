@@ -95,6 +95,12 @@ pub enum RunEventPayload {
         metrics: Option<LlmCallMetrics>,
         #[serde(default)]
         context_window: usize,
+        /// LLM stop reason (e.g. "stop", "tool_use", "max_tokens", "error").
+        #[serde(default)]
+        stop_reason: String,
+        /// Tool calls returned by the LLM, if any.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_calls: Option<Vec<LlmToolCallSummary>>,
     },
     ContextCompactionStarted {
         message_count: usize,
@@ -122,6 +128,17 @@ pub enum RunEventPayload {
     Error {
         message: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// LlmToolCallSummary — tool call in LlmCallCompleted
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmToolCallSummary {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
 }
 
 // ---------------------------------------------------------------------------

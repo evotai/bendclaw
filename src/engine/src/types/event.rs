@@ -111,6 +111,11 @@ pub enum AgentEvent {
         error: Option<String>,
         metrics: LlmCallMetrics,
         context_window: usize,
+        /// Stop reason from the LLM response (for `gen_ai.response.finish_reasons`).
+        stop_reason: super::llm::StopReason,
+        /// Response content blocks (text + tool calls). Empty on error.
+        /// Used for `gen_ai.output.messages` (Opt-In) and verbose UI.
+        content: Vec<super::message::Content>,
     },
     ContextCompactionStart {
         message_count: usize,

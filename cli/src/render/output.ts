@@ -184,6 +184,7 @@ export function buildToolProgress(name: string, text: string, expanded?: boolean
 }
 
 export function buildVerboseEvent(eventText: string): OutputLine[] {
+  if (!eventText) return []
   return eventText.split('\n').map((line) => ({
     id: genId('verb'),
     kind: 'verbose' as const,

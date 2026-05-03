@@ -108,7 +108,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
 // LLM call completed
 // ---------------------------------------------------------------------------
 
-export function formatLlmCallCompleted(data: Record<string, unknown>): string {
+export function formatLlmCallCompleted(data: Record<string, unknown>): { text: string; expandedText?: string } {
   const model = data.model as string | undefined
   const turn = data.turn as number | undefined
   const error = data.error as string | undefined
@@ -133,7 +133,27 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): string {
   lines.push(`[LLM] ✓ ${model ?? 'unknown'}${turn != null ? ` · turn ${turn}` : ''} · ${formatDuration(durationMs)} · ${tokPerSec} tok/s`)
   lines.push(`  tok     ${humanTokens(inputTok)} in · ${humanTokens(outputTok)} out`)
   lines.push(`  timing  ttfb ${(ttfbMs / 1000).toFixed(1)}s · ${ttfbPct}% · stream ${(streamingMs / 1000).toFixed(1)}s · ${streamPct}%`)
-  return lines.join('\n')
+
+  // Tool calls returned by the LLM (raw JSON, truncated to avoid flooding)
+  const toolCalls = data.tool_calls as { id: string; name: string; arguments: Record<string, unknown> }[] | undefined
+  let expandedCallsLine: string | undefined
+  if (toolCalls && toolCalls.length > 0) {
+    const json = JSON.stringify(toolCalls)
+    const maxLen = 200
+    if (json.length > maxLen) {
+      lines.push(`  calls   ${json.slice(0, maxLen)}…`)
+      expandedCallsLine = `  calls   ${json}`
+    } else {
+      lines.push(`  calls   ${json}`)
+    }
+  }
+
+  const compact = lines.join('\n')
+  if (expandedCallsLine) {
+    const expandedLines = [...lines.slice(0, -1), expandedCallsLine]
+    return { text: compact, expandedText: expandedLines.join('\n') }
+  }
+  return { text: compact }
 }
 
 // ---------------------------------------------------------------------------

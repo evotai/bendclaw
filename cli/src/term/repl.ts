@@ -517,7 +517,24 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         }
 
         if (update.commitLines.length > 0) {
-          commitLines(update.commitLines)
+          if (update.expandedCommitLines) {
+            // Dual-commit: compact in compactLines, expanded in expandedLines
+            const compact = update.commitLines
+            const exp = update.expandedCommitLines
+            const prevKind = compactLines.length > 0 ? compactLines[compactLines.length - 1]!.kind : undefined
+            compactLines.push(...compact)
+            expandedLines.push(...exp)
+            const visible = expanded ? exp : compact
+            const blocks = buildOutputBlocks(visible, prevKind)
+            const rendered = blocksToLines(blocks)
+            renderer.beginBatch()
+            renderer.appendScroll(rendered.join('\n'))
+            renderStatus()
+            renderer.flushBatch()
+            screenLog.logLines(rendered)
+          } else {
+            commitLines(update.commitLines)
+          }
         }
 
         if (update.rerenderStatus && !streamMachine?.spinnerState.streaming) renderStatus()

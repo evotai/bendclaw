@@ -27,6 +27,7 @@ export interface StreamContext {
 export interface StreamUpdate {
   state: StreamMachineState
   commitLines: OutputLine[]
+  expandedCommitLines?: OutputLine[]
   writeLines: OutputLine[]
   rerenderStatus: boolean
   suppressToolStarted: boolean
@@ -154,16 +155,27 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
+  let expandedCommitLines: OutputLine[] | undefined
+
   if (prev.appState.verbose && (event.kind === 'llm_call_completed' || event.kind === 'context_compaction_completed')) {
     const flushed = flushStreaming(state)
     state = flushed.state
     commitLines.push(...flushed.lines)
     writeLines.push(...flushed.lines)
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
+    let hasExpanded = false
     for (const evt of newEvents) {
       const verboseLines = buildVerboseEvent(evt.text)
       commitLines.push(...verboseLines)
       writeLines.push(...verboseLines)
+      if (evt.expandedText) hasExpanded = true
+    }
+    if (hasExpanded) {
+      expandedCommitLines = [...flushed.lines]
+      for (const evt of newEvents) {
+        const expLines = buildVerboseEvent(evt.expandedText ?? evt.text)
+        expandedCommitLines.push(...expLines)
+      }
     }
   }
 
@@ -226,6 +238,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   return {
     state,
     commitLines,
+    expandedCommitLines,
     writeLines,
     rerenderStatus,
     suppressToolStarted,

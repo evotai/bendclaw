@@ -269,6 +269,8 @@ pub(super) async fn stream_assistant_response(
                     error: Some(e.to_string()),
                     metrics: error_metrics,
                     context_window: budget.context_window,
+                    stop_reason: StopReason::Error,
+                    content: vec![],
                 })
                 .ok();
                 attempt += 1;
@@ -296,9 +298,14 @@ pub(super) async fn stream_assistant_response(
 
     match result {
         Ok(ref msg) => {
-            let usage = match msg {
-                Message::Assistant { usage, .. } => usage.clone(),
-                _ => Usage::default(),
+            let (usage, stop_reason, content) = match msg {
+                Message::Assistant {
+                    usage,
+                    stop_reason,
+                    content,
+                    ..
+                } => (usage.clone(), stop_reason.clone(), content.clone()),
+                _ => (Usage::default(), StopReason::Stop, vec![]),
             };
 
             tx.send(AgentEvent::LlmCallEnd {
@@ -308,6 +315,8 @@ pub(super) async fn stream_assistant_response(
                 error: None,
                 metrics: collected_metrics,
                 context_window: budget.context_window,
+                stop_reason,
+                content,
             })
             .ok();
             msg.clone()
@@ -320,6 +329,8 @@ pub(super) async fn stream_assistant_response(
                 error: Some(e.to_string()),
                 metrics: collected_metrics,
                 context_window: budget.context_window,
+                stop_reason: StopReason::Error,
+                content: vec![],
             })
             .ok();
             Message::Assistant {

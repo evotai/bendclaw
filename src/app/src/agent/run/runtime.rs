@@ -14,6 +14,7 @@ use super::convert::from_agent_messages;
 use super::convert::total_usage;
 use super::convert::transcript_from_assistant_completed;
 use super::event::LlmMessageStats;
+use super::event::LlmToolCallSummary;
 use super::event::RunEvent;
 use super::event::RunEventContext;
 use super::event::RunEventPayload;
@@ -321,12 +322,16 @@ fn drive_otel(
             usage,
             error,
             metrics,
+            stop_reason,
+            content,
             ..
         } => {
-            let finish_reason = if error.is_some() {
-                Some("error")
-            } else {
-                Some("stop")
+            let finish_reason = match stop_reason {
+                evot_engine::StopReason::Stop => "stop",
+                evot_engine::StopReason::ToolUse => "tool_calls",
+                evot_engine::StopReason::Length => "length",
+                evot_engine::StopReason::Error => "error",
+                evot_engine::StopReason::Aborted => "error",
             };
             sub.on_llm_call_end(
                 *turn,
@@ -336,9 +341,11 @@ fn drive_otel(
                 usage.output,
                 usage.cache_read,
                 usage.cache_write,
-                finish_reason,
+                Some(finish_reason),
                 error.as_deref(),
                 metrics.ttft_ms,
+                stop_reason,
+                content,
             );
         }
         evot_engine::AgentEvent::ToolExecutionStart {
@@ -611,6 +618,8 @@ fn map_agent_event(
             error,
             metrics,
             context_window,
+            stop_reason,
+            content,
         } => {
             let usage_summary = UsageSummary {
                 input: usage.input,
@@ -625,6 +634,22 @@ fn map_agent_event(
                 streaming_ms: metrics.streaming_ms,
                 chunk_count: metrics.chunk_count,
             };
+            // Extract tool call summaries for the public event
+            let tool_calls: Vec<LlmToolCallSummary> = content
+                .iter()
+                .filter_map(|c| match c {
+                    evot_engine::Content::ToolCall {
+                        id,
+                        name,
+                        arguments,
+                    } => Some(LlmToolCallSummary {
+                        id: id.clone(),
+                        name: name.clone(),
+                        arguments: arguments.clone(),
+                    }),
+                    _ => None,
+                })
+                .collect();
             vec![
                 RuntimeEvent::Transcript(
                     TranscriptStats::LlmCallCompleted(LlmCallCompletedStats {
@@ -646,6 +671,12 @@ fn map_agent_event(
                     error: error.clone(),
                     metrics: Some(llm_metrics),
                     context_window: *context_window,
+                    stop_reason: stop_reason.to_string(),
+                    tool_calls: if tool_calls.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls)
+                    },
                 }),
             ]
         }

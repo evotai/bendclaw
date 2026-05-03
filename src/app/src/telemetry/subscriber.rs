@@ -36,6 +36,7 @@ const GEN_AI_USAGE_OUTPUT_TOKENS: &str = "gen_ai.usage.output_tokens";
 const GEN_AI_USAGE_CACHE_READ: &str = "gen_ai.usage.cache_read.input_tokens";
 const GEN_AI_USAGE_CACHE_CREATION: &str = "gen_ai.usage.cache_creation.input_tokens";
 const GEN_AI_RESPONSE_FINISH_REASONS: &str = "gen_ai.response.finish_reasons";
+const GEN_AI_OUTPUT_MESSAGES: &str = "gen_ai.output.messages";
 const GEN_AI_CONVERSATION_ID: &str = "gen_ai.conversation.id";
 const GEN_AI_TOOL_NAME: &str = "gen_ai.tool.name";
 const GEN_AI_TOOL_CALL_ID: &str = "gen_ai.tool.call.id";
@@ -57,7 +58,6 @@ struct LlmSpanState {
 
 /// Manages OTel span lifecycle for a single agent run.
 pub struct TelemetrySubscriber {
-    #[allow(dead_code)]
     config: TelemetryConfig,
     session_id: String,
     root_span: Option<Context>,
@@ -188,6 +188,8 @@ impl TelemetrySubscriber {
         finish_reason: Option<&str>,
         error: Option<&str>,
         ttft_ms: u64,
+        stop_reason: &evot_engine::StopReason,
+        content: &[evot_engine::Content],
     ) {
         if let Some(state) = self.llm_spans.remove(&(turn, attempt)) {
             let span = state.cx.span();
@@ -229,6 +231,13 @@ impl TelemetrySubscriber {
                 let error_type = classify_error(err);
                 span.set_attribute(KeyValue::new(ERROR_TYPE, error_type));
                 span.set_status(Status::error(err.to_string()));
+            }
+
+            // gen_ai.output.messages (Opt-In): serialize response as JSON string
+            if self.config.capture_content && !content.is_empty() {
+                if let Ok(json) = build_output_messages(content, stop_reason) {
+                    span.set_attribute(KeyValue::new(GEN_AI_OUTPUT_MESSAGES, json));
+                }
             }
 
             span.end();
@@ -316,4 +325,61 @@ fn classify_error(err: &str) -> &'static str {
     } else {
         "provider_error"
     }
+}
+
+/// Build `gen_ai.output.messages` JSON string per OTel Gen AI semantic conventions.
+///
+/// Format: `[{"role": "assistant", "parts": [...], "finish_reason": "..."}]`
+/// where parts contain `{"type": "text", "content": "..."}` and/or
+/// `{"type": "tool_call", "id": "...", "name": "...", "arguments": {...}}`.
+fn build_output_messages(
+    content: &[evot_engine::Content],
+    stop_reason: &evot_engine::StopReason,
+) -> Result<String, serde_json::Error> {
+    let mut parts = Vec::new();
+    for block in content {
+        match block {
+            evot_engine::Content::Text { text } => {
+                parts.push(serde_json::json!({
+                    "type": "text",
+                    "content": text,
+                }));
+            }
+            evot_engine::Content::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
+                parts.push(serde_json::json!({
+                    "type": "tool_call",
+                    "id": id,
+                    "name": name,
+                    "arguments": arguments,
+                }));
+            }
+            evot_engine::Content::Thinking { thinking, .. } => {
+                parts.push(serde_json::json!({
+                    "type": "text",
+                    "content": thinking,
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    let finish_reason = match stop_reason {
+        evot_engine::StopReason::Stop => "stop",
+        evot_engine::StopReason::ToolUse => "tool_calls",
+        evot_engine::StopReason::Length => "length",
+        evot_engine::StopReason::Error => "error",
+        evot_engine::StopReason::Aborted => "error",
+    };
+
+    let message = serde_json::json!([{
+        "role": "assistant",
+        "parts": parts,
+        "finish_reason": finish_reason,
+    }]);
+
+    serde_json::to_string(&message)
 }

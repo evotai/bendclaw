@@ -11,7 +11,6 @@ use async_trait::async_trait;
 
 use crate::types::*;
 
-const MAX_RESPONSE_SIZE: usize = 512 * 1024; // 512KB
 const TIMEOUT_SECS: u64 = 30;
 const BROWSER_RENDER_WAIT_SECS: u64 = 5;
 const BROWSER_POLL_INTERVAL_MS: u64 = 300;
@@ -148,9 +147,8 @@ impl AgentTool for WebFetchTool {
             .map_err(|e| ToolError::Failed(format!("Failed to read response body: {e}")))?;
 
         if !content_type.contains("text/html") {
-            let text = truncate_text(body);
             return Ok(ToolResult {
-                content: vec![Content::Text { text }],
+                content: vec![Content::Text { text: body }],
                 details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
                 retention: Retention::Normal,
             });
@@ -159,9 +157,8 @@ impl AgentTool for WebFetchTool {
         let reqwest_text = html_to_text(&body);
 
         if !should_try_browser_fallback(&reqwest_text, has_custom_headers) {
-            let text = truncate_text(reqwest_text);
             return Ok(ToolResult {
-                content: vec![Content::Text { text }],
+                content: vec![Content::Text { text: reqwest_text }],
                 details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
                 retention: Retention::Normal,
             });
@@ -179,7 +176,7 @@ impl AgentTool for WebFetchTool {
         .await;
 
         if let Ok(Ok(Ok(rendered_html))) = browser_result {
-            let text = truncate_text(html_to_text(&rendered_html));
+            let text = html_to_text(&rendered_html);
             return Ok(ToolResult {
                 content: vec![Content::Text { text }],
                 details: serde_json::json!({ "status": status, "renderer": "browser_fallback" }),
@@ -187,9 +184,8 @@ impl AgentTool for WebFetchTool {
             });
         }
 
-        let text = truncate_text(reqwest_text);
         Ok(ToolResult {
-            content: vec![Content::Text { text }],
+            content: vec![Content::Text { text: reqwest_text }],
             details: serde_json::json!({ "status": status, "renderer": "reqwest" }),
             retention: Retention::Normal,
         })
@@ -252,13 +248,4 @@ fn html_to_text(html: &str) -> String {
         Ok(text) => text,
         Err(_) => html.to_string(),
     }
-}
-
-/// Truncate large text responses to the tool limit.
-fn truncate_text(mut text: String) -> String {
-    if text.len() > MAX_RESPONSE_SIZE {
-        text.truncate(MAX_RESPONSE_SIZE);
-        text.push_str("\n... (response truncated at 512KB)");
-    }
-    text
 }

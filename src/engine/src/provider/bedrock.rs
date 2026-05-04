@@ -241,12 +241,14 @@ pub fn build_bedrock_body(config: &StreamConfig) -> serde_json::Value {
                     .filter(|c| !matches!(c, Content::Text { text } if text.is_empty()))
                     .filter_map(|c| match c {
                         Content::Text { text } => Some(serde_json::json!({"text": text})),
-                        Content::Image { data, mime_type } => Some(serde_json::json!({
-                            "image": {
-                                "format": mime_type.split('/').nth(1).unwrap_or("png"),
-                                "source": {"bytes": data},
-                            }
-                        })),
+                        Content::Image { .. } => c.resolve_image_data().map(|(data, mime_type)| {
+                            serde_json::json!({
+                                "image": {
+                                    "format": mime_type.split('/').nth(1).unwrap_or("png"),
+                                    "source": {"bytes": data},
+                                }
+                            })
+                        }),
                         _ => None,
                     })
                     .collect();
@@ -314,12 +316,14 @@ pub fn content_to_bedrock(content: &[Content]) -> Vec<serde_json::Value> {
         .filter(|c| !matches!(c, Content::Text { text } if text.is_empty()))
         .filter_map(|c| match c {
             Content::Text { text } => Some(serde_json::json!({"text": text})),
-            Content::Image { data, mime_type } => Some(serde_json::json!({
-                "image": {
-                    "format": mime_type.split('/').nth(1).unwrap_or("png"),
-                    "source": {"bytes": data},
-                }
-            })),
+            Content::Image { .. } => c.resolve_image_data().map(|(data, mime_type)| {
+                serde_json::json!({
+                    "image": {
+                        "format": mime_type.split('/').nth(1).unwrap_or("png"),
+                        "source": {"bytes": data},
+                    }
+                })
+            }),
             Content::ToolCall {
                 id,
                 name,

@@ -116,12 +116,15 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> evot_engine::Agen
                         TranscriptUserContent::Text { text } => {
                             evot_engine::Content::Text { text: text.clone() }
                         }
-                        TranscriptUserContent::Image { data, mime_type } => {
-                            evot_engine::Content::Image {
-                                data: data.clone(),
-                                mime_type: mime_type.clone(),
-                            }
-                        }
+                        TranscriptUserContent::Image {
+                            data,
+                            mime_type,
+                            source,
+                        } => evot_engine::Content::Image {
+                            data: data.clone(),
+                            mime_type: mime_type.clone(),
+                            source: source.clone(),
+                        },
                     })
                     .collect()
             };

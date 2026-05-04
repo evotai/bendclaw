@@ -363,6 +363,7 @@ fn cap_preserves_non_text_content() {
     let image = Content::Image {
         data: "base64data".into(),
         mime_type: "image/png".into(),
+        source: None,
     };
     let big_text2 = Content::Text {
         text: "y".repeat(60_000),

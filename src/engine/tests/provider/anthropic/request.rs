@@ -194,6 +194,7 @@ fn test_tool_result_with_image() {
                     Content::Image {
                         data: "aW1hZ2VkYXRh".into(),
                         mime_type: "image/png".into(),
+                        source: None,
                     },
                 ],
                 is_error: false,

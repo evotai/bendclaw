@@ -8,9 +8,14 @@ pub(crate) enum JsContent {
     Text { text: String },
     #[serde(rename = "image")]
     Image {
+        /// Base64 data — may be empty when `source` is provided.
+        #[serde(default)]
         data: String,
         #[serde(rename = "mimeType")]
         mime_type: String,
+        /// File path to the cached image on disk.
+        #[serde(default)]
+        source: Option<String>,
     },
 }
 
@@ -28,15 +33,39 @@ pub(crate) fn parse_content_blocks(
             JsContent::Text { text } if !text.is_empty() => {
                 Some(evot_engine::Content::Text { text })
             }
-            JsContent::Image { data, mime_type } if !data.is_empty() => {
+            JsContent::Image {
+                data,
+                mime_type,
+                source,
+            } => {
+                // When a source path is provided, store it as a lazy reference
+                // so the base64 payload stays out of the message context.
+                if let Some(ref path) = source {
+                    if !path.is_empty() {
+                        return Some(evot_engine::Content::Image {
+                            data: String::new(),
+                            mime_type,
+                            source,
+                        });
+                    }
+                }
+                // Fallback: inline base64 (e.g. feishu, or no source)
+                if data.is_empty() {
+                    return None;
+                }
                 match evot_engine::resize_image(&data, &mime_type) {
                     Ok((resized_data, new_mime)) => Some(evot_engine::Content::Image {
                         data: resized_data,
                         mime_type: new_mime,
+                        source: None,
                     }),
                     Err(e) => {
                         eprintln!("image resize failed, using original: {e}");
-                        Some(evot_engine::Content::Image { data, mime_type })
+                        Some(evot_engine::Content::Image {
+                            data,
+                            mime_type,
+                            source: None,
+                        })
                     }
                 }
             }

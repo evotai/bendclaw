@@ -156,12 +156,21 @@ async fn test_read_image_file() {
         .unwrap();
 
     match &result.content[0] {
-        Content::Image { data, mime_type } => {
+        Content::Image {
+            data,
+            mime_type,
+            source,
+        } => {
             assert_eq!(mime_type, "image/png");
-            assert!(!data.is_empty());
-            // Verify round-trip: decode should match original bytes
+            assert!(data.is_empty(), "data should be empty when source is set");
+            assert!(source.is_some(), "source path should be set");
+            // Verify resolve_image_data loads from disk
+            let (resolved_data, resolved_mime) = result.content[0]
+                .resolve_image_data()
+                .expect("resolve should succeed");
+            assert_eq!(resolved_mime, "image/png");
             let decoded = base64::engine::general_purpose::STANDARD
-                .decode(data)
+                .decode(&resolved_data)
                 .unwrap();
             assert_eq!(decoded, png_bytes);
         }

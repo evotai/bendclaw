@@ -212,10 +212,7 @@ fn tool_result_images_as_user_content(tool_name: &str, content: &[Content]) -> V
         text: format!("Image output from tool `{}`:", tool_name),
     }];
     user_content.extend(content.iter().filter_map(|c| match c {
-        Content::Image { data, mime_type } => Some(Content::Image {
-            data: data.clone(),
-            mime_type: mime_type.clone(),
-        }),
+        Content::Image { .. } => Some(c.clone()),
         _ => None,
     }));
     user_content
@@ -234,10 +231,12 @@ pub fn content_to_openai(content: &[Content]) -> serde_json::Value {
         .filter(|c| !matches!(c, Content::Text { text } if text.is_empty()))
         .filter_map(|c| match c {
             Content::Text { text } => Some(serde_json::json!({"type": "text", "text": text})),
-            Content::Image { data, mime_type } => Some(serde_json::json!({
-                "type": "image_url",
-                "image_url": {"url": format!("data:{};base64,{}", mime_type, data)},
-            })),
+            Content::Image { .. } => c.resolve_image_data().map(|(data, mime_type)| {
+                serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {"url": format!("data:{};base64,{}", mime_type, data)},
+                })
+            }),
             _ => None,
         })
         .collect();

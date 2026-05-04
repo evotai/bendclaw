@@ -437,7 +437,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const fullText = sourceAnnotations ? `${text}\n${sourceAnnotations}` : text
     if (fullText) blocks.push({ type: 'text', text: fullText })
     for (const img of resolved) {
-      blocks.push({ type: 'image', data: img.base64, mimeType: img.mediaType })
+      blocks.push({
+        type: 'image',
+        data: img.filePath ? '' : img.base64,
+        mimeType: img.mediaType,
+        source: img.filePath,
+      })
     }
     return { blocks, resolvedIds: new Set(resolved.map(r => r.id)) }
   }

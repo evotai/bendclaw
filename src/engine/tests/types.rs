@@ -102,6 +102,7 @@ fn test_content_variants_roundtrip() {
     roundtrip(&Content::Image {
         data: "base64data".into(),
         mime_type: "image/png".into(),
+        source: None,
     });
     roundtrip(&Content::Thinking {
         thinking: "let me think...".into(),

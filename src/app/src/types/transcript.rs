@@ -58,8 +58,16 @@ pub struct ToolCallRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TranscriptUserContent {
-    Text { text: String },
-    Image { data: String, mime_type: String },
+    Text {
+        text: String,
+    },
+    Image {
+        #[serde(default)]
+        data: String,
+        mime_type: String,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        source: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -149,12 +157,15 @@ impl TranscriptItem {
                 evot_engine::Content::Text { text } => {
                     Some(TranscriptUserContent::Text { text: text.clone() })
                 }
-                evot_engine::Content::Image { data, mime_type } => {
-                    Some(TranscriptUserContent::Image {
-                        data: data.clone(),
-                        mime_type: mime_type.clone(),
-                    })
-                }
+                evot_engine::Content::Image {
+                    data,
+                    mime_type,
+                    source,
+                } => Some(TranscriptUserContent::Image {
+                    data: data.clone(),
+                    mime_type: mime_type.clone(),
+                    source: source.clone(),
+                }),
                 _ => None,
             })
             .collect();

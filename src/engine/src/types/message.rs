@@ -34,9 +34,14 @@ pub enum Content {
     Text { text: String },
     #[serde(rename = "image")]
     Image {
+        #[serde(default)]
         data: String,
         #[serde(rename = "mimeType")]
         mime_type: String,
+        /// Optional file path — when set, `data` can be empty and will be
+        /// loaded lazily by the provider request builder.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        source: Option<String>,
     },
     #[serde(rename = "thinking")]
     Thinking {
@@ -50,6 +55,37 @@ pub enum Content {
         name: String,
         arguments: serde_json::Value,
     },
+}
+
+impl Content {
+    /// Resolve image data: if `data` is empty but `source` is set, load from disk.
+    /// Returns `(base64_data, mime_type)` or `None` if resolution fails.
+    pub fn resolve_image_data(&self) -> Option<(String, String)> {
+        match self {
+            Content::Image {
+                data,
+                mime_type,
+                source,
+            } => {
+                if !data.is_empty() {
+                    return Some((data.clone(), mime_type.clone()));
+                }
+                if let Some(path) = source {
+                    match std::fs::read(path) {
+                        Ok(bytes) => {
+                            use base64::Engine;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            Some((b64, mime_type.clone()))
+                        }
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

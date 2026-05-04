@@ -1514,6 +1514,7 @@ async fn test_filter_non_text_content_only_text_extracted() {
             Content::Image {
                 data: "base64data".into(),
                 mime_type: "image/png".into(),
+                source: None,
             },
         ],
         timestamp: 0,
@@ -1929,6 +1930,7 @@ async fn test_llm_call_stats_image_tokens_separate_from_user() {
                 Content::Image {
                     data: "A".repeat(3000),
                     mime_type: "image/png".into(),
+                    source: None,
                 },
             ],
             timestamp: 0,

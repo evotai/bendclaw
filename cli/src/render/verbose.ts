@@ -33,7 +33,14 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     if (ms.user_count > 0) parts.push(`user ${ms.user_count}`)
     if (ms.assistant_count > 0) parts.push(`asst ${ms.assistant_count}`)
     if (ms.tool_result_count > 0) parts.push(`tool ${ms.tool_result_count}`)
-    if ((ms.image_count as number) > 0) parts.push(`img ${ms.image_count}`)
+     if ((ms.image_count as number) > 0) {
+       const pathCount = (ms.image_path_count as number) ?? 0
+       const base64Count = (ms.image_base64_count as number) ?? 0
+       const imgParts: string[] = []
+       if (pathCount > 0) imgParts.push(`path ${pathCount}`)
+       if (base64Count > 0) imgParts.push(`b64 ${base64Count}`)
+       parts.push(imgParts.length > 0 ? `img ${ms.image_count} (${imgParts.join(' · ')})` : `img ${ms.image_count}`)
+     }
     if (parts.length > 0) msgBreakdown = ` (${parts.join(' · ')})`
   }
 
@@ -61,7 +68,11 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     if ((ms.user_tokens as number) > 0) dist.push(`user ${humanTokens(ms.user_tokens)}`)
     if ((ms.assistant_tokens as number) > 0) dist.push(`asst ${humanTokens(ms.assistant_tokens)}`)
     if ((ms.tool_result_tokens as number) > 0) dist.push(`tool ${humanTokens(ms.tool_result_tokens)}`)
-    if ((ms.image_tokens as number) > 0) dist.push(`img ${humanTokens(ms.image_tokens)}`)
+    const totalTokens = sysTok + toolDefTok + (ms.user_tokens ?? 0) + (ms.assistant_tokens ?? 0) + (ms.tool_result_tokens ?? 0) + (ms.image_tokens ?? 0)
+    if ((ms.image_tokens as number) > 0) {
+      const pct = totalTokens > 0 ? ` · ${(((ms.image_tokens as number) / totalTokens) * 100).toFixed(0)}%` : ''
+      dist.push(`img ${humanTokens(ms.image_tokens)}${pct}`)
+    }
     if (dist.length > 0) detailLines.push(`  tok     ${dist.join(' · ')}`)
   } else {
     const bytes = (data.message_bytes as number) ?? 0
@@ -188,7 +199,11 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
     if (uTok > 0) parts.push(`user ${humanTokens(uTok)}`)
     if (aTok > 0) parts.push(`asst ${humanTokens(aTok)}`)
     if (trTok > 0) parts.push(`tool ${humanTokens(trTok)}`)
-    if (imgTok > 0) parts.push(`img ${humanTokens(imgTok)}`)
+    const totalTokens = effectiveSysTok + toolDefTok + uTok + aTok + trTok + imgTok
+    if (imgTok > 0) {
+      const pct = totalTokens > 0 ? ` · ${((imgTok / totalTokens) * 100).toFixed(0)}%` : ''
+      parts.push(`img ${humanTokens(imgTok)}${pct}`)
+    }
     if (parts.length > 0) detailLines.push(`  tok     ${parts.join(' · ')}`)
   }
 
@@ -203,7 +218,14 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
     if (uCount > 0) msgParts.push(`user ${uCount}`)
     if (aCount > 0) msgParts.push(`asst ${aCount}`)
     if (trCount > 0) msgParts.push(`tool ${trCount}`)
-    if (imgCount > 0) msgParts.push(`img ${imgCount}`)
+    if (imgCount > 0) {
+      const pathCount = ((cms.image_path_count as number) ?? 0)
+      const base64Count = ((cms.image_base64_count as number) ?? 0)
+      const imgParts: string[] = []
+      if (pathCount > 0) imgParts.push(`path ${pathCount}`)
+      if (base64Count > 0) imgParts.push(`b64 ${base64Count}`)
+      msgParts.push(imgParts.length > 0 ? `img ${imgCount} (${imgParts.join(' · ')})` : `img ${imgCount}`)
+    }
     if (msgParts.length > 0) msgBreakdown = ` (${msgParts.join(' · ')})`
   }
 

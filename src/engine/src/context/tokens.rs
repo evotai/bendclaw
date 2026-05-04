@@ -91,6 +91,18 @@ pub fn compute_call_stats_from_agent_messages(messages: &[AgentMessage]) -> LlmC
     compute_call_stats_iter(messages.iter().filter_map(|m| m.as_llm()))
 }
 
+fn add_image_stats(stats: &mut LlmCallStats, content: &Content, tokens: usize) {
+    if let Content::Image { data, source, .. } = content {
+        stats.image_count += 1;
+        stats.image_tokens += tokens;
+        if source.is_some() && data.is_empty() {
+            stats.image_path_count += 1;
+        } else {
+            stats.image_base64_count += 1;
+        }
+    }
+}
+
 fn compute_call_stats_iter<'a>(messages: impl Iterator<Item = &'a Message>) -> LlmCallStats {
     let mut stats = LlmCallStats::default();
 
@@ -101,8 +113,7 @@ fn compute_call_stats_iter<'a>(messages: impl Iterator<Item = &'a Message>) -> L
                 for c in content {
                     let tok = single_content_tokens(c);
                     if matches!(c, Content::Image { .. }) {
-                        stats.image_count += 1;
-                        stats.image_tokens += tok;
+                        add_image_stats(&mut stats, c, tok);
                     } else {
                         stats.user_tokens += tok;
                     }
@@ -113,8 +124,7 @@ fn compute_call_stats_iter<'a>(messages: impl Iterator<Item = &'a Message>) -> L
                 for c in content {
                     let tok = single_content_tokens(c);
                     if matches!(c, Content::Image { .. }) {
-                        stats.image_count += 1;
-                        stats.image_tokens += tok;
+                        add_image_stats(&mut stats, c, tok);
                     } else {
                         stats.assistant_tokens += tok;
                     }
@@ -128,8 +138,7 @@ fn compute_call_stats_iter<'a>(messages: impl Iterator<Item = &'a Message>) -> L
                 for c in content {
                     let tok = single_content_tokens(c);
                     if matches!(c, Content::Image { .. }) {
-                        stats.image_count += 1;
-                        stats.image_tokens += tok;
+                        add_image_stats(&mut stats, c, tok);
                     } else {
                         stats.tool_result_tokens += tok;
                         msg_tokens += tok;

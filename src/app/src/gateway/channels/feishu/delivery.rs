@@ -623,6 +623,7 @@ pub async fn resolve_message_parts(
                     content.push(evot_engine::Content::Image {
                         data: img.data_base64,
                         mime_type: img.mime_type,
+                        source: None,
                     });
                 }
                 Err(e) => {

@@ -86,10 +86,26 @@ pub fn compact_messages(
     let mut all_actions = Vec::new();
     let mut level = 0;
 
+    // Use provider-aware estimate for trigger decisions only when images
+    // are present.  total_tokens() estimates ~5k per image, but the real
+    // provider cost can be 30-40k, so message_tokens alone severely
+    // underestimates pressure.  For non-image conversations the char/4
+    // estimate is accurate enough and avoids false triggers from general
+    // provider overhead (system prompt, tool definitions, etc.).
+    let effective_tokens = if before_image_count > 0 {
+        message_tokens.max(
+            budget_state
+                .estimated_tokens
+                .saturating_sub(config.system_prompt_tokens),
+        )
+    } else {
+        message_tokens
+    };
+
     let max_messages = config.max_messages;
     let over_message_limit = max_messages > 0 && messages.len() > max_messages;
-    let should_collapse = message_tokens > ctx.compact_trigger && !over_message_limit;
-    let should_evict = message_tokens > ctx.budget || over_message_limit;
+    let should_collapse = effective_tokens > ctx.compact_trigger && !over_message_limit;
+    let should_evict = effective_tokens > ctx.budget || over_message_limit;
 
     for phase in PHASES {
         let run_phase = match phase {

@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use base64::Engine;
 
 use super::edit::diff;
 use crate::types::*;
@@ -146,16 +145,16 @@ impl AgentTool for ReadFileTool {
             }
             let mime_type = get_image_mime_type(&path)
                 .ok_or_else(|| ToolError::Failed("Unknown image format".into()))?;
-            let bytes = tokio::fs::read(&path)
+            let meta = tokio::fs::metadata(&path)
                 .await
                 .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path.display(), e)))?;
-            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
             return Ok(ToolResult {
                 content: vec![Content::Image {
-                    data,
+                    data: String::new(),
                     mime_type: mime_type.to_string(),
+                    source: Some(path.to_string_lossy().to_string()),
                 }],
-                details: serde_json::json!({ "path": path_str, "bytes": bytes.len() }),
+                details: serde_json::json!({ "path": path_str, "bytes": meta.len() }),
                 retention: Retention::Normal,
             });
         }

@@ -120,6 +120,7 @@ export interface ImageContentBlock {
   type: 'image'
   data: string
   mimeType: string
+  source?: string
 }
 
 export type ContentBlock = TextContentBlock | ImageContentBlock

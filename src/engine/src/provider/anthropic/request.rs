@@ -191,10 +191,16 @@ pub fn content_to_anthropic(content: &[Content]) -> Vec<serde_json::Value> {
         .filter(|c| !matches!(c, Content::Text { text } if text.is_empty()))
         .map(|c| match c {
             Content::Text { text } => serde_json::json!({"type": "text", "text": text}),
-            Content::Image { data, mime_type } => serde_json::json!({
-                "type": "image",
-                "source": {"type": "base64", "media_type": mime_type, "data": data},
-            }),
+            Content::Image { .. } => {
+                if let Some((data, mime_type)) = c.resolve_image_data() {
+                    serde_json::json!({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": mime_type, "data": data},
+                    })
+                } else {
+                    serde_json::json!({"type": "text", "text": "[image unavailable]"})
+                }
+            }
             Content::Thinking {
                 thinking,
                 signature,

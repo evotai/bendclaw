@@ -62,24 +62,37 @@ export function renderBar(value: number, max: number, width: number): string {
  *   H — HeadTail (head + tail truncation)
  *   S — Summarized (turn summarized)
  *   D — Dropped (messages evicted)
- *   C — LifecycleCleared (current-run result cleared after use)
+ *   L — LifecycleReclaimed (current-run result reclaimed after use)
  *   A — AgeCleared (old result cleared by age policy)
  *   X — OversizeCapped (oversized result capped)
+ *   I — ImageStripped (old image stripped under severe pressure)
+ *   T — TurnCollapsed (assistant/tool turn collapsed into summary)
+ *   E — MessagesEvicted (messages evicted)
  */
 const COMPACTION_METHOD_CHARS: Record<string, string> = {
   Outline: 'O',
   HeadTail: 'H',
-  Summarized: 'S',
-  Dropped: 'D',
-  LifecycleCleared: 'C',
+  Summarized: 'T',
+  TurnCollapsed: 'T',
+  Dropped: 'E',
+  MessagesEvicted: 'E',
+  LifecycleCleared: 'L',
+  LifecycleReclaimed: 'L',
   AgeCleared: 'A',
   OversizeCapped: 'X',
+  ImageStripped: 'I',
 }
 
-/** Reverse lookup: char → method name */
-const CHAR_TO_METHOD: Record<string, string> = Object.fromEntries(
-  Object.entries(COMPACTION_METHOD_CHARS).map(([k, v]) => [v, k])
-)
+const COMPACTION_METHOD_LEGEND: Record<string, string> = {
+  O: 'Outline',
+  H: 'HeadTail',
+  T: 'TurnCollapsed',
+  E: 'MessagesEvicted',
+  L: 'LifecycleReclaimed',
+  A: 'AgeCleared',
+  X: 'OversizeCapped',
+  I: 'ImageStripped',
+}
 
 /**
  * Render a position bar showing which messages were affected by compaction,
@@ -214,7 +227,7 @@ export function renderPositionBar(beforeCount: number, sortedActions: any[], _le
     // Build legend from segments
     const legendParts: string[] = []
     if (hasKept) legendParts.push('·=unchanged/kept')
-    for (const [method, ch] of Object.entries(COMPACTION_METHOD_CHARS)) {
+    for (const [ch, method] of Object.entries(COMPACTION_METHOD_LEGEND)) {
       if (usedChars.has(ch)) legendParts.push(`${ch}=${method}`)
     }
     const legend = legendParts.join('  ')
@@ -228,7 +241,7 @@ export function renderPositionBar(beforeCount: number, sortedActions: any[], _le
   const seen = new Set(slots)
   const legendParts: string[] = []
   if (seen.has('·')) legendParts.push('·=unchanged/kept')
-  for (const [method, ch] of Object.entries(COMPACTION_METHOD_CHARS)) {
+  for (const [ch, method] of Object.entries(COMPACTION_METHOD_LEGEND)) {
     if (seen.has(ch)) legendParts.push(`${ch}=${method}`)
   }
   const legend = legendParts.join('  ')

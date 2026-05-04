@@ -155,6 +155,8 @@ pub struct LlmMessageStats {
     pub assistant_count: usize,
     pub tool_result_count: usize,
     pub image_count: usize,
+    pub image_path_count: usize,
+    pub image_base64_count: usize,
     pub user_tokens: usize,
     pub assistant_tokens: usize,
     pub tool_result_tokens: usize,

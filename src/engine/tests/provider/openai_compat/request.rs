@@ -139,6 +139,7 @@ fn test_content_to_openai_multipart() {
         Content::Image {
             data: "abc".into(),
             mime_type: "image/png".into(),
+            source: None,
         },
     ];
     let result = content_to_openai(&content);
@@ -173,6 +174,7 @@ fn test_tool_result_with_image() {
                 content: vec![Content::Image {
                     data: "aW1hZ2VkYXRh".into(),
                     mime_type: "image/png".into(),
+                    source: None,
                 }],
                 is_error: false,
                 timestamp: 0,

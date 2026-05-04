@@ -151,6 +151,7 @@ impl FeishuChannel {
                                             input.push(evot_engine::Content::Image {
                                                 data: img.data_base64,
                                                 mime_type: img.mime_type,
+                                                source: None,
                                             });
                                         }
                                         Err(e) => {
@@ -269,6 +270,7 @@ impl FeishuChannel {
                                                 input.push(evot_engine::Content::Image {
                                                     data: img.data_base64,
                                                     mime_type: img.mime_type,
+                                                    source: None,
                                                 });
                                             }
                                             Err(e) => {

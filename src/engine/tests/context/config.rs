@@ -110,7 +110,7 @@ fn test_execution_limits() {
 }
 
 #[test]
-fn test_compaction_budget_from_tracker_ignores_provider_baseline() {
+fn test_compaction_budget_from_tracker_uses_provider_baseline() {
     let mut tracker = ContextTracker::new();
     tracker.record_usage(
         &Usage {
@@ -124,7 +124,10 @@ fn test_compaction_budget_from_tracker_ignores_provider_baseline() {
     let messages = vec![AgentMessage::Llm(Message::user("small message"))];
     let budget = CompactionBudgetState::from_tracker(&tracker, &messages);
 
-    assert_eq!(budget.estimated_tokens, total_tokens(&messages));
+    assert_eq!(
+        budget.estimated_tokens,
+        tracker.estimate_context_tokens(&messages)
+    );
 }
 
 #[test]

@@ -62,6 +62,7 @@ pub fn compact_messages(
     let compact_trigger = budget * (config.compact_trigger_pct.min(100) as usize) / 100;
     let compact_target_pct = config.compact_target_pct.min(config.compact_trigger_pct);
     let compact_target = budget * (compact_target_pct as usize) / 100;
+    let message_tokens = total_tokens(&messages);
 
     let ctx = PhaseContext {
         budget,
@@ -69,24 +70,26 @@ pub fn compact_messages(
         compact_target,
         keep_recent: config.keep_recent,
         keep_first: config.keep_first,
+        max_messages: config.max_messages,
+        message_limit_target_pct: config.message_limit_target_pct,
         tool_output_max_lines: config.tool_output_max_lines,
         policy: CompactionPolicy::default(),
     };
 
     let before_message_count = messages.len();
     let before_image_count = image_count(&messages);
-    let before_estimated_tokens = budget_state.estimated_tokens.max(total_tokens(&messages));
+    let before_estimated_tokens = budget_state.estimated_tokens;
     let before_tool_details = collect_tool_details(&messages);
 
-    let mut current_tokens = before_estimated_tokens;
+    let mut current_tokens = message_tokens;
     let mut messages = messages;
     let mut all_actions = Vec::new();
     let mut level = 0;
 
     let max_messages = config.max_messages;
     let over_message_limit = max_messages > 0 && messages.len() > max_messages;
-    let should_collapse = current_tokens > ctx.compact_trigger && !over_message_limit;
-    let should_evict = current_tokens > ctx.budget || over_message_limit;
+    let should_collapse = message_tokens > ctx.compact_trigger && !over_message_limit;
+    let should_evict = message_tokens > ctx.budget || over_message_limit;
 
     for phase in PHASES {
         let run_phase = match phase {
@@ -142,7 +145,14 @@ pub fn compact_messages(
     current_tokens = current_tokens.max(post_sanitize_tokens);
 
     let after_message_count = messages.len();
-    let after_estimated_tokens = current_tokens;
+    let after_message_tokens = current_tokens;
+    let after_estimated_tokens = if after_message_tokens == message_tokens {
+        before_estimated_tokens
+    } else {
+        before_estimated_tokens
+            .saturating_sub(message_tokens.saturating_sub(after_message_tokens))
+            .max(after_message_tokens)
+    };
     let after_tool_details = collect_tool_details(&messages);
 
     let stats = build_stats(StatsInput {

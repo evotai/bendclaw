@@ -173,11 +173,11 @@ impl CompactionBudgetState {
         }
     }
 
-    /// Provider baseline should not force compaction decisions: usage can include
-    /// prompt-cache reads that make context appear much larger than compactable
-    /// message content. LLM-call UI still uses the tracker baseline separately.
-    pub fn from_tracker(_tracker: &ContextTracker, messages: &[AgentMessage]) -> Self {
-        Self::from_messages(messages)
+    /// Build from tracker estimate and message list.
+    pub fn from_tracker(tracker: &ContextTracker, messages: &[AgentMessage]) -> Self {
+        Self {
+            estimated_tokens: tracker.estimate_context_tokens(messages),
+        }
     }
 }
 
@@ -211,6 +211,10 @@ pub struct ContextConfig {
     /// and avoids accumulating low-value summaries forever.
     /// Set to 0 to disable message-count eviction. Default: 80.
     pub max_messages: usize,
+    /// Target percentage of `max_messages` when message-count eviction runs.
+    /// This avoids dropping a session from just-over-limit to only the pinned
+    /// head/tail. Clamped to 1–100. Default: 85.
+    pub message_limit_target_pct: u8,
 }
 
 impl Default for ContextConfig {
@@ -223,7 +227,8 @@ impl Default for ContextConfig {
             tool_output_max_lines: 50,
             compact_trigger_pct: 80,
             compact_target_pct: 75,
-            max_messages: 80,
+            max_messages: 100,
+            message_limit_target_pct: 85,
         }
     }
 }

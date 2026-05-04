@@ -34,6 +34,86 @@ fn make_tool_result(tool_call_id: &str, tool_name: &str) -> AgentMessage {
 }
 
 #[test]
+fn test_provider_overhead_does_not_make_l2_collapse_tiny_turn() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        make_assistant_with_tool_call("tc-1", "bash"),
+        make_tool_result("tc-1", "bash"),
+        AgentMessage::Llm(Message::user("next")),
+    ];
+
+    let message_tokens = total_tokens(&messages);
+    let config = ContextConfig {
+        max_context_tokens: 1_000,
+        system_prompt_tokens: 0,
+        keep_recent: 1,
+        keep_first: 1,
+        max_messages: 0,
+        ..Default::default()
+    };
+    let budget_state = CompactionBudgetState {
+        estimated_tokens: 158_000,
+    };
+
+    let result = compact_messages(messages.clone(), &config, &budget_state);
+
+    assert_eq!(result.stats.level, 0);
+    assert_eq!(result.stats.turns_summarized, 0);
+    assert_eq!(result.stats.after_message_count, messages.len());
+    assert!(result.stats.after_estimated_tokens >= budget_state.estimated_tokens);
+    assert_eq!(total_tokens(&result.messages), message_tokens);
+}
+
+#[test]
+fn test_provider_overhead_savings_subtracts_only_message_savings() {
+    let mut messages = Vec::new();
+    messages.push(AgentMessage::Llm(Message::user("task")));
+    for i in 0..20 {
+        let id = format!("tc-{i}");
+        messages.push(make_assistant_with_tool_call(&id, "search"));
+        messages.push(AgentMessage::Llm(Message::ToolResult {
+            tool_call_id: id,
+            tool_name: "search".into(),
+            content: vec![Content::Text {
+                text: "result ".repeat(300),
+            }],
+            is_error: false,
+            timestamp: 0,
+            retention: Retention::Normal,
+        }));
+    }
+    messages.push(AgentMessage::Llm(Message::user("next")));
+
+    let before_message_tokens = total_tokens(&messages);
+    let provider_overhead = 120_000;
+    let budget_state = CompactionBudgetState {
+        estimated_tokens: provider_overhead + before_message_tokens,
+    };
+    let config = ContextConfig {
+        max_context_tokens: before_message_tokens,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 1,
+        max_messages: 0,
+        compact_trigger_pct: 80,
+        compact_target_pct: 75,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &budget_state);
+    let after_message_tokens = total_tokens(&result.messages);
+
+    assert!(result.stats.turns_summarized > 0);
+    assert!(after_message_tokens <= config.max_context_tokens * 75 / 100);
+    assert_eq!(
+        result.stats.after_estimated_tokens,
+        budget_state
+            .estimated_tokens
+            .saturating_sub(before_message_tokens - after_message_tokens)
+    );
+}
+
+#[test]
 fn test_truncate_head_tail() {
     let text = (1..=100)
         .map(|i| format!("line {}", i))
@@ -1374,12 +1454,10 @@ fn test_tier2_oversize_read_file_records_oversize_capped() {
 // Regression: provider-reported tokens exceed chars/4 estimate
 // ---------------------------------------------------------------------------
 
-/// When the provider reports higher token usage than chars/4 estimates,
-/// compact must still trigger L1+ passes. This reproduces the bug where
-/// compact saw ~85k (chars/4) while the provider reported ~167k, causing
-/// a no-op even though the context exceeded the budget.
+/// Provider-only overhead should not trigger collapse. It can still trigger
+/// local shrink when content has non-text provider cost, such as images.
 #[test]
-fn test_compact_triggers_when_provider_estimate_exceeds_char_estimate() {
+fn test_provider_estimate_does_not_trigger_l2_when_messages_fit() {
     // Build messages whose chars/4 estimate fits within budget,
     // but simulate a provider reporting much higher token usage.
     let messages =
@@ -1414,16 +1492,14 @@ fn test_compact_triggers_when_provider_estimate_exceeds_char_estimate() {
         estimated_tokens: provider_estimate,
     };
     let result_compact = compact_messages(messages, &config, &budget_over);
-    assert!(
-        result_compact.stats.level >= 1,
-        "provider estimate exceeds budget, compact should trigger L1+, got level={}",
+    assert_eq!(
+        result_compact.stats.level, 0,
+        "provider overhead alone should not trigger L1/L2, got level={}",
         result_compact.stats.level,
     );
-    assert!(
-        result_compact.stats.after_estimated_tokens < provider_estimate,
-        "compaction should reduce estimated tokens: before={} after={}",
-        provider_estimate,
-        result_compact.stats.after_estimated_tokens,
+    assert_eq!(
+        result_compact.stats.after_estimated_tokens, provider_estimate,
+        "without message-token savings, provider estimate should be preserved"
     );
 }
 
@@ -2548,6 +2624,35 @@ fn test_l2_when_keep_recent_covers_all() {
     assert_no_orphan_tool_pairs(&result.messages);
 }
 
+fn has_user_text(messages: &[AgentMessage], expected: &str) -> bool {
+    messages.iter().any(|message| {
+        matches!(
+            message,
+            AgentMessage::Llm(Message::User { content, .. })
+                if content.iter().any(|content| matches!(content, Content::Text { text } if text == expected))
+        )
+    })
+}
+
+fn has_tool_call(messages: &[AgentMessage], expected_id: &str) -> bool {
+    messages.iter().any(|message| {
+        matches!(
+            message,
+            AgentMessage::Llm(Message::Assistant { content, .. })
+                if content.iter().any(|content| matches!(content, Content::ToolCall { id, .. } if id == expected_id))
+        )
+    })
+}
+
+fn has_tool_result(messages: &[AgentMessage], expected_id: &str) -> bool {
+    messages.iter().any(|message| {
+        matches!(
+            message,
+            AgentMessage::Llm(Message::ToolResult { tool_call_id, .. }) if tool_call_id == expected_id
+        )
+    })
+}
+
 #[test]
 fn test_message_limit_evicts_instead_of_summarizing() {
     let messages = (0..20)
@@ -2560,6 +2665,7 @@ fn test_message_limit_evicts_instead_of_summarizing() {
         keep_recent: 4,
         keep_first: 1,
         max_messages: 8,
+        message_limit_target_pct: 75,
         ..Default::default()
     };
 
@@ -2568,9 +2674,139 @@ fn test_message_limit_evicts_instead_of_summarizing() {
     });
 
     assert_eq!(result.stats.turns_summarized, 0);
-    assert!(result.stats.messages_dropped > 0);
+    assert_eq!(result.stats.messages_dropped, 15);
     assert_eq!(result.stats.level, 3);
-    assert!(result.messages.len() <= config.keep_first + config.keep_recent + 1);
+    assert_eq!(result.messages.len(), 6);
+    assert_no_orphan_tool_pairs(&result.messages);
+}
+
+#[test]
+fn test_message_limit_does_not_evict_at_exact_max() {
+    let messages = (0..10)
+        .map(|i| AgentMessage::Llm(Message::user(format!("message {}", i))))
+        .collect::<Vec<_>>();
+
+    let config = ContextConfig {
+        max_context_tokens: 100_000,
+        system_prompt_tokens: 0,
+        max_messages: 10,
+        message_limit_target_pct: 50,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 1,
+    });
+
+    assert_eq!(result.stats.level, 0);
+    assert_eq!(result.stats.messages_dropped, 0);
+    assert_eq!(result.messages.len(), 10);
+}
+
+#[test]
+fn test_message_limit_evicts_to_percentage_target_not_minimum_tail() {
+    let messages = (0..102)
+        .map(|i| AgentMessage::Llm(Message::user(format!("message {}", i))))
+        .collect::<Vec<_>>();
+
+    let config = ContextConfig {
+        max_context_tokens: 100_000,
+        system_prompt_tokens: 0,
+        keep_recent: 10,
+        keep_first: 2,
+        max_messages: 100,
+        message_limit_target_pct: 85,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 1,
+    });
+
+    assert_eq!(result.stats.level, 3);
+    assert_eq!(result.stats.messages_dropped, 18);
+    assert_eq!(result.messages.len(), 85);
+    assert_no_orphan_tool_pairs(&result.messages);
+}
+
+#[test]
+fn test_message_limit_prefers_dropping_assistant_and_tool_messages() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("pinned start")),
+        AgentMessage::Llm(Message::user("keep user 1")),
+        AgentMessage::Llm(Message::user("keep user 2")),
+        make_assistant_with_tool_call("drop-call", "bash"),
+        make_tool_result("drop-call", "bash"),
+        AgentMessage::Llm(Message::user("keep user 3")),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+        AgentMessage::Llm(Message::user("recent 3")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 100_000,
+        system_prompt_tokens: 0,
+        keep_recent: 3,
+        keep_first: 1,
+        max_messages: 8,
+        message_limit_target_pct: 100,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 1,
+    });
+
+    assert_eq!(result.stats.level, 3);
+    assert_eq!(result.stats.messages_dropped, 2);
+    assert_eq!(result.messages.len(), 8);
+    assert!(has_user_text(&result.messages, "keep user 1"));
+    assert!(has_user_text(&result.messages, "keep user 2"));
+    assert!(has_user_text(&result.messages, "keep user 3"));
+    assert!(!has_tool_call(&result.messages, "drop-call"));
+    assert!(!has_tool_result(&result.messages, "drop-call"));
+    assert_no_orphan_tool_pairs(&result.messages);
+}
+
+#[test]
+fn test_message_limit_drops_user_messages_after_assistant_and_tool_exhausted() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("pinned start")),
+        AgentMessage::Llm(Message::user("drop user 1")),
+        make_assistant_with_tool_call("drop-call", "bash"),
+        make_tool_result("drop-call", "bash"),
+        AgentMessage::Llm(Message::user("drop user 2")),
+        AgentMessage::Llm(Message::user("drop user 3")),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+        AgentMessage::Llm(Message::user("recent 3")),
+        AgentMessage::Llm(Message::user("recent 4")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 100_000,
+        system_prompt_tokens: 0,
+        keep_recent: 4,
+        keep_first: 1,
+        max_messages: 9,
+        message_limit_target_pct: 67,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 1,
+    });
+
+    assert_eq!(result.stats.level, 3);
+    assert_eq!(result.stats.messages_dropped, 4);
+    assert_eq!(result.messages.len(), 7);
+    assert!(has_user_text(&result.messages, "pinned start"));
+    assert!(has_user_text(&result.messages, "recent 1"));
+    assert!(has_user_text(&result.messages, "recent 4"));
+    assert!(!has_tool_call(&result.messages, "drop-call"));
+    assert!(!has_tool_result(&result.messages, "drop-call"));
+    assert!(!has_user_text(&result.messages, "drop user 1"));
+    assert_no_orphan_tool_pairs(&result.messages);
 }
 
 #[test]
@@ -2706,8 +2942,8 @@ fn test_images_in_pinned_message_do_not_stall_compaction() {
     );
     assert!(result.stats.age_cleared > 0);
     assert!(
-        result.stats.after_estimated_tokens <= config.max_context_tokens,
-        "image-heavy provider estimate should not remain stuck after image strip: before={}, after={}",
+        result.stats.after_estimated_tokens < result.stats.before_estimated_tokens,
+        "image-heavy provider estimate should decrease after image strip: before={}, after={}",
         result.stats.before_estimated_tokens,
         result.stats.after_estimated_tokens
     );

@@ -19,6 +19,154 @@ use crate::context::tokens::total_tokens;
 use crate::types::*;
 
 pub fn run(messages: Vec<AgentMessage>, ctx: &PhaseContext) -> PhaseResult {
+    if total_tokens(&messages) <= ctx.budget
+        && ctx.max_messages > 0
+        && messages.len() > ctx.max_messages
+    {
+        return drop_to_message_target(messages, ctx);
+    }
+
+    drop_to_token_target(messages, ctx)
+}
+
+fn drop_to_message_target(messages: Vec<AgentMessage>, ctx: &PhaseContext) -> PhaseResult {
+    let len = messages.len();
+    let target_len = message_limit_target(ctx, len);
+
+    if len <= target_len {
+        return PhaseResult {
+            messages,
+            actions: Vec::new(),
+        };
+    }
+
+    let first_end = ctx.keep_first.min(len);
+    let recent_len = ctx
+        .keep_recent
+        .min(target_len.saturating_sub(first_end + 1));
+    let recent_start = len.saturating_sub(recent_len);
+    let removable = recent_start.saturating_sub(first_end);
+    let remove_count = len
+        .saturating_sub(target_len)
+        .saturating_add(1)
+        .min(removable);
+
+    if remove_count == 0 {
+        return PhaseResult {
+            messages,
+            actions: Vec::new(),
+        };
+    }
+
+    let drop_indices = choose_message_limit_drops(&messages, first_end, recent_start, remove_count);
+    let dropped_tokens: usize = drop_indices
+        .iter()
+        .map(|&idx| message_tokens(&messages[idx]))
+        .sum();
+    let marker = AgentMessage::Llm(Message::User {
+        content: vec![Content::Text {
+            text: format!(
+                "[Context compacted: {} messages removed]",
+                drop_indices.len()
+            ),
+        }],
+        timestamp: now_ms(),
+    });
+    let marker_tokens = message_tokens(&marker);
+
+    let mut result = Vec::with_capacity(target_len);
+    let mut inserted_marker = false;
+    let mut drop_pos = 0;
+    for (idx, msg) in messages.into_iter().enumerate() {
+        let should_drop = drop_pos < drop_indices.len() && drop_indices[drop_pos] == idx;
+        if should_drop {
+            if !inserted_marker {
+                result.push(marker.clone());
+                inserted_marker = true;
+            }
+            drop_pos += 1;
+        } else {
+            result.push(msg);
+        }
+    }
+
+    let first_dropped = drop_indices[0];
+    let last_dropped = drop_indices[drop_indices.len() - 1];
+    let action = CompactionAction {
+        index: first_dropped,
+        tool_name: "messages".into(),
+        method: CompactionMethod::MessagesEvicted,
+        before_tokens: dropped_tokens.max(marker_tokens),
+        after_tokens: marker_tokens,
+        end_index: Some(last_dropped),
+        related_count: Some(drop_indices.len()),
+    };
+
+    PhaseResult {
+        messages: result,
+        actions: vec![action],
+    }
+}
+
+fn message_limit_target(ctx: &PhaseContext, current_len: usize) -> usize {
+    if ctx.max_messages == 0 {
+        return 0;
+    }
+
+    let pct = ctx.message_limit_target_pct.clamp(1, 100) as usize;
+    let minimum = ctx
+        .keep_first
+        .saturating_add(ctx.keep_recent)
+        .saturating_add(1);
+    let pct_target = ctx.max_messages.saturating_mul(pct).saturating_add(99) / 100;
+    pct_target
+        .max(minimum)
+        .min(ctx.max_messages)
+        .min(current_len)
+        .max(1)
+}
+
+fn choose_message_limit_drops(
+    messages: &[AgentMessage],
+    start: usize,
+    end: usize,
+    remove_count: usize,
+) -> Vec<usize> {
+    let mut drops = Vec::with_capacity(remove_count);
+
+    for (idx, message) in messages.iter().enumerate().take(end).skip(start) {
+        if is_assistant_or_tool(message) {
+            drops.push(idx);
+            if drops.len() == remove_count {
+                drops.sort_unstable();
+                return drops;
+            }
+        }
+    }
+
+    for (idx, message) in messages.iter().enumerate().take(end).skip(start) {
+        if !is_assistant_or_tool(message) {
+            drops.push(idx);
+            if drops.len() == remove_count {
+                drops.sort_unstable();
+                return drops;
+            }
+        }
+    }
+
+    drops.sort_unstable();
+    drops.truncate(remove_count);
+    drops
+}
+
+fn is_assistant_or_tool(message: &AgentMessage) -> bool {
+    matches!(
+        message,
+        AgentMessage::Llm(Message::Assistant { .. } | Message::ToolResult { .. })
+    )
+}
+
+fn drop_to_token_target(messages: Vec<AgentMessage>, ctx: &PhaseContext) -> PhaseResult {
     let len = messages.len();
     let target_messages = ctx
         .keep_first

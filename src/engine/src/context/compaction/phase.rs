@@ -13,6 +13,8 @@ pub struct PhaseContext {
     pub compact_target: usize,
     pub keep_recent: usize,
     pub keep_first: usize,
+    pub max_messages: usize,
+    pub message_limit_target_pct: u8,
     pub tool_output_max_lines: usize,
     pub policy: CompactionPolicy,
 }

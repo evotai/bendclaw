@@ -43,7 +43,7 @@ fn arb_config() -> impl Strategy<Value = ContextConfig> {
             keep_recent: recent,
             keep_first: first,
             tool_output_max_lines: max_lines,
-            max_messages: 0,
+            max_messages: 50,
             ..Default::default()
         })
 }

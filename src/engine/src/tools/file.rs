@@ -135,7 +135,7 @@ impl AgentTool for ReadFileTool {
             .await
             .map_err(|e| ToolError::Failed(format!("Cannot access {}: {}", path.display(), e)))?;
 
-        // Handle image files: read as binary, return base64-encoded Content::Image
+        // Handle image files: keep path in context and resolve bytes only when sent to provider.
         if is_image_file(&path) {
             if metadata.len() > MAX_IMAGE_SIZE_BYTES {
                 return Err(ToolError::Failed(format!(
@@ -150,9 +150,10 @@ impl AgentTool for ReadFileTool {
                 .map_err(|e| ToolError::Failed(format!("Cannot read {}: {}", path.display(), e)))?;
             return Ok(ToolResult {
                 content: vec![Content::Image {
-                    data: String::new(),
                     mime_type: mime_type.to_string(),
-                    source: Some(path.to_string_lossy().to_string()),
+                    source: ImageSource::Path {
+                        path: path.to_string_lossy().to_string(),
+                    },
                 }],
                 details: serde_json::json!({ "path": path_str, "bytes": meta.len() }),
                 retention: Retention::Normal,

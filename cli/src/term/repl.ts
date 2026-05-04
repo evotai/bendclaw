@@ -439,9 +439,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     for (const img of resolved) {
       blocks.push({
         type: 'image',
-        data: img.filePath ? '' : img.base64,
         mimeType: img.mediaType,
-        source: img.filePath,
+        source: img.filePath
+          ? { type: 'path', path: img.filePath }
+          : { type: 'base64', data: img.base64 },
       })
     }
     return { blocks, resolvedIds: new Set(resolved.map(r => r.id)) }

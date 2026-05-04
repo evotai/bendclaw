@@ -1743,9 +1743,10 @@ fn test_oversized_user_with_images_preserved() {
         AgentMessage::Llm(Message::user("task")),
         AgentMessage::Llm(Message::User {
             content: vec![Content::Text { text: big_text }, Content::Image {
-                data: "base64data".into(),
                 mime_type: "image/png".into(),
-                source: None,
+                source: ImageSource::Base64 {
+                    data: "base64data".into(),
+                },
             }],
             timestamp: 0,
         }),
@@ -2820,9 +2821,10 @@ fn test_old_images_preserved_until_severe_pressure() {
                     text: "old image".into(),
                 },
                 Content::Image {
-                    data: "base64data".into(),
                     mime_type: "image/png".into(),
-                    source: None,
+                    source: ImageSource::Base64 {
+                        data: "base64data".into(),
+                    },
                 },
             ],
             timestamp: 0,
@@ -2862,9 +2864,10 @@ fn test_images_stripped_under_severe_pressure() {
         AgentMessage::Llm(Message::user("task")),
         AgentMessage::Llm(Message::User {
             content: vec![Content::Image {
-                data: "base64data".into(),
                 mime_type: "image/png".into(),
-                source: None,
+                source: ImageSource::Base64 {
+                    data: "base64data".into(),
+                },
             }],
             timestamp: 0,
         }),
@@ -2907,9 +2910,10 @@ fn test_images_in_pinned_message_do_not_stall_compaction() {
                     text: "look at this".into(),
                 },
                 Content::Image {
-                    data: "very-large-image".into(),
                     mime_type: "image/png".into(),
-                    source: None,
+                    source: ImageSource::Base64 {
+                        data: "very-large-image".into(),
+                    },
                 },
             ],
             timestamp: 0,

@@ -156,14 +156,12 @@ async fn test_read_image_file() {
         .unwrap();
 
     match &result.content[0] {
-        Content::Image {
-            data,
-            mime_type,
-            source,
-        } => {
+        Content::Image { mime_type, source } => {
             assert_eq!(mime_type, "image/png");
-            assert!(data.is_empty(), "data should be empty when source is set");
-            assert!(source.is_some(), "source path should be set");
+            assert!(
+                matches!(source, evotengine::ImageSource::Path { path } if path == tmp.to_string_lossy().as_ref()),
+                "source path should be set"
+            );
             // Verify resolve_image_data loads from disk
             let (resolved_data, resolved_mime) = result.content[0]
                 .resolve_image_data()

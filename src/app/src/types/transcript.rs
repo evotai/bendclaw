@@ -62,12 +62,16 @@ pub enum TranscriptUserContent {
         text: String,
     },
     Image {
-        #[serde(default)]
-        data: String,
         mime_type: String,
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        source: Option<String>,
+        source: TranscriptImageSource,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TranscriptImageSource {
+    Base64 { data: String },
+    Path { path: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -157,15 +161,20 @@ impl TranscriptItem {
                 evot_engine::Content::Text { text } => {
                     Some(TranscriptUserContent::Text { text: text.clone() })
                 }
-                evot_engine::Content::Image {
-                    data,
-                    mime_type,
-                    source,
-                } => Some(TranscriptUserContent::Image {
-                    data: data.clone(),
-                    mime_type: mime_type.clone(),
-                    source: source.clone(),
-                }),
+                evot_engine::Content::Image { mime_type, source } => {
+                    let source = match source {
+                        evot_engine::ImageSource::Base64 { data } => {
+                            TranscriptImageSource::Base64 { data: data.clone() }
+                        }
+                        evot_engine::ImageSource::Path { path } => {
+                            TranscriptImageSource::Path { path: path.clone() }
+                        }
+                    };
+                    Some(TranscriptUserContent::Image {
+                        mime_type: mime_type.clone(),
+                        source,
+                    })
+                }
                 _ => None,
             })
             .collect();

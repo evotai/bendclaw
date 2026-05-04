@@ -28,20 +28,22 @@ pub enum Retention {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ImageSource {
+    Path { path: String },
+    Base64 { data: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Content {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image")]
     Image {
-        #[serde(default)]
-        data: String,
         #[serde(rename = "mimeType")]
         mime_type: String,
-        /// Optional file path — when set, `data` can be empty and will be
-        /// loaded lazily by the provider request builder.
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        source: Option<String>,
+        source: ImageSource,
     },
     #[serde(rename = "thinking")]
     Thinking {
@@ -62,27 +64,20 @@ impl Content {
     /// Returns `(base64_data, mime_type)` or `None` if resolution fails.
     pub fn resolve_image_data(&self) -> Option<(String, String)> {
         match self {
-            Content::Image {
-                data,
-                mime_type,
-                source,
-            } => {
-                if !data.is_empty() {
-                    return Some((data.clone(), mime_type.clone()));
+            Content::Image { mime_type, source } => match source {
+                ImageSource::Base64 { data } if !data.is_empty() => {
+                    Some((data.clone(), mime_type.clone()))
                 }
-                if let Some(path) = source {
-                    match std::fs::read(path) {
-                        Ok(bytes) => {
-                            use base64::Engine;
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                            Some((b64, mime_type.clone()))
-                        }
-                        Err(_) => None,
+                ImageSource::Path { path } => match std::fs::read(path) {
+                    Ok(bytes) => {
+                        use base64::Engine;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        Some((b64, mime_type.clone()))
                     }
-                } else {
-                    None
-                }
-            }
+                    Err(_) => None,
+                },
+                ImageSource::Base64 { .. } => None,
+            },
             _ => None,
         }
     }

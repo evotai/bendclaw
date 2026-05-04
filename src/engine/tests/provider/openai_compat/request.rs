@@ -137,9 +137,8 @@ fn test_content_to_openai_multipart() {
             text: "look at this".into(),
         },
         Content::Image {
-            data: "abc".into(),
             mime_type: "image/png".into(),
-            source: None,
+            source: ImageSource::Base64 { data: "abc".into() },
         },
     ];
     let result = content_to_openai(&content);
@@ -172,9 +171,10 @@ fn test_tool_result_with_image() {
                 tool_call_id: "call-1".into(),
                 tool_name: "read_file".into(),
                 content: vec![Content::Image {
-                    data: "aW1hZ2VkYXRh".into(),
                     mime_type: "image/png".into(),
-                    source: None,
+                    source: ImageSource::Base64 {
+                        data: "aW1hZ2VkYXRh".into(),
+                    },
                 }],
                 is_error: false,
                 timestamp: 0,

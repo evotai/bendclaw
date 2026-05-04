@@ -278,17 +278,19 @@ fn user_content_round_trip_preserves_multimodal_order() {
             text: "before".into(),
         },
         evot_engine::Content::Image {
-            data: "img1".into(),
             mime_type: "image/png".into(),
-            source: None,
+            source: evot_engine::ImageSource::Base64 {
+                data: "img1".into(),
+            },
         },
         evot_engine::Content::Text {
             text: "between".into(),
         },
         evot_engine::Content::Image {
-            data: "img2".into(),
             mime_type: "image/jpeg".into(),
-            source: None,
+            source: evot_engine::ImageSource::Base64 {
+                data: "img2".into(),
+            },
         },
     ]);
 
@@ -299,20 +301,21 @@ fn user_content_round_trip_preserves_multimodal_order() {
     assert_eq!(content.len(), 4);
     assert!(matches!(&content[0], TranscriptUserContent::Text { text } if text == "before"));
     assert!(
-        matches!(&content[1], TranscriptUserContent::Image { data, mime_type, source } if data == "img1" && mime_type == "image/png" && source.is_none())
+        matches!(&content[1], TranscriptUserContent::Image { mime_type, source } if mime_type == "image/png" && matches!(source, TranscriptImageSource::Base64 { data } if data == "img1"))
     );
     assert!(matches!(&content[2], TranscriptUserContent::Text { text } if text == "between"));
     assert!(
-        matches!(&content[3], TranscriptUserContent::Image { data, mime_type, source } if data == "img2" && mime_type == "image/jpeg" && source.is_none())
+        matches!(&content[3], TranscriptUserContent::Image { mime_type, source } if mime_type == "image/jpeg" && matches!(source, TranscriptImageSource::Base64 { data } if data == "img2"))
     );
 }
 
 #[test]
 fn user_content_round_trip_preserves_image_source() {
     let item = TranscriptItem::user_from_content(&[evot_engine::Content::Image {
-        data: String::new(),
         mime_type: "image/png".into(),
-        source: Some("/tmp/image.png".into()),
+        source: evot_engine::ImageSource::Path {
+            path: "/tmp/image.png".into(),
+        },
     }]);
 
     let TranscriptItem::User { content, .. } = item else {
@@ -320,7 +323,7 @@ fn user_content_round_trip_preserves_image_source() {
     };
 
     assert!(
-        matches!(&content[0], TranscriptUserContent::Image { data, mime_type, source } if data.is_empty() && mime_type == "image/png" && source.as_deref() == Some("/tmp/image.png"))
+        matches!(&content[0], TranscriptUserContent::Image { mime_type, source } if mime_type == "image/png" && matches!(source, TranscriptImageSource::Path { path } if path == "/tmp/image.png"))
     );
 }
 

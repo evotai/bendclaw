@@ -621,9 +621,10 @@ pub async fn resolve_message_parts(
             {
                 Ok(img) => {
                     content.push(evot_engine::Content::Image {
-                        data: img.data_base64,
                         mime_type: img.mime_type,
-                        source: None,
+                        source: evot_engine::ImageSource::Base64 {
+                            data: img.data_base64,
+                        },
                     });
                 }
                 Err(e) => {

@@ -2,6 +2,7 @@
 
 use crate::types::AssistantBlock;
 use crate::types::ToolCallRecord;
+use crate::types::TranscriptImageSource;
 use crate::types::TranscriptItem;
 use crate::types::TranscriptUserContent;
 use crate::types::UsageSummary;
@@ -116,15 +117,20 @@ pub fn agent_message_from_transcript(item: &TranscriptItem) -> evot_engine::Agen
                         TranscriptUserContent::Text { text } => {
                             evot_engine::Content::Text { text: text.clone() }
                         }
-                        TranscriptUserContent::Image {
-                            data,
-                            mime_type,
-                            source,
-                        } => evot_engine::Content::Image {
-                            data: data.clone(),
-                            mime_type: mime_type.clone(),
-                            source: source.clone(),
-                        },
+                        TranscriptUserContent::Image { mime_type, source } => {
+                            let source = match source {
+                                TranscriptImageSource::Path { path } => {
+                                    evot_engine::ImageSource::Path { path: path.clone() }
+                                }
+                                TranscriptImageSource::Base64 { data } => {
+                                    evot_engine::ImageSource::Base64 { data: data.clone() }
+                                }
+                            };
+                            evot_engine::Content::Image {
+                                mime_type: mime_type.clone(),
+                                source,
+                            }
+                        }
                     })
                     .collect()
             };

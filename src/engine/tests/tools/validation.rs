@@ -361,9 +361,10 @@ fn cap_preserves_non_text_content() {
         text: "x".repeat(60_000),
     };
     let image = Content::Image {
-        data: "base64data".into(),
         mime_type: "image/png".into(),
-        source: None,
+        source: evotengine::ImageSource::Base64 {
+            data: "base64data".into(),
+        },
     };
     let big_text2 = Content::Text {
         text: "y".repeat(60_000),

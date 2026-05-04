@@ -192,9 +192,10 @@ fn test_tool_result_with_image() {
                         text: "screenshot".into(),
                     },
                     Content::Image {
-                        data: "aW1hZ2VkYXRh".into(),
                         mime_type: "image/png".into(),
-                        source: None,
+                        source: ImageSource::Base64 {
+                            data: "aW1hZ2VkYXRh".into(),
+                        },
                     },
                 ],
                 is_error: false,

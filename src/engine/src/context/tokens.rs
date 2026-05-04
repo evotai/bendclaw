@@ -92,13 +92,12 @@ pub fn compute_call_stats_from_agent_messages(messages: &[AgentMessage]) -> LlmC
 }
 
 fn add_image_stats(stats: &mut LlmCallStats, content: &Content, tokens: usize) {
-    if let Content::Image { data, source, .. } = content {
+    if let Content::Image { source, .. } = content {
         stats.image_count += 1;
         stats.image_tokens += tokens;
-        if source.is_some() && data.is_empty() {
-            stats.image_path_count += 1;
-        } else {
-            stats.image_base64_count += 1;
+        match source {
+            ImageSource::Path { .. } => stats.image_path_count += 1,
+            ImageSource::Base64 { .. } => stats.image_base64_count += 1,
         }
     }
 }

@@ -472,10 +472,15 @@ fn content_parts(content: &[evot_engine::Content]) -> Vec<serde_json::Value> {
                     "content": thinking,
                 }));
             }
-            evot_engine::Content::Image { mime_type, .. } => {
+            evot_engine::Content::Image { mime_type, source } => {
+                let source_type = match source {
+                    evot_engine::ImageSource::Path { .. } => "path",
+                    evot_engine::ImageSource::Base64 { .. } => "base64",
+                };
                 parts.push(serde_json::json!({
                     "type": "image",
                     "mime_type": mime_type,
+                    "source_type": source_type,
                 }));
             }
         }

@@ -153,9 +153,9 @@ describe('buildVerboseEvent', () => {
       },
     })
     expect(text).toContain('[LLM] ● claude-sonnet-4 · turn 2 · 18 msgs (user 6 · asst 5 · tool 7)')
-    expect(text).toContain('  ctx     ')
-    expect(text).toContain('  tok     sys 8k · user 12k · asst 4k · tool 18k')
-    expect(text).toContain('          read_file  ~8k')
+    expect(text).toContain('  ctx       ')
+    expect(text).toContain('  tok       sys 8k · user 12k · asst 4k · tool 18k')
+    expect(text).toContain('            read_file  ~8k')
   })
 
   test('formats llm completed with status symbol and timing details', () => {
@@ -170,8 +170,8 @@ describe('buildVerboseEvent', () => {
       time_to_first_byte_ms: 1100,
     })
     expect(result.text).toContain('[LLM] ✓ claude-sonnet-4 · turn 2 · 8.4s')
-    expect(result.text).toContain('  tok     42k in · 352 out')
-    expect(result.text).toContain('  timing  ttfb 1.1s · 13% · stream 7.3s · 87%')
+    expect(result.text).toContain('  tok       42k in · 352 out')
+    expect(result.text).toContain('  timing    ttfb 1.1s (13%) · stream 7.3s (87%)')
   })
 
   test('formats compact verbose with status symbols and preserves details', () => {
@@ -183,8 +183,8 @@ describe('buildVerboseEvent', () => {
       token_breakdown: { system: 8000, user: 24000, assistant: 18000, tool: 118000 },
     })
     expect(started).toContain('[COMPACT] ● compacting · L1 · 48 msgs')
-    expect(started).toContain('  ctx     ')
-    expect(started).toContain('  tok     sys 8k · user 24k · asst 18k · tool 118k')
+    expect(started).toContain('  ctx       ')
+    expect(started).toContain('  tok       sys 8k · user 24k · asst 18k · tool 118k')
 
     const completed = formatCompactionCompleted({
       result: {
@@ -202,12 +202,10 @@ describe('buildVerboseEvent', () => {
       },
     })
     expect(completed).toContain('[COMPACT] ✓ L1 done · 48 → 35 msgs · −42k · 25%')
-    expect(completed).toContain('  ctx     ')
-    expect(completed).toContain('  map     [··OHHH··SS]')
-    expect(completed).toContain('  legend  ·=unchanged/kept')
-    expect(completed).toContain('  result  ↓ outlined 2, head-tail 3')
-    expect(completed).toContain('  details changed 5/48')
-    expect(completed).toContain('    #12 read_file HeadTail ~18k → ~4k (−14k)')
+    expect(completed).toContain('  ctx       ')
+    expect(completed).toContain('  map       [··OHHH··SS]  ·=kept  O=Outline  H=HeadTail  S=Summarized')
+    expect(completed).toContain('  result    ↓ outlined 2, head-tail 3')
+    expect(completed).toContain('  actions   #12 read_file HeadTail ~18k → ~4k (−14k)')
   })
 })
 

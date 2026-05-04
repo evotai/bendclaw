@@ -56,7 +56,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     if (total > 0) {
       const pct = ((total / contextWindow) * 100).toFixed(0)
       const bar = renderBar(total, contextWindow, 20)
-      detailLines.push(`  ctx     ${bar}  ~${humanTokens(total)} / ${humanTokens(contextWindow)} · ${pct}%`)
+      detailLines.push(`  ctx       ${bar}  ~${humanTokens(total)} / ${humanTokens(contextWindow)} · ${pct}%`)
     }
   }
 
@@ -73,11 +73,11 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
       const pct = totalTokens > 0 ? ` · ${(((ms.image_tokens as number) / totalTokens) * 100).toFixed(0)}%` : ''
       dist.push(`img ${humanTokens(ms.image_tokens)}${pct}`)
     }
-    if (dist.length > 0) detailLines.push(`  tok     ${dist.join(' · ')}`)
+    if (dist.length > 0) detailLines.push(`  tok       ${dist.join(' · ')}`)
   } else {
     const bytes = (data.message_bytes as number) ?? 0
     const kb = bytes >= 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${bytes} B`
-    detailLines.push(`  tok     ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)} · tools ${humanTokens(toolDefTok)}`)
+    detailLines.push(`  tok       ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)} · tools ${humanTokens(toolDefTok)}`)
   }
 
   // Per-tool token breakdown (top 3 + count when >= 4 tools, full list when 2-3)
@@ -97,18 +97,18 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
         // Show all when manageable
         for (const [name, tokens] of sorted) {
           const pct = ((tokens / total) * 100).toFixed(0)
-          detailLines.push(`          ${name.padEnd(maxNameLen)}  ~${humanTokens(tokens).padEnd(6)} ${pct.padStart(3)}%`)
+          detailLines.push(`            ${name.padEnd(maxNameLen)}  ~${humanTokens(tokens).padEnd(6)} ${pct.padStart(3)}%`)
         }
       } else {
         // Top N + omitted count
         for (const [name, tokens] of sorted.slice(0, TOP)) {
           const pct = ((tokens / total) * 100).toFixed(0)
-          detailLines.push(`          ${name.padEnd(maxNameLen)}  ~${humanTokens(tokens).padEnd(6)} ${pct.padStart(3)}%`)
+          detailLines.push(`            ${name.padEnd(maxNameLen)}  ~${humanTokens(tokens).padEnd(6)} ${pct.padStart(3)}%`)
         }
         const omitted = sorted.length - TOP
         const omittedTokens = sorted.slice(TOP).reduce((s, [, t]) => s + t, 0)
         const omittedPct = ((omittedTokens / total) * 100).toFixed(0)
-        detailLines.push(`          ... ${omitted} more tools  ~${humanTokens(omittedTokens).padEnd(6)} ${omittedPct.padStart(3)}%`)
+        detailLines.push(`            ... ${omitted} more tools  ~${humanTokens(omittedTokens).padEnd(6)} ${omittedPct.padStart(3)}%`)
       }
     }
   }
@@ -144,8 +144,8 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): { text: s
 
   const lines: string[] = []
   lines.push(`[LLM] ✓ ${model ?? 'unknown'}${turn != null ? ` · turn ${turn}` : ''} · ${formatDuration(durationMs)} · ${tokPerSec} tok/s`)
-  lines.push(`  tok     ${humanTokens(inputTok)} in · ${humanTokens(outputTok)} out`)
-  lines.push(`  timing  ttfb ${(ttfbMs / 1000).toFixed(1)}s · ${ttfbPct}% · stream ${(streamingMs / 1000).toFixed(1)}s · ${streamPct}%`)
+  lines.push(`  tok       ${humanTokens(inputTok)} in · ${humanTokens(outputTok)} out`)
+  lines.push(`  timing    ttfb ${(ttfbMs / 1000).toFixed(1)}s (${ttfbPct}%) · stream ${(streamingMs / 1000).toFixed(1)}s (${streamPct}%)`)
 
   // Tool calls returned by the LLM (raw JSON, truncated to avoid flooding)
   const toolCalls = data.tool_calls as { id: string; name: string; arguments: Record<string, unknown> }[] | undefined
@@ -154,10 +154,10 @@ export function formatLlmCallCompleted(data: Record<string, unknown>): { text: s
     const json = JSON.stringify(toolCalls)
     const maxLen = 200
     if (json.length > maxLen) {
-      lines.push(`  output  ${json.slice(0, maxLen)}…`)
-      expandedCallsLine = `  output  ${json}`
+      lines.push(`  output    ${json.slice(0, maxLen)}…`)
+      expandedCallsLine = `  output    ${json}`
     } else {
-      lines.push(`  output  ${json}`)
+      lines.push(`  output    ${json}`)
     }
   }
 
@@ -183,7 +183,7 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
   const bar = renderBar(estTokens, contextWindow, 20)
 
   const detailLines: string[] = []
-  if (contextWindow > 0) detailLines.push(`  ctx     ${bar}  ~${humanTokens(estTokens)} / ${humanTokens(contextWindow)} · ${pct}%`)
+  if (contextWindow > 0) detailLines.push(`  ctx       ${bar}  ~${humanTokens(estTokens)} / ${humanTokens(contextWindow)} · ${pct}%`)
 
   // Token distribution if available
   const cms = (data.message_stats as Record<string, any> | undefined) ?? (data.token_breakdown as Record<string, any> | undefined)
@@ -204,7 +204,7 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
       const pct = totalTokens > 0 ? ` · ${((imgTok / totalTokens) * 100).toFixed(0)}%` : ''
       parts.push(`img ${humanTokens(imgTok)}${pct}`)
     }
-    if (parts.length > 0) detailLines.push(`  tok     ${parts.join(' · ')}`)
+    if (parts.length > 0) detailLines.push(`  tok       ${parts.join(' · ')}`)
   }
 
   // Message breakdown — parenthetical, same style as LLM started
@@ -271,10 +271,10 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
       if (contextWindow > 0 && after > 0) {
         const pct = ((after / contextWindow) * 100).toFixed(0)
         const bar = renderBar(after, contextWindow, 20)
-        lines.push(`  ctx     ${bar}  ~${humanTokens(after)} / ${humanTokens(contextWindow)} · ${pct}% · −${humanTokens(saved)}`)
+        lines.push(`  ctx       ${bar}  ~${humanTokens(after)} / ${humanTokens(contextWindow)} · ${pct}% · −${humanTokens(saved)}`)
       }
 
-      lines.push(`  ~${humanTokens(before)} → ~${humanTokens(after)}`)
+      lines.push(`  tokens    ~${humanTokens(before)} → ~${humanTokens(after)}`)
       return lines.join('\n')
     }
 
@@ -341,18 +341,19 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
       if (contextWindow > 0 && after > 0) {
         const pct = ((after / contextWindow) * 100).toFixed(0)
         const bar = renderBar(after, contextWindow, 20)
-        lines.push(`  ctx     ${bar}  ~${humanTokens(after)} / ${humanTokens(contextWindow)} · ${pct}% · −${humanTokens(saved)}`)
+        lines.push(`  ctx       ${bar}  ~${humanTokens(after)} / ${humanTokens(contextWindow)} · ${pct}% · −${humanTokens(saved)}`)
       }
 
-      lines.push(`  map     ${posBar}`)
-      if (legend) lines.push(`  legend  ${legend}`)
-      lines.push(`  result  ${summary}`)
+      lines.push(`  map       ${legend ? `${posBar}  ${legend.replace('·=unchanged/kept', '·=kept')}` : posBar}`)
+      lines.push(`  result    ${summary}`)
 
       const explicitDetails = result.details as string[] | undefined
       if (explicitDetails && explicitDetails.length > 0) {
-        const [first, ...rest] = explicitDetails
-        lines.push(`  details ${first ?? ''}`)
-        for (const line of rest) lines.push(`    ${line}`)
+        const [, ...rest] = explicitDetails
+        const details = rest.length > 0 ? rest : explicitDetails
+        const [first, ...tail] = details
+        lines.push(`  actions   ${first ?? ''}`)
+        for (const line of tail) lines.push(`            ${line}`)
       } else if (sorted.length > 0) {
         const totalActions = allActions?.length ?? 0
         const changed = sorted.length
@@ -360,16 +361,14 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
         if (level === 1) {
           const summarized = sorted.filter((a: any) => a.method === 'Summarized')
           if (summarized.length > 0) {
-            const totalMsgs = summarized.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
-            header = `  details summarized ${summarized.length} turns (${totalMsgs} msgs → ${summarized.length} summaries)`
+            header = '  actions   '
           } else {
-            header = `  details changed ${changed}/${totalActions}`
+            header = `  actions   changed ${changed}/${totalActions}`
           }
         } else if (level === 2) {
-          const kept = Math.max(afterMsgs - 1, 0)
-          header = `  details dropped ${msgsDropped}, kept ${kept}, marker 1`
+          header = `  actions   dropped ${msgsDropped}, kept ${Math.max(afterMsgs - 1, 0)}, marker 1`
         } else {
-          header = `  details changed ${changed}`
+          header = `  actions   changed ${changed}`
         }
         lines.push(header)
 
@@ -382,16 +381,17 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
           const bTok = (a.before_tokens as number) ?? 0
           const aTok = (a.after_tokens as number) ?? 0
           const aSaved = bTok - aTok
+          const prefix = '            '
           if (method === 'Summarized') {
             const rc = (a.related_count as number) ?? 0
-            return `    #${String(idx).padEnd(3)} turn(${1 + rc} msgs)  ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
+            return `${prefix}#${String(idx).padEnd(3)} turn(${1 + rc} msgs)  ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
           }
           if (method === 'Dropped') {
             const endIdx = a.end_index as number | undefined
             const idxStr = endIdx != null ? `#${idx}..#${String(endIdx).padEnd(3)}` : `#${String(idx).padEnd(3)}`
-            return `    ${idxStr}  ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
+            return `${prefix}${idxStr}  ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
           }
-          return `    #${String(idx).padEnd(3)} ${toolName.padEnd(12)} ${method.padEnd(12)} ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
+          return `${prefix}#${String(idx).padEnd(3)} ${toolName.padEnd(12)} ${method.padEnd(12)} ~${humanTokens(bTok)} → ~${humanTokens(aTok)}  (−${humanTokens(aSaved)})`
         }
 
         if (sorted.length <= TOP + TAIL) {
@@ -399,7 +399,7 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
         } else {
           for (const a of sorted.slice(0, TOP)) lines.push(fmtAction(a))
           const omitted = sorted.length - TOP - TAIL
-          lines.push(`    ... ${omitted} more ...`)
+          lines.push(`            ... ${omitted} more ...`)
           for (const a of sorted.slice(sorted.length - TAIL)) lines.push(fmtAction(a))
         }
       }

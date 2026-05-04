@@ -660,16 +660,30 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   }
 
+  /** Flush any in-progress content from the stream machine to the scroll area.
+   *  Call before nulling streamMachine on any abort/cancel path. */
+  function flushStreamContent() {
+    if (!streamMachine) return
+    const flushed = flushStreaming(streamMachine)
+    if (flushed.lines.length > 0) commitLines(flushed.lines)
+    // Preserve tool progress that was only shown in the status area
+    const progress = streamMachine.lastToolProgress
+    if (progress) {
+      const toolName = streamMachine.spinnerState.toolName ?? 'bash'
+      commitLines(buildToolProgressLines(
+        { kind: 'tool_progress', payload: { tool_name: toolName, text: progress } } as any,
+        expanded,
+      ))
+    }
+  }
+
   function interruptStream(id: string, text: string) {
     if (streamRef) {
       streamRef.abort()
       streamRef = null
     }
     isLoading = false
-    if (streamMachine) {
-      const flushed = flushStreaming(streamMachine)
-      if (flushed.lines.length > 0) commitLines(flushed.lines)
-    }
+    flushStreamContent()
     streamMachine = null
     stopSpinner()
     commitLines([{ id, kind: 'system', text }])
@@ -935,7 +949,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // Abort any in-flight streaming
       if (isLoading && streamRef) {
         streamRef.abort(); streamRef = null; isLoading = false
-        if (streamMachine) { const f = flushStreaming(streamMachine); if (f.lines.length > 0) commitLines(f.lines) }
+        flushStreamContent()
         streamMachine = null; stopSpinner()
       }
       // Start a fresh session — clear screen, re-render banner, reset state
@@ -1399,10 +1413,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         }
         overlay = { kind: 'none' }
         isLoading = false
-        if (streamMachine) {
-          const flushed = flushStreaming(streamMachine)
-          if (flushed.lines.length > 0) commitLines(flushed.lines)
-        }
+        flushStreamContent()
         streamMachine = null
         stopSpinner()
         commitLines([{ id: 'sys-ask-cancel', kind: 'system', text: '  ⏺ Cancelled.' }])

@@ -19,7 +19,7 @@ import type { RunStats, UIMessage } from '../term/app/types.js'
 
 export interface OutputLine {
   id: string
-  kind: 'user' | 'assistant' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system' | 'run_summary'
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system' | 'run_summary'
   text: string
 }
 
@@ -55,6 +55,16 @@ export function buildAssistantLines(markdownText: string): OutputLine[] {
   return cleaned.split('\n').map((line) => ({
     id: genId('asst'),
     kind: 'assistant' as const,
+    text: line,
+  }))
+}
+
+export function buildThinkingLines(text: string): OutputLine[] {
+  if (!text.trim()) return []
+  const cleaned = text.replace(/^\n+/, '').replace(/\n+$/, '')
+  return cleaned.split('\n').map((line) => ({
+    id: genId('think'),
+    kind: 'thinking' as const,
     text: line,
   }))
 }

@@ -8,6 +8,7 @@ const MAX_PROGRESS_LINE_WIDTH = 120
 export interface ActiveResponseInput {
   isLoading: boolean
   pendingText: string
+  pendingThinkingText: string
   toolProgress: string
   spinner: SpinnerState
   termRows: number
@@ -19,6 +20,21 @@ export function buildActiveResponseBlocks(input: ActiveResponseInput): ViewBlock
   if (!input.isLoading) return []
 
   const blocks: ViewBlock[] = []
+
+  if (input.pendingThinkingText) {
+    // Show the trailing fragment of in-progress thinking text.
+    const lines = input.pendingThinkingText.split('\n')
+    const maxLines = Math.max(1, input.termRows - 10)
+    const visible = lines.slice(-maxLines)
+    const styledLines: StyledLine[] = visible.map((l, i) =>
+      i === 0
+        ? line(colored('  🤔 ', 'cyan'), dim(l))
+        : line(dim(`     ${l}`))
+    )
+    if (styledLines.length > 0) {
+      blocks.push(block(styledLines, 1))
+    }
+  }
 
   if (input.pendingText) {
     // Show the trailing fragment of in-progress streaming text.

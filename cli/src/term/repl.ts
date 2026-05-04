@@ -217,6 +217,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (destroyed) return
     const isAssistantStreaming = streamMachine?.spinnerState.streaming ?? false
     const pendingText = isAssistantStreaming ? '' : streamMachine?.pendingText ?? ''
+    const pendingThinkingText = streamMachine?.pendingThinkingText ?? ''
     const toolProgress = currentToolProgress()
 
     // When ask-user is active, suppress the spinner — the agent is waiting
@@ -225,6 +226,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const activeBlocks = buildActiveResponseBlocks({
       isLoading: isAskUserActive ? false : isLoading,
       pendingText: isAskUserActive ? '' : pendingText,
+      pendingThinkingText: isAskUserActive ? '' : pendingThinkingText,
       toolProgress: isAskUserActive ? '' : toolProgress,
       spinner: spinnerState,
       termRows: renderer.termRows,

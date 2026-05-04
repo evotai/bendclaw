@@ -29,6 +29,15 @@ export function buildOutputBlocks(lines: OutputLine[], initialPrevKind?: string)
         break
       }
 
+      case 'thinking': {
+        const isBlockStart = prevKind !== 'thinking'
+        const prefix = isBlockStart ? '  🤔 ' : '     '
+        blocks.push(block([
+          line(dim(`${prefix}${ol.text}`)),
+        ], isBlockStart ? 1 : 0))
+        break
+      }
+
       case 'tool':
         blocks.push(buildToolBlock(ol.text))
         break

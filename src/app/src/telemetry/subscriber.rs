@@ -468,7 +468,7 @@ fn content_parts(content: &[evot_engine::Content]) -> Vec<serde_json::Value> {
             }
             evot_engine::Content::Thinking { thinking, .. } => {
                 parts.push(serde_json::json!({
-                    "type": "text",
+                    "type": "reasoning",
                     "content": thinking,
                 }));
             }
@@ -530,7 +530,7 @@ fn build_output_messages(
             }
             evot_engine::Content::Thinking { thinking, .. } => {
                 parts.push(serde_json::json!({
-                    "type": "text",
+                    "type": "reasoning",
                     "content": thinking,
                 }));
             }

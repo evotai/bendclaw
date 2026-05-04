@@ -1,4 +1,4 @@
-import { buildError, buildRunSummary, buildToolCall, buildToolProgress, buildToolResult, buildVerboseEvent, buildAssistantLines, type OutputLine } from '../../render/output.js'
+import { buildError, buildRunSummary, buildToolCall, buildToolProgress, buildToolResult, buildVerboseEvent, buildAssistantLines, buildThinkingLines, type OutputLine } from '../../render/output.js'
 import { findStreamingCommitPoint } from '../../render/markdown.js'
 import { setSpinnerPhase, type SpinnerState } from '../spinner.js'
 import { applyEvent } from './reducer.js'
@@ -12,9 +12,12 @@ export interface StreamMachineState {
   appState: AppState
   spinnerState: SpinnerState
   pendingText: string
+  pendingThinkingText: string
   toolProgress: string
   lastToolProgress: string
   streamingText: string
+  streamingThinkingText: string
+  thinkingTokenCount: number
   prefixEmitted: boolean
   assistantCommitted: boolean
   lastPendingRender: number
@@ -43,9 +46,12 @@ export function createStreamMachineState(appState: AppState, spinnerState: Spinn
     appState,
     spinnerState,
     pendingText: '',
+    pendingThinkingText: '',
     toolProgress: '',
     lastToolProgress: '',
     streamingText: '',
+    streamingThinkingText: '',
+    thinkingTokenCount: 0,
     prefixEmitted: false,
     assistantCommitted: false,
     lastPendingRender: 0,
@@ -75,8 +81,33 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   }
 
   if (event.kind === 'assistant_delta') {
+    const thinkingDelta = p.thinking_delta as string | undefined
+    if (thinkingDelta) {
+      state = {
+        ...state,
+        streamingThinkingText: state.streamingThinkingText + thinkingDelta,
+        pendingThinkingText: state.streamingThinkingText + thinkingDelta,
+        thinkingTokenCount: state.thinkingTokenCount + 1,
+        spinnerState: {
+          ...state.spinnerState,
+          lastTokenAt: Date.now(),
+          streaming: true,
+          tokenCount: state.spinnerState.tokenCount + 1,
+        },
+      }
+      rerenderStatus = true
+    }
+
     const delta = p.delta as string | undefined
     if (delta) {
+      // When first text delta arrives after thinking, flush thinking content
+      if (state.streamingThinkingText) {
+        const thinkingLines = buildThinkingLines(state.streamingThinkingText)
+        commitLines.push(...thinkingLines)
+        writeLines.push(...thinkingLines)
+        state = { ...state, streamingThinkingText: '', pendingThinkingText: '' }
+      }
+
       state = { ...state, streamingText: state.streamingText + delta }
       if (!state.prefixEmitted) {
         const trimmed = state.streamingText.replace(/^[\n\r]+/, '')
@@ -271,19 +302,30 @@ export function buildToolProgressLines(event: RunEvent, expanded?: boolean): Out
 }
 
 export function flushStreaming(state: StreamMachineState): { state: StreamMachineState; lines: OutputLine[] } {
-  if (!state.streamingText.trim()) {
+  const lines: OutputLine[] = []
+
+  // Flush any remaining thinking content first
+  if (state.streamingThinkingText.trim()) {
+    lines.push(...buildThinkingLines(state.streamingThinkingText))
+  }
+
+  if (state.streamingText.trim()) {
+    const assistantLines = buildAssistantLines(state.streamingText)
+    if (state.assistantCommitted && assistantLines.length > 0) {
+      lines.unshift({ id: `sep-${sepId++}`, kind: 'assistant', text: '' })
+    }
+    lines.push(...assistantLines)
+  }
+
+  if (lines.length === 0) {
     return {
-      state: { ...state, streamingText: '', pendingText: '', assistantCommitted: false },
+      state: { ...state, streamingText: '', streamingThinkingText: '', pendingText: '', pendingThinkingText: '', assistantCommitted: false },
       lines: [],
     }
   }
 
-  const lines = buildAssistantLines(state.streamingText)
-  if (state.assistantCommitted && lines.length > 0) {
-    lines.unshift({ id: `sep-${sepId++}`, kind: 'assistant', text: '' })
-  }
   return {
-    state: { ...state, streamingText: '', pendingText: '', assistantCommitted: false },
+    state: { ...state, streamingText: '', streamingThinkingText: '', pendingText: '', pendingThinkingText: '', assistantCommitted: false },
     lines,
   }
 }

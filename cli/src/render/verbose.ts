@@ -17,6 +17,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
   const msgCount = (data.message_count as number) ?? 0
   const injectedCount = (data.injected_count as number) ?? 0
   const sysTok = (data.system_prompt_tokens as number) ?? 0
+  const toolDefTok = (data.tool_definition_tokens as number) ?? 0
   const retryStr = attempt > 0 ? ` · retry ${attempt}` : ''
   const injectedStr = injectedCount > 0 ? ` · ${injectedCount} injected` : ''
 
@@ -43,7 +44,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
     const total = estimatedContextTokens > 0
       ? estimatedContextTokens
       : ms
-        ? sysTok + (ms.user_tokens ?? 0) + (ms.assistant_tokens ?? 0) + (ms.tool_result_tokens ?? 0) + (ms.image_tokens ?? 0)
+        ? sysTok + toolDefTok + (ms.user_tokens ?? 0) + (ms.assistant_tokens ?? 0) + (ms.tool_result_tokens ?? 0) + (ms.image_tokens ?? 0)
         : 0
     if (total > 0) {
       const pct = ((total / contextWindow) * 100).toFixed(0)
@@ -56,6 +57,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
   if (ms) {
     const dist: string[] = []
     if (sysTok > 0) dist.push(`sys ${humanTokens(sysTok)}`)
+    if (toolDefTok > 0) dist.push(`tools ${humanTokens(toolDefTok)}`)
     if ((ms.user_tokens as number) > 0) dist.push(`user ${humanTokens(ms.user_tokens)}`)
     if ((ms.assistant_tokens as number) > 0) dist.push(`asst ${humanTokens(ms.assistant_tokens)}`)
     if ((ms.tool_result_tokens as number) > 0) dist.push(`tool ${humanTokens(ms.tool_result_tokens)}`)
@@ -64,7 +66,7 @@ export function formatLlmCallStarted(data: Record<string, unknown>): string {
   } else {
     const bytes = (data.message_bytes as number) ?? 0
     const kb = bytes >= 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${bytes} B`
-    detailLines.push(`  tok     ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)}`)
+    detailLines.push(`  tok     ${msgCount} msgs · ${kb} · system ${humanTokens(sysTok)} · tools ${humanTokens(toolDefTok)}`)
   }
 
   // Per-tool token breakdown (top 3 + count when >= 4 tools, full list when 2-3)
@@ -165,6 +167,7 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
   const estTokens = (data.estimated_tokens as number) ?? 0
   const contextWindow = (data.context_window as number) ?? 0
   const sysTok = (data.system_prompt_tokens as number) ?? 0
+  const toolDefTok = (data.tool_definition_tokens as number) ?? 0
   const pct = contextWindow > 0 ? ((estTokens / contextWindow) * 100).toFixed(0) : '0'
   const bar = renderBar(estTokens, contextWindow, 20)
 
@@ -181,6 +184,7 @@ export function formatCompactionStarted(data: Record<string, unknown>): string {
     const imgTok = ((cms.image_tokens as number) ?? (cms.image as number)) ?? 0
     const effectiveSysTok = sysTok || ((cms.system_tokens as number) ?? (cms.system as number) ?? 0)
     if (effectiveSysTok > 0) parts.push(`sys ${humanTokens(effectiveSysTok)}`)
+    if (toolDefTok > 0) parts.push(`tools ${humanTokens(toolDefTok)}`)
     if (uTok > 0) parts.push(`user ${humanTokens(uTok)}`)
     if (aTok > 0) parts.push(`asst ${humanTokens(aTok)}`)
     if (trTok > 0) parts.push(`tool ${humanTokens(trTok)}`)
@@ -283,22 +287,24 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
       // Summary line
       let summary: string
       if (level === 1) {
-        const explicitSummary = result.result as string | undefined
-        if (explicitSummary) {
-          summary = explicitSummary
+        const summarized = sorted.filter((a: any) => a.method === 'Summarized')
+        if (summarized.length > 0) {
+          const totalMsgs = summarized.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
+          summary = `↓ summarized ${summarized.length} turns (${totalMsgs} msgs → ${summarized.length} summaries)`
         } else {
-          const outlineCount = sorted.filter((a: any) => a.method === 'Outline').length
-          const headtailCount = sorted.filter((a: any) => a.method === 'HeadTail').length
-          const parts: string[] = []
-          if (outlineCount > 0) parts.push(`outlined ${outlineCount}`)
-          if (headtailCount > 0) parts.push(`head-tail ${headtailCount}`)
-          summary = parts.length > 0 ? `↓ ${parts.join(', ')}` : '↓ no changes'
+          const explicitSummary = result.result as string | undefined
+          if (explicitSummary) {
+            summary = explicitSummary
+          } else {
+            const outlineCount = sorted.filter((a: any) => a.method === 'Outline').length
+            const headtailCount = sorted.filter((a: any) => a.method === 'HeadTail').length
+            const parts: string[] = []
+            if (outlineCount > 0) parts.push(`outlined ${outlineCount}`)
+            if (headtailCount > 0) parts.push(`head-tail ${headtailCount}`)
+            summary = parts.length > 0 ? `↓ ${parts.join(', ')}` : '↓ no changes'
+          }
         }
       } else if (level === 2) {
-        const turnCount = sorted.length
-        const totalMsgs = sorted.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
-        summary = `↓ summarized ${turnCount} turns (${totalMsgs} msgs → ${turnCount} summaries)`
-      } else if (level === 3) {
         const kept = Math.max(afterMsgs - 1, 0)
         summary = `↓ dropped ${msgsDropped} msgs, kept ${kept} + 1 marker`
       } else {
@@ -330,11 +336,14 @@ export function formatCompactionCompleted(data: Record<string, unknown>): string
         const changed = sorted.length
         let header: string
         if (level === 1) {
-          header = `  details changed ${changed}/${totalActions}`
+          const summarized = sorted.filter((a: any) => a.method === 'Summarized')
+          if (summarized.length > 0) {
+            const totalMsgs = summarized.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
+            header = `  details summarized ${summarized.length} turns (${totalMsgs} msgs → ${summarized.length} summaries)`
+          } else {
+            header = `  details changed ${changed}/${totalActions}`
+          }
         } else if (level === 2) {
-          const totalMsgs = sorted.reduce((s: number, a: any) => s + 1 + ((a.related_count as number) ?? 0), 0)
-          header = `  details summarized ${changed} turns (${totalMsgs} msgs → ${changed} summaries)`
-        } else if (level === 3) {
           const kept = Math.max(afterMsgs - 1, 0)
           header = `  details dropped ${msgsDropped}, kept ${kept}, marker 1`
         } else {

@@ -600,6 +600,7 @@ fn map_agent_event(
                         message_count,
                         message_bytes,
                         system_prompt_tokens: budget.system_prompt_tokens,
+                        tool_definition_tokens: budget.tool_definition_tokens,
                     })
                     .to_item(),
                 ),
@@ -612,6 +613,7 @@ fn map_agent_event(
                     message_bytes,
                     estimated_context_tokens: budget.estimated_tokens,
                     system_prompt_tokens: budget.system_prompt_tokens,
+                    tool_definition_tokens: budget.tool_definition_tokens,
                     tool_count,
                     message_stats,
                     budget_tokens: budget.budget_tokens,
@@ -715,6 +717,7 @@ fn map_agent_event(
                         estimated_tokens: budget.estimated_tokens,
                         budget_tokens: budget.budget_tokens,
                         system_prompt_tokens: budget.system_prompt_tokens,
+                        tool_definition_tokens: budget.tool_definition_tokens,
                         context_window: budget.context_window,
                     })
                     .to_item(),
@@ -724,6 +727,7 @@ fn map_agent_event(
                     estimated_tokens: budget.estimated_tokens,
                     budget_tokens: budget.budget_tokens,
                     system_prompt_tokens: budget.system_prompt_tokens,
+                    tool_definition_tokens: budget.tool_definition_tokens,
                     context_window: budget.context_window,
                     message_stats: stats,
                 }),

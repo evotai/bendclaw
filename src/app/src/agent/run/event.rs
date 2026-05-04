@@ -70,6 +70,8 @@ pub enum RunEventPayload {
         #[serde(default)]
         estimated_context_tokens: usize,
         system_prompt_tokens: usize,
+        #[serde(default)]
+        tool_definition_tokens: usize,
         tool_count: usize,
         /// Pre-computed message stats by role.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,6 +109,8 @@ pub enum RunEventPayload {
         estimated_tokens: usize,
         budget_tokens: usize,
         system_prompt_tokens: usize,
+        #[serde(default)]
+        tool_definition_tokens: usize,
         context_window: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         message_stats: Option<LlmMessageStats>,

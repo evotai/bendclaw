@@ -1,25 +1,37 @@
-//! Evict stale messages by dropping the middle of the conversation.
+//! Evict stale messages by dropping the upper-middle of the conversation.
 //!
-//! **L2 — budget-gated**: only runs when over budget.
+//! Runs for hard token pressure or when `max_messages` is exceeded. This is the
+//! primary long-session control: keep the beginning and recent tail, then drop
+//! old middle content instead of endlessly summarizing it.
 //!
-//! Strategy: EvictionStrategy
+//! Strategy:
 //!   Keeps `keep_first` messages + `keep_recent` messages.
 //!   Drops the middle, inserting a marker.
 //!   If still over budget, uses tail-first retention:
 //!     Protect `keep_first`, then fill remaining budget from tail.
-//!     Naturally drops old messages — including accumulated summaries
-//!     that pile up at the front of the list.
 
 use crate::context::compaction::compact::CompactionAction;
 use crate::context::compaction::compact::CompactionMethod;
-use crate::context::compaction::pass::CompactContext;
-use crate::context::compaction::pass::PassResult;
+use crate::context::compaction::phase::PhaseContext;
+use crate::context::compaction::phase::PhaseResult;
 use crate::context::tokens::message_tokens;
 use crate::context::tokens::total_tokens;
 use crate::types::*;
 
-pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
+pub fn run(messages: Vec<AgentMessage>, ctx: &PhaseContext) -> PhaseResult {
     let len = messages.len();
+    let target_messages = ctx
+        .keep_first
+        .saturating_add(ctx.keep_recent)
+        .saturating_add(1)
+        .max(1);
+    if len <= target_messages && total_tokens(&messages) <= ctx.compact_target {
+        return PhaseResult {
+            messages,
+            actions: Vec::new(),
+        };
+    }
+
     let first_end = ctx.keep_first.min(len);
     let recent_start = len.saturating_sub(ctx.keep_recent);
 
@@ -30,7 +42,7 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
             vec![CompactionAction {
                 index: 0,
                 tool_name: "messages".into(),
-                method: CompactionMethod::Dropped,
+                method: CompactionMethod::MessagesEvicted,
                 before_tokens: total_tokens(&messages),
                 after_tokens: total_tokens(&result),
                 end_index: None,
@@ -39,7 +51,7 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
         } else {
             vec![]
         };
-        return PassResult {
+        return PhaseResult {
             messages: result,
             actions,
         };
@@ -76,7 +88,7 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
             vec![CompactionAction {
                 index: 0,
                 tool_name: "messages".into(),
-                method: CompactionMethod::Dropped,
+                method: CompactionMethod::MessagesEvicted,
                 before_tokens: total_tokens(&messages),
                 after_tokens: total_tokens(&result),
                 end_index: None,
@@ -85,7 +97,7 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
         } else {
             vec![]
         };
-        return PassResult {
+        return PhaseResult {
             messages: result,
             actions,
         };
@@ -94,14 +106,14 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext) -> PassResult {
     let actions = vec![CompactionAction {
         index: first_end,
         tool_name: "messages".into(),
-        method: CompactionMethod::Dropped,
-        before_tokens: dropped_tokens,
+        method: CompactionMethod::MessagesEvicted,
+        before_tokens: dropped_tokens.max(marker_tokens),
         after_tokens: marker_tokens,
         end_index: Some(recent_start.saturating_sub(1)),
         related_count: Some(removed),
     }];
 
-    PassResult {
+    PhaseResult {
         messages: result,
         actions,
     }

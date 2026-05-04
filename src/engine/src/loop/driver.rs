@@ -18,6 +18,7 @@ use super::tool_exec::skip_tool_call_doom_loop;
 use crate::context::ContextTracker;
 use crate::context::ExecutionTracker;
 use crate::context::{self};
+use crate::provider::ToolDefinition;
 use crate::types::*;
 
 /// Start an agent loop with new prompt messages.
@@ -215,6 +216,16 @@ async fn run_loop(
             compact_context(context, config, &mut context_tracker, tx);
 
             // Build budget snapshot for the LLM call (same source as compaction)
+            let tool_defs: Vec<ToolDefinition> = context
+                .tools
+                .iter()
+                .map(|t| ToolDefinition {
+                    name: t.name().to_string(),
+                    description: t.description().to_string(),
+                    parameters: t.parameters_schema(),
+                })
+                .collect();
+            context_tracker.record_request_overhead(&context.system_prompt, &tool_defs);
             let budget_snapshot =
                 context_tracker.budget_snapshot(&context.messages, config.context_config.as_ref());
 

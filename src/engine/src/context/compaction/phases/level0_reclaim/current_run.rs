@@ -5,14 +5,14 @@
 //! `Retention::CurrentRun` with a subsequent `User` message → replace content
 //! with `"[{tool_name} result cleared after use]"`.
 
-use crate::context::compaction::compact::CompactionAction;
-use crate::context::compaction::compact::CompactionMethod;
-use crate::context::compaction::pass::CompactContext;
-use crate::context::compaction::pass::PassResult;
+use crate::context::compaction::phase::PhaseContext;
+use crate::context::compaction::phase::PhaseResult;
+use crate::context::compaction::CompactionAction;
+use crate::context::compaction::CompactionMethod;
 use crate::context::tokens::content_tokens;
 use crate::types::*;
 
-pub fn run(messages: Vec<AgentMessage>, _ctx: &CompactContext) -> PassResult {
+pub fn run(messages: Vec<AgentMessage>, _ctx: &PhaseContext) -> PhaseResult {
     // Pre-compute: for each index, is there a User message after it?
     let mut has_user_after = vec![false; messages.len()];
     let mut seen_user = false;
@@ -59,7 +59,7 @@ pub fn run(messages: Vec<AgentMessage>, _ctx: &CompactContext) -> PassResult {
                 actions.push(CompactionAction {
                     index: idx,
                     tool_name: tool_name.clone(),
-                    method: CompactionMethod::LifecycleCleared,
+                    method: CompactionMethod::LifecycleReclaimed,
                     before_tokens,
                     after_tokens,
                     end_index: None,
@@ -80,7 +80,7 @@ pub fn run(messages: Vec<AgentMessage>, _ctx: &CompactContext) -> PassResult {
         })
         .collect();
 
-    PassResult {
+    PhaseResult {
         messages: result,
         actions,
     }

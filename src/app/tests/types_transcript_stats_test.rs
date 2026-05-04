@@ -15,6 +15,7 @@ fn stats_llm_call_started_round_trip() {
         message_count: 5,
         message_bytes: 1200,
         system_prompt_tokens: 300,
+        tool_definition_tokens: 50,
     });
     let item = stats.to_item();
     assert!(matches!(&item, TranscriptItem::Stats { kind, .. } if kind == "llm_call_started"));
@@ -91,6 +92,7 @@ fn stats_context_compaction_started_round_trip() {
         estimated_tokens: 50000,
         budget_tokens: 80000,
         system_prompt_tokens: 5000,
+        tool_definition_tokens: 7000,
         context_window: 100000,
     });
     let item = stats.to_item();

@@ -26,6 +26,8 @@ pub struct LlmCallStartedStats {
     pub message_count: usize,
     pub message_bytes: usize,
     pub system_prompt_tokens: usize,
+    #[serde(default)]
+    pub tool_definition_tokens: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +58,8 @@ pub struct ContextCompactionStartedStats {
     pub estimated_tokens: usize,
     pub budget_tokens: usize,
     pub system_prompt_tokens: usize,
+    #[serde(default)]
+    pub tool_definition_tokens: usize,
     pub context_window: usize,
 }
 

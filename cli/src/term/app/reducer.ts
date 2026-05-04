@@ -168,6 +168,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
       const model = (p.model as string) ?? state.model
       const turn = event.turn
       const sysTok = (p.system_prompt_tokens as number) ?? 0
+      const toolDefTok = (p.tool_definition_tokens as number) ?? 0
 
       // Pre-computed message stats from Rust side (always present)
       const ms = p.message_stats as Record<string, any> | undefined
@@ -217,7 +218,7 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
           contextWindow: (p.context_window as number) ?? state.currentRunStats.contextWindow,
           lastMessageStats: msgStats,
           cumulativeStats: cumulative,
-          systemPromptTokens: sysTok,
+          systemPromptTokens: sysTok + toolDefTok,
         },
         verboseEvents: [...state.verboseEvents, { kind: 'llm_call', text }],
       }

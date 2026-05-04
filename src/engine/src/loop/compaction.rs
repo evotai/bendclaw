@@ -30,15 +30,12 @@ pub(super) fn compact_context(
     let budget = context_tracker.budget_snapshot(&context.messages, Some(ctx_config));
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    let budget_state = CompactionBudgetState::from_tracker(
-        context_tracker,
-        &context.messages,
-        ctx_config.system_prompt_tokens,
-    );
+    let budget_state = CompactionBudgetState::from_tracker(context_tracker, &context.messages);
     let compact_budget = crate::context::ContextBudgetSnapshot {
         estimated_tokens: budget_state.estimated_tokens,
         budget_tokens: budget.budget_tokens,
         system_prompt_tokens: budget.system_prompt_tokens,
+        tool_definition_tokens: budget.tool_definition_tokens,
         context_window: budget.context_window,
     };
     let result = strategy.compact(
@@ -110,11 +107,7 @@ pub(super) fn compact_for_recovery(
 
     let pre_stats = crate::context::compute_call_stats_from_agent_messages(&context.messages);
 
-    let budget_state = CompactionBudgetState::from_tracker(
-        context_tracker,
-        &context.messages,
-        ctx_config.system_prompt_tokens,
-    );
+    let budget_state = CompactionBudgetState::from_tracker(context_tracker, &context.messages);
     let compact_result = strategy.compact(
         std::mem::take(&mut context.messages),
         ctx_config,
@@ -133,6 +126,7 @@ pub(super) fn compact_for_recovery(
             estimated_tokens: compact_result.stats.before_estimated_tokens,
             budget_tokens: budget.budget_tokens,
             system_prompt_tokens: budget.system_prompt_tokens,
+            tool_definition_tokens: budget.tool_definition_tokens,
             context_window: budget.context_window,
         },
         message_stats: pre_stats,

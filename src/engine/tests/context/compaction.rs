@@ -759,11 +759,11 @@ fn test_level1_outline_works_on_short_code_files() {
 }
 
 // ---------------------------------------------------------------------------
-// Level 2 action structure tests (DSL)
+// Level 1 summarize action structure tests (DSL)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_level2_actions_structure() {
+fn test_level1_summarize_actions_structure() {
     let messages = pat("u tr tr u u").pad(2000).build();
 
     let config = ContextConfig {
@@ -778,15 +778,15 @@ fn test_level2_actions_structure() {
     let budget_state = CompactionBudgetState::from_messages(&messages);
     let result = compact_messages(messages, &config, &budget_state);
     assert!(
-        result.stats.level >= 2,
-        "expected level >= 2, got {}",
+        result.stats.level >= 1,
+        "expected level >= 1, got {}",
         result.stats.level
     );
 
-    if result.stats.level == 2 {
+    if result.stats.level == 1 {
         assert!(!result.stats.actions.is_empty());
         for action in &result.stats.actions {
-            assert_eq!(action.method, CompactionMethod::Summarized);
+            assert_eq!(action.method, CompactionMethod::TurnCollapsed);
             assert_eq!(action.tool_name, "assistant");
             assert!(action.related_count.is_some());
             assert!(action.before_tokens > action.after_tokens);
@@ -795,7 +795,7 @@ fn test_level2_actions_structure() {
 }
 
 #[test]
-fn test_level2_action_related_count() {
+fn test_level1_summarize_action_related_count() {
     // One assistant with multiple tool results following it
     let pad = "x".repeat(800);
     let messages = vec![
@@ -818,12 +818,12 @@ fn test_level2_action_related_count() {
 
     let budget_state = CompactionBudgetState::from_messages(&messages);
     let result = compact_messages(messages, &config, &budget_state);
-    if result.stats.level == 2 {
+    if result.stats.level == 1 {
         let summarized: Vec<_> = result
             .stats
             .actions
             .iter()
-            .filter(|a| a.method == CompactionMethod::Summarized)
+            .filter(|a| a.method == CompactionMethod::TurnCollapsed)
             .collect();
 
         for action in &summarized {
@@ -839,11 +839,11 @@ fn test_level2_action_related_count() {
 }
 
 // ---------------------------------------------------------------------------
-// Level 3 action structure tests (DSL)
+// Level 2 drop action structure tests (DSL)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_level3_actions_structure() {
+fn test_level2_drop_actions_structure() {
     let messages = pat("u u tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr u u u")
         .pad(10)
         .build();
@@ -862,20 +862,20 @@ fn test_level3_actions_structure() {
     assert_eq!(result.stats.level, 3, "should trigger level 3");
     assert!(!result.stats.actions.is_empty());
 
-    // Level 3 can have actions from earlier passes (Summarized, etc.) plus Dropped
+    // Level 2 can have actions from earlier passes (Summarized, etc.) plus Dropped
     let has_dropped = result
         .stats
         .actions
         .iter()
-        .any(|a| a.method == CompactionMethod::Dropped);
+        .any(|a| a.method == CompactionMethod::MessagesEvicted);
     assert!(
         has_dropped,
-        "level 3 should have at least one Dropped action"
+        "level 2 should have at least one Dropped action"
     );
 }
 
 #[test]
-fn test_level3_action_has_range() {
+fn test_level2_drop_action_has_range() {
     let messages = pat("u u a a a a a a a a a a a a a a a u u")
         .pad(100)
         .build();
@@ -891,12 +891,12 @@ fn test_level3_action_has_range() {
 
     let budget_state = CompactionBudgetState::from_messages(&messages);
     let result = compact_messages(messages, &config, &budget_state);
-    if result.stats.level == 3 {
+    if result.stats.level == 2 {
         let dropped: Vec<_> = result
             .stats
             .actions
             .iter()
-            .filter(|a| a.method == CompactionMethod::Dropped)
+            .filter(|a| a.method == CompactionMethod::MessagesEvicted)
             .collect();
 
         assert!(!dropped.is_empty());
@@ -945,7 +945,7 @@ fn test_compact_level1_actions_are_level1_only() {
 }
 
 #[test]
-fn test_compact_level2_actions_are_level2_only() {
+fn test_compact_level1_summarize_actions_match_level() {
     let messages = pat("u tr u tr u").pad(800).build();
 
     let config = ContextConfig {
@@ -959,8 +959,8 @@ fn test_compact_level2_actions_are_level2_only() {
 
     let budget_state = CompactionBudgetState::from_messages(&messages);
     let result = compact_messages(messages, &config, &budget_state);
-    if result.stats.level == 2 {
-        assert_actions_match_level(2, &result.stats.actions);
+    if result.stats.level == 1 {
+        assert_actions_match_level(1, &result.stats.actions);
     }
 }
 
@@ -1225,9 +1225,9 @@ fn test_byte_cap_on_long_single_line() {
     }
 }
 
-/// Level 2 summary should preserve multiple short text fragments.
+/// Level 1 summary should preserve multiple short text fragments.
 #[test]
-fn test_level2_summary_preserves_multiple_texts() {
+fn test_level1_summary_preserves_multiple_texts() {
     let messages = vec![
         AgentMessage::Llm(Message::user("task")),
         // Old assistant turn with multiple short texts + tool calls
@@ -1286,7 +1286,7 @@ fn test_level2_summary_preserves_multiple_texts() {
     ];
 
     let config = ContextConfig {
-        max_context_tokens: 100, // force over-budget to trigger L2
+        max_context_tokens: 100, // force over-budget to trigger summarization
         system_prompt_tokens: 0,
         keep_recent: 3,
         keep_first: 2,
@@ -1312,7 +1312,7 @@ fn test_level2_summary_preserves_multiple_texts() {
     }
     assert!(
         found_both,
-        "Level 2 summary should preserve multiple short text fragments"
+        "Level 1 summary should preserve multiple short text fragments"
     );
 }
 
@@ -1652,7 +1652,8 @@ fn test_oversized_user_multi_block_merged() {
     }
 }
 
-/// Oversized user message with images should preserve images and truncate text.
+/// Oversized user message with images should preserve images while truncating text,
+/// unless image pressure is severe enough to require stripping.
 #[test]
 fn test_oversized_user_with_images_preserved() {
     let big_text = (1..=2000)
@@ -1815,6 +1816,7 @@ fn test_l1_compacts_to_target() {
         keep_recent: 10,
         keep_first: 2,
         tool_output_max_lines: 50,
+        max_messages: 0,
         ..Default::default()
     };
 
@@ -2143,12 +2145,12 @@ fn test_l1_and_l2_cooperate() {
         .stats
         .actions
         .iter()
-        .any(|a| a.method == CompactionMethod::Summarized);
+        .any(|a| a.method == CompactionMethod::TurnCollapsed);
     let has_dropped = result
         .stats
         .actions
         .iter()
-        .any(|a| a.method == CompactionMethod::Dropped);
+        .any(|a| a.method == CompactionMethod::MessagesEvicted);
 
     assert!(
         has_summarized || has_dropped,
@@ -2251,9 +2253,8 @@ fn test_extreme_all_orphan_tool_results() {
     assert_no_orphan_tool_pairs(&result.messages);
 }
 
-/// Multi-round simulation where user-only history grows past the hard message limit.
-/// In that case L1 may conservatively summarize old consecutive user messages
-/// before L2 eviction has to drop them entirely.
+/// Multi-round simulation where user-only history grows past the message limit.
+/// L2 should evict stale middle messages instead of building user summaries.
 #[test]
 fn test_multi_round_l2_escalation() {
     let budget = 800;
@@ -2263,14 +2264,14 @@ fn test_multi_round_l2_escalation() {
         keep_recent: 2,
         keep_first: 1,
         tool_output_max_lines: 50,
-        max_messages_hard: 8,
+        max_messages: 8,
         ..Default::default()
     };
 
     let mut messages = Vec::new();
     messages.push(AgentMessage::Llm(Message::user("start")));
 
-    let mut l1_summarized = false;
+    let mut saw_drop = false;
 
     for i in 0..20 {
         messages.push(AgentMessage::Llm(Message::user(format!(
@@ -2285,18 +2286,18 @@ fn test_multi_round_l2_escalation() {
         };
         let result = compact_messages(messages, &config, &budget_state);
 
-        if result.stats.turns_summarized > 0 {
-            l1_summarized = true;
+        if result.stats.messages_dropped > 0 {
+            saw_drop = true;
         }
 
         messages = result.messages;
     }
 
-    // L1 should collapse old consecutive user messages only after hard message pressure,
-    // preserving snippets instead of letting L2 drop them wholesale.
+    // Message-count pressure should evict stale middle messages instead of
+    // creating low-value user-message summaries.
     assert!(
-        l1_summarized,
-        "L1 should collapse old consecutive user messages before L2 eviction"
+        saw_drop,
+        "message-count pressure should trigger L2 eviction"
     );
 
     let final_tokens = total_tokens(&messages);
@@ -2309,7 +2310,7 @@ fn test_multi_round_l2_escalation() {
 }
 
 // ---------------------------------------------------------------------------
-// L1 (level 2) → L2 (level 3) escalation tests
+// L1 → L2 escalation tests
 // ---------------------------------------------------------------------------
 
 /// L1 summarizes old turns but still over budget → L2 drops middle messages.
@@ -2380,10 +2381,10 @@ fn test_l1_to_l2_escalation_single_call() {
     };
     let result = compact_messages(messages.clone(), &config, &budget_state);
 
-    // Should reach level 3 (L2 evict)
+    // Should reach level 3 (evict)
     assert_eq!(
         result.stats.level, 3,
-        "should escalate to level 3 (L2 evict): turns_summarized={}, messages_dropped={}",
+        "should escalate to level 3 (evict): turns_summarized={}, messages_dropped={}",
         result.stats.turns_summarized, result.stats.messages_dropped,
     );
 
@@ -2547,7 +2548,171 @@ fn test_l2_when_keep_recent_covers_all() {
     assert_no_orphan_tool_pairs(&result.messages);
 }
 
-/// Edge case: budget is zero. Should not panic, should return something.
+#[test]
+fn test_message_limit_evicts_instead_of_summarizing() {
+    let messages = (0..20)
+        .map(|i| AgentMessage::Llm(Message::user(format!("old message {}", i))))
+        .collect::<Vec<_>>();
+
+    let config = ContextConfig {
+        max_context_tokens: 100_000,
+        system_prompt_tokens: 0,
+        keep_recent: 4,
+        keep_first: 1,
+        max_messages: 8,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 1,
+    });
+
+    assert_eq!(result.stats.turns_summarized, 0);
+    assert!(result.stats.messages_dropped > 0);
+    assert_eq!(result.stats.level, 3);
+    assert!(result.messages.len() <= config.keep_first + config.keep_recent + 1);
+}
+
+#[test]
+fn test_old_images_preserved_until_severe_pressure() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![
+                Content::Text {
+                    text: "old image".into(),
+                },
+                Content::Image {
+                    data: "base64data".into(),
+                    mime_type: "image/png".into(),
+                },
+            ],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 10000,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 1,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 12000,
+    });
+
+    let has_image = result.messages.iter().any(|m| {
+        matches!(
+            m,
+            AgentMessage::Llm(Message::User { content, .. })
+                if content.iter().any(|c| matches!(c, Content::Image { .. }))
+        )
+    });
+    assert!(
+        has_image,
+        "old images should survive ordinary over-budget cleanup"
+    );
+}
+
+#[test]
+fn test_images_stripped_under_severe_pressure() {
+    let messages = vec![
+        AgentMessage::Llm(Message::user("task")),
+        AgentMessage::Llm(Message::User {
+            content: vec![Content::Image {
+                data: "base64data".into(),
+                mime_type: "image/png".into(),
+            }],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 100,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 1,
+        ..Default::default()
+    };
+
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 200,
+    });
+
+    let has_image = result.messages.iter().any(|m| {
+        matches!(
+            m,
+            AgentMessage::Llm(Message::User { content, .. })
+                if content.iter().any(|c| matches!(c, Content::Image { .. }))
+        )
+    });
+    assert!(
+        !has_image,
+        "images should be stripped under severe pressure"
+    );
+    assert!(result.stats.age_cleared > 0);
+}
+
+#[test]
+fn test_images_in_pinned_message_do_not_stall_compaction() {
+    let messages = vec![
+        AgentMessage::Llm(Message::User {
+            content: vec![
+                Content::Text {
+                    text: "look at this".into(),
+                },
+                Content::Image {
+                    data: "very-large-image".into(),
+                    mime_type: "image/png".into(),
+                },
+            ],
+            timestamp: 0,
+        }),
+        AgentMessage::Llm(Message::user("recent 1")),
+        AgentMessage::Llm(Message::user("recent 2")),
+    ];
+
+    let config = ContextConfig {
+        max_context_tokens: 1_000,
+        system_prompt_tokens: 0,
+        keep_recent: 2,
+        keep_first: 1,
+        ..Default::default()
+    };
+
+    // Simulate provider usage reporting a large image-heavy context while the
+    // text-only message estimate is tiny. Compaction must make progress instead
+    // of preserving the pinned image forever.
+    let result = compact_messages(messages, &config, &CompactionBudgetState {
+        estimated_tokens: 20_000,
+    });
+
+    let has_image = result.messages.iter().any(|m| {
+        matches!(
+            m,
+            AgentMessage::Llm(Message::User { content, .. })
+                if content.iter().any(|c| matches!(c, Content::Image { .. }))
+        )
+    });
+    assert!(
+        !has_image,
+        "severe image pressure should strip pinned images"
+    );
+    assert!(result.stats.age_cleared > 0);
+    assert!(
+        result.stats.after_estimated_tokens <= config.max_context_tokens,
+        "image-heavy provider estimate should not remain stuck after image strip: before={}, after={}",
+        result.stats.before_estimated_tokens,
+        result.stats.after_estimated_tokens
+    );
+}
+
 #[test]
 fn test_extreme_zero_budget() {
     let messages = pat("u tr u tr u").pad(100).tool_output(500).build();

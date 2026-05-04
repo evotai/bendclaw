@@ -201,7 +201,7 @@ fn test_sanitize_dsl_orphan_after_valid_conversation() {
 }
 
 #[test]
-fn test_compact_level2_no_orphans() {
+fn test_compact_level1_summarize_no_orphans() {
     let messages = pat("u u u tr u").pad(800).build();
 
     let config = ContextConfig {
@@ -216,15 +216,15 @@ fn test_compact_level2_no_orphans() {
     let budget_state = CompactionBudgetState::from_messages(&messages);
     let result = compact_messages(messages, &config, &budget_state);
     assert!(
-        result.stats.level >= 2,
-        "expected level >= 2, got {}",
+        result.stats.level >= 1,
+        "expected level >= 1, got {}",
         result.stats.level
     );
     assert_no_orphan_tool_pairs(&result.messages);
 }
 
 #[test]
-fn test_compact_level3_no_orphans() {
+fn test_compact_level2_drop_no_orphans() {
     let messages = pat("u u tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr tr u")
         .pad(10)
         .build();

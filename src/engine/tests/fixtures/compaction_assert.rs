@@ -37,19 +37,19 @@ pub fn assert_no_orphan_tool_pairs(messages: &[AgentMessage]) {
 /// actions from earlier passes. The `level` represents the *highest* pass
 /// that produced actions:
 ///   0 = only LifecycleCleared (or no-op)
-///   1 = shrink (Outline / HeadTail / AgeCleared / OversizeCapped)
-///   2 = collapse (Summarized), may also have level-1 actions
-///   3 = evict (Dropped), may also have level-1 and level-2 actions
+///   1 = collapse (Summarized), may also have cleanup/shrink actions
+///   2 = evict (Dropped), may also have level-1 actions
 pub fn assert_actions_match_level(level: u8, actions: &[CompactionAction]) {
     let allowed_at_level = |method: &CompactionMethod, lvl: u8| -> bool {
         match method {
-            CompactionMethod::LifecycleCleared => true, // always allowed
+            CompactionMethod::LifecycleReclaimed => true, // always allowed
             CompactionMethod::AgeCleared
+            | CompactionMethod::ImageStripped
             | CompactionMethod::OversizeCapped
             | CompactionMethod::Outline
             | CompactionMethod::HeadTail => lvl >= 1,
-            CompactionMethod::Summarized => lvl >= 2,
-            CompactionMethod::Dropped => lvl >= 3,
+            CompactionMethod::TurnCollapsed => lvl >= 2,
+            CompactionMethod::MessagesEvicted => lvl >= 3,
         }
     };
 

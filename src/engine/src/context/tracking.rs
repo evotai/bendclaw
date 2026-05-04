@@ -4,7 +4,9 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::tokens::message_tokens;
+use super::tokens::tool_definition_tokens;
 use super::tokens::total_tokens;
+use crate::provider::ToolDefinition;
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -20,6 +22,7 @@ use crate::types::*;
 pub struct ContextTracker {
     last_baseline_tokens: Option<usize>,
     last_baseline_index: Option<usize>,
+    system_tool_overhead_tokens: usize,
 }
 
 impl ContextTracker {
@@ -27,7 +30,18 @@ impl ContextTracker {
         Self {
             last_baseline_tokens: None,
             last_baseline_index: None,
+            system_tool_overhead_tokens: 0,
         }
+    }
+
+    /// Record fixed request overhead that compaction cannot reduce.
+    pub fn record_request_overhead(&mut self, system_prompt: &str, tools: &[ToolDefinition]) {
+        self.system_tool_overhead_tokens =
+            crate::context::estimate_tokens(system_prompt) + tool_definition_tokens(tools);
+    }
+
+    pub fn system_tool_overhead_tokens(&self) -> usize {
+        self.system_tool_overhead_tokens
     }
 
     /// Update baseline from provider usage (call after each assistant message).
@@ -60,6 +74,7 @@ impl ContextTracker {
     pub fn record_compaction(&mut self) {
         self.last_baseline_tokens = None;
         self.last_baseline_index = None;
+        self.system_tool_overhead_tokens = 0;
     }
 
     /// Estimate current context size: baseline + chars/4 for trailing messages.
@@ -98,6 +113,9 @@ impl ContextTracker {
             estimated_tokens,
             budget_tokens,
             system_prompt_tokens,
+            tool_definition_tokens: self
+                .system_tool_overhead_tokens
+                .saturating_sub(system_prompt_tokens),
             context_window,
         }
     }
@@ -106,6 +124,7 @@ impl ContextTracker {
     pub fn reset(&mut self) {
         self.last_baseline_tokens = None;
         self.last_baseline_index = None;
+        self.system_tool_overhead_tokens = 0;
     }
 }
 
@@ -126,6 +145,7 @@ pub struct ContextBudgetSnapshot {
     pub estimated_tokens: usize,
     pub budget_tokens: usize,
     pub system_prompt_tokens: usize,
+    pub tool_definition_tokens: usize,
     pub context_window: usize,
 }
 
@@ -153,29 +173,11 @@ impl CompactionBudgetState {
         }
     }
 
-    /// Build from the context tracker's API-baseline estimate.
-    ///
-    /// The tracker estimate includes system prompt + tool definitions overhead
-    /// that compaction cannot reduce. Subtract `system_prompt_tokens` to
-    /// approximate the message-only portion, but never go below the pure
-    /// chars/4 estimate (which is the floor compaction can actually measure).
-    ///
-    /// This matters for images: the fixed 2k/image estimate can be far below
-    /// the real API cost, so the provider baseline keeps compaction aware of
-    /// the true context size.
-    pub fn from_tracker(
-        tracker: &ContextTracker,
-        messages: &[AgentMessage],
-        system_prompt_tokens: usize,
-    ) -> Self {
-        let tracker_estimate = tracker.estimate_context_tokens(messages);
-        let message_estimate = total_tokens(messages);
-        let estimated = tracker_estimate
-            .saturating_sub(system_prompt_tokens)
-            .max(message_estimate);
-        Self {
-            estimated_tokens: estimated,
-        }
+    /// Provider baseline should not force compaction decisions: usage can include
+    /// prompt-cache reads that make context appear much larger than compactable
+    /// message content. LLM-call UI still uses the tracker baseline separately.
+    pub fn from_tracker(_tracker: &ContextTracker, messages: &[AgentMessage]) -> Self {
+        Self::from_messages(messages)
     }
 }
 
@@ -204,17 +206,11 @@ pub struct ContextConfig {
     /// L1 and L2 both aim to reduce context to this fraction.
     /// Must be <= compact_trigger_pct. Default: 75.
     pub compact_target_pct: u8,
-    /// Maximum messages before L1 summarization is forced, even if the
-    /// token estimate is within budget. Guards against stale provider
-    /// baselines that would otherwise skip compaction.
-    /// Set to 0 to disable message-count trigger. Default: 80.
+    /// Maximum messages before L2 eviction drops stale middle context, even if
+    /// the token estimate is within budget. This keeps long sessions compact
+    /// and avoids accumulating low-value summaries forever.
+    /// Set to 0 to disable message-count eviction. Default: 80.
     pub max_messages: usize,
-    /// Hard message-count limit that forces L2 eviction (dropping middle
-    /// messages), even if the token estimate is within budget. This is the
-    /// last-resort guard against sessions that accumulate thousands of
-    /// non-compactable messages (e.g. steering prompts).
-    /// Must be >= max_messages. Set to 0 to disable. Default: 250.
-    pub max_messages_hard: usize,
 }
 
 impl Default for ContextConfig {
@@ -228,7 +224,6 @@ impl Default for ContextConfig {
             compact_trigger_pct: 80,
             compact_target_pct: 75,
             max_messages: 80,
-            max_messages_hard: 250,
         }
     }
 }

@@ -29,6 +29,7 @@ fn aggregator_ingests_llm_call_started() {
         message_count: 5,
         message_bytes: 1200,
         system_prompt_tokens: 300,
+        tool_definition_tokens: 0,
     }));
     assert_eq!(agg.llm_call_count, 1);
     assert_eq!(agg.system_prompt_tokens, 300);
@@ -279,6 +280,7 @@ fn aggregator_to_run_summary_produces_correct_data() {
         message_count: 3,
         message_bytes: 500,
         system_prompt_tokens: 200,
+        tool_definition_tokens: 0,
     }));
     agg.ingest(&TranscriptStats::LlmCallCompleted(LlmCallCompletedStats {
         turn: 1,
@@ -314,6 +316,7 @@ fn aggregator_to_run_summary_produces_correct_data() {
         message_count: 5,
         message_bytes: 800,
         system_prompt_tokens: 200,
+        tool_definition_tokens: 0,
     }));
     agg.ingest(&TranscriptStats::LlmCallCompleted(LlmCallCompletedStats {
         turn: 1,
@@ -370,6 +373,7 @@ fn aggregator_to_run_summary_from_stats_returns_none_without_run_finished() {
         message_count: 3,
         message_bytes: 500,
         system_prompt_tokens: 200,
+        tool_definition_tokens: 0,
     }));
     assert!(agg.to_run_summary_from_stats().is_none());
 }
@@ -385,6 +389,7 @@ fn aggregator_to_run_summary_from_stats_works_with_run_finished() {
         message_count: 3,
         message_bytes: 500,
         system_prompt_tokens: 200,
+        tool_definition_tokens: 0,
     }));
     agg.ingest(&TranscriptStats::RunFinished(RunFinishedStats {
         usage: UsageSummary {
@@ -424,6 +429,7 @@ fn aggregator_from_items_batch_ingest() {
             message_count: 1,
             message_bytes: 100,
             system_prompt_tokens: 50,
+            tool_definition_tokens: 0,
         })
         .to_item(),
         TranscriptStats::LlmCallCompleted(LlmCallCompletedStats {
@@ -480,6 +486,7 @@ fn aggregator_reset_clears_state() {
         message_count: 3,
         message_bytes: 500,
         system_prompt_tokens: 200,
+        tool_definition_tokens: 0,
     }));
     assert_eq!(agg.llm_call_count, 1);
 

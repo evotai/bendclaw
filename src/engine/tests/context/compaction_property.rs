@@ -29,7 +29,6 @@ fn arb_config() -> impl Strategy<Value = ContextConfig> {
             keep_first: first,
             tool_output_max_lines: max_lines,
             max_messages: 0,
-            max_messages_hard: 0,
             ..Default::default()
         })
 }
@@ -107,7 +106,7 @@ proptest! {
         let level = result.stats.level;
         if level == 0 {
             for action in &result.stats.actions {
-                prop_assert_eq!(action.method.clone(), CompactionMethod::LifecycleCleared);
+                prop_assert_eq!(action.method.clone(), CompactionMethod::LifecycleReclaimed);
             }
         } else {
             assert_actions_match_level(level, &result.stats.actions);
@@ -121,7 +120,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn compact_respects_budget_before_level3(
+    fn compact_reduces_or_preserves_tokens(
         pattern in arb_pattern(),
         pad in arb_pad(),
         tool_out in arb_tool_out(),
@@ -383,7 +382,7 @@ fn keep_first_preserves_multiple_leading_messages() {
     // keep_first=3 means msg-0(user), msg-1(user), msg-2(assistant) are protected.
     let messages = pat("u u a tr tr u").pad(10).tool_output(5_000).build();
     let config = ContextConfig {
-        max_context_tokens: 300, // very tight — forces level 3 + keep_within_budget
+        max_context_tokens: 300, // very tight — forces L2 drop + keep_within_budget
         system_prompt_tokens: 0,
         keep_recent: 1,
         keep_first: 3,

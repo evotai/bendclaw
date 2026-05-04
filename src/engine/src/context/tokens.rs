@@ -5,13 +5,14 @@
 //! models and ensures all subsystems (compaction, call stats, context
 //! tracking) agree on token counts.
 
+use crate::provider::ToolDefinition;
 use crate::types::*;
 
 /// Conservative fixed token estimate for images.
-/// Claude's actual cost is `width * height / 750` (up to ~5333 for 2000×2000).
-/// Using a fixed 2000 avoids underestimation that causes compaction to fire
-/// too late.
-const IMAGE_FIXED_TOKEN_ESTIMATE: usize = 2_000;
+/// Images are resized to 2000×2000 max before provider calls, and Claude's
+/// visual token formula is roughly `width * height / 750`, so use the maximum
+/// post-resize cost instead of a low placeholder.
+const IMAGE_FIXED_TOKEN_ESTIMATE: usize = 5_333;
 
 /// Estimate tokens for a text string using the tiktoken `o200k_base` encoding.
 pub fn estimate_tokens(text: &str) -> usize {
@@ -63,6 +64,17 @@ fn single_content_tokens(c: &Content) -> usize {
             name, arguments, ..
         } => estimate_tokens(name) + estimate_tokens(&arguments.to_string()) + 8,
     }
+}
+
+/// Estimate tokens for tool definitions.
+pub fn tool_definition_tokens(tools: &[ToolDefinition]) -> usize {
+    tools
+        .iter()
+        .map(|tool| match serde_json::to_string(tool) {
+            Ok(json) => estimate_tokens(&json),
+            Err(_) => estimate_tokens(&tool.name) + estimate_tokens(&tool.description),
+        })
+        .sum()
 }
 
 /// Compute pre-aggregated stats from LLM messages.

@@ -6,26 +6,25 @@
 //!
 //! Handles two message types:
 //! - **User messages**: truncate oversized old (non-pinned, non-recent) user
-//!   text (budget-gated). Images are never stripped.
+//!   text when over budget; old images are stripped only under severe pressure.
 //! - **Tool results**: policy-driven truncation via `ToolPolicy`.
-//!   Images in tool results are preserved.
+//!   Images in old tool results follow the same severe-pressure stripping rule.
 //!
 //! Strategy: `ToolPolicy` from `policy::tool_policy()`.
 //! Global thresholds control *when* a result is oversized; per-tool policy
 //! controls *how* it is handled.
 
-use std::collections::HashMap;
-
-use crate::context::compaction::compact::CompactionAction;
-use crate::context::compaction::compact::CompactionMethod;
-use crate::context::compaction::outline;
-use crate::context::compaction::pass::CompactContext;
-use crate::context::compaction::pass::PassResult;
+use super::truncate::*;
+use super::user::*;
+use crate::context::compaction::phase::PhaseContext;
+use crate::context::compaction::phase::PhaseResult;
 use crate::context::compaction::policy::tool_policy;
+use crate::context::compaction::CompactionAction;
+use crate::context::compaction::CompactionMethod;
 use crate::context::tokens::content_tokens;
 use crate::types::*;
 
-pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: usize) -> PassResult {
+pub fn run(messages: Vec<AgentMessage>, ctx: &PhaseContext, current_tokens: usize) -> PhaseResult {
     let tool_call_index = build_tool_call_index(&messages);
     let len = messages.len();
     let recent_boundary = len.saturating_sub(ctx.keep_recent);
@@ -263,10 +262,9 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
                 }
             }
 
-            // Tier 4: ImageStrip — strip images from tool results (budget-gated).
-            // When severely over budget (>150%), also strip from recent messages.
+            // Tier 4: ImageStrip — strip images only under severe pressure.
             let severely_over = running_tokens > ctx.budget + ctx.budget / 2;
-            if over_budget && (severely_over || !is_recent) {
+            if over_budget && severely_over {
                 let has_images = content.iter().any(|c| matches!(c, Content::Image { .. }));
                 if has_images {
                     let stripped: Vec<Content> = content
@@ -318,188 +316,8 @@ pub fn run(messages: Vec<AgentMessage>, ctx: &CompactContext, current_tokens: us
         }
     }
 
-    PassResult {
+    PhaseResult {
         messages: result,
         actions,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// User message classification
-// ---------------------------------------------------------------------------
-
-/// What to do with a user message during shrink.
-enum UserAction {
-    /// Over budget + oversized: truncate text
-    TruncateOversized,
-    /// Over budget + has images: strip images
-    StripImages,
-    /// No action needed
-    Keep,
-}
-
-/// Classify the action for a user message based on position and size.
-fn classify_user_action(
-    is_pinned: bool,
-    is_recent: bool,
-    running_tokens: usize,
-    budget: usize,
-    content: &[Content],
-    oversize_threshold: usize,
-) -> UserAction {
-    if is_pinned {
-        return UserAction::Keep;
-    }
-    // Severely over budget (>150%): strip images even from recent messages.
-    // This is the last resort when images dominate context and normal
-    // compaction (text-only) cannot bring it within budget.
-    let severely_over = running_tokens > budget + budget / 2;
-    if !is_recent {
-        let tokens = content_tokens(content);
-        if running_tokens > budget && tokens > oversize_threshold {
-            return UserAction::TruncateOversized;
-        }
-    }
-    if (severely_over || !is_recent)
-        && running_tokens > budget
-        && content.iter().any(|c| matches!(c, Content::Image { .. }))
-    {
-        return UserAction::StripImages;
-    }
-    UserAction::Keep
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Build an index from tool_call_id → ToolCall arguments.
-fn build_tool_call_index(messages: &[AgentMessage]) -> HashMap<String, serde_json::Value> {
-    let mut index = HashMap::new();
-    for msg in messages {
-        if let AgentMessage::Llm(Message::Assistant { content, .. }) = msg {
-            for c in content {
-                if let Content::ToolCall { id, arguments, .. } = c {
-                    index.insert(id.clone(), arguments.clone());
-                }
-            }
-        }
-    }
-    index
-}
-
-/// Byte limit for tool result text after line truncation.
-/// Catches cases where individual lines are very long (minified JSON/HTML).
-const COMPACTION_MAX_BYTES: usize = 15_000;
-
-/// Truncate content blocks using outline (if preferred) or head-tail,
-/// then apply a byte cap to catch long single-line content.
-fn truncate_content(
-    content: &[Content],
-    _tool_name: &str,
-    tool_call_id: &str,
-    tool_call_index: &HashMap<String, serde_json::Value>,
-    max_lines: usize,
-    prefer_outline: bool,
-) -> Vec<Content> {
-    content
-        .iter()
-        .map(|c| match c {
-            Content::Text { text } => {
-                let truncated = if prefer_outline {
-                    try_outline_or_truncate(text, tool_call_index, tool_call_id, max_lines)
-                } else {
-                    truncate_text_head_tail(text, max_lines)
-                };
-                // Second pass: byte cap (line truncation alone may not be
-                // enough when individual lines are very long).
-                let truncated =
-                    crate::tools::validation::truncate_tool_text(&truncated, COMPACTION_MAX_BYTES);
-                Content::Text { text: truncated }
-            }
-            Content::Image { .. } => c.clone(),
-            other => other.clone(),
-        })
-        .collect()
-}
-
-/// Try tree-sitter outline for read_file, fall back to head-tail.
-fn try_outline_or_truncate(
-    text: &str,
-    tool_call_index: &HashMap<String, serde_json::Value>,
-    tool_call_id: &str,
-    max_lines: usize,
-) -> String {
-    // Extract file path and extension from the tool call arguments
-    if let Some(args) = tool_call_index.get(tool_call_id) {
-        if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
-            let ext = std::path::Path::new(path_str)
-                .extension()
-                .and_then(|e| e.to_str());
-            if let Some(ext) = ext {
-                if let Some(outlined) =
-                    outline::extract_outline_from_read_file_output(text, ext, path_str)
-                {
-                    // Use outline only if it saves at least 10%
-                    let threshold = text.len() / 10;
-                    if outlined.len() + threshold < text.len() {
-                        return outlined;
-                    }
-                }
-            }
-        }
-    }
-
-    truncate_text_head_tail(text, max_lines)
-}
-
-/// Truncate text keeping first N/2 and last N/2 lines.
-pub fn truncate_text_head_tail(text: &str, max_lines: usize) -> String {
-    let lines: Vec<&str> = text.lines().collect();
-    if lines.len() <= max_lines {
-        return text.to_string();
-    }
-
-    let head = max_lines / 2;
-    let tail = max_lines - head;
-    let omitted = lines.len() - head - tail;
-
-    let mut result = lines[..head].join("\n");
-    result.push_str(&format!("\n\n[... {} lines truncated ...]\n\n", omitted));
-    result.push_str(&lines[lines.len() - tail..].join("\n"));
-    result
-}
-
-/// Detect whether outline or head-tail was used by checking content.
-fn detect_method(original: &[Content], truncated: &[Content]) -> CompactionMethod {
-    for t in truncated {
-        if let Content::Text { text } = t {
-            if text.contains("[Structural outline of") {
-                return CompactionMethod::Outline;
-            }
-            if text.contains("[... ") && text.contains(" lines truncated ...]") {
-                return CompactionMethod::HeadTail;
-            }
-        }
-    }
-    // If content changed but no marker detected, it was still capped
-    let orig_len: usize = original
-        .iter()
-        .map(|c| match c {
-            Content::Text { text } => text.len(),
-            _ => 0,
-        })
-        .sum();
-    let trunc_len: usize = truncated
-        .iter()
-        .map(|c| match c {
-            Content::Text { text } => text.len(),
-            _ => 0,
-        })
-        .sum();
-    if trunc_len < orig_len {
-        CompactionMethod::OversizeCapped
-    } else {
-        CompactionMethod::HeadTail
     }
 }

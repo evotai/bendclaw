@@ -1,15 +1,15 @@
-//! Shared types for compaction passes.
+//! Shared types for compaction phases.
 
-use super::compact::CompactionAction;
 use super::policy::CompactionPolicy;
+use super::types::CompactionAction;
 use crate::types::AgentMessage;
 
-/// Shared read-only context passed to every pass.
-pub struct CompactContext {
+/// Shared read-only context passed to every phase.
+pub struct PhaseContext {
     pub budget: usize,
-    /// L1 collapse trigger: when context exceeds this, L1 runs.
+    /// Collapse trigger: when context exceeds this, collapse runs.
     pub compact_trigger: usize,
-    /// Compaction target: L1 and L2 both aim to reduce context to this.
+    /// Compaction target: collapse and evict both aim to reduce context to this.
     pub compact_target: usize,
     pub keep_recent: usize,
     pub keep_first: usize,
@@ -17,8 +17,8 @@ pub struct CompactContext {
     pub policy: CompactionPolicy,
 }
 
-/// Output of a single pass.
-pub struct PassResult {
+/// Output of a single phase.
+pub struct PhaseResult {
     pub messages: Vec<AgentMessage>,
     pub actions: Vec<CompactionAction>,
 }

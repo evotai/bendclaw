@@ -100,6 +100,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
             message_bytes,
             estimated_context_tokens,
             system_prompt_tokens,
+            tool_definition_tokens,
             tool_count,
             message_stats,
             budget_tokens,
@@ -116,6 +117,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                     "message_bytes": message_bytes,
                     "estimated_context_tokens": estimated_context_tokens,
                     "system_prompt_tokens": system_prompt_tokens,
+                    "tool_definition_tokens": tool_definition_tokens,
                     "tool_count": tool_count,
                     "message_stats": message_stats,
                     "budget_tokens": budget_tokens,
@@ -167,6 +169,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
             estimated_tokens,
             budget_tokens,
             system_prompt_tokens,
+            tool_definition_tokens,
             context_window,
             message_stats,
         } => {
@@ -177,6 +180,7 @@ pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
                     "estimated_tokens": estimated_tokens,
                     "budget_tokens": budget_tokens,
                     "system_prompt_tokens": system_prompt_tokens,
+                    "tool_definition_tokens": tool_definition_tokens,
                     "context_window": context_window,
                     "message_stats": message_stats,
                 }

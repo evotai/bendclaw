@@ -7,9 +7,14 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use opentelemetry::trace::Span;
+use opentelemetry::trace::SpanContext;
+use opentelemetry::trace::SpanId;
 use opentelemetry::trace::SpanKind;
 use opentelemetry::trace::Status;
 use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::TraceFlags;
+use opentelemetry::trace::TraceId;
+use opentelemetry::trace::TraceState;
 use opentelemetry::trace::Tracer;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::Array;
@@ -64,6 +69,8 @@ struct LlmSpanState {
 pub struct TelemetrySubscriber {
     config: TelemetryConfig,
     session_id: String,
+    /// Deterministic trace ID derived from session_id — all turns share this.
+    session_trace_id: TraceId,
     root_span: Option<Context>,
     /// Context with root span active — parent for LLM spans.
     root_cx: Option<Context>,
@@ -81,9 +88,11 @@ impl TelemetrySubscriber {
         if !config.is_enabled() {
             return None;
         }
+        let session_trace_id = trace_id_from_session(session_id);
         Some(Self {
             config: config.clone(),
             session_id: session_id.to_string(),
+            session_trace_id,
             root_span: None,
             root_cx: None,
             llm_spans: HashMap::new(),
@@ -93,8 +102,25 @@ impl TelemetrySubscriber {
     }
 
     /// Called on AgentStart — creates the root invoke_agent span.
+    ///
+    /// The span is parented under a remote span context whose trace ID is
+    /// derived from the session ID, so every conversation in the same session
+    /// reports under the same trace.
     pub fn on_agent_start(&mut self) {
         let tracer = opentelemetry::global::tracer_provider().tracer("evot");
+
+        // Build a remote parent context that carries the session-level trace ID.
+        // Using a remote span context means the SDK inherits the trace ID
+        // without creating an actual parent span.
+        let remote_sc = SpanContext::new(
+            self.session_trace_id,
+            SpanId::INVALID,
+            TraceFlags::SAMPLED,
+            true, // remote
+            TraceState::default(),
+        );
+        let parent_cx = Context::current().with_remote_span_context(remote_sc);
+
         let span = tracer
             .span_builder("invoke_agent evot")
             .with_kind(SpanKind::Internal)
@@ -103,9 +129,9 @@ impl TelemetrySubscriber {
                 KeyValue::new(GEN_AI_CONVERSATION_ID, self.session_id.clone()),
                 KeyValue::new("session.id", self.session_id.clone()),
             ])
-            .start(&tracer);
+            .start_with_context(&tracer, &parent_cx);
 
-        let root_cx = Context::current_with_span(span);
+        let root_cx = parent_cx.with_span(span);
         self.root_span = Some(root_cx.clone());
         self.root_cx = Some(root_cx);
     }
@@ -342,6 +368,26 @@ impl Drop for TelemetrySubscriber {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Derive a deterministic OTel `TraceId` from a session ID.
+///
+/// All conversations within the same session will share this trace ID,
+/// making them appear as spans under a single trace in the backend.
+fn trace_id_from_session(session_id: &str) -> TraceId {
+    use std::hash::Hash;
+    use std::hash::Hasher;
+    // Use two SipHash passes with different seeds to fill 16 bytes.
+    let mut h1 = std::collections::hash_map::DefaultHasher::new();
+    session_id.hash(&mut h1);
+    let a = h1.finish();
+    let mut h2 = std::collections::hash_map::DefaultHasher::new();
+    a.hash(&mut h2);
+    let b = h2.finish();
+    let mut buf = [0u8; 16];
+    buf[..8].copy_from_slice(&a.to_le_bytes());
+    buf[8..].copy_from_slice(&b.to_le_bytes());
+    TraceId::from_bytes(buf)
+}
 
 /// Classify error strings into stable OTel error.type categories.
 fn classify_error(err: &str) -> &'static str {

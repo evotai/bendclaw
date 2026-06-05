@@ -130,6 +130,7 @@
       /* content blocks (eval .cb styling) */
       .cb { margin: 6px 0; }
       .cb-h { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; font-family: var(--mono); font-size: 11px; }
+      .cb-pos { color: var(--muted); font-size: 10px; }
       .cb-label { color: var(--fg); font-weight: 600; }
       .cb-thinking .cb-label { color: var(--muted); }
       .cb-text .cb-label { color: var(--fg); }
@@ -254,11 +255,11 @@
       </div>
       <div class="detail" id="detail"><div class="empty">Select a request to view its trace.</div></div>
     </div>
-    <details class="sc-section sc-collapsible" open id="sec-sequence">
+    <details class="sc-section sc-collapsible" id="sec-sequence">
       <summary class="sc-title">Tool Call Sequence</summary>
       <div id="tool-sequence"></div>
     </details>
-    <details class="sc-section sc-collapsible" open id="sec-spans">
+    <details class="sc-section sc-collapsible" id="sec-spans">
       <summary class="sc-title">Span Details</summary>
       <div id="span-details"></div>
     </details>
@@ -285,18 +286,17 @@
       }
       function getToolSummary(name, input) {
         const cat = getToolCategory(name);
-        const info = TOOL_CATEGORIES[cat];
         const a = input || {};
         let code = "";
         if (cat === "execute") code = String(a.command || a.cmd || "").split("\n")[0].slice(0, 120);
-        else if (cat === "read" || cat === "write" || cat === "edit") code = a.file_path || a.path || "file";
+        else if (cat === "read" || cat === "write" || cat === "edit") code = a.file_path || a.path || "";
         else if (cat === "search") code = String(a.pattern || a.query || a.path || "").slice(0, 80);
         else {
           for (const k of Object.keys(a)) {
             if (typeof a[k] === "string" && a[k].length < 120) { code = a[k]; break; }
           }
         }
-        return { icon: info.icon, prefix: info.label || name, code };
+        return { icon: "\u2699", prefix: `tool_use \u00B7 ${name}`, code };
       }
 
       function esc(s) {
@@ -332,12 +332,13 @@
         return String(n);
       }
       // --- tool-call row: collapsed summary + expandable input/result ---
-      function renderToolCallRow(tc, result) {
+      function renderToolCallRow(tc, result, posLabel) {
         const summary = getToolSummary(tc.name, tc.input);
         const row = el("div", "tc-row");
         const head = el("button", "tc-head");
         const timing = result && result.duration_ms ? fmtDur(result.duration_ms) : "";
         head.innerHTML =
+          (posLabel ? `<span class="cb-pos">${esc(posLabel)}</span>` : "") +
           `<span class="tc-icon">${summary.icon}</span>` +
           `<span class="tc-prefix">${esc(summary.prefix)}</span>` +
           (summary.code ? ` <code class="tc-code">${esc(summary.code)}</code>` : "") +
@@ -376,29 +377,42 @@
         return row;
       }
 
-      function renderBlock(blk) {
+      function renderContentRow(label, content, posLabel, isError) {
+        const row = el("div", "tc-row");
+        const head = el("button", "tc-head");
+        const lines = content ? content.split("\n").length : 0;
+        head.innerHTML =
+          (posLabel ? `<span class="cb-pos">${esc(posLabel)}</span>` : "") +
+          `<span class="tc-prefix">${esc(label)}</span>` +
+          (isError ? ' <span class="tc-err">error</span>' : "") +
+          ` <span class="tc-time">${lines} line${lines === 1 ? "" : "s"}</span>` +
+          `<span class="tc-chevron">\u25B6</span>`;
+        const detail = el("div", "tc-detail");
+        detail.style.display = "none";
+        const pre = el("pre"); pre.textContent = content || "(empty)";
+        detail.appendChild(pre);
+        head.addEventListener("click", () => {
+          const open = detail.style.display === "none";
+          detail.style.display = open ? "" : "none";
+          row.classList.toggle("tc-open", open);
+          head.querySelector(".tc-chevron").textContent = open ? "\u25BC" : "\u25B6";
+        });
+        row.appendChild(head); row.appendChild(detail);
+        return row;
+      }
+
+      function renderBlock(blk, posLabel) {
         if (blk.type === "thinking") {
-          const c = el("div", "cb cb-thinking");
-          const h = el("div", "cb-h"); h.appendChild(el("span", "cb-label", "\u{1F4AD} thinking")); c.appendChild(h);
-          const pre = el("pre"); pre.textContent = blk.text; c.appendChild(pre);
-          return c;
+          return renderContentRow("thinking", blk.text, posLabel, false);
         }
         if (blk.type === "text") {
-          const c = el("div", "cb cb-text");
-          const h = el("div", "cb-h"); h.appendChild(el("span", "cb-label", "\u{1F4AC} text")); c.appendChild(h);
-          const pre = el("pre"); pre.textContent = blk.text; c.appendChild(pre);
-          return c;
+          return renderContentRow("text", blk.text, posLabel, false);
         }
         if (blk.type === "tool_use") {
-          return renderToolCallRow(blk, null);
+          return renderToolCallRow(blk, null, posLabel);
         }
         if (blk.type === "tool_result") {
-          const c = el("div", "cb cb-text");
-          const h = el("div", "cb-h");
-          h.appendChild(el("span", "cb-label" + (blk.is_error ? " cb-err" : ""), blk.is_error ? "\u2699 tool result \u00B7 error" : "\u2699 tool result"));
-          c.appendChild(h);
-          const pre = el("pre"); pre.textContent = blk.content || "(empty)"; c.appendChild(pre);
-          return c;
+          return renderContentRow("tool_result", blk.content, posLabel, blk.is_error);
         }
         return null;
       }
@@ -509,27 +523,14 @@
           }));
         }
 
-        // Split the reconstructed input context into conversation messages vs
-        // incoming tool results, mirroring how the array is sent to the model.
+        // Reconstructed input messages sent to the model, in original order.
         const inputMsgs = d.input_messages || [];
-        const ctxBlocks = inputMsgs.filter(b => b.type !== "tool_result");
-        const inResults = inputMsgs.filter(b => b.type === "tool_result");
-        if (ctxBlocks.length) {
-          input.appendChild(reqFold("messages", `${ctxBlocks.length} message${ctxBlocks.length === 1 ? "" : "s"}`, body => {
-            for (const b of ctxBlocks) { const node = renderBlock(b); if (node) body.appendChild(node); }
+        if (inputMsgs.length) {
+          input.appendChild(reqFold("messages", `${inputMsgs.length} message${inputMsgs.length === 1 ? "" : "s"}`, body => {
+            for (const b of inputMsgs) { const node = renderBlock(b, `msg[${b.mi}].${b.role}`); if (node) body.appendChild(node); }
           }));
         }
         root.appendChild(input);
-
-        // TOOL RESULTS section: observations fed into this call from the prior
-        // turn's tool calls. These are model input, not output.
-        if (inResults.length) {
-          const exec = ioSection("io-execution", "\u26A1 TOOL RESULTS", `${inResults.length} result${inResults.length === 1 ? "" : "s"}`);
-          const flow = el("div", "msg-flow");
-          for (const r of inResults) { const node = renderBlock(r); if (node) flow.appendChild(node); }
-          exec.appendChild(flow);
-          root.appendChild(exec);
-        }
 
         // OUTPUT section: what the model generated this call — thinking, text,
         // and tool calls in natural order. Tool calls carry no inline result;
@@ -546,7 +547,7 @@
           outFlow.appendChild(e);
         }
         const blocks = d.blocks || [];
-        for (const blk of blocks) { const node = renderBlock(blk); if (node) outFlow.appendChild(node); }
+        for (let i = 0; i < blocks.length; i++) { const node = renderBlock(blocks[i], `content[${i}]`); if (node) outFlow.appendChild(node); }
         if (!blocks.length && !d.error_message) {
           outFlow.appendChild(el("p", "muted", "No response captured."));
         }

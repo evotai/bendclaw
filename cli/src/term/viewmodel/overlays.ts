@@ -47,7 +47,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
   const lines: StyledLine[] = [
     border,
     line(plain('')),
-    line(colored('Only showing models from configured providers. Use /login to add providers.', 'yellow')),
+    line(colored('Only showing models from configured providers. Run evot login to add cloud models.', 'yellow')),
     line(plain('')),
     buildModelSearchLine(state.query, width),
     line(plain('')),
@@ -63,33 +63,42 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
   )
   const end = Math.min(start + maxVisible, state.items.length)
 
-  let visibleProvider: string | undefined
+  let visibleListRowSeen = false
   for (let index = start; index < end; index++) {
     const item = state.items[index]!
-    const provider = item.detail?.trim()
-    if (provider && provider !== visibleProvider) {
-      if (visibleProvider !== undefined) lines.push(line(plain('')))
-      lines.push(line(dim(`  ${provider}`)))
-      visibleProvider = provider
+    // Group headings are explicit rows, so the server's own label is shown
+    // verbatim rather than reverse-engineered from a row's detail text.
+    if (item.header) {
+      // The viewport can begin halfway through a large group, with its header
+      // scrolled offscreen. Still separate the next group from those rows.
+      if (visibleListRowSeen) lines.push(line(plain('')))
+      lines.push(line(dim(`  ${item.label}`)))
+      visibleListRowSeen = true
+      continue
     }
 
     const focused = index === state.focusIndex
     lines.push(line(
       focused ? colored('→ ', 'cyan') : plain('  '),
       focused ? colored(item.label, 'cyan') : plain(item.label),
+      ...(item.detail ? [dim(`  ${item.detail}`)] : []),
       ...(item.selected ? [colored(' ✓', 'green')] : []),
     ))
+    visibleListRowSeen = true
   }
 
   if (start > 0 || end < state.items.length) {
-    lines.push(line(dim(`  (${state.focusIndex + 1}/${state.items.length})`)))
+    // Headings are not choices, so the counter reflects models only.
+    const models = state.items.filter(item => !item.header)
+    const position = models.indexOf(state.items[state.focusIndex]!) + 1
+    lines.push(line(dim(`  (${position}/${models.length})`)))
   }
 
   if (state.items.length === 0) {
     lines.push(line(dim('  No matching models')))
   } else {
     const selected = state.items[state.focusIndex]
-    if (selected) {
+    if (selected && !selected.header) {
       lines.push(line(plain('')))
       lines.push(line(dim(`  Model Name: ${selected.label}`)))
     }

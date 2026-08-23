@@ -34,21 +34,87 @@ else
   error "Either curl or wget is required but neither is installed"
 fi
 
+# Retries cover transient network faults. Resume (--continue) avoids restarting
+# a multi-megabyte download from zero, but only helps when a partial exists and
+# the host honours byte ranges; download_verified falls back to a clean fetch
+# when it does not.
+DOWNLOAD_ATTEMPTS=3
+
+# curl's exit code for "server won't resume", which is a permanent property of
+# that host rather than a transient fault. wget has no distinct code for it, so
+# it relies on the attempt-count fallback in download_verified instead.
+CURL_NO_RESUME_EXIT=33
+
 download() {
-  _url="$1"; _output="$2"
+  _url="$1"; _output="$2"; _resume="${3:-yes}"
   if [ "$DOWNLOADER" = "curl" ]; then
-    curl -fsSL -o "$_output" "$_url"
+    if [ "$_resume" = "yes" ]; then
+      curl -fsSL --retry 2 --retry-delay 1 --retry-connrefused \
+        --connect-timeout 20 --continue-at - -o "$_output" "$_url"
+    else
+      curl -fsSL --retry 2 --retry-delay 1 --retry-connrefused \
+        --connect-timeout 20 -o "$_output" "$_url"
+    fi
   else
-    wget -q -O "$_output" "$_url"
+    if [ "$_resume" = "yes" ]; then
+      wget -q --tries=3 --timeout=20 --continue -O "$_output" "$_url"
+    else
+      wget -q --tries=3 --timeout=20 -O "$_output" "$_url"
+    fi
   fi
+}
+
+# Download, verify checksum, and unpack, retried as a unit.
+#
+# Resume is only attempted when a partial is actually on disk, so a first
+# download never pays for it. Three failure modes are distinguished:
+#   - server refuses byte ranges: discard the partial, retry without resume
+#   - transfer died mid-flight: keep the partial, next attempt resumes it
+#   - payload is complete but bad (checksum or extraction): discard it, since
+#     resuming corrupt bytes would fail identically forever
+download_verified() {
+  _url="$1"; _output="$2"; _sha_url="$3"; _extract_to="$4"
+  _attempt=1
+  while : ; do
+    if [ -s "$_output" ]; then _resume=yes; else _resume=no; fi
+    # `|| _status=$?` keeps the failure inside a list: a bare call that returns
+    # non-zero would abort the whole script under `set -e`.
+    _status=0
+    download "$_url" "$_output" "$_resume" || _status=$?
+
+    if [ "$_status" -eq 0 ]; then
+      # A failed tar can leave valid-looking partial files behind. Recreate the
+      # extraction root before every attempt so only the archive that just
+      # passed checksum verification can supply the installed artifacts.
+      if verify_checksum "$_output" "$_sha_url" \
+        && rm -rf "$_extract_to" \
+        && mkdir -p "$_extract_to" \
+        && tar -xzf "$_output" -C "$_extract_to"; then
+        return 0
+      fi
+      rm -f "$_output"
+    elif [ "$_resume" = yes ] && { [ "$_status" -eq "$CURL_NO_RESUME_EXIT" ] || [ "$_attempt" -ge 2 ]; }; then
+      # Either the host said it cannot resume, or resume was tried once and did
+      # not help. Drop the partial so the next attempt starts clean instead of
+      # replaying the same rejection.
+      rm -f "$_output"
+    fi
+
+    if [ "$_attempt" -ge "$DOWNLOAD_ATTEMPTS" ]; then
+      return 1
+    fi
+    warn "  Download failed, retrying ($((_attempt + 1))/${DOWNLOAD_ATTEMPTS})..."
+    sleep "$_attempt"
+    _attempt=$((_attempt + 1))
+  done
 }
 
 fetch() {
   _url="$1"
   if [ "$DOWNLOADER" = "curl" ]; then
-    curl -fsSL "$_url"
+    curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 20 "$_url"
   else
-    wget -qO- "$_url"
+    wget -q --tries=3 --timeout=20 -O- "$_url"
   fi
 }
 
@@ -70,10 +136,22 @@ case "$ARCH" in
 esac
 
 case "${os}-${arch}" in
-  linux-x86_64)   TARGET="x86_64-unknown-linux-gnu" ;;
-  linux-aarch64)  TARGET="aarch64-unknown-linux-gnu" ;;
-  darwin-x86_64)  TARGET="x86_64-apple-darwin" ;;
-  darwin-aarch64) TARGET="aarch64-apple-darwin" ;;
+  linux-x86_64)
+    TARGET="x86_64-unknown-linux-gnu"
+    BINDING="evot-napi.linux-x64-gnu.node"
+    ;;
+  linux-aarch64)
+    TARGET="aarch64-unknown-linux-gnu"
+    BINDING="evot-napi.linux-arm64-gnu.node"
+    ;;
+  darwin-x86_64)
+    TARGET="x86_64-apple-darwin"
+    BINDING="evot-napi.darwin-x64.node"
+    ;;
+  darwin-aarch64)
+    TARGET="aarch64-apple-darwin"
+    BINDING="evot-napi.darwin-arm64.node"
+    ;;
 esac
 
 # --- Version resolution ---
@@ -97,52 +175,104 @@ SHA_URL="${URL}.sha256"
 info "Installing ${BINARY} v${VERSION} for ${TARGET}..."
 
 TMP="$(mktemp -d)"
+PACKAGE_DIR="$TMP/package"
 BINARY_STAGE=""
-LIB_STAGE=""
+BINDING_STAGE=""
+BINARY_BACKUP=""
+BINDING_BACKUP=""
+STATE_STAGE=""
+STATE_BACKUP=""
+STATE_PATH=""
+TRANSACTION_ACTIVE=no
+HAD_BINARY=no
+HAD_BINDING=no
+HAD_STATE=no
+
+# Restore the previous install after any failure that occurs once replacement
+# starts. The executable is restored last, so an observable binary always has
+# its corresponding binding and bookkeeping in place.
+rollback_install() {
+  [ "$TRANSACTION_ACTIVE" = yes ] || return 0
+
+  if [ "$HAD_BINDING" = yes ] && [ -f "$BINDING_BACKUP" ]; then
+    mv -f "$BINDING_BACKUP" "$LIB_DIR/$BINDING" || true
+    BINDING_BACKUP=""
+  else
+    rm -f "$LIB_DIR/$BINDING" || true
+  fi
+
+  if [ "$HAD_STATE" = yes ] && [ -f "$STATE_BACKUP" ]; then
+    mv -f "$STATE_BACKUP" "$STATE_PATH" || true
+    STATE_BACKUP=""
+  else
+    [ -z "$STATE_PATH" ] || rm -f "$STATE_PATH" || true
+  fi
+
+  if [ "$HAD_BINARY" = yes ] && [ -f "$BINARY_BACKUP" ]; then
+    mv -f "$BINARY_BACKUP" "$INSTALL_DIR/$BINARY" || true
+    BINARY_BACKUP=""
+  else
+    rm -f "$INSTALL_DIR/$BINARY" || true
+  fi
+
+  TRANSACTION_ACTIVE=no
+}
+
 cleanup() {
+  rollback_install
   rm -rf "$TMP"
   [ -z "$BINARY_STAGE" ] || rm -f "$BINARY_STAGE"
-  [ -z "$LIB_STAGE" ] || rm -rf "$LIB_STAGE"
+  [ -z "$BINDING_STAGE" ] || rm -f "$BINDING_STAGE"
+  [ -z "$BINARY_BACKUP" ] || rm -f "$BINARY_BACKUP"
+  [ -z "$BINDING_BACKUP" ] || rm -f "$BINDING_BACKUP"
+  [ -z "$STATE_STAGE" ] || rm -f "$STATE_STAGE"
+  [ -z "$STATE_BACKUP" ] || rm -f "$STATE_BACKUP"
 }
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
 
-download "$URL" "$TMP/$ASSET"
+# SHA256 verification (best-effort: skip if .sha256 file not published, which
+# is the case for releases cut before checksums were added).
+verify_checksum() {
+  _file="$1"; _sha_url="$2"
+  _expected="$(fetch "$_sha_url" 2>/dev/null || true)"
+  [ -n "$_expected" ] || return 0
+  _expected="$(echo "$_expected" | awk '{print $1}')"
 
-# SHA256 verification (best-effort: skip if .sha256 file not published)
-EXPECTED_SHA="$(fetch "$SHA_URL" 2>/dev/null || true)"
-if [ -n "$EXPECTED_SHA" ]; then
-  EXPECTED_SHA="$(echo "$EXPECTED_SHA" | awk '{print $1}')"
   if command -v sha256sum > /dev/null 2>&1; then
-    ACTUAL_SHA="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
+    _actual="$(sha256sum "$_file" | awk '{print $1}')"
   elif command -v shasum > /dev/null 2>&1; then
-    ACTUAL_SHA="$(shasum -a 256 "$TMP/$ASSET" | awk '{print $1}')"
+    _actual="$(shasum -a 256 "$_file" | awk '{print $1}')"
   else
-    ACTUAL_SHA=""
+    return 0
   fi
-  if [ -n "$ACTUAL_SHA" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-    error "Checksum verification failed (expected $EXPECTED_SHA, got $ACTUAL_SHA)"
+
+  if [ "$_actual" != "$_expected" ]; then
+    warn "  Checksum mismatch (expected $_expected, got $_actual)"
+    return 1
   fi
   info "Checksum verified"
-fi
+}
+
+download_verified "$URL" "$TMP/$ASSET" "$SHA_URL" "$PACKAGE_DIR" \
+  || error "Failed to download and verify ${ASSET} after ${DOWNLOAD_ATTEMPTS} attempts"
 
 # --- Validate package ---
 
-tar -xzf "$TMP/$ASSET" -C "$TMP"
-
-[ -f "$TMP/bin/$BINARY" ] || error "Release archive does not contain bin/$BINARY"
-chmod +x "$TMP/bin/$BINARY"
+[ -f "$PACKAGE_DIR/bin/$BINARY" ] || error "Release archive does not contain bin/$BINARY"
+[ -f "$PACKAGE_DIR/lib/$BINDING" ] || error "Release archive does not contain lib/$BINDING for $TARGET"
+chmod +x "$PACKAGE_DIR/bin/$BINARY"
 
 # Preserve the signatures produced by the release workflow. Clearing download
 # attributes is safe, but re-signing here can make macOS reject a reused inode.
 if [ "$os" = "darwin" ]; then
-  xattr -cr "$TMP/bin/$BINARY" 2>/dev/null || true
-  if [ -d "$TMP/lib" ]; then
-    xattr -cr "$TMP/lib" 2>/dev/null || true
+  xattr -cr "$PACKAGE_DIR/bin/$BINARY" 2>/dev/null || true
+  if [ -d "$PACKAGE_DIR/lib" ]; then
+    xattr -cr "$PACKAGE_DIR/lib" 2>/dev/null || true
   fi
 fi
 
-CANDIDATE_VERSION="$(EVOT_HOME="$TMP" "$TMP/bin/$BINARY" --version 2>&1)" \
+CANDIDATE_VERSION="$(EVOT_HOME="$PACKAGE_DIR" "$PACKAGE_DIR/bin/$BINARY" --version 2>&1)" \
   || error "Downloaded evot failed to start: $CANDIDATE_VERSION"
 [ "$CANDIDATE_VERSION" = "evot v$VERSION" ] \
   || error "Downloaded version mismatch (expected evot v$VERSION, got $CANDIDATE_VERSION)"
@@ -157,41 +287,57 @@ esac
 LIB_DIR="$EVOT_HOME_DIR/lib"
 mkdir -p "$LIB_DIR"
 
-# Stage on the destination filesystems, then rename into place. This keeps the
-# old executable usable while /update runs and always gives macOS a fresh inode.
+# Stage the exact target pair and its bookkeeping on their destination
+# filesystems. A release archive may contain other support files, but only the
+# binding selected by the runtime loader is version-coupled to this executable.
 BINARY_STAGE="$INSTALL_DIR/.evot.new.$$"
-LIB_STAGE="$LIB_DIR/.evot-install.$$"
-mkdir -p "$LIB_STAGE"
-cp "$TMP/bin/$BINARY" "$BINARY_STAGE"
+BINDING_STAGE="$LIB_DIR/.${BINDING}.new.$$"
+BINARY_BACKUP="$INSTALL_DIR/.evot.old.$$"
+BINDING_BACKUP="$LIB_DIR/.${BINDING}.old.$$"
+STATE_PATH="$EVOT_HOME_DIR/install-state.json"
+STATE_STAGE="$EVOT_HOME_DIR/.install-state.json.$$"
+STATE_BACKUP="$EVOT_HOME_DIR/.install-state.old.$$"
+cp "$PACKAGE_DIR/bin/$BINARY" "$BINARY_STAGE"
+cp "$PACKAGE_DIR/lib/$BINDING" "$BINDING_STAGE"
 chmod +x "$BINARY_STAGE"
-
-if [ -d "$TMP/lib" ]; then
-  for f in "$TMP"/lib/*; do
-    [ -f "$f" ] || continue
-    cp "$f" "$LIB_STAGE/"
-  done
-fi
+cat > "$STATE_STAGE" <<EOF
+{
+  "version": "$VERSION",
+  "target": "$TARGET",
+  "lib": ["$BINDING"],
+  "installed_at": $(date -u +%s)000
+}
+EOF
 
 if [ "$os" = "darwin" ]; then
   xattr -cr "$BINARY_STAGE" 2>/dev/null || true
-  xattr -cr "$LIB_STAGE" 2>/dev/null || true
+  xattr -cr "$BINDING_STAGE" 2>/dev/null || true
   codesign --verify --strict "$BINARY_STAGE" >/dev/null 2>&1 \
     || error "Downloaded evot has an invalid macOS signature"
-  for f in "$LIB_STAGE"/*.node; do
-    [ -f "$f" ] || continue
-    codesign --verify --strict "$f" >/dev/null 2>&1 \
-      || error "Downloaded $(basename "$f") has an invalid macOS signature"
-  done
+  codesign --verify --strict "$BINDING_STAGE" >/dev/null 2>&1 \
+    || error "Downloaded $BINDING has an invalid macOS signature"
 fi
 
-# Install bindings first and the executable last. mv performs an atomic rename
-# within each destination directory instead of overwriting an existing inode.
-for f in "$LIB_STAGE"/*; do
-  [ -f "$f" ] || continue
-  mv -f "$f" "$LIB_DIR/$(basename "$f")"
-done
-rmdir "$LIB_STAGE"
-LIB_STAGE=""
+# Copy backups before replacing any artifact. If backup creation fails, the
+# installed set is still untouched. Once replacement begins, the EXIT trap
+# restores all three files on every error path, including failed startup or
+# metadata commit.
+if [ -f "$INSTALL_DIR/$BINARY" ]; then
+  cp -p "$INSTALL_DIR/$BINARY" "$BINARY_BACKUP"
+  HAD_BINARY=yes
+fi
+if [ -f "$LIB_DIR/$BINDING" ]; then
+  cp -p "$LIB_DIR/$BINDING" "$BINDING_BACKUP"
+  HAD_BINDING=yes
+fi
+if [ -f "$STATE_PATH" ]; then
+  cp -p "$STATE_PATH" "$STATE_BACKUP"
+  HAD_STATE=yes
+fi
+
+TRANSACTION_ACTIVE=yes
+mv -f "$BINDING_STAGE" "$LIB_DIR/$BINDING"
+BINDING_STAGE=""
 mv -f "$BINARY_STAGE" "$INSTALL_DIR/$BINARY"
 BINARY_STAGE=""
 
@@ -199,6 +345,17 @@ INSTALLED_VERSION="$(EVOT_HOME="$EVOT_HOME_DIR" "$INSTALL_DIR/$BINARY" --version
   || error "Installed evot failed to start: $INSTALLED_VERSION"
 [ "$INSTALLED_VERSION" = "evot v$VERSION" ] \
   || error "Installed version mismatch (expected evot v$VERSION, got $INSTALLED_VERSION)"
+
+# Commit bookkeeping only after the new pair proves runnable. A failed rename
+# remains inside the rollback window and restores the previous complete set.
+mv -f "$STATE_STAGE" "$STATE_PATH"
+STATE_STAGE=""
+
+TRANSACTION_ACTIVE=no
+rm -f "$BINARY_BACKUP" "$BINDING_BACKUP" "$STATE_BACKUP"
+BINARY_BACKUP=""
+BINDING_BACKUP=""
+STATE_BACKUP=""
 
 ok "  ✓ Installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
 

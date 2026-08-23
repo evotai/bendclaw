@@ -95,6 +95,8 @@ export interface BannerOptions {
   releaseNotes?: string[] | null
   /** Update available info */
   updateAvailable?: { version: string } | null
+  /** Install bookkeeping mismatch worth surfacing (see update/state.ts). */
+  installDrift?: string | null
   /** Fully resolved, ordered skill directories from the agent. */
   skillsDirs?: string[]
 }
@@ -111,6 +113,7 @@ export function renderBanner(opts: BannerOptions): string {
     serverState,
     releaseNotes,
     updateAvailable,
+    installDrift,
     skillsDirs,
   } = opts
 
@@ -127,22 +130,6 @@ export function renderBanner(opts: BannerOptions): string {
   if (detailLines.length > 0) detailLines.push('')
   detailLines.push(chalk.dim('  Esc interrupt  ·  / commands  ·  Ctrl+O expand  ·  Ctrl+D exit'))
 
-  if (updateAvailable) {
-    detailLines.push('')
-    const border = chalk.hex('#ffff00')('  ' + '─'.repeat(Math.max(1, Math.min(columns - 4, 72))))
-    detailLines.push(border)
-    detailLines.push(chalk.bold.hex('#ffff00')('  Update Available'))
-    detailLines.push(
-      chalk.hex(MUTED)(`  New version ${updateAvailable.version} is available. Run `) +
-        chalk.hex('#8abeb7')('evot update'),
-    )
-    detailLines.push(
-      chalk.hex(MUTED)('  Changelog: ') +
-        chalk.hex('#8abeb7')('https://github.com/evotai/evot/releases'),
-    )
-    detailLines.push(border)
-  }
-
   if (releaseNotes && releaseNotes.length > 0) {
     detailLines.push('')
     detailLines.push(chalk.bold.hex('#8abeb7')("  What's New:"))
@@ -155,6 +142,20 @@ export function renderBanner(opts: BannerOptions): string {
     const envPath = configInfo.envPath ? formatPath(configInfo.envPath) : '.env'
     detailLines.push('')
     detailLines.push(chalk.hex('#ffff00')(`  ⚠ No API key — edit ${envPath}`))
+  }
+
+  if (updateAvailable) {
+    detailLines.push('')
+    detailLines.push(
+      chalk.hex('#8abeb7')(`  ↑ evot v${updateAvailable.version} available`) +
+        chalk.hex(MUTED)(' — run /update'),
+    )
+  }
+
+  if (installDrift) {
+    detailLines.push('')
+    detailLines.push(chalk.hex('#ffff00')(`  ⚠ Install mismatch: ${installDrift}`))
+    detailLines.push(chalk.hex(MUTED)('    run /update to reinstall'))
   }
 
   const fullBannerLines = wrapBannerLines(

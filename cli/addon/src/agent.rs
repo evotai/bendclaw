@@ -362,17 +362,36 @@ impl NapiAgent {
 
     fn collect_models(&self, config: &evot::conf::Config) -> Vec<serde_json::Value> {
         let llm = self.agent.llm();
+        let free_meta = crate::cloud_model_meta();
+        // The server names and orders its own groups; membership decides which
+        // providers are cloud, so no name is hardcoded here.
+        let cloud_groups = crate::cloud_provider_groups();
         let mut models = Vec::new();
         for (provider, profile) in &config.providers {
             for model in &profile.models {
                 let model = model.trim();
                 if !model.is_empty() {
-                    models.push(serde_json::json!({
+                    let mut entry = serde_json::json!({
                         "provider": provider,
                         "protocol": profile.protocol.to_string(),
                         "model": model,
                         "spec": format!("{provider}:{model}"),
-                    }));
+                    });
+                    if let Some((label, order)) = cloud_groups.get(provider) {
+                        entry["group_label"] = serde_json::json!(label);
+                        entry["group_order"] = serde_json::json!(order);
+                        if let Some(meta) = free_meta.get(model) {
+                            entry["free"] = serde_json::json!({
+                                "display_name": meta.display_name,
+                                "tagline": meta.tagline,
+                                "is_new": meta.is_new,
+                                "tier": meta.tier,
+                            });
+                        } else {
+                            entry["free"] = serde_json::json!({});
+                        }
+                    }
+                    models.push(entry);
                 }
             }
         }

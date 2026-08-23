@@ -15,7 +15,7 @@ import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
 import { formatCompactionCompleted } from '../render/verbose.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
-import { Agent, QueryStream, fastExit, type CompactionTask, type ManualCompactionOutcome, type SessionMeta, type ConfigInfo, type QueuedPrompt } from '../native/index.js'
+import { Agent, QueryStream, fastExit, authNotices, type CompactionTask, type ManualCompactionOutcome, type SessionMeta, type ConfigInfo, type QueuedPrompt } from '../native/index.js'
 import { createInitialState, type AppState } from './app/state.js'
 import { assistantToolCalls } from './app/assistant-content.js'
 import type { UIAssistantBlock } from './app/types.js'
@@ -40,6 +40,7 @@ import {
   type PromptVMInput,
   type ViewBlock,
 } from './viewmodel/index.js'
+import { createAdSlotState, tickAdSlot, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, type AdSlotState } from './viewmodel/ad-slot.js'
 import { HistoryRenderCache } from './viewmodel/history-cache.js'
 import { Committer } from './committer.js'
 import {
@@ -94,7 +95,7 @@ import {
   type AskUserParams,
 } from './host-tools.js'
 import { extractPlanItems, type PlanModeItem } from './plan-mode.js'
-import { currentModelSpec, formatModelLabel, formatModelOptionDetail, modelOptions, selectModelOption, sortModelOptionsForSelector } from './app/provider.js'
+import { currentModelSpec, formatModelLabel, formatModelOptionDetail, formatModelOptionLabel, isCloudModel, modelGroupLabel, modelOptions, selectModelOption, sortModelOptionsForSelector } from './app/provider.js'
 import chalk from 'chalk'
 import {
   shouldCollapse,
@@ -174,6 +175,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   // The composer paints its own caret, so the idle blink is ours to drive.
   const caretBlink = new CaretBlink({ onChange: () => renderer.requestRender() })
+  // Ad slot ticker: repaints at the scroll step so the marquee moves even
+  // when the user is idle. Skipped while an overlay owns the screen.
+  const adSlotTimer = setInterval(() => {
+    if (overlay.kind !== 'none') return
+    renderer.requestRender()
+  }, 250)
+  ;(adSlotTimer as unknown as { unref?: () => void }).unref?.()
 
   let appState: AppState = {
     ...createInitialState(agent.model, agent.cwd),
@@ -218,6 +226,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let exitHint = false
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
+  const adSlot: AdSlotState = createAdSlotState(
+    authNotices().map(n => ({
+      id: n.id,
+      kind: n.kind,
+      title: n.title,
+      body: n.body_md ?? '',
+    })),
+  )
+  // Logged-in users see the slot from the start — no need to wait for a
+  // task to finish. The live sync below refreshes content first.
+  if (adSlot.notices.length > 0 || adSlot.ads.length > 0) {
+    triggerAdSlot(adSlot, Date.now())
+  }
   // Promise-based bridge for the ask-user overlay. Both the `ask_user` host
   // tool and the plan-review flow present questions through the same overlay
   // and await the user's answers here. Resolves with the collected answers, or
@@ -406,6 +427,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   })
   updateMgr.start()
 
+  // Install bookkeeping. bin/evot reports its own version but the napi bindings
+  // report nothing, so a half-finished install is otherwise silent until a
+  // binding fails to load. Checked once at startup; never blocks.
+  let installDrift: string | null = null
+  try {
+    const { checkInstallHealth } = await import('../update/state.js')
+    const health = checkInstallHealth(appVersion)
+    if (health.kind === 'drift') installDrift = health.reason
+  } catch { /* best effort */ }
+
   const historyMgr = new HistoryManager(agent.cwd)
   const entries = historyMgr.load()
   historyState = createHistoryState(entries)
@@ -483,12 +514,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // Release notes (shown once after update)
   let releaseNotes: string[] | null = null
   try {
-    const { shouldShowReleaseNotes } = await import('../update/seen-version.js')
-    if (shouldShowReleaseNotes(appVersion)) {
+    const { markReleaseNotesSeen, releaseNotesPending } = await import('../update/seen-version.js')
+    if (releaseNotesPending(appVersion)) {
       const { parseReleaseNotes } = await import('../update/notes.js')
-      const { fetchLatestStable } = await import('../update/check.js')
-      fetchLatestStable().then((info) => {
-        if (info?.body) {
+      const { fetchReleaseNotesFor } = await import('../update/check.js')
+      // Notes for the build that is running, not whatever is newest. Keep the
+      // version pending when offline; only a matching release record proves the
+      // metadata was handled and may be marked seen.
+      fetchReleaseNotesFor(appVersion).then((info) => {
+        if (!info) return
+        markReleaseNotesSeen(appVersion)
+        if (info.body) {
           releaseNotes = parseReleaseNotes(info.body)
           renderer.requestRender()
         }
@@ -507,6 +543,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       serverState,
       releaseNotes,
       updateAvailable,
+      installDrift,
       skillsDirs: agent.skillsDirs(),
     })
   }
@@ -659,6 +696,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Match pi's sibling order before editorContainer: pending messages, then
     // status. The queue manager suppresses the duplicate pending-message copy
     // because the selector itself is displaying those same entries.
+    // Ad slot lifecycle: one tick per frame drives enter/steady/exit phases;
+    // the dedicated timer repaints while idle so animations play.
+    const adSlotTick = tickAdSlot(adSlot, Date.now())
     const preEditorBlocks: ViewBlock[] = []
     const queueManagerOpen = overlay.kind === 'selector' && overlay.state.title === 'Prompt queue'
     const queueLines = queueManagerOpen
@@ -676,6 +716,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (spinnerBlock) spinnerBlock = { ...spinnerBlock, marginTop: 0 }
     }
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
+    // The ad slot is an idle-time surface: hidden while a task is running
+    // (spinner visible) so it never competes with live output.
+    if (adSlotTick.content && !isLoading && !spinnerBlock) {
+      preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols))
+    }
 
     // A selector replaces only pi's editorContainer. Its preceding queue/status
     // siblings and following footer sibling remain in normal document flow.
@@ -1244,6 +1289,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       isLoading = false
       streamMachine = null
       stopSpinner()
+      // Task finished — surface the ad/notice slot with the freshest campaigns.
+      try { await syncCloudNow(true) } catch {}
+      triggerAdSlot(adSlot, Date.now())
       renderer.requestRender()
     }
 
@@ -1991,6 +2039,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const pendingCommand = resolveCommand(text)
     if (pendingCommand.kind === 'resolved' && pendingCommand.name === '/model') {
       try {
+        await syncCloudNow(true)
         configInfo = agent.configInfo()
       } catch (err) {
         commitSystem('sys-model-config', chalk.red(`  Failed to reload model config: ${errorText(err)}`))
@@ -2166,16 +2215,28 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (models.length > 1) {
         const activeSpec = currentModelSpec(configInfo, agent.model)
         const sortedModels = sortModelOptionsForSelector(models, activeSpec)
-        const items: SelectorItem[] = sortedModels.map(option => {
-          const detail = formatModelOptionDetail(option)
-          return {
-            label: option.model,
-            detail,
-            id: option.spec,
-            selected: option.spec === activeSpec,
-            searchText: `${option.model} ${detail} ${option.protocol ?? ''}`,
+        const items: SelectorItem[] = []
+        let lastGroup: string | undefined
+        for (const option of sortedModels) {
+          // One heading per group, using the label the server pushed.
+          const group = modelGroupLabel(option)
+          if (group !== lastGroup) {
+            items.push({ label: group, header: true, focusable: false, group })
+            lastGroup = group
           }
-        })
+          const detail = formatModelOptionDetail(option)
+          const label = formatModelOptionLabel(option)
+          items.push({
+            label,
+            // Omit empty details so cloud rows render as a single clean line.
+            ...(detail ? { detail } : {}),
+            id: option.spec,
+            group,
+            selected: option.spec === activeSpec,
+            // Searchable by both names, so the real id still finds it.
+            searchText: `${label} ${option.model} ${detail} ${option.protocol ?? ''}`,
+          })
+        }
         overlay = {
           kind: 'selector',
           state: selectorFocusOn(
@@ -2201,6 +2262,81 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
    * ranked list with reasons, then opens the resume selector on the ranked
    * sessions. Falls back to the literal-filter selector on failure.
    */
+  /** In-REPL login: run the device-code flow, then reload model config in
+   *  place so free models appear without restarting. If no provider was
+   *  configured, the cloud provider becomes active immediately. */
+  /** Re-read the synced catalog: refresh model config and the ad/notice slot.
+   *  Called after login, by the live-sync poller, and on demand. */
+  function reloadCloudContent(): void {
+    const before = adSlot.notices.length
+    const fresh = authNotices().map(n => ({
+      id: n.id,
+      kind: n.kind,
+      priority: n.priority,
+      title: n.title,
+      body: n.body_md ?? '',
+    }))
+    // Refresh campaigns in place — runtime slot state (whether the slot has
+    // been triggered, and where rotation is) must survive a content refresh.
+    const keep = {
+      seenNoticeIds: adSlot.seenNoticeIds,
+      triggered: adSlot.triggered,
+      currentId: adSlot.currentId,
+      shownAt: adSlot.shownAt,
+      rotationDueAt: adSlot.rotationDueAt,
+    }
+    Object.assign(adSlot, createAdSlotState(fresh), keep)
+    try { configInfo = agent.configInfo() } catch {}
+  }
+
+  // Live sync: re-fetch the cloud catalog so new notices, ads and models
+  // appear in-session without a restart. Silent when nothing changed.
+  let lastSyncedAt = 0
+  let syncing = false
+  const CLOUD_SYNC_MS = 30_000
+  const syncTimer = setInterval(() => {
+    void syncCloudNow()
+  }, CLOUD_SYNC_MS)
+  ;(syncTimer as unknown as { unref?: () => void }).unref?.()
+
+  async function syncCloudNow(force = false): Promise<void> {
+    if (syncing || (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS)) return
+    syncing = true
+    try {
+      const { authSyncModels, authWhoami } = await import('../native/index.js')
+      if (!await authWhoami()) return
+      // Any server-pushed group counts, not just the free tier, so granted
+      // models and split protocol groups are announced too.
+      const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
+      const knownModelIds = new Set(cloudModels().map(m => m.model))
+      const knownNoticeIds = new Set(adSlot.notices.map(n => n.id))
+      await authSyncModels()
+      lastSyncedAt = Date.now()
+      reloadCloudContent()
+      const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
+      const addedNotices = authNotices().filter(n => !knownNoticeIds.has(n.id))
+      if (addedModels.length > 0) {
+        const names = addedModels.slice(0, 3)
+          .map(m => formatModelOptionLabel(m))
+          .join(', ')
+        const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
+        commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
+      }
+      if (addedNotices.length > 0) {
+        // The slot itself announces it: erase what's showing, type the new one.
+        queueAdSlotTransition(adSlot, addedNotices[0]!.id)
+      }
+      if (addedModels.length > 0 || addedNotices.length > 0) renderer.requestRender()
+    } catch {
+      // offline / not logged in / server unreachable — stay silent
+    } finally {
+      syncing = false
+    }
+  }
+
+  // First pull as soon as the prompt is up, so ads/models aren't 30s stale.
+  setTimeout(() => { void syncCloudNow() }, 400).unref?.()
+
   async function handleSemanticResume(query: string) {
     commitSystem('sys-rsem-busy', chalk.dim('  searching sessions…'))
     renderer.requestRender()
@@ -2608,6 +2744,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     compactionTask?.abort()
     streamRef?.abort()
     stopSpinner()
+    clearInterval(adSlotTimer)
+    clearInterval(syncTimer)
     caretBlink.dispose()
     gitInfo.dispose()
     updateMgr.cleanup()

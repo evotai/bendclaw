@@ -1,0 +1,233 @@
+import { describe, test, expect } from 'bun:test'
+
+import {
+  createAdSlotState,
+  tickAdSlot,
+  triggerAdSlot,
+  buildAdSlotBlocks,
+  AD_ENTER_MS,
+  AD_STEADY_MS,
+  AD_GAP_MS,
+  ERASE_STEP_MS,
+} from '../src/term/viewmodel/ad-slot.js'
+import type { AdContent } from '../src/term/viewmodel/ad-slot.js'
+
+const notice: AdContent = { id: 'n1', kind: 'notice', priority: 10, title: 'New model: Kimi K3', body: 'fast inference' }
+const ad1: AdContent = { id: 'a1', kind: 'ad', title: 'Ad One', body: 'try it' }
+const ad2: AdContent = { id: 'a2', kind: 'ad', title: 'Ad Two', body: 'also try it' }
+
+const T0 = 1_000_000
+
+
+describe('ad slot lifecycle', () => {
+  test('hidden until first trigger, then shows and keeps showing', () => {
+    const state = createAdSlotState([notice, ad1])
+    expect(tickAdSlot(state, T0).content).toBeNull()          // idle before login/task
+    triggerAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 1000)
+    expect(tick.content?.id).toBe('n1')
+    // still visible far into the future — no auto-dismiss
+    expect(tickAdSlot(state, T0 + 10 * AD_STEADY_MS).content).not.toBeNull()
+  })
+
+  test('progress advances monotonically through the steady phase', () => {
+    const state = createAdSlotState([notice])
+    triggerAdSlot(state, T0)
+    let last = 0
+    for (let t = T0; t <= T0 + AD_STEADY_MS / 2; t += AD_STEADY_MS / 20) {
+      const { progress, phase } = tickAdSlot(state, t)
+      if (phase === 'erasing') break
+      expect(progress).toBeGreaterThanOrEqual(last)
+      last = progress
+    }
+  })
+
+  test('content cycles the whole playlist and wraps, with an erase between items', () => {
+    const state = createAdSlotState([notice, ad1, ad2])
+    triggerAdSlot(state, T0)
+    const order: string[] = []
+    let sawErasing = false
+    // Walk many rotations at fine granularity so short erase frames are seen.
+    for (let t = T0; t < T0 + AD_STEADY_MS * 8; t += 30) {
+      const r = tickAdSlot(state, t)
+      if (r.phase === 'erasing') sawErasing = true
+      if (r.phase === 'steady' && r.content && order[order.length - 1] !== r.content.id) {
+        order.push(r.content.id)
+      }
+    }
+    expect(sawErasing).toBe(true)
+    // Every campaign appears, and the list wraps instead of dead-ending.
+    expect(order.slice(0, 4)).toEqual(['n1', 'a1', 'a2', 'n1'])
+    expect(order.length).toBeGreaterThan(5)
+  })
+
+  test('an unseen notice preempts a showing ad', () => {
+    const state = createAdSlotState([ad1])
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 1000).content?.id).toBe('a1')
+
+    // A notice arriving mid-session outranks the ad once it has settled.
+    state.notices.push({ id: 'n-urgent', kind: 'notice', priority: 99, title: 'urgent', body: '' })
+    let seen: string | undefined
+    for (let t = T0 + 2000; t < T0 + AD_STEADY_MS; t += 250) {
+      const tick = tickAdSlot(state, t)
+      if (tick.content?.id === 'n-urgent') { seen = tick.content.id; break }
+    }
+    expect(seen).toBe('n-urgent')
+  })
+
+  test('idle without trigger: slot stays hidden indefinitely', () => {
+    const state = createAdSlotState([ad1])
+    for (const t of [T0, T0 + 60_000, T0 + 600_000]) {
+      expect(tickAdSlot(state, t).content).toBeNull()
+    }
+  })
+
+  test('erase wipes the line character by character, then holds blank before the next item', () => {
+    const state = createAdSlotState([notice, ad1])
+    triggerAdSlot(state, T0)
+    // let the notice type out and cross its window so a transition is queued
+    let t = T0
+    for (; t < T0 + AD_STEADY_MS + 100; t += 250) tickAdSlot(state, t)
+
+    // sample the erase phase: rendered width must shrink monotonically
+    const widths: number[] = []
+    for (let u = t; u < t + 40 * ERASE_STEP_MS; u += ERASE_STEP_MS) {
+      const tick = tickAdSlot(state, u)
+      if (tick.phase !== 'erasing') break
+      const blocks = buildAdSlotBlocks(state, tick, 200, u)
+      widths.push(blocks[0]!.lines[1]!.spans!.map(s => s.text).join('').trim().length)
+    }
+    expect(widths.length).toBeGreaterThan(3)
+    for (let i = 1; i < widths.length; i++) {
+      expect(widths[i]!).toBeLessThanOrEqual(widths[i - 1]!)
+    }
+    expect(widths[widths.length - 1]!).toBe(0)   // ends blank
+  })
+
+  test('gap keeps the slot blank between two items', () => {
+    const state = createAdSlotState([notice, ad1])
+    triggerAdSlot(state, T0)
+    let t = T0
+    for (; t < T0 + AD_STEADY_MS + 100; t += 250) tickAdSlot(state, t)
+    // find when erasing finished
+    let eraseEnd = t
+    for (let u = t; u < t + 60 * ERASE_STEP_MS; u += ERASE_STEP_MS) {
+      if (tickAdSlot(state, u).phase !== 'erasing') { eraseEnd = u; break }
+      eraseEnd = u
+    }
+    // mid-gap the line renders empty while the old content is still pinned
+    const mid = tickAdSlot(state, eraseEnd - AD_GAP_MS / 2)
+    if (mid.phase === 'erasing') {
+      const text = buildAdSlotBlocks(state, mid, 200, eraseEnd - AD_GAP_MS / 2)[0]!
+        .lines[1]!.spans!.map(s => s.text).join('').trim()
+      expect(text).toBe('')
+    }
+  })
+})
+
+describe('buildAdSlotBlocks rendering', () => {
+  test('renders a single ticker line between two rules', () => {
+    const state = createAdSlotState([notice, ad1])
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 15_000)
+    expect(tick.phase).toBe('steady')
+    const blocks = buildAdSlotBlocks(state, tick, 100)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0]!.lines.length).toBe(3)   // rule + ticker + rule
+    const text = blocks[0]!.lines.map(l => (l.spans ?? []).map(s => s.text).join('')).join('\n')
+    expect(text).toContain('New model: Kimi K3')
+    expect(text).not.toContain('Notice:')
+  })
+
+  test('ticker shows title and body, nothing else', () => {
+    const state = createAdSlotState([ad1])
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 15_000)
+    const text = buildAdSlotBlocks(state, tick, 200)
+      .flatMap(b => b.lines.map(l => (l.spans ?? []).map(s => s.text).join(''))).join('')
+    expect(text).toContain('Ad One')
+    expect(text).toContain('try it')
+    // No kind label, no CTA arrow — just the copy.
+    expect(text).not.toContain('Ad:')
+    expect(text).not.toContain('\u2197')
+  })
+
+  test('typewriter reveals characters over time then holds', async () => {
+    const { typedLength, TYPE_STEP_MS } = await import('../src/term/viewmodel/ad-slot.js')
+    expect(typedLength(1000, 1000)).toBe(0)
+    expect(typedLength(1000, 1000 + TYPE_STEP_MS * 5)).toBe(5)
+    // monotonic
+    let last = -1
+    for (let t = 0; t <= 100; t += 10) {
+      const len = typedLength(0, t)
+      expect(len).toBeGreaterThanOrEqual(last)
+      last = len
+    }
+  })
+
+  test('typing starts empty and fills in as frames pass', async () => {
+    const { typedLength, TYPE_STEP_MS } = await import('../src/term/viewmodel/ad-slot.js')
+    const state = createAdSlotState([ad1])
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0)
+
+    // early frame: only a few characters visible
+    const early = buildAdSlotBlocks(state, tickAdSlot(state, T0 + TYPE_STEP_MS * 3), 200, T0 + TYPE_STEP_MS * 3)
+    const earlyText = early[0]!.lines[1]!.spans!.map(x => x.text).join('')
+    expect(earlyText.length).toBeLessThan(20)
+
+    // long after typing finished: the whole line is visible
+    const later = buildAdSlotBlocks(state, tickAdSlot(state, T0 + TYPE_STEP_MS * 500), 200, T0 + TYPE_STEP_MS * 500)
+    const laterText = later[0]!.lines[1]!.spans!.map(x => x.text).join('')
+    expect(laterText).toContain('Ad One')
+    expect(laterText).toContain('try it')
+    expect(laterText).not.toContain('Ad:')
+  })
+
+  test('short content fits without scrolling artifacts', () => {
+    const state = createAdSlotState([notice])
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 15_000)
+    const blocks = buildAdSlotBlocks(state, tick, 200)
+    const text = blocks[0]!.lines[1]!.spans!.map(s => s.text).join('')
+    expect(text).toContain('New model: Kimi K3')
+    expect(text).not.toContain('Notice:')
+  })
+
+  test('erasing keeps the rules and blanks only the text line', () => {
+    const state = createAdSlotState([notice, ad1])
+    triggerAdSlot(state, T0)
+    const tick = { content: notice, phase: 'erasing' as const, progress: 0 }
+    // shownAt is far in the past, so every character is already wiped
+    const blocks = buildAdSlotBlocks(state, tick, 100, T0 + 60_000)
+    expect(blocks[0]!.lines.length).toBe(3)   // rule + blank ticker + rule
+    const text = blocks[0]!.lines[1]!.spans!.map(s => s.text).join('').trim()
+    expect(text).toBe('')
+  })
+
+  test('gone renders nothing; narrow terminal renders nothing', () => {
+    const state = createAdSlotState([notice, ad1])
+    const gone = { content: null, phase: 'gone' as const, progress: 0 }
+    expect(buildAdSlotBlocks(state, gone, 100)).toEqual([])
+    const tick = tickAdSlot(state, T0 + 15_000)
+    expect(buildAdSlotBlocks(state, tick, 20)).toEqual([])
+  })
+
+  test('every rendered line passes styledLineToAnsi without crashing', async () => {
+    const { styledLineToAnsi } = await import('../src/term/viewmodel/types.js')
+    for (const cols of [100, 60, 31]) {
+      const state = createAdSlotState([notice, ad1])
+      triggerAdSlot(state, T0)
+      for (const t of [T0 + 50, T0 + 15_000, T0 + AD_STEADY_MS - 100]) {
+        const tick = tickAdSlot(state, t)
+        for (const b of buildAdSlotBlocks(state, tick, cols)) {
+          for (const l of b.lines) expect(() => styledLineToAnsi(l)).not.toThrow()
+        }
+      }
+    }
+  })
+})

@@ -169,7 +169,12 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
     const result = await runUpdate(version())
     switch (result.kind) {
       case 'up_to_date':
-        ctx.commitSystem('sys-upd-ok', '  ✓ evot is up to date.')
+        ctx.commitSystem(
+          'sys-upd-ok',
+          result.staleReason
+            ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
+            : '  ✓ evot is up to date.',
+        )
         break
       case 'updated': {
         const lines: string[] = [`  ✓ updated ${result.from} → ${result.to}. restart evot to apply.`]

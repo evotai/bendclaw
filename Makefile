@@ -137,6 +137,10 @@ install: build-cli
 		codesign --force --sign - "$$BIN_STAGE"; \
 	fi; \
 	mv -f "$$BIN_STAGE" "$(HOME)/.evotai/bin/evot"
+	@# A local build is not a tracked release. Drop any install-state.json left
+	@# by install.sh so the startup drift check reports 'unknown' (quiet) instead
+	@# of comparing this dev binary against a recorded release version.
+	@rm -f "$(HOME)/.evotai/install-state.json"
 	@INSTALL_DIR="$(HOME)/.evotai/bin"; \
 	ENV_FILE="$(HOME)/.evotai/evot.env"; \
 	echo ""; \

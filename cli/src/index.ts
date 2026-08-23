@@ -20,13 +20,49 @@ async function main() {
       await runPrompt(opts)
       break
 
+    case 'login': {
+      const { runLogin } = await import('./commands/login.js')
+      const loggedIn = await runLogin()
+      // Login completed → drop straight into the REPL so the user lands in
+      // the product instead of back at the shell. Failures exit inside runLogin.
+      if (!loggedIn) { process.exitCode = 1; break }
+      const agent = await createAgent(opts)
+      const { startRepl } = await import('./term/repl.js')
+      await startRepl({
+        agent,
+        resumeSessionId: opts.resume,
+        continueLatest: opts.continueLatest,
+        serverPort: opts.port,
+        envFile: opts.envFile,
+      })
+      break
+    }
+
+    case 'logout': {
+      const { runLogout } = await import('./commands/login.js')
+      await runLogout()
+      break
+    }
+
+    case 'whoami': {
+      const { runWhoami } = await import('./commands/login.js')
+      process.exitCode = await runWhoami()
+      break
+    }
+
     case 'update': {
       const { runUpdate } = await import('./update/index.js')
       const { version } = await import('./native/index.js')
       console.log('  checking for updates...')
       const result = await runUpdate(version())
       switch (result.kind) {
-        case 'up_to_date': console.log('  ✓ evot is up to date.'); break
+        case 'up_to_date':
+          console.log(
+            result.staleReason
+              ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
+              : '  ✓ evot is up to date.',
+          )
+          break
         case 'updated': {
           console.log(`  ✓ updated ${result.from} → ${result.to}`)
           if (result.notes && result.notes.length > 0) {

@@ -232,51 +232,45 @@ fn process_sse_event(
                     text: String::new(),
                 });
             }
-            match data.content_block {
-                AnthropicContentBlock::Text { .. } => {
-                    state.content.push(Content::Text {
-                        text: String::new(),
-                    });
-                }
-                AnthropicContentBlock::Thinking { .. } => {
-                    state.content.push(Content::Thinking {
-                        thinking: String::new(),
-                        metadata: None,
-                    });
-                }
+            let block = match data.content_block {
+                AnthropicContentBlock::Text { .. } => Content::Text {
+                    text: String::new(),
+                },
+                AnthropicContentBlock::Thinking { .. } => Content::Thinking {
+                    thinking: String::new(),
+                    metadata: None,
+                },
                 AnthropicContentBlock::ToolUse { id, name, .. } => {
-                    state.content.push(Content::ToolCall {
-                        id: id.clone(),
-                        name: name.clone(),
-                        arguments: serde_json::Value::Object(Default::default()),
-                        metadata: None,
-                    });
                     let _ = tx.send(StreamEvent::ToolCallStart {
                         content_index: idx,
+                        id: id.clone(),
+                        name: name.clone(),
+                    });
+                    Content::ToolCall {
                         id,
                         name,
-                    });
+                        arguments: serde_json::Value::Object(Default::default()),
+                        metadata: None,
+                    }
                 }
-                // Server-side model fallback (e.g. fable-5 → opus-4-8). Record
-                // the substitute model so the response reports what actually
-                // served the request, and keep a placeholder for alignment.
                 AnthropicContentBlock::Fallback { to } => {
                     if let Some(model) = to.and_then(|t| t.model) {
                         if !model.is_empty() {
                             state.fallback_model = Some(model);
                         }
                     }
-                    state.content.push(Content::Text {
+                    Content::Text {
                         text: String::new(),
-                    });
+                    }
                 }
-                // Unknown block type: keep a placeholder so later indices stay
-                // aligned.
-                AnthropicContentBlock::Other => {
-                    state.content.push(Content::Text {
-                        text: String::new(),
-                    });
-                }
+                AnthropicContentBlock::Other => Content::Text {
+                    text: String::new(),
+                },
+            };
+            if state.content.len() == idx {
+                state.content.push(block);
+            } else if let Some(slot) = state.content.get_mut(idx) {
+                *slot = block;
             }
         }
         "content_block_delta" => {

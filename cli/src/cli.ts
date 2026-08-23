@@ -1,7 +1,7 @@
 import type { Agent } from './native/index.js'
 
 export interface CliOptions {
-  command: 'repl' | 'serve' | 'prompt' | 'update'
+  command: 'repl' | 'serve' | 'prompt' | 'update' | 'login' | 'logout' | 'whoami'
   model?: string
   prompt?: string
   port?: number
@@ -43,6 +43,10 @@ export async function parseArgs(argv: string[]): Promise<CliOptions> {
       opts.command = 'update'
       continue
     }
+
+    if (arg === 'login') { opts.command = 'login'; continue }
+    if (arg === 'logout') { opts.command = 'logout'; continue }
+    if (arg === 'whoami') { opts.command = 'whoami'; continue }
 
     if ((arg === '-p' || arg === '--prompt') && argv[i + 1]) {
       opts.command = 'prompt'

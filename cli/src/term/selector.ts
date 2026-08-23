@@ -290,21 +290,24 @@ function applyFilter(state: SelectorState, query: string): SelectorState {
   }
 
   if (state.presentation === 'model') {
-    const providerOrder = new Map<string, number>()
+    // Groups keep their configured order while filtering, so matches stay under
+    // the heading they belong to.
+    const groupOrder = new Map<string, number>()
     for (const item of state.allItems) {
-      const provider = item.detail ?? ''
-      if (!providerOrder.has(provider)) providerOrder.set(provider, providerOrder.size)
+      const group = item.group ?? ''
+      if (!groupOrder.has(group)) groupOrder.set(group, groupOrder.size)
     }
-    const filtered = state.allItems
+    const matched = state.allItems
       .filter(item => !item.header)
       .map((item, index) => ({ item, index, score: modelFuzzyScore(query, item) }))
       .filter((entry): entry is { item: SelectorItem; index: number; score: number } => entry.score !== null)
       .sort((left, right) => {
-        const leftProvider = providerOrder.get(left.item.detail ?? '') ?? Number.MAX_SAFE_INTEGER
-        const rightProvider = providerOrder.get(right.item.detail ?? '') ?? Number.MAX_SAFE_INTEGER
-        return leftProvider - rightProvider || left.score - right.score || left.index - right.index
+        const leftGroup = groupOrder.get(left.item.group ?? '') ?? Number.MAX_SAFE_INTEGER
+        const rightGroup = groupOrder.get(right.item.group ?? '') ?? Number.MAX_SAFE_INTEGER
+        return leftGroup - rightGroup || left.score - right.score || left.index - right.index
       })
       .map(entry => entry.item)
+    const filtered = insertGroupHeaders(state.allItems, matched)
     const focusIndex = firstFocusable(filtered)
     return { ...state, query, items: filtered, focusIndex, scrollOffset: ensureVisible(0, focusIndex, filtered.length) }
   }
@@ -340,6 +343,29 @@ function restoreGroupHeaders(allItems: SelectorItem[], matched: SelectorItem[]):
     if (!matchedIds.has(item.id ?? item.label)) return []
     return [matched.find(candidate => (candidate.id ?? candidate.label) === (item.id ?? item.label)) ?? item]
   })
+}
+
+/** Insert group headings without reordering, so ranked matches keep their
+ *  order. Groups are already contiguous when matches are sorted by group. */
+function insertGroupHeaders(allItems: SelectorItem[], matched: SelectorItem[]): SelectorItem[] {
+  if (!matched.some(item => item.group)) return matched
+
+  const headers = new Map<string, SelectorItem>()
+  for (const item of allItems) {
+    if (item.header && item.group) headers.set(item.group, item)
+  }
+
+  const withHeaders: SelectorItem[] = []
+  let current: string | undefined
+  for (const item of matched) {
+    if (item.group && item.group !== current) {
+      current = item.group
+      const header = headers.get(item.group)
+      if (header) withHeaders.push(header)
+    }
+    withHeaders.push(item)
+  }
+  return withHeaders
 }
 
 function withContext(item: SelectorItem, query: string): SelectorItem {

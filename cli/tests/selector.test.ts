@@ -118,8 +118,10 @@ describe('renderSelector via viewmodel', () => {
   test('renders the pi model selector as a full-width editor replacement', () => {
     const state = {
       ...createSelectorState('Models', [
-        { label: 'grok-4.5', detail: 'openai', selected: true },
-        { label: 'gpt-5.6-sol', detail: 'droid' },
+        { label: 'openai', header: true, focusable: false, group: 'openai' },
+        { label: 'grok-4.5', group: 'openai', selected: true },
+        { label: 'droid', header: true, focusable: false, group: 'droid' },
+        { label: 'gpt-5.6-sol', group: 'droid' },
       ]),
       presentation: 'model' as const,
       circularNavigation: true,
@@ -131,14 +133,15 @@ describe('renderSelector via viewmodel', () => {
     expect(lines[1]).toBe('─'.repeat(40))
     expect(lines[2]).toBe('')
     expect(lines[3]).toBe('Only showing models from configured')
-    expect(lines[4]).toBe('providers. Use /login to add providers.')
-    expect(lines[6]).toStartWith('>  ')
-    expect(lines[8]).toBe('  openai')
-    expect(lines[9]).toBe('→ grok-4.5 ✓')
-    expect(lines[10]).toBe('')
-    expect(lines[11]).toBe('  droid')
-    expect(lines[12]).toBe('  gpt-5.6-sol')
-    expect(lines[14]).toBe('  Model Name: grok-4.5')
+    expect(lines[4]).toBe('providers. Run evot login to add cloud')
+    expect(lines[5]).toBe('models.')
+    expect(lines[7]).toStartWith('>  ')
+    expect(lines[9]).toBe('  openai')
+    expect(lines[10]).toBe('→ grok-4.5 ✓')
+    expect(lines[11]).toBe('')
+    expect(lines[12]).toBe('  droid')
+    expect(lines[13]).toBe('  gpt-5.6-sol')
+    expect(lines[15]).toBe('  Model Name: grok-4.5')
     expect(lines.at(-1)).toBe('─'.repeat(40))
     expect(lines.join('\n')).not.toContain('Models  2')
     expect(lines.join('\n')).not.toContain('enter select')
@@ -147,8 +150,10 @@ describe('renderSelector via viewmodel', () => {
   test('model filtering keeps provider groups without repeated badges', () => {
     let state = {
       ...createSelectorState('Models', [
-        { label: 'grok-4.5', detail: 'openai', searchText: 'grok-4.5 openai' },
-        { label: 'gpt-5.6-sol', detail: 'droid', searchText: 'gpt-5.6-sol droid' },
+        { label: 'openai', header: true, focusable: false, group: 'openai' },
+        { label: 'grok-4.5', group: 'openai', searchText: 'grok-4.5 openai' },
+        { label: 'droid', header: true, focusable: false, group: 'droid' },
+        { label: 'gpt-5.6-sol', group: 'droid', searchText: 'gpt-5.6-sol droid' },
       ]),
       presentation: 'model' as const,
     }
@@ -161,13 +166,16 @@ describe('renderSelector via viewmodel', () => {
     expect(text).not.toContain('[droid]')
   })
 
-  test('model selector renders one weak header per provider with blank group separators', () => {
+  test('model selector renders one weak header per group with blank separators', () => {
+    // Headings are explicit rows, so a group name is shown once, verbatim.
     const state = {
       ...createSelectorState('Models', [
-        { label: 'gpt-5.6-sol', detail: 'openai', selected: true },
-        { label: 'grok-4.5', detail: 'openai' },
-        { label: 'claude-opus-4-8', detail: 'anthropic' },
-        { label: 'claude-sonnet-5', detail: 'anthropic' },
+        { label: 'openai', header: true, focusable: false, group: 'openai' },
+        { label: 'gpt-5.6-sol', group: 'openai', selected: true },
+        { label: 'grok-4.5', group: 'openai' },
+        { label: 'anthropic', header: true, focusable: false, group: 'anthropic' },
+        { label: 'claude-opus-4-8', group: 'anthropic' },
+        { label: 'claude-sonnet-5', group: 'anthropic' },
       ]),
       presentation: 'model' as const,
     }
@@ -189,12 +197,31 @@ describe('renderSelector via viewmodel', () => {
     expect(lines.join('\n')).not.toContain('[anthropic]')
   })
 
+  test('model selector keeps a blank separator when a group header scrolls into view', () => {
+    const state = {
+      ...createSelectorState('Models', [
+        { label: 'Evot Free', header: true, focusable: false, group: 'free' },
+        ...Array.from({ length: 11 }, (_, index) => ({ label: `free-${index + 1}`, group: 'free' })),
+        { label: 'anthropic · Anthropic Messages', header: true, focusable: false, group: 'anthropic' },
+        { label: 'claude-opus-5', group: 'anthropic' },
+      ]),
+      presentation: 'model' as const,
+      focusIndex: 9,
+    }
+    const lines = buildSelectorRegionLines(state, 80)
+      .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
+    const headerIndex = lines.indexOf('  anthropic · Anthropic Messages')
+
+    expect(headerIndex).toBeGreaterThan(0)
+    expect(lines[headerIndex - 1]).toBe('')
+  })
+
   test('model filtering uses fuzzy matching and quality ordering within a provider', () => {
     let state = {
       ...createSelectorState('Models', [
-        { label: 'alpha-gpt', detail: 'provider', searchText: 'alpha-gpt provider' },
-        { label: 'gpt-alpha', detail: 'provider', searchText: 'gpt-alpha provider' },
-        { label: 'unrelated', detail: 'provider', searchText: 'unrelated provider' },
+        { label: 'alpha-gpt', group: 'provider', searchText: 'alpha-gpt provider' },
+        { label: 'gpt-alpha', group: 'provider', searchText: 'gpt-alpha provider' },
+        { label: 'unrelated', group: 'provider', searchText: 'unrelated provider' },
       ]),
       presentation: 'model' as const,
     }

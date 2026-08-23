@@ -1,4 +1,5 @@
 mod agent;
+mod auth;
 mod compaction;
 mod convert;
 mod exit;
@@ -9,6 +10,14 @@ mod server;
 mod tracing;
 
 pub use agent::NapiAgent;
+pub use auth::auth_begin;
+pub use auth::auth_logout;
+pub use auth::auth_notices;
+pub use auth::auth_poll;
+pub use auth::auth_sync_models;
+pub use auth::auth_whoami;
+pub use auth::cloud_model_meta;
+pub use auth::cloud_provider_groups;
 pub use compaction::NapiCompaction;
 pub use exit::fast_exit;
 pub use fork::NapiForkedAgent;

@@ -73,6 +73,18 @@ export interface ModelOption {
   model: string
   /** Provider-qualified value accepted by --model and the model setter. */
   spec: string
+  /** Heading for this model's group, pushed by the server. Cloud models only. */
+  group_label?: string
+  /** Where this group sits relative to the others. Cloud models only. */
+  group_order?: number
+  /** Present on evot cloud models; carries server-pushed metadata. */
+  free?: {
+    display_name?: string
+    tagline?: string
+    is_new?: boolean
+    /** `base` (open to everyone) or `special` (granted per account). */
+    tier?: string
+  }
 }
 
 export interface ConfigInfo {
@@ -469,4 +481,83 @@ export function fastExit(code = 0): never {
   rawFastExit(code)
   // rawFastExit does not return; this satisfies the `never` type
   throw new Error('unreachable')
+}
+
+// ---------------------------------------------------------------------------
+// Cloud auth (evot login)
+// ---------------------------------------------------------------------------
+
+import {
+  authBegin as rawAuthBegin,
+  authPoll as rawAuthPoll,
+  authLogout as rawAuthLogout,
+  authSyncModels as rawAuthSyncModels,
+  authWhoami as rawAuthWhoami,
+  authNotices as rawAuthNotices,
+} from './binding.js'
+
+export interface LoginCodeResponse {
+  code: string
+  login_url: string
+  expires_at: number
+  expires_in_ms: number
+  interval_ms: number
+}
+
+export type AuthPollResult =
+  | { status: 'pending' | 'expired' | 'denied' }
+  | { status: 'success'; state: { user: { id: string; name: string; email: string } }; sync_error?: string }
+
+function parseJsonOrThrow(raw: unknown, context: string): unknown {
+  if (typeof raw !== 'string') return raw
+  try {
+    return JSON.parse(raw)
+  } catch {
+    // The addon surfaces Rust errors as plain text — rethrow with context.
+    throw new Error(raw.startsWith('Error') ? `${context}: ${raw.replace(/^Error:\s*/, '')}` : `${context}: ${raw}`)
+  }
+}
+
+export async function authBegin(serverUrl: string, fingerprintId: string): Promise<LoginCodeResponse> {
+  return parseJsonOrThrow(await rawAuthBegin(serverUrl, fingerprintId), 'login failed') as LoginCodeResponse
+}
+
+export async function authPoll(serverUrl: string, code: string, expiresAt: number): Promise<AuthPollResult> {
+  return parseJsonOrThrow(await rawAuthPoll(serverUrl, code, expiresAt), 'login polling failed') as AuthPollResult
+}
+
+export async function authSyncModels(): Promise<void> {
+  await rawAuthSyncModels()
+}
+
+export async function authLogout(): Promise<void> {
+  await rawAuthLogout()
+}
+
+export async function authWhoami(): Promise<{ id: string; name: string; email: string } | null> {
+  const raw = await rawAuthWhoami()
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+export interface CloudNotice {
+  id: string
+  kind: 'notice' | 'ad'
+  priority?: number
+  title: string
+  body_md?: string
+}
+
+export function authNotices(): CloudNotice[] {
+  const raw = rawAuthNotices()
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as CloudNotice[]
+  } catch {
+    return []
+  }
 }

@@ -16,13 +16,6 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/new', description: 'Start a new session', handler: 'builtin' },
   { name: '/model', description: 'Show or change model', usage: '/model [name]', handler: 'builtin' },
   { name: '/plan', description: 'Enter planning mode', handler: 'builtin' },
-  { name: '/harden', description: 'Stress-test the previous plan or current changes', usage: '/harden [plan | changes | arch | subject]', handler: 'builtin' },
-  { name: '/skill', description: 'Manage skills', usage: '/skill [list | install <source> | remove <name>]', handler: 'builtin' },
-  { name: '/copy', description: 'Copy last agent message (Markdown source) to clipboard', handler: 'builtin' },
-  { name: '/clip', description: 'Clip last reply to the memory vault; all = distill session', usage: '/clip [all]', handler: 'builtin' },
-  { name: '/share', description: 'Share a session or import a shared session', usage: '/share [session-id | url#password]', handler: 'builtin' },
-  { name: '/compact', description: 'Compact session context', usage: '/compact [instructions]', handler: 'builtin' },
-  { name: '/clear', description: 'Clear session context', handler: 'builtin' },
 ]
 
 /** Hidden commands — recognised but not shown in /help or ghost hints */
@@ -30,6 +23,13 @@ export const HIDDEN_COMMANDS: SlashCommand[] = [
   { name: '/exit', aliases: ['/quit', '/q'], description: 'Exit the REPL', handler: 'builtin' },
   { name: '/act', description: 'Return to normal action mode', handler: 'builtin' },
   { name: '/done', description: 'Exit log/plan mode', handler: 'builtin' },
+  { name: '/harden', description: 'Stress-test the previous plan or current changes', usage: '/harden [plan | changes | arch | subject]', handler: 'builtin' },
+  { name: '/skill', description: 'Manage skills', usage: '/skill [list | install <source> | remove <name>]', handler: 'builtin' },
+  { name: '/copy', description: 'Copy last agent message (Markdown source) to clipboard', handler: 'builtin' },
+  { name: '/clip', description: 'Clip last reply to the memory vault; all = distill session', usage: '/clip [all]', handler: 'builtin' },
+  { name: '/share', description: 'Share a session or import a shared session', usage: '/share [session-id | url#password]', handler: 'builtin' },
+  { name: '/compact', description: 'Compact session context', usage: '/compact [instructions]', handler: 'builtin' },
+  { name: '/clear', description: 'Clear session context', handler: 'builtin' },
   { name: '/env', description: 'Manage variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
   { name: '/log', description: 'Show or analyze session logs; shot exports markdown', usage: '/log [shot | query]', handler: 'builtin' },
   { name: '/update', description: 'Update evot to latest version', handler: 'builtin' },
@@ -37,7 +37,7 @@ export const HIDDEN_COMMANDS: SlashCommand[] = [
 ]
 
 /** All commands (visible + hidden) for resolution */
-const ALL_COMMANDS: SlashCommand[] = [...COMMANDS, ...HIDDEN_COMMANDS]
+export const ALL_COMMANDS: SlashCommand[] = [...COMMANDS, ...HIDDEN_COMMANDS]
 
 export type ResolvedCommand =
   | { kind: 'resolved'; name: string; args: string }

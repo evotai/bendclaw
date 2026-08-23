@@ -110,7 +110,7 @@ describe('renderBanner', () => {
     const cases = [
       { columns: 40, rows: 30 },
       { columns: 80, rows: 20 },
-      { columns: 80, rows: 24, updateAvailable: { version: 'next' } },
+      { columns: 80, rows: 16 },
     ]
     for (const dimensions of cases) {
       const banner = stripAnsi(renderBanner({
@@ -150,5 +150,58 @@ describe('renderBanner', () => {
     for (const line of banner.split('\n')) {
       expect(stringWidth(stripAnsi(line))).toBeLessThanOrEqual(columns)
     }
+  })
+
+  test('shows an available update with the command that applies it', () => {
+    const { cwd, skillsDir } = createFixture(1)
+    const banner = stripAnsi(renderBanner({
+      version: '2026.4.13',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns: 80,
+      rows: 30,
+      skillsDirs: [skillsDir],
+      updateAvailable: { version: '2026.4.20' },
+    }))
+
+    expect(banner).toContain('evot v2026.4.20 available')
+    expect(banner).toContain('/update')
+  })
+
+  test('stays quiet when no update is available', () => {
+    const { cwd, skillsDir } = createFixture(1)
+    const banner = stripAnsi(renderBanner({
+      version: '2026.4.13',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns: 80,
+      rows: 30,
+      skillsDirs: [skillsDir],
+      updateAvailable: null,
+      installDrift: null,
+    }))
+
+    expect(banner).not.toContain('available')
+    expect(banner).not.toContain('Install mismatch')
+  })
+
+  test('surfaces an install mismatch with a remedy', () => {
+    const { cwd, skillsDir } = createFixture(1)
+    const banner = stripAnsi(renderBanner({
+      version: '2026.4.13',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns: 80,
+      rows: 30,
+      skillsDirs: [skillsDir],
+      installDrift: 'missing native binding lib/evot-napi.darwin-arm64.node',
+    }))
+
+    expect(banner).toContain('Install mismatch')
+    expect(banner).toContain('lib/evot-napi.darwin-arm64.node')
+    expect(banner).toContain('run /update to reinstall')
   })
 })

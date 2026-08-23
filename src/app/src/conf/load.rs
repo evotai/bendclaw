@@ -799,6 +799,8 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
         }
     }
 
+    apply_cloud_provider(&mut config)?;
+
     // Apply instance isolation: if EVOT_ID is set, redirect fs storage
     if let Some(ref id) = config.id {
         let isolated_root = paths::state_root_dir()?.join(id);
@@ -806,4 +808,78 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     }
 
     Ok(config)
+}
+
+/// Register the cloud providers from the models cache when the user is logged
+/// in. Cached-only: no network at config load time; `evot login` refreshes the
+/// cache. Never overrides an explicit BYOK selection.
+///
+/// The server names, orders, and groups its own providers (one per tier and
+/// protocol), so one account can mix Anthropic and OpenAI models.
+fn apply_cloud_provider(config: &mut Config) -> Result<()> {
+    if crate::auth::load_auth()?.is_none() {
+        return Ok(());
+    }
+    let Some(cache) = crate::auth::load_models_cache()? else {
+        return Ok(());
+    };
+
+    let mut primary: Option<(String, i64)> = None;
+    for group in cache.response.providers {
+        if group.models.is_empty() {
+            continue;
+        }
+        let name = normalize_provider_name(&group.name);
+        validate_provider_name(&name)?;
+        let protocol = parse_protocol(&group.protocol).map_err(|_| {
+            EvotError::Conf(format!("unsupported cloud protocol: {}", group.protocol))
+        })?;
+
+        // Keep the server's default first so it is preselected.
+        let head = if group.models.contains(&group.default_model) {
+            group.default_model.clone()
+        } else {
+            group.models[0].clone()
+        };
+        let mut ordered = vec![head.clone()];
+        ordered.extend(group.models.into_iter().filter(|m| *m != head));
+
+        let profile = ProviderProfile {
+            protocol,
+            api_key: group.api_key,
+            base_url: group.base_url,
+            models: ordered,
+            compat_caps: CompatCaps::default(),
+            route_capabilities: RouteCapabilityOverrides::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        };
+        config.providers.insert(name.clone(), profile);
+        // The server orders its own groups, so the first one it ranks is the
+        // landing spot for a fresh install. No tier name is assumed here.
+        if primary
+            .as_ref()
+            .is_none_or(|(_, rank)| group.sort_order < *rank)
+        {
+            primary = Some((name, group.sort_order));
+        }
+    }
+
+    let Some((primary, _)) = primary else {
+        return Ok(());
+    };
+
+    // Auto-activate a cloud provider only when nothing usable is configured
+    // (fresh install). An existing BYOK selection always wins.
+    let current_unconfigured = config
+        .providers
+        .get(&config.llm.provider)
+        .map(|profile| profile.api_key.trim().is_empty())
+        .unwrap_or(true);
+    if current_unconfigured || config.llm.provider.is_empty() {
+        config.llm.provider = primary;
+    }
+    Ok(())
 }

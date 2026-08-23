@@ -288,10 +288,11 @@ pub async fn drive_sse_response(
                     }
                     Some(Ok(bytes)) => {
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        // Process complete SSE frames
-                        while let Some(pos) = buffer.find("\n\n") {
+                        // Process complete SSE frames. Spec allows CRLF;
+                        // OpenRouter and some CDNs emit \r\n\r\n.
+                        while let Some((pos, sep)) = next_sse_boundary(&buffer) {
                             let frame = buffer[..pos].to_string();
-                            buffer = buffer[pos + 2..].to_string();
+                            buffer = buffer[pos + sep..].to_string();
                             if let Some(event) = parse_sse_frame(&frame) {
                                 if tx.send(event).is_err() {
                                     return Ok(());
@@ -302,6 +303,17 @@ pub async fn drive_sse_response(
                 }
             }
         }
+    }
+}
+
+/// First complete SSE frame boundary. Spec allows CRLF; some CDNs emit it.
+fn next_sse_boundary(buffer: &str) -> Option<(usize, usize)> {
+    let lf = buffer.find("\n\n").map(|pos| (pos, 2));
+    let crlf = buffer.find("\r\n\r\n").map(|pos| (pos, 4));
+    match (lf, crlf) {
+        (Some(a), Some(b)) if b.0 < a.0 => Some(b),
+        (Some(a), _) => Some(a),
+        (None, other) => other,
     }
 }
 

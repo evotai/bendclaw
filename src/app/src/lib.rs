@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod auth;
 pub mod command;
 pub mod compact;
 pub mod conf;

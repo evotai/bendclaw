@@ -4,6 +4,8 @@ mod agent_prompt_test;
 mod agent_thinking_test;
 #[path = "agent_variable_test.rs"]
 mod agent_variable_test;
+#[path = "auth_test.rs"]
+mod auth_test;
 #[path = "auto_compact_test.rs"]
 mod auto_compact_test;
 #[path = "command_test.rs"]

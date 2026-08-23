@@ -1,0 +1,461 @@
+use std::ffi::OsString;
+
+use evot::auth;
+use evot::conf::Config;
+
+use crate::conf_load_test::env_lock;
+
+fn restore_env_var(key: &str, value: Option<OsString>) {
+    match value {
+        Some(value) => std::env::set_var(key, value),
+        None => std::env::remove_var(key),
+    }
+}
+
+fn write_test_home(dir: &std::path::Path, auth: Option<&str>, cache: Option<&str>) {
+    let root = dir.join(".evotai");
+    std::fs::create_dir_all(&root).unwrap();
+    if let Some(content) = auth {
+        std::fs::write(root.join("auth.json"), content).unwrap();
+    }
+    if let Some(content) = cache {
+        std::fs::write(root.join("models.cache.json"), content).unwrap();
+    }
+}
+
+const AUTH_JSON: &str = r#"{
+  "version": 1,
+  "server_base_url": "http://localhost:8787",
+  "user": {"id":"u1","name":"bo","email":"bo@test.dev"},
+  "cli_token": "tok",
+  "refresh_token": "ref",
+  "models_synced_at": 0
+}"#;
+
+const CACHE_JSON: &str = r#"{
+  "synced_at": 123,
+  "response": {
+    "version": 3,
+    "providers": [
+      {"name":"evot-free","protocol":"anthropic",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"m-two","models":["m-one","m-two","m-three"]}
+    ],
+    "models": [
+      {"id":"m-one","display_name":"One","protocol":"anthropic","tier":"base"},
+      {"id":"m-two","display_name":"Two","protocol":"anthropic","tier":"base"},
+      {"id":"m-three","display_name":"Three","protocol":"anthropic","tier":"base"}
+    ],
+    "notices": []
+  }
+}"#;
+
+#[test]
+fn cloud_provider_registered_and_default_when_no_byok() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let config = result.unwrap();
+    let profile = config
+        .providers
+        .get("evot-free")
+        .expect("evot-free provider registered");
+    assert_eq!(profile.base_url, "http://localhost:8787/v1/llm");
+    assert_eq!(profile.api_key, "evot.scoped.key");
+    assert_eq!(profile.models.first().unwrap(), "m-two");
+    assert_eq!(config.llm.provider, "evot-free");
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn cloud_provider_kept_optional_when_byok_active() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-byok-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    std::fs::write(
+        env_home.join(".evotai/evot.toml"),
+        "[providers.openrouter]\napi_key = \"sk-byok\"\nmodel = [\"byok/model\"]\n\n[llm]\nprovider = \"openrouter\"\n",
+    )
+    .unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let config = result.unwrap();
+    assert!(config.providers.contains_key("evot-free"));
+    assert_eq!(config.llm.provider, "openrouter");
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn no_auth_file_means_no_cloud_provider() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-none-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, None, None);
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let config = result.unwrap();
+    assert!(!config.providers.contains_key("evot-free"));
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+/// A newer server sends one provider per (tier, protocol) pair, and owns the
+/// heading and ordering for each.
+const MULTI_CACHE_JSON: &str = r#"{
+  "synced_at": 123,
+  "response": {
+    "version": 7,
+    "providers": [
+      {"name":"evot-free","label":"Evot Free","sort_order":0,"protocol":"anthropic",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"claude-free","models":["claude-free"]},
+      {"name":"evot-free-openai","label":"Evot Free","sort_order":0,"protocol":"openai",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"gpt-free","models":["gpt-free","gpt-free-mini"]},
+      {"name":"evot-pro","label":"Evot Premium","sort_order":1,"protocol":"anthropic",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"claude-pro","models":["claude-pro"]}
+    ],
+    "models": [
+      {"id":"claude-free","protocol":"anthropic","tier":"base","provider":"evot-free"},
+      {"id":"gpt-free","protocol":"openai","tier":"base","provider":"evot-free"},
+      {"id":"gpt-free-mini","protocol":"openai","tier":"base","provider":"evot-free"},
+      {"id":"claude-pro","protocol":"anthropic","tier":"special","provider":"evot-pro"}
+    ],
+    "notices": []
+  }
+}"#;
+
+#[test]
+fn each_cloud_protocol_becomes_its_own_provider() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-multi-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(MULTI_CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    restore_env_var("HOME", original_home);
+    let config = result.unwrap();
+
+    let free = config.providers.get("evot-free").expect("free registered");
+    assert_eq!(free.protocol.to_string(), "anthropic");
+    assert_eq!(free.models, vec!["claude-free".to_string()]);
+
+    let compat = config
+        .providers
+        .get("evot-free-openai")
+        .expect("openai group registered");
+    assert_eq!(compat.protocol.to_string(), "openai");
+    assert_eq!(compat.models.first().unwrap(), "gpt-free");
+
+    let pro = config.providers.get("evot-pro").expect("pro registered");
+    assert_eq!(pro.protocol.to_string(), "anthropic");
+    assert_eq!(pro.models, vec!["claude-pro".to_string()]);
+
+    // The lowest sort_order is where a fresh install lands, never the granted
+    // tier. Ordering comes from the server, not from the provider name.
+    assert_eq!(config.llm.provider, "evot-free");
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+/// Renaming the tiers server-side must move the landing spot with them, since
+/// the client ranks groups by `sort_order` and never by name.
+const RENAMED_CACHE_JSON: &str = r#"{
+  "synced_at": 123,
+  "response": {
+    "version": 9,
+    "providers": [
+      {"name":"tier-alpha","label":"Alpha","sort_order":7,"protocol":"anthropic",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"m-alpha","models":["m-alpha"]},
+      {"name":"tier-omega","label":"Omega","sort_order":2,"protocol":"openai",
+       "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
+       "default_model":"m-omega","models":["m-omega"]}
+    ],
+    "models": [
+      {"id":"m-alpha","protocol":"anthropic","tier":"base","provider":"tier-alpha"},
+      {"id":"m-omega","protocol":"openai","tier":"base","provider":"tier-omega"}
+    ],
+    "notices": []
+  }
+}"#;
+
+#[test]
+fn the_landing_provider_follows_server_order_not_its_name() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-rank-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(RENAMED_CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    restore_env_var("HOME", original_home);
+    let config = result.unwrap();
+
+    assert!(config.providers.contains_key("tier-alpha"));
+    assert!(config.providers.contains_key("tier-omega"));
+    // sort_order 2 wins over 7, even though neither is named like a tier.
+    assert_eq!(config.llm.provider, "tier-omega");
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn cloud_group_labels_and_order_come_from_the_server() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-label-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(MULTI_CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let cache = auth::load_models_cache();
+    restore_env_var("HOME", original_home);
+    let cache = cache.unwrap().expect("cache present");
+
+    let groups = cache.response.providers;
+    // The server owns both the heading and the ordering.
+    let free = groups
+        .iter()
+        .find(|g| g.name == "evot-free")
+        .expect("free group");
+    assert_eq!(free.label, "Evot Free");
+    assert_eq!(free.sort_order, 0);
+
+    let pro = groups
+        .iter()
+        .find(|g| g.name == "evot-pro")
+        .expect("pro group");
+    assert_eq!(pro.label, "Evot Premium");
+    assert_eq!(pro.sort_order, 1);
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn cloud_models_keep_the_server_default_first() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-order-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    restore_env_var("HOME", original_home);
+    let config = result.unwrap();
+
+    let profile = config.providers.get("evot-free").expect("registered");
+    assert_eq!(profile.protocol.to_string(), "anthropic");
+    // default_model is m-two, so it is preselected ahead of m-one.
+    assert_eq!(profile.models.first().unwrap(), "m-two");
+    assert_eq!(profile.models.len(), 3);
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn auth_store_roundtrip() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-store-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, None, None);
+    std::env::set_var("HOME", &env_home);
+
+    let state: auth::AuthState = serde_json::from_str(AUTH_JSON).unwrap();
+    auth::save_auth(&state).unwrap();
+    let loaded = auth::load_auth().unwrap().expect("state persisted");
+
+    assert_eq!(loaded.user.email, "bo@test.dev");
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(env_home.join(".evotai/auth.json"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    auth::clear_auth().unwrap();
+    assert!(auth::load_auth().unwrap().is_none());
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+mod wiremock_tests {
+    use evot::auth;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn begin_login_parses_server_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/auth/cli/code"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "code": "ABC123",
+                "login_url": "http://x/login?code=ABC123",
+                "expires_at": 123456,
+                "expires_in_ms": 3600000,
+                "interval_ms": 2000
+            })))
+            .mount(&server)
+            .await;
+
+        let resp = auth::begin_login(&server.uri(), "fp-1").await.unwrap();
+        assert_eq!(resp.code, "ABC123");
+        assert_eq!(resp.expires_in_ms, 3_600_000);
+    }
+
+    #[tokio::test]
+    async fn poll_status_maps_success_to_auth_state() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/auth/cli/status"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "status": "success",
+                "cli_token": "tok-1",
+                "refresh_token": "ref-1",
+                "user": {"id": "u1", "name": "bo", "email": "bo@test.dev"}
+            })))
+            .mount(&server)
+            .await;
+
+        match auth::poll_status(&server.uri(), "CODE", 42).await.unwrap() {
+            auth::PollOutcome::Success { user } => {
+                assert_eq!(user.cli_token, "tok-1");
+                assert_eq!(user.server_base_url, server.uri());
+                assert_eq!(user.user.email, "bo@test.dev");
+            }
+            other => panic!("expected success, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_status_pending_202() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/auth/cli/status"))
+            .respond_with(
+                ResponseTemplate::new(202).set_body_json(serde_json::json!({"status": "pending"})),
+            )
+            .mount(&server)
+            .await;
+
+        match auth::poll_status(&server.uri(), "CODE", 42).await.unwrap() {
+            auth::PollOutcome::Pending => {}
+            other => panic!("expected pending, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn sync_models_sends_bearer_token_and_parses_catalog() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/config/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "version": 7,
+                "providers": [{
+                    "name": "evot-free",
+                    "protocol": "anthropic",
+                    "base_url": "http://x/v1/llm",
+                    "api_key": "evot.k",
+                    "default_model": "m1",
+                    "models": ["m1"]
+                }],
+                "models": [{"id": "m1", "display_name": "One",
+                            "protocol": "anthropic", "tier": "base"}],
+                "notices": [{"id": "n1", "kind": "notice", "title": "hi"}]
+            })))
+            .mount(&server)
+            .await;
+
+        let state: auth::AuthState = serde_json::from_str(
+            AUTH_JSON
+                .replace(
+                    "\"server_base_url\": \"http://localhost:8787\"",
+                    &format!("\"server_base_url\": \"{}\"", server.uri()),
+                )
+                .as_str(),
+        )
+        .unwrap();
+
+        let response = auth::sync_models(&state).await.unwrap();
+        assert_eq!(response.version, 7);
+        assert_eq!(response.models.len(), 1);
+        assert_eq!(response.providers[0].default_model, "m1");
+        assert_eq!(response.providers[0].protocol, "anthropic");
+        assert_eq!(response.notices[0].id, "n1");
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let headers = &requests[0].headers;
+        assert_eq!(
+            headers.get("authorization").map(|v| v.to_str().unwrap()),
+            Some("Bearer tok")
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_models_surfaces_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/config/models"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let state: auth::AuthState = serde_json::from_str(
+            AUTH_JSON
+                .replace(
+                    "\"server_base_url\": \"http://localhost:8787\"",
+                    &format!("\"server_base_url\": \"{}\"", server.uri()),
+                )
+                .as_str(),
+        )
+        .unwrap();
+        assert!(auth::sync_models(&state).await.is_err());
+    }
+}

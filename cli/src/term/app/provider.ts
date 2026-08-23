@@ -13,6 +13,40 @@ export function modelOptions(configInfo: ConfigInfo | undefined, fallbackModel: 
   }]
 }
 
+/** True when the server pushed this model as part of a cloud group. */
+export function isCloudModel(option: ModelOption): boolean {
+  return option.group_label !== undefined
+}
+
+/** Human name for a wire protocol, or '' when unknown. */
+function protocolLabel(protocol: ModelOption['protocol']): string {
+  return protocol === 'anthropic'
+    ? 'Anthropic Messages'
+    : protocol === 'openai'
+      ? 'OpenAI Chat Completions'
+      : protocol === 'openai_responses'
+        ? 'OpenAI Responses'
+        : protocol ?? ''
+}
+
+/** Heading for a model's group. Cloud groups use the label the server pushed;
+ *  BYOK providers are grouped by provider and wire protocol. */
+export function modelGroupLabel(option: ModelOption): string {
+  if (isCloudModel(option)) return option.group_label?.trim() || option.provider
+  return [option.provider, protocolLabel(option.protocol)].filter(Boolean).join(' · ')
+}
+
+/** Per-row extra shown after the name. The group heading already carries the
+ *  provider and protocol, so only a NEW badge is worth the space. */
+export function formatModelOptionDetail(option: ModelOption): string {
+  return isCloudModel(option) && option.free?.is_new ? 'NEW' : ''
+}
+
+/** Rank a provider: server-ordered cloud groups first, then BYOK providers. */
+function cloudRank(option: ModelOption): number {
+  return isCloudModel(option) ? (option.group_order ?? 0) : Number.MAX_SAFE_INTEGER
+}
+
 export function sortModelOptionsForSelector(options: ModelOption[], activeSpec: string): ModelOption[] {
   const activeProvider = options.find(option => option.spec === activeSpec)?.provider
   return options
@@ -21,6 +55,17 @@ export function sortModelOptionsForSelector(options: ModelOption[], activeSpec: 
       const leftGroup = left.option.provider === activeProvider ? 0 : 1
       const rightGroup = right.option.provider === activeProvider ? 0 : 1
       if (leftGroup !== rightGroup) return leftGroup - rightGroup
+
+      // Cloud groups sit above BYOK providers, in the order the server sent.
+      // Same heading (Evot Free / Evot Premium) stays contiguous even when
+      // routing split the tier into one provider per protocol.
+      const cloudOrder = cloudRank(left.option) - cloudRank(right.option)
+      if (cloudOrder !== 0) return cloudOrder
+
+      const leftHeading = modelGroupLabel(left.option)
+      const rightHeading = modelGroupLabel(right.option)
+      const headingOrder = leftHeading.localeCompare(rightHeading)
+      if (headingOrder !== 0) return headingOrder
 
       const providerOrder = left.option.provider.localeCompare(right.option.provider)
       if (providerOrder !== 0) return providerOrder
@@ -36,15 +81,10 @@ export function currentModelSpec(configInfo: ConfigInfo | undefined, model: stri
   return configInfo?.provider ? `${configInfo.provider}:${model}` : model
 }
 
-export function formatModelOptionDetail(option: ModelOption): string {
-  const protocol = option.protocol === 'anthropic'
-    ? 'Anthropic Messages'
-    : option.protocol === 'openai'
-      ? 'OpenAI Chat Completions'
-      : option.protocol === 'openai_responses'
-        ? 'OpenAI Responses'
-        : option.protocol ?? ''
-  return [option.provider, protocol].filter(Boolean).join(' · ')
+/** What the picker shows for a model: the server's display name when it has one. */
+export function formatModelOptionLabel(option: ModelOption): string {
+  const shown = option.free?.display_name?.trim()
+  return shown || option.model
 }
 
 export function formatModelLabel(model: string, provider: string): string {

@@ -1,15 +1,16 @@
 /**
- * Track the last version the user has seen, so we can show
- * "What's New" release notes once after an update.
+ * Track the last version whose release metadata was handled, so we can show
+ * "What's New" once after an update without losing it to a transient outage.
  */
 
 import { join } from 'path'
-import { homedir } from 'os'
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { isNewer } from '../update/check.js'
+import { isNewer } from './version.js'
+import { stateDir } from './paths.js'
 
-const STATE_DIR = join(homedir(), '.evotai')
-const STATE_PATH = join(STATE_DIR, 'last-seen-version.json')
+function statePath(): string {
+  return join(stateDir(), 'last-seen-version.json')
+}
 
 interface State {
   version: string
@@ -17,8 +18,8 @@ interface State {
 
 function readState(): State | null {
   try {
-    const raw = readFileSync(STATE_PATH, 'utf-8')
-    return JSON.parse(raw) as State
+    const parsed = JSON.parse(readFileSync(statePath(), 'utf-8')) as State
+    return typeof parsed?.version === 'string' && parsed.version ? parsed : null
   } catch {
     return null
   }
@@ -26,29 +27,34 @@ function readState(): State | null {
 
 function writeState(state: State): void {
   try {
-    mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(STATE_PATH, JSON.stringify(state), 'utf-8')
+    mkdirSync(stateDir(), { recursive: true })
+    writeFileSync(statePath(), JSON.stringify(state), 'utf-8')
   } catch { /* best effort */ }
 }
 
 /**
- * Check if the current version is newer than what the user last saw.
- * If so, mark it as seen and return true (caller should show release notes).
- * On first install, records the version without triggering notes.
+ * Whether release metadata for the running version still needs to be shown.
+ *
+ * A missing record is treated as a first install: establish a baseline without
+ * showing historical notes. For an upgrade, do not advance the record here —
+ * an offline metadata fetch must remain pending for the next startup.
  */
-export function shouldShowReleaseNotes(currentVersion: string): boolean {
+export function releaseNotesPending(currentVersion: string): boolean {
   const state = readState()
-
   if (!state) {
-    // First install — record version, don't show notes
     writeState({ version: currentVersion })
     return false
   }
+  return isNewer(state.version, currentVersion)
+}
 
-  if (isNewer(state.version, currentVersion)) {
-    writeState({ version: currentVersion })
-    return true
+/**
+ * Mark release metadata for a version as handled. Never move the record
+ * backwards if another, newer process has already advanced it.
+ */
+export function markReleaseNotesSeen(version: string): void {
+  const state = readState()
+  if (!state || isNewer(state.version, version)) {
+    writeState({ version })
   }
-
-  return false
 }

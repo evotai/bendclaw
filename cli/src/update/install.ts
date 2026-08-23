@@ -2,22 +2,60 @@
  * Execute the install script to update evot.
  */
 
-import { homedir } from 'os'
-import { basename, dirname, join } from 'path'
+import { join } from 'path'
+import { installBinDir, installRoot, runningInstallDir } from './paths.js'
 
-const INSTALL_SCRIPT = 'https://raw.githubusercontent.com/evotai/evot/main/install.sh'
+const INSTALL_SCRIPT_BASE = 'https://raw.githubusercontent.com/evotai/evot'
+const SCRIPT_FETCH_TIMEOUT = 30_000
+const SCRIPT_FETCH_ATTEMPTS = 3
+const SCRIPT_RETRY_BASE_DELAY = 1_000
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function installRoot(env: Record<string, string>): string {
-  if (env.EVOT_INSTALL_DIR) {
-    return basename(env.EVOT_INSTALL_DIR) === 'bin'
-      ? dirname(env.EVOT_INSTALL_DIR)
-      : env.EVOT_INSTALL_DIR
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Fetch install.sh with bounded retries.
+ *
+ * The install itself is not retried here — install.sh stages and validates
+ * before replacing anything, and re-running it blindly would repeat a download
+ * that failed for a non-transient reason. Only the script fetch, which is
+ * cheap and idempotent, gets attempts.
+ */
+async function fetchInstallScript(tag?: string): Promise<{ script: string } | { error: string }> {
+  // An update must use the installer committed with the release it selected.
+  // Fetching main could apply newer install semantics to an older release asset.
+  const ref = tag ? encodeURIComponent(tag) : 'main'
+  const installScript = `${INSTALL_SCRIPT_BASE}/${ref}/install.sh`
+  let lastError = ''
+  for (let attempt = 1; attempt <= SCRIPT_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(installScript, {
+        signal: AbortSignal.timeout(SCRIPT_FETCH_TIMEOUT),
+      })
+      if (!response.ok) {
+        lastError = `failed to download install script: HTTP ${response.status}`
+        // 4xx will not fix itself; only retry server-side and throttling faults.
+        const retryable = response.status === 408 || response.status === 429 || response.status >= 500
+        if (!retryable) return { error: lastError }
+      } else {
+        const script = await response.text()
+        if (script.trim()) return { script }
+        lastError = 'failed to download install script: empty response'
+      }
+    } catch (err: unknown) {
+      lastError = `failed to download install script: ${errorMessage(err)}`
+    }
+
+    if (attempt < SCRIPT_FETCH_ATTEMPTS) {
+      await sleep(SCRIPT_RETRY_BASE_DELAY * 2 ** (attempt - 1))
+    }
   }
-  return env.EVOT_HOME || join(homedir(), '.evotai')
+  return { error: lastError || 'failed to download install script' }
 }
 
 async function verifyInstalledVersion(
@@ -25,8 +63,7 @@ async function verifyInstalledVersion(
   env: Record<string, string>,
 ): Promise<{ success: boolean; output: string }> {
   const root = installRoot(env)
-  const installDir = env.EVOT_INSTALL_DIR || join(root, 'bin')
-  const binary = join(installDir, 'evot')
+  const binary = join(installBinDir(env), 'evot')
   const proc = Bun.spawn([binary, '--version'], {
     stdout: 'pipe',
     stderr: 'pipe',
@@ -59,23 +96,25 @@ async function verifyInstalledVersion(
 export async function executeInstall(tag?: string): Promise<{ success: boolean; output: string }> {
   try {
     const env: Record<string, string> = { ...process.env as Record<string, string> }
+    const inferredInstallDir = runningInstallDir()
+    if (!env.EVOT_INSTALL_DIR && inferredInstallDir) {
+      // Preserve custom installs after the one-shot installer environment is
+      // gone: update the compiled evot that is actually running.
+      env.EVOT_INSTALL_DIR = inferredInstallDir
+    }
     if (tag) {
       env.EVOT_INSTALL_VERSION = tag
     }
 
     // Fetch first, then pass the complete script to sh. A `curl | sh` pipeline
     // can return success when curl fails because POSIX sh has no pipefail.
-    const response = await fetch(INSTALL_SCRIPT)
-    if (!response.ok) {
-      return { success: false, output: `failed to download install script: HTTP ${response.status}` }
-    }
-    const script = await response.text()
-    if (!script.trim()) {
-      return { success: false, output: 'failed to download install script: empty response' }
+    const fetched = await fetchInstallScript(tag)
+    if ('error' in fetched) {
+      return { success: false, output: fetched.error }
     }
 
     const proc = Bun.spawn(['sh'], {
-      stdin: new Blob([script]),
+      stdin: new Blob([fetched.script]),
       stdout: 'pipe',
       stderr: 'pipe',
       env,

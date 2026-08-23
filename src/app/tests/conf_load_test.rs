@@ -11,7 +11,7 @@ use evot_engine::ThinkingLevel;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
-fn env_lock() -> &'static Mutex<()> {
+pub(crate) fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }

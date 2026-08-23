@@ -5,7 +5,7 @@
 
 import { readdirSync, statSync } from 'fs'
 import { join, dirname, basename } from 'path'
-import { COMMANDS, HIDDEN_COMMANDS } from './index.js'
+import { ALL_COMMANDS, COMMANDS } from './index.js'
 
 /**
  * Returns true when text looks like a hand-typed slash command prefix:
@@ -82,8 +82,9 @@ export function getGhostHint(line: string, cursorCol: number): string {
     return `  [${COMMANDS.map(c => c.name.slice(1)).join('  ')}]`
   }
 
-  // Only match visible commands for ghost hints
-  const matches = COMMANDS.filter(c => c.name.startsWith(cmd))
+  // Ghost hints match all commands (hidden ones stay completable);
+  // only the bare-`/` list above is limited to visible commands.
+  const matches = ALL_COMMANDS.filter(c => c.name.startsWith(cmd))
 
   if (matches.length === 0) return ''
 
@@ -107,7 +108,7 @@ export function getGhostHint(line: string, cursorCol: number): string {
 
 function getSubCommandHint(cmd: string, partial: string): string {
   // Resolve the command first
-  const resolved = COMMANDS.find(c => c.name === cmd || c.name.startsWith(cmd))
+  const resolved = ALL_COMMANDS.find(c => c.name === cmd || c.name.startsWith(cmd))
   if (!resolved) return ''
 
   const subcmds = SUB_COMMANDS[resolved.name] ?? []
@@ -150,7 +151,7 @@ function completeSlashCommand(input: string): CompletionResult | null {
   // Only complete the command name itself (first word)
   if (parts.length > 1) return null
 
-  const allCmds = [...COMMANDS, ...HIDDEN_COMMANDS]
+  const allCmds = ALL_COMMANDS
   const allNames: string[] = []
   for (const c of allCmds) {
     allNames.push(c.name)

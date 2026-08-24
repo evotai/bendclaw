@@ -184,4 +184,12 @@ describe('modelSelectorItems', () => {
     ])
     expect(items.find(item => item.id === 'droid:gpt-5.6-sol')?.selected).toBe(true)
   })
+
+  test('a single model still gets a heading and a selectable row', () => {
+    const items = modelSelectorItems([cloudOptions[2]!], 'evot-free:cohere/north-mini:free')
+    expect(items.map(item => ({ label: item.label, header: item.header, id: item.id }))).toEqual([
+      { label: 'Evot Free', header: true, id: undefined },
+      { label: 'North Mini', header: undefined, id: 'evot-free:cohere/north-mini:free' },
+    ])
+  })
 })

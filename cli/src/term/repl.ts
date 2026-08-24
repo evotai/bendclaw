@@ -2346,10 +2346,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function openModelSelector(): void {
     const models = modelOptions(configInfo, agent.model)
-    if (models.length <= 1) {
-      commitSystem('sys-m', '  Only one model available.')
-      return
-    }
     const activeSpec = currentModelSpec(configInfo, agent.model)
     overlay = {
       kind: 'selector',
@@ -2369,11 +2365,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   function refreshOpenModelSelector(): boolean {
     if (overlay.kind !== 'selector' || overlay.state.presentation !== 'model') return false
     const models = modelOptions(configInfo, agent.model)
-    if (models.length <= 1) {
-      overlay = { kind: 'none' }
-      commitSystem('sys-m', '  Only one model available.')
-      return true
-    }
     const activeSpec = currentModelSpec(configInfo, agent.model)
     overlay = {
       kind: 'selector',

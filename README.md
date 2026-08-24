@@ -2,105 +2,62 @@
   <strong>Evot</strong>
 </p>
 
-<p align="center">
-  <strong>Same quality. Up to 78% less cost.</strong>
-</p>
+<p align="center"><strong>High-quality AI work, at low or even zero cost.</strong></p>
+
+<p align="center">We pick great models — including free stealth ones like <code>stealth/ox-alpha</code> (free this week) — so everyone can run long tasks affordably.</p>
 
 <p align="center">
-  <em>Fewer tool calls. Less context waste. More work per token.</em>
-</p>
-
-<p align="center">
-  <a href="#-news">News</a> &middot;
-  <a href="#benchmark">Benchmark</a> &middot;
-  <a href="#why-is-evot-faster-and-cheaper">Why</a> &middot;
-  <a href="#dashboard">Dashboard</a> &middot;
-  <a href="#installation">Install</a> &middot;
-  <a href="#quickstart">Quickstart</a> &middot;
-  <a href="#commands">Commands</a> &middot;
-  <a href="#development">Dev</a>
+  <a href=".github/assets/demo.gif"><img src=".github/assets/demo.gif" alt="evot demo" width="960" /></a>
 </p>
 
 ## 📢 News
 
-- **2026-07-24** [REPL] `/share` securely shares or imports complete sessions through one command.
-- **2026-07-24** [Memory] `/clip` saves the latest assistant reply verbatim; `/clip all` distills the whole session into the memory vault.
-- **2026-07-22** [Memory] Persistent markdown memory and semantic `/resume <query>` recall.
-- **2026-07-16** [REPL] Prompt queue — queue follow-ups and manage them with `Ctrl+B`.
-- **2026-07-09** [REPL] `/log shot` — export the last assistant markdown turn as an HTML/PNG snapshot matching the TUI.
-- **2026-07-03** [REPL] `/copy` — copy the last agent message's Markdown source to the clipboard.
-- **2026-06-16** [REPL] Shift+Tab cycles reasoning effort; persisted per session.
+- **2026-08-24** Free model of the week: [`stealth/ox-alpha`](https://openrouter.ai/stealth/ox-alpha) — free on OpenRouter for a week.
 
-## Benchmark
+## Performance
 
-Same task and eval environment, across three agents and three models. The matrix shows how both choices affect cost, tool usage, and concurrent work.
+Same task, same eval environment, three agents × three models — cost and tool calls, lower is better.
 
 <p align="center">
-  <a href=".github/assets/benchmark-agent-model-comparison.png"><img src=".github/assets/benchmark-agent-model-comparison.png" alt="Benchmark comparing evot, Claude Code, and pi across Claude Fable 5, GPT 5.6, and Claude Opus 4.8" width="960" /></a>
+  <a href=".github/assets/benchmark-agent-model-comparison.png"><img src=".github/assets/benchmark-agent-model-comparison.png" alt="Benchmark comparing evot, Claude Code, and pi" width="960" /></a>
 </p>
 
-<p align="center"><em>Cost and tool calls: lower is better. Parallelism: higher means more concurrent work.</em></p>
+> Task: fix a real bug in serde_json ([issue #979](https://github.com/serde-rs/json/issues/979)) end to end.
 
-> Task: Fix a real bug in serde_json ([issue #979](https://github.com/serde-rs/json/issues/979)) — investigate root cause, apply fix, write regression test, verify all tests pass.
-
-| Model | evot cost | Claude Code cost | pi cost | evot tool calls | Claude Code tool calls | pi tool calls |
-|-------|----------:|-----------------:|--------:|----------------:|-----------------------:|--------------:|
-| Claude Fable 5 | $0.52 | $1.90 | **$0.50** | **8** | 13 | 11 |
-| GPT 5.6 | **$0.61** | $2.15 | $1.18 | **9** | 12 | 13 |
-| Claude Opus 4.8 | **$1.06** | $4.83 | $1.61 | **10** | 13 | 16 |
-
-All nine runs produce correct, passing code. Compared with Claude Code, evot costs **72–78% less** and uses **23–38% fewer tool calls**. It also uses fewer tool calls than pi on every model, while costing less on GPT 5.6 and Claude Opus 4.8.
-
-### Why is evot faster and cheaper?
-
-Give the LLM less context, but higher-quality context. Where other agents burn extra tokens and time managing context, evot leans on cheap, deterministic machinery first:
-
-- **Algorithmic compaction** — a Rust pipeline runs in microseconds between turns: spent tool results are reclaimed, and old turns are evicted into a compact structured summary while recent work stays intact.
-- **Provider-native compaction** — on GPT/Codex models (OpenAI Responses API), evot uses server-side compaction automatically: the endpoint returns an opaque item that replays with far higher recall than a text summary. Zero config — any failure falls back to local summarization silently.
-- **Spill to disk** — large tool results write to disk with a short preview. The model re-reads on demand instead of carrying megabytes in context.
-- **Compaction markers** — structured metadata (files modified, conclusions, environment state) survives compaction, so progress is never lost.
-
-**Every gain is earned under a rigorous trace + eval framework, not guessed at.** Each engine change is measured against live traces and a reproducible benchmark pipeline — the same real-world tasks run against Claude Code and Codex (latest versions) — before it ships. Token usage, cost, time, and success rate must improve or hold. Relentless trial and iteration, where the numbers decide what stays. Continuous improvement, no regression.
-
-## Dashboard
-
-Evot ships with a built-in web dashboard for real-time observability: server resource usage, all connected sessions, and per-session detail — token usage, tool call sequences, and span-level traces.
-
-<table align="center">
-  <tr>
-    <td align="center"><strong>Overview — server metrics & sessions</strong></td>
-    <td align="center"><strong>Session detail — usage & tool traces</strong></td>
-  </tr>
-  <tr>
-    <td><a href=".github/assets/dashboard-overview.png"><img src=".github/assets/dashboard-overview.png" alt="evot dashboard — overview" width="480" height="300" /></a></td>
-    <td><a href=".github/assets/dashboard-session-detail.png"><img src=".github/assets/dashboard-session-detail.png" alt="evot dashboard — session detail" width="480" height="300" /></a></td>
-  </tr>
-</table>
-
----
+All nine runs produce correct, passing code — but evot costs **72–78% less** than Claude Code with **fewer tool calls** on every model.
 
 ## Installation
-
-### One-liner (recommended)
 
 ```bash
 curl -fsSL https://evot.ai/install | sh
 ```
 
-### From source
+<details>
+<summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/evotai/evot.git
 cd evot
 make setup && make install
-evot
 ```
 
-## Quickstart
+</details>
 
-**1. Set your API key**
+## Login
 
-Create `~/.evotai/evot.env`:
+```bash
+evot login     # follow the prompts; you land straight in the TUI after login
+```
+
+```bash
+evot           # interactive TUI
+evot -c        # continue the latest session in this directory
+```
+
+> In the TUI: `/help` lists all commands.
+
+<details>
+<summary>Custom configuration (bring your own models via <code>~/.evotai/evot.env</code>)</summary>
 
 ```env
 # Anthropic (default)
@@ -142,40 +99,7 @@ EVOT_LLM_ANTHROPIC_MODEL=claude-opus-4.8
 # EVOT_LLM_OPENROUTER_MODEL=stealth/ox-alpha
 ```
 
-**2. Run**
-
-```bash
-evot                 # interactive TUI
-evot -c              # continue latest session in cwd
-```
-
-> In the TUI: `/help` lists commands, Shift+Tab cycles the reasoning effort.
->
-> One-shot: `evot -p "..."` · resume by id: `evot -r <id>` · model override: `--model provider:model`
-
-## Commands
-
-`/help` lists everything. These are the ones unique to evot and worth knowing:
-
-| Command | What it does |
-|---------|--------------|
-| `/clip` | Save the latest assistant reply verbatim to the memory vault (`~/.evotai/memory/clips`). `/clip all` distills the whole session into the vault. |
-| `/share [id \| url]` | Share the current or specified session through an encrypted expiring link; pass a shared URL to import it. |
-| `/resume <query>` | Find and resume a past session by meaning, not just id. |
-| `/harden` | Stress-test the previous plan or current changes — hunt edge cases and loopholes before you commit. |
-| `/skill` | Manage skills: `list`, `install <source>`, `remove <name>`. |
-| `/log shot` | Export the last assistant turn as an HTML/PNG snapshot matching the TUI. |
-| `/copy` | Copy the last agent message's Markdown source to the clipboard. |
-
-Context compaction is automatic — evot compacts between turns as context fills, with no setup. On the official OpenAI Responses API, provider-native (remote) compaction takes priority; everything else uses the local algorithmic path. Use `/compact` only when you want to force it early.
-
-## Development
-
-```bash
-make setup        # install Rust toolchain, git hooks
-make test         # all tests (engine + CLI)
-make install      # compile standalone binary to ~/.evotai/bin/evot
-```
+</details>
 
 ## License
 

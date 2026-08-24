@@ -224,14 +224,14 @@ case "${os}-${arch}" in
 esac
 
 # --- Version resolution ---
-# Prefer evot.ai's proxy: the server has a stable egress IP and can attach a
-# token, so it survives GitHub API rate limits that bite anonymous curl users.
-# Fall back to the GitHub API directly if the proxy is unreachable.
+# Prefer auto.evot.ai's proxy: the server has a stable egress IP and can
+# attach a token, so it survives GitHub API rate limits that bite anonymous
+# curl users. Fall back to the GitHub API directly if the proxy is unreachable.
 
 if [ -n "${EVOT_INSTALL_VERSION:-}" ]; then
   TAG="$EVOT_INSTALL_VERSION"
 else
-  TAG="$(fetch "https://evot.ai/install/latest" 2>/dev/null || true)"
+  TAG="$(fetch "https://auto.evot.ai/install/latest" 2>/dev/null || true)"
   case "$TAG" in
     v[0-9]*) ;;
     *)

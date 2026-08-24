@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import type { ReleaseInfo, CheckResult } from './types.js'
 import { compareVersions, isNewer, isPrerelease } from './version.js'
 import { stateDir } from './paths.js'
+import { resolveUpdateProxy } from './proxy.js'
 
 const REPO = 'evotai/evot'
 const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases?per_page=20`
@@ -83,9 +84,14 @@ async function fetchReleases(
   }
   if (etag) headers['If-None-Match'] = etag
 
+  // An explicit `proxy` is required rather than relying on ambient variables:
+  // Bun's fetch ignores ALL_PROXY, so the common socks-only setup would send
+  // this request direct while install.sh proxied the download.
+  const { fetchProxy } = await resolveUpdateProxy()
   const resp = await fetch(RELEASES_URL, {
     headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+    ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
   })
 
   if (resp.status === 304) return { status: 'not_modified' }

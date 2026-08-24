@@ -49,7 +49,9 @@ describe('runUpdate', () => {
     const result = await runUpdate('2026.4.13')
 
     // "Up to date" is only as good as the last successful check; say why.
-    expect(result).toEqual({ kind: 'up_to_date', staleReason: 'offline' })
+    expect(result).toMatchObject({ kind: 'up_to_date', staleReason: 'offline' })
+    // The route is chosen automatically, so a stale answer has to name it.
+    expect(typeof (result as { proxy?: string }).proxy).toBe('string')
   })
 
   test('reports the reason a rate-limited check fell back to cache', async () => {
@@ -96,7 +98,11 @@ describe('runUpdate', () => {
   test('surfaces a check error when there is nothing cached', async () => {
     globalThis.fetch = (async () => { throw new Error('offline') }) as typeof globalThis.fetch
 
-    expect(await runUpdate('2026.4.13')).toEqual({ kind: 'error', message: 'offline' })
+    const result = await runUpdate('2026.4.13')
+
+    expect(result).toMatchObject({ kind: 'error', message: 'offline' })
+    // A network failure must name the route it took, since it was auto-selected.
+    expect(typeof (result as { proxy?: string }).proxy).toBe('string')
   })
 
   test('installs an available release and reports its notes', async () => {

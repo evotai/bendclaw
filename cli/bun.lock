@@ -10,8 +10,10 @@
         "cli-highlight": "^2.1.11",
         "diff": "^9.0.0",
         "get-east-asian-width": "^1.5.0",
+        "mac-system-proxy": "1.0.4",
         "marked": "^15.0.0",
         "partial-json": "0.1.7",
+        "proxy-from-env": "2.1.0",
         "string-width": "^8.2.0",
         "strip-ansi": "^7.2.0",
       },
@@ -19,6 +21,7 @@
         "@napi-rs/cli": "^3.6.1",
         "@types/bun": "^1.2.0",
         "@types/diff": "^8.0.0",
+        "@types/proxy-from-env": "1.0.4",
         "@xterm/headless": "5.5.0",
         "typescript": "^5.8.0",
       },
@@ -202,6 +205,8 @@
 
     "@types/node": ["@types/node@25.6.2", "", { "dependencies": { "undici-types": "~7.19.0" } }, "sha512-sokuT28dxf9JT5Kady1fsXOvI4HVpjZa95NKT5y9PNTIrs2AsobR4GFAA90ZG8M+nxVRLysCXsVj6eGC7Vbrlw=="],
 
+    "@types/proxy-from-env": ["@types/proxy-from-env@1.0.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-TPR9/bCZAr3V1eHN4G3LD3OLicdJjqX1QRXWuNcCYgE66f/K8jO2ZRtHxI2D9MbnuUP6+qiKSS8eUHp6TFHGCw=="],
+
     "@types/unist": ["@types/unist@2.0.11", "", {}, "sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA=="],
 
     "@unified-latex/unified-latex-builder": ["@unified-latex/unified-latex-builder@1.8.4", "", { "dependencies": { "@unified-latex/unified-latex-types": "^1.8.4" } }, "sha512-Rw5XlVhJ50wk7J/hukJ0YBjLqaCjNTYDLZc6lNPH8Vji56YPzZbduuh/kY3ueME+CnxJq/34CGY8D/0cOZY8yw=="],
@@ -322,6 +327,8 @@
 
     "json-with-bigint": ["json-with-bigint@3.5.8", "", {}, "sha512-eq/4KP6K34kwa7TcFdtvnftvHCD9KvHOGGICWwMFc4dOOKF5t4iYqnfLK8otCRCRv06FXOzGGyqE8h8ElMvvdw=="],
 
+    "mac-system-proxy": ["mac-system-proxy@1.0.4", "", {}, "sha512-IAkNLxXZrYuM99A2OhPrvUoAxohsxQciJh2D2xnD+R6vypn/AVyOYLsbZsMVCS/fEbLIe67nQ8krEAfqP12BVg=="],
+
     "marked": ["marked@15.0.12", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
 
     "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
@@ -339,6 +346,8 @@
     "parse5-htmlparser2-tree-adapter": ["parse5-htmlparser2-tree-adapter@6.0.1", "", { "dependencies": { "parse5": "^6.0.1" } }, "sha512-qPuWvbLgvDGilKc5BoicRovlT4MtYT6JfJyBOMDsKoiT+GiuP5qyrPCnR9HcPECIJJmZh5jRndyNThnhhb/vlA=="],
 
     "partial-json": ["partial-json@0.1.7", "", {}, "sha512-Njv/59hHaokb/hRUjce3Hdv12wd60MtM9Z5Olmn+nehe0QDAsRtRbJPvJ0Z91TusF0SuZRIvnM+S4l6EIP8leA=="],
+
+    "proxy-from-env": ["proxy-from-env@2.1.0", "", {}, "sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA=="],
 
     "require-directory": ["require-directory@2.1.1", "", {}, "sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q=="],
 

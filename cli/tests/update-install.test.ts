@@ -525,4 +525,41 @@ printf 'evot v2026.7.19\\n'
     expect(exitCode).not.toBe(0)
     expect(existsSync(join(root, 'nostate', 'install-state.json'))).toBe(false)
   })
+
+  /**
+   * A release download can connect at TCP+TLS and then deliver nothing. With
+   * only --connect-timeout, curl has no deadline for that state and waits
+   * indefinitely, which is what a user experiences as "update just hangs".
+   */
+  test('bounds a stalled transfer instead of waiting indefinitely', () => {
+    const script = readFileSync(installShPath, 'utf8')
+
+    expect(script).toContain('--speed-limit "$STALL_MIN_BYTES_PER_SEC"')
+    expect(script).toContain('--speed-time "$STALL_WINDOW_SECONDS"')
+    // Both branches of download() need it, not just the resuming one.
+    expect(script.match(/--speed-limit/g)).toHaveLength(2)
+    // The small-response path is bounded too, so a stalled version or checksum
+    // lookup cannot hang the install before the download starts.
+    expect(script).toContain('--max-time')
+  })
+
+  /**
+   * Retry belongs to download_verified, which owns backoff, resume and the
+   * discard rules. An in-tool retry underneath it multiplies rather than bounds:
+   * `--retry 2` turns a 20s stall limit into 60s, which the outer loop then
+   * triples, so a stalled host hangs for minutes.
+   */
+  test('does not nest in-tool retries inside the download retry loop', () => {
+    const script = readFileSync(installShPath, 'utf8')
+    const downloadFn = script.slice(
+      script.indexOf('\ndownload() {'),
+      script.indexOf('\n# Download, verify checksum'),
+    )
+
+    expect(downloadFn).not.toContain('--retry')
+    expect(downloadFn).not.toContain('--tries=3')
+    expect(downloadFn).toContain('--tries=1')
+    // The outer loop is what supplies the attempts.
+    expect(script).toContain('DOWNLOAD_ATTEMPTS=3')
+  })
 })

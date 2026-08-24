@@ -62,6 +62,8 @@ async function main() {
               ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
               : '  ✓ evot is up to date.',
           )
+          // Only present alongside a stale answer, where the route explains it.
+          if (result.proxy) console.log(`    ${result.proxy}`)
           break
         case 'updated': {
           console.log(`  ✓ updated ${result.from} → ${result.to}`)
@@ -74,7 +76,9 @@ async function main() {
           }
           break
         }
-        case 'error': console.error(`  ✗ ${result.message}`); process.exit(1)
+        case 'error': console.error(`  ✗ ${result.message}`)
+          if (result.proxy) console.error(`    ${result.proxy}`)
+          process.exit(1)
       }
       break
     }

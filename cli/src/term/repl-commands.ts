@@ -171,9 +171,13 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
       case 'up_to_date':
         ctx.commitSystem(
           'sys-upd-ok',
-          result.staleReason
-            ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
-            : '  ✓ evot is up to date.',
+          [
+            result.staleReason
+              ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
+              : '  ✓ evot is up to date.',
+            // Only present alongside a stale answer, where the route explains it.
+            ...(result.proxy ? [`    ${result.proxy}`] : []),
+          ].join('\n'),
         )
         break
       case 'updated': {
@@ -189,7 +193,10 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
         break
       }
       case 'error':
-        ctx.commitSystem('sys-upd-err', chalk.red(`  ✗ ${result.message}`))
+        ctx.commitSystem(
+          'sys-upd-err',
+          chalk.red([`  ✗ ${result.message}`, ...(result.proxy ? [`    ${result.proxy}`] : [])].join('\n')),
+        )
         break
     }
   } catch (err) {

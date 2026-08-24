@@ -40,26 +40,53 @@ fi
 # when it does not.
 DOWNLOAD_ATTEMPTS=3
 
+# Abort a transfer that has effectively stopped moving.
+#
+# --connect-timeout only bounds the connect phase. Reaching the release CDN can
+# succeed at TCP+TLS and then deliver nothing, at which point curl has no
+# deadline at all and waits indefinitely -- observed as a download sitting for
+# well over a minute on a connection whose handshake completed in 0.2s. The
+# retry loop below cannot help, because curl never returns.
+#
+# A floor of 1 KB/s sustained over 20s distinguishes a stalled transfer from a
+# merely slow one: a 37 MB asset at that rate would need ~10 hours, so anything
+# at or below it is not going to finish. Hitting the floor exits with curl's
+# timeout status, which hands the attempt back to download_verified.
+STALL_MIN_BYTES_PER_SEC=1024
+STALL_WINDOW_SECONDS=20
+
 # curl's exit code for "server won't resume", which is a permanent property of
 # that host rather than a transient fault. wget has no distinct code for it, so
 # it relies on the attempt-count fallback in download_verified instead.
 CURL_NO_RESUME_EXIT=33
 
+# Fetch one URL, once.
+#
+# Deliberately no in-tool retry (`curl --retry` / `wget --tries`): retry,
+# backoff and resume are owned by download_verified, and nesting the two
+# multiplies the worst case rather than bounding it. With a per-attempt stall
+# limit, an inner retry of 2 turns a 20s bound into 60s, which the outer loop
+# then triples again -- 3 minutes of apparent hang on a stalled host. One
+# attempt per call keeps the ceiling at DOWNLOAD_ATTEMPTS * the stall window.
 download() {
   _url="$1"; _output="$2"; _resume="${3:-yes}"
   if [ "$DOWNLOADER" = "curl" ]; then
     if [ "$_resume" = "yes" ]; then
-      curl -fsSL --retry 2 --retry-delay 1 --retry-connrefused \
-        --connect-timeout 20 --continue-at - -o "$_output" "$_url"
+      curl -fsSL --connect-timeout 20 \
+        --speed-limit "$STALL_MIN_BYTES_PER_SEC" --speed-time "$STALL_WINDOW_SECONDS" \
+        --continue-at - -o "$_output" "$_url"
     else
-      curl -fsSL --retry 2 --retry-delay 1 --retry-connrefused \
-        --connect-timeout 20 -o "$_output" "$_url"
+      curl -fsSL --connect-timeout 20 \
+        --speed-limit "$STALL_MIN_BYTES_PER_SEC" --speed-time "$STALL_WINDOW_SECONDS" \
+        -o "$_output" "$_url"
     fi
   else
+    # wget's --timeout already covers reads as well as DNS and connect, so a
+    # stalled transfer is bounded without an extra flag.
     if [ "$_resume" = "yes" ]; then
-      wget -q --tries=3 --timeout=20 --continue -O "$_output" "$_url"
+      wget -q --tries=1 --timeout="$STALL_WINDOW_SECONDS" --continue -O "$_output" "$_url"
     else
-      wget -q --tries=3 --timeout=20 -O "$_output" "$_url"
+      wget -q --tries=1 --timeout="$STALL_WINDOW_SECONDS" -O "$_output" "$_url"
     fi
   fi
 }
@@ -109,10 +136,16 @@ download_verified() {
   done
 }
 
+# Fetch a small response to stdout (version JSON, checksum).
+#
+# Unlike download(), this has no outer retry loop wrapping it, so the in-tool
+# retry stays. --max-time is safe because the payload is small and bounded, and
+# it is what stops a stalled read from hanging the install before the download
+# even starts. Worst case is 3 attempts * 20s plus backoff.
 fetch() {
   _url="$1"
   if [ "$DOWNLOADER" = "curl" ]; then
-    curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 20 "$_url"
+    curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 20 --max-time 20 "$_url"
   else
     wget -q --tries=3 --timeout=20 -O- "$_url"
   fi

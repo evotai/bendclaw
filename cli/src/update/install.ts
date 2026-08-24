@@ -4,6 +4,7 @@
 
 import { join } from 'path'
 import { installBinDir, installRoot, runningInstallDir } from './paths.js'
+import { applyProxyToEnv, resolveUpdateProxy } from './proxy.js'
 
 const INSTALL_SCRIPT_BASE = 'https://raw.githubusercontent.com/evotai/evot'
 const SCRIPT_FETCH_TIMEOUT = 30_000
@@ -34,8 +35,10 @@ async function fetchInstallScript(tag?: string): Promise<{ script: string } | { 
   let lastError = ''
   for (let attempt = 1; attempt <= SCRIPT_FETCH_ATTEMPTS; attempt++) {
     try {
+      const { fetchProxy } = await resolveUpdateProxy()
       const response = await fetch(installScript, {
         signal: AbortSignal.timeout(SCRIPT_FETCH_TIMEOUT),
+        ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
       })
       if (!response.ok) {
         lastError = `failed to download install script: HTTP ${response.status}`
@@ -95,7 +98,11 @@ async function verifyInstalledVersion(
 
 export async function executeInstall(tag?: string): Promise<{ success: boolean; output: string }> {
   try {
-    const env: Record<string, string> = { ...process.env as Record<string, string> }
+    // The 37 MB release asset is downloaded by curl inside install.sh, so the
+    // decision has to be pushed into the child's environment. Normalizing it
+    // here also removes any unreachable value inherited from the parent shell.
+    const selection = await resolveUpdateProxy()
+    const env = applyProxyToEnv({ ...process.env as Record<string, string> }, selection)
     const inferredInstallDir = runningInstallDir()
     if (!env.EVOT_INSTALL_DIR && inferredInstallDir) {
       // Preserve custom installs after the one-shot installer environment is

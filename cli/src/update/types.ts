@@ -23,7 +23,12 @@ export type RunResult =
   /**
    * `staleReason` is set when the answer came from cache because the check could
    * not reach GitHub, and carries why. Absent means the answer was confirmed.
+   *
+   * `proxy` explains which network route the attempt took. It accompanies the
+   * outcomes where the route is in question, because the proxy is now chosen
+   * automatically: without it, a failure cannot be told apart from one where the
+   * user's proxy was never consulted.
    */
-  | { kind: 'up_to_date'; staleReason?: string }
+  | { kind: 'up_to_date'; staleReason?: string; proxy?: string }
   | { kind: 'updated'; from: string; to: string; notes?: string[] }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; proxy?: string }

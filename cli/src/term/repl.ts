@@ -26,6 +26,7 @@ import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
 import { renderBanner } from './banner.js'
+import stringWidth from 'string-width'
 import {
   buildOutputBlocks,
   buildPromptBlocks,
@@ -419,6 +420,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   // Update info
   let updateAvailable: { version: string } | null = null
+  let updateStatus: 'idle' | 'downloading' | 'staged' = 'idle'
+  let updateVersion: string | null = null
   const updateMgr = new (await import('../update/index.js')).UpdateManager(
     appVersion
   )
@@ -426,6 +429,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     updateAvailable = { version: info.version }
     renderer.requestRender()
   })
+  updateMgr.on('update-status', (status: { kind: 'idle' | 'downloading' | 'staged'; version?: string }) => {
+    updateStatus = status.kind
+    updateVersion = status.version ?? null
+    renderer.requestRender()
+  })
+  {
+    // A download staged by a previous session must show before the first
+    // network check runs, so seed from disk alongside the manager's own read.
+    const initial = updateMgr.getStatus()
+    if (initial.kind !== 'idle') {
+      updateStatus = initial.kind
+      updateVersion = initial.version
+    }
+  }
   updateMgr.start()
 
   // Install bookkeeping. bin/evot reports its own version but the napi bindings
@@ -548,7 +565,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       rows: renderer.termRows,
       serverState,
       releaseNotes,
-      updateAvailable,
       installDrift,
       skillsDirs: agent.skillsDirs(),
     })
@@ -722,6 +738,41 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (spinnerBlock) spinnerBlock = { ...spinnerBlock, marginTop: 0 }
     }
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
+    // Update notice: right-aligned at the input box's top corner — the same
+    // placement Claude Code uses. This area repaints every frame, so it stays
+    // visible while a task runs (unlike the banner, which scrolls away with
+    // history). Staged is green because it wants to be seen: "restart when
+    // convenient". Downloading and manual-only-available are dim background
+    // noise. Failures stay silent; the manual /update reports them with full
+    // context. compactAbove keeps the composer's centering filler off, so the
+    // notice hugs the frame top instead of floating above blank rows.
+    let updateNotice: ViewBlock['lines'][number]['spans'] | null = null
+    if (overlay.kind === 'none') {
+      if (updateStatus === 'staged' && updateVersion) {
+        updateNotice = [
+          { text: '✓ ', hex: '#3f9142' },
+          { text: `Update downloaded v${updateVersion}`, hex: '#3f9142' },
+          { text: ' · Restart to apply', dim: true },
+        ]
+      } else if (updateStatus === 'downloading' && updateVersion) {
+        updateNotice = [{ text: `⬇ Auto-updating to v${updateVersion}…`, dim: true }]
+      } else if (updateStatus === 'idle' && updateAvailable && !spinnerBlock) {
+        // Auto-download off or still queued: the only state where /update is
+        // the user's action, so naming the command here is correct.
+        updateNotice = [
+          { text: `↑ evot v${updateAvailable.version} available`, dim: true },
+          { text: ' — run /update', dim: true },
+        ]
+      }
+    }
+    if (updateNotice) {
+      const textWidth = updateNotice.reduce((sum, s) => sum + stringWidth(s.text), 0)
+      const pad = Math.max(0, renderer.termCols - textWidth - 2)
+      preEditorBlocks.push({
+        lines: [{ spans: [{ text: ' '.repeat(pad) }, ...updateNotice] }],
+        marginTop: spinnerBlock || queueLines.length > 0 ? 0 : 1,
+      })
+    }
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
     if (adSlotTick.content && !isLoading && !spinnerBlock) {
@@ -757,6 +808,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     footerBlocks.push(...buildPromptBlocks(getPromptVM(), {
       attachedAbove: spinnerBlock !== null || queueLines.length > 0,
       reservedAboveRows: blocksToLines(preEditorBlocks).length,
+      compactAbove: updateNotice !== null,
     }))
 
     return {

@@ -11,6 +11,22 @@ async function main() {
   const rawArgs = process.argv.slice(2)
   const opts = await parseArgs(rawArgs)
 
+  // Apply a background-staged download before any interactive path comes up.
+  // A verified archive is already on disk, so this is a local copy-and-swap —
+  // the whole point of staging was to keep it off the network. Interactive
+  // commands only: `/update` manages its own lifecycle, and one-shot paths
+  // (whoami, logout) must not pay for it.
+  if (opts.command === 'repl' || opts.command === 'login' || opts.command === 'prompt') {
+    try {
+      const { applyStagedOnStartup } = await import('./update/index.js')
+      const { version } = await import('./native/index.js')
+      const applied = await applyStagedOnStartup(version())
+      if (applied) {
+        console.log(`  ✓ evot updated to v${applied} in the background; this session is running the new version.`)
+      }
+    } catch { /* never block launch on update bookkeeping */ }
+  }
+
   switch (opts.command) {
     case 'serve':
       await startServer(opts.port, opts.model, opts.envFile)

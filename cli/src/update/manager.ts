@@ -1,9 +1,10 @@
 /**
  * UpdateManager — automatic update check scheduler with event emission.
- * Only responsible for checking; does not install.
+ * Checks, then stages the download in the background; does not install.
  *
  * Events:
- *   'update-available' → ReleaseInfo
+ *   'update-available' → ReleaseInfo   a newer release exists
+ *   'update-status'    → UpdateStatus  background staging progress
  *
  * Failures are deliberately not emitted: an unreachable GitHub is not something
  * to nag the user about, and checkForUpdate already persists the reason so
@@ -14,6 +15,7 @@
 import { EventEmitter } from 'events'
 import type { ReleaseInfo } from './types.js'
 import { checkForUpdate } from './check.js'
+import { readStaged, stageUpdate } from './stage.js'
 
 const INITIAL_DELAY = 10_000          // 10s after start
 const PERIODIC_CHECK = 30 * 60_000    // 30 min interval
@@ -27,6 +29,11 @@ const BACKOFF_RETRY = 60 * 60_000     // probe once an hour after backing off
  */
 const MAX_CONSECUTIVE_FAILURES = 5
 
+export type UpdateStatus =
+  | { kind: 'idle' }
+  | { kind: 'downloading'; version: string }
+  | { kind: 'staged'; version: string }
+
 export class UpdateManager extends EventEmitter {
   private currentVersion: string
   private now: () => number
@@ -37,11 +44,17 @@ export class UpdateManager extends EventEmitter {
   private retryAfter = 0
   private inFlight = false
   private stopped = false
+  private status: UpdateStatus = { kind: 'idle' }
+  private stagingAbort: AbortController | null = null
 
   constructor(currentVersion: string, now: () => number = Date.now) {
     super()
     this.currentVersion = currentVersion
     this.now = now
+    // A previous session may have left a verified download behind. Surface it
+    // immediately instead of waiting for the first check to re-discover it.
+    const staged = readStaged()
+    if (staged) this.status = { kind: 'staged', version: staged.version }
   }
 
   /** Start the scheduler: delayed first check + periodic checks. */
@@ -53,6 +66,11 @@ export class UpdateManager extends EventEmitter {
     this.periodicTimer = setInterval(() => {
       void this.check()
     }, PERIODIC_CHECK)
+  }
+
+  /** Current background-download status, for persistent UI surfaces. */
+  getStatus(): UpdateStatus {
+    return this.status
   }
 
   /**
@@ -91,12 +109,48 @@ export class UpdateManager extends EventEmitter {
       if (result.kind === 'available' && result.latest.version !== this.lastNotifiedVersion) {
         this.lastNotifiedVersion = result.latest.version
         this.emit('update-available', result.latest)
+        this.maybeStage(result.latest)
       }
     } catch {
       this.recordFailure()
     } finally {
       this.inFlight = false
     }
+  }
+
+  /**
+   * Kick off a background download unless disabled or already superseded.
+   *
+   * EVOT_AUTO_DOWNLOAD=0 opts out entirely — metered connections and shared
+   * machines are the use cases. An existing staged version that already
+   * matches or beats the candidate means there is nothing to do either.
+   */
+  private maybeStage(release: ReleaseInfo): void {
+    if (process.env.EVOT_AUTO_DOWNLOAD === '0') return
+    if (this.stopped || this.stagingAbort) return
+    if (this.status.kind === 'staged' && this.status.version >= release.version) return
+
+    this.setStatus({ kind: 'downloading', version: release.version })
+    const controller = new AbortController()
+    this.stagingAbort = controller
+
+    stageUpdate(release, controller.signal)
+      .then(() => {
+        this.setStatus({ kind: 'staged', version: release.version })
+      })
+      .catch(() => {
+        // Silent by contract: the manual `/update` path reports failures with
+        // full context, and a transient outage self-heals on the next check.
+        if (!controller.signal.aborted) this.setStatus({ kind: 'idle' })
+      })
+      .finally(() => {
+        if (this.stagingAbort === controller) this.stagingAbort = null
+      })
+  }
+
+  private setStatus(status: UpdateStatus): void {
+    this.status = status
+    this.emit('update-status', status)
   }
 
   private recordFailure(): void {
@@ -116,7 +170,7 @@ export class UpdateManager extends EventEmitter {
     return this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && this.now() < this.retryAfter
   }
 
-  /** Clean up timers. */
+  /** Clean up timers and abort an in-flight background download. */
   cleanup(): void {
     this.stopped = true
     if (this.initialTimer) {
@@ -127,5 +181,7 @@ export class UpdateManager extends EventEmitter {
       clearInterval(this.periodicTimer)
       this.periodicTimer = null
     }
+    this.stagingAbort?.abort()
+    this.stagingAbort = null
   }
 }

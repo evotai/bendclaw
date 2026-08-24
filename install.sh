@@ -239,6 +239,12 @@ ASSET="${BINARY}-v${VERSION}-${TARGET}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 SHA_URL="${URL}.sha256"
 
+# A pre-staged archive from the CLI's background downloader. The download step
+# is skipped, but checksum verification and every other validation still run:
+# the file came from the same release CDN, yet it travelled through a second
+# process before arriving here.
+STAGED_ASSET="${EVOT_INSTALL_ASSET:-}"
+
 # --- Download & verify ---
 
 info "Installing ${BINARY} v${VERSION} for ${TARGET}..."
@@ -323,8 +329,56 @@ verify_checksum() {
   info "Checksum verified"
 }
 
-download_verified "$URL" "$TMP/$ASSET" "$SHA_URL" "$PACKAGE_DIR" \
-  || error "Failed to download and verify ${ASSET} after ${DOWNLOAD_ATTEMPTS} attempts"
+# Checksum verification against a local sidecar instead of a fetched one.
+# A missing sidecar is still tolerated (older releases published none), but a
+# present sidecar that disagrees is fatal.
+verify_checksum_from_file() {
+  _file="$1"; _sha_path="$2"
+  [ -s "$_sha_path" ] || return 0
+  _expected="$(awk '{print $1}' "$_sha_path")"
+  [ -n "$_expected" ] || return 0
+
+  if command -v sha256sum > /dev/null 2>&1; then
+    _actual="$(sha256sum "$_file" | awk '{print $1}')"
+  elif command -v shasum > /dev/null 2>&1; then
+    _actual="$(shasum -a 256 "$_file" | awk '{print $1}')"
+  else
+    return 0
+  fi
+
+  if [ "$_actual" != "$_expected" ]; then
+    warn "  Checksum mismatch for staged archive (expected $_expected, got $_actual)"
+    return 1
+  fi
+  info "Checksum verified"
+}
+
+# Install from a staged archive when one was provided, otherwise download.
+#
+# The staged path still verifies the checksum — against the sidecar file that
+# travelled with the archive rather than a fresh fetch of SHA_URL, since the
+# point of staging is to skip the network. Any other failure (bad tar, missing
+# binary) falls through to a normal download so the install can still succeed.
+if [ -n "$STAGED_ASSET" ] && [ -f "$STAGED_ASSET" ]; then
+  STAGED_SHA="$STAGED_ASSET.sha256"
+  cp -f "$STAGED_ASSET" "$TMP/$ASSET"
+  if verify_checksum_from_file "$TMP/$ASSET" "$STAGED_SHA" \
+    && rm -rf "$PACKAGE_DIR" \
+    && mkdir -p "$PACKAGE_DIR" \
+    && tar -xzf "$TMP/$ASSET" -C "$PACKAGE_DIR"; then
+    info "Using pre-downloaded ${ASSET}"
+  else
+    warn "  Staged archive failed verification; downloading instead"
+    rm -rf "$PACKAGE_DIR"
+    rm -f "$TMP/$ASSET"
+    STAGED_ASSET=""
+  fi
+fi
+
+if [ -z "$STAGED_ASSET" ]; then
+  download_verified "$URL" "$TMP/$ASSET" "$SHA_URL" "$PACKAGE_DIR" \
+    || error "Failed to download and verify ${ASSET} after ${DOWNLOAD_ATTEMPTS} attempts"
+fi
 
 # --- Validate package ---
 

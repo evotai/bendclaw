@@ -93,8 +93,6 @@ export interface BannerOptions {
   quiet?: boolean
   /** Release notes to show after an update (What's New) */
   releaseNotes?: string[] | null
-  /** Update available info */
-  updateAvailable?: { version: string } | null
   /** Install bookkeeping mismatch worth surfacing (see update/state.ts). */
   installDrift?: string | null
   /** Fully resolved, ordered skill directories from the agent. */
@@ -112,7 +110,6 @@ export function renderBanner(opts: BannerOptions): string {
     rows = Number.POSITIVE_INFINITY,
     serverState,
     releaseNotes,
-    updateAvailable,
     installDrift,
     skillsDirs,
   } = opts
@@ -142,14 +139,6 @@ export function renderBanner(opts: BannerOptions): string {
     const envPath = configInfo.envPath ? formatPath(configInfo.envPath) : '.env'
     detailLines.push('')
     detailLines.push(chalk.hex('#ffff00')(`  ⚠ No API key — edit ${envPath}`))
-  }
-
-  if (updateAvailable) {
-    detailLines.push('')
-    detailLines.push(
-      chalk.hex('#8abeb7')(`  ↑ evot v${updateAvailable.version} available`) +
-        chalk.hex(MUTED)(' — run /update'),
-    )
   }
 
   if (installDrift) {

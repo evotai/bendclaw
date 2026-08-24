@@ -107,7 +107,10 @@ async function verifyInstalledVersion(
   return { success: true, output: actual }
 }
 
-export async function executeInstall(tag?: string): Promise<{ success: boolean; output: string }> {
+export async function executeInstall(
+  tag?: string,
+  extraEnv?: Record<string, string>,
+): Promise<{ success: boolean; output: string }> {
   try {
     // The 37 MB release asset is downloaded by curl inside install.sh, so the
     // decision has to be pushed into the child's environment. Normalizing it
@@ -122,6 +125,9 @@ export async function executeInstall(tag?: string): Promise<{ success: boolean; 
     }
     if (tag) {
       env.EVOT_INSTALL_VERSION = tag
+    }
+    if (extraEnv) {
+      Object.assign(env, extraEnv)
     }
 
     // Fetch first, then pass the complete script to sh. A `curl | sh` pipeline

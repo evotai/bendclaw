@@ -52,12 +52,16 @@ function stubFailure() {
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'evot-manager-test-'))
   process.env.EVOT_HOME = home
+  // These tests cover check scheduling only. Staging downloads through the
+  // same global fetch and would pollute every request count here.
+  process.env.EVOT_AUTO_DOWNLOAD = '0'
   requestCount = 0
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
   delete process.env.EVOT_HOME
+  delete process.env.EVOT_AUTO_DOWNLOAD
   rmSync(home, { recursive: true, force: true })
 })
 

@@ -152,23 +152,6 @@ describe('renderBanner', () => {
     }
   })
 
-  test('shows an available update with the command that applies it', () => {
-    const { cwd, skillsDir } = createFixture(1)
-    const banner = stripAnsi(renderBanner({
-      version: '2026.4.13',
-      model: 'model',
-      cwd,
-      configInfo: { provider: 'provider', hasApiKey: true },
-      columns: 80,
-      rows: 30,
-      skillsDirs: [skillsDir],
-      updateAvailable: { version: '2026.4.20' },
-    }))
-
-    expect(banner).toContain('evot v2026.4.20 available')
-    expect(banner).toContain('/update')
-  })
-
   test('stays quiet when no update is available', () => {
     const { cwd, skillsDir } = createFixture(1)
     const banner = stripAnsi(renderBanner({

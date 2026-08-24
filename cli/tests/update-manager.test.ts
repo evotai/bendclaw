@@ -38,7 +38,7 @@ function release(tag: string): GhRelease {
 function stubOk(releases: GhRelease[]) {
   globalThis.fetch = (async () => {
     requestCount++
-    return new Response(JSON.stringify(releases), { status: 200 })
+    return new Response(releases[0]?.tag_name ?? '', { status: 200 })
   }) as typeof globalThis.fetch
 }
 

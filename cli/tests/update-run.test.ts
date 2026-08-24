@@ -7,14 +7,8 @@ import { runUpdate } from '../src/update/index.js'
 const originalFetch = globalThis.fetch
 let home = ''
 
-function release(tag: string) {
-  return {
-    draft: false,
-    prerelease: tag.includes('-beta.'),
-    name: `evot ${tag.replace(/^v/, '')}`,
-    tag_name: tag,
-    body: null,
-  }
+function latest(tag: string) {
+  return new Response(tag, { status: 200 })
 }
 
 beforeEach(() => {
@@ -34,7 +28,7 @@ afterEach(() => {
 describe('runUpdate', () => {
   test('reports up to date without attempting an install', async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
 
     expect(await runUpdate('2026.4.13')).toEqual({ kind: 'up_to_date' })
     expect(existsSync(join(home, 'bin', 'evot'))).toBe(false)
@@ -42,7 +36,7 @@ describe('runUpdate', () => {
 
   test('flags an up-to-date answer that came from a stale cache', async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
     await runUpdate('2026.4.13')
 
     globalThis.fetch = (async () => { throw new Error('offline') }) as typeof globalThis.fetch
@@ -56,7 +50,7 @@ describe('runUpdate', () => {
 
   test('reports the reason a rate-limited check fell back to cache', async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
     await runUpdate('2026.4.13')
 
     globalThis.fetch = (async () =>
@@ -65,13 +59,13 @@ describe('runUpdate', () => {
 
     expect(result.kind).toBe('up_to_date')
     if (result.kind === 'up_to_date') {
-      expect(result.staleReason).toBe('failed to fetch release info')
+      expect(result.staleReason).toContain('HTTP 403')
     }
   })
 
   test('a confirmed up-to-date answer carries no stale reason', async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
 
     const result = await runUpdate('2026.4.13')
 
@@ -81,7 +75,7 @@ describe('runUpdate', () => {
   test('a later success clears the recorded failure', async () => {
     const { lastCheckError } = await import('../src/update/check.js')
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
     await runUpdate('2026.4.13')
 
     globalThis.fetch = (async () => { throw new Error('offline') }) as typeof globalThis.fetch
@@ -89,7 +83,7 @@ describe('runUpdate', () => {
     expect(lastCheckError()?.message).toBe('offline')
 
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify([release('v2026.4.13')]), { status: 200 })) as typeof globalThis.fetch
+      latest('v2026.4.13')) as typeof globalThis.fetch
     await runUpdate('2026.4.13')
 
     expect(lastCheckError()).toBeNull()
@@ -105,7 +99,7 @@ describe('runUpdate', () => {
     expect(typeof (result as { proxy?: string }).proxy).toBe('string')
   })
 
-  test('installs an available release and reports its notes', async () => {
+  test('installs an available release', async () => {
     const script = `#!/bin/sh
 set -e
 mkdir -p "$EVOT_INSTALL_DIR"
@@ -114,10 +108,7 @@ chmod +x "$EVOT_INSTALL_DIR/evot"
 `
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes('install.sh')) return new Response(script)
-      return new Response(
-        JSON.stringify([{ ...release('v2026.4.20'), body: '### Changelog\n* faster startup' }]),
-        { status: 200 },
-      )
+      return latest('v2026.4.20')
     }) as typeof globalThis.fetch
 
     const result = await runUpdate('2026.4.13')
@@ -126,7 +117,7 @@ chmod +x "$EVOT_INSTALL_DIR/evot"
       kind: 'updated',
       from: '2026.4.13',
       to: '2026.4.20',
-      notes: ['faster startup'],
+      notes: [],
     })
     expect(readFileSync(join(home, 'bin', 'evot'), 'utf8')).toContain('2026.4.20')
   })
@@ -148,7 +139,7 @@ EOF
 `
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes('install.sh')) return new Response(script)
-      return new Response(JSON.stringify([release('v2026.4.20')]), { status: 200 })
+      return latest('v2026.4.20')
     }) as typeof globalThis.fetch
 
     await runUpdate('2026.4.13')
@@ -163,7 +154,7 @@ EOF
         // A script that exits non-zero without installing anything.
         return new Response('#!/bin/sh\necho "disk full" >&2\nexit 1\n')
       }
-      return new Response(JSON.stringify([release('v2026.4.20')]), { status: 200 })
+      return latest('v2026.4.20')
     }) as typeof globalThis.fetch
 
     const result = await runUpdate('2026.4.13')
@@ -182,7 +173,7 @@ chmod +x "$EVOT_INSTALL_DIR/evot"
 `
     globalThis.fetch = (async (url: string) => {
       if (String(url).includes('install.sh')) return new Response(script)
-      return new Response(JSON.stringify([release('v2026.4.20')]), { status: 200 })
+      return latest('v2026.4.20')
     }) as typeof globalThis.fetch
 
     const result = await runUpdate('2026.4.13')

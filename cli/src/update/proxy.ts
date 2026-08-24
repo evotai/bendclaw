@@ -43,7 +43,6 @@ const FETCH_SCHEMES = new Set(['http', 'https'])
  * port-sensitive, and `getProxyForUrl` needs both to apply its rules.
  */
 export const UPDATE_URLS = [
-  'https://api.github.com/',
   'https://raw.githubusercontent.com/',
   'https://github.com/',
 ]

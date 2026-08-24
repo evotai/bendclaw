@@ -120,7 +120,7 @@ describe('envExemptsAll', () => {
   test('true when NO_PROXY covers every update endpoint', () => {
     expect(envExemptsAll({
       https_proxy: 'http://proxy.corp:3128',
-      no_proxy: 'github.com,api.github.com,raw.githubusercontent.com',
+      no_proxy: 'github.com,raw.githubusercontent.com',
     })).toBe(true)
   })
 
@@ -361,7 +361,7 @@ describe('selectProxy', () => {
 
     const selection = await select({
       https_proxy: 'http://127.0.0.1:7890',
-      no_proxy: 'github.com,api.github.com,raw.githubusercontent.com',
+      no_proxy: 'github.com,raw.githubusercontent.com',
     }, probe)
 
     expect(selection.fetchProxy).toBeNull()

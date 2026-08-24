@@ -1,5 +1,9 @@
 /**
- * GitHub release query, channel selection, and disk cache.
+ * Latest-release lookup via auto.evot.ai, plus a disk cache.
+ *
+ * The curl|sh installer and the CLI share one endpoint so a NAT that 403s
+ * GitHub still sees new releases. The server looks GitHub up with a token;
+ * this client never talks to api.github.com.
  */
 
 import { join } from 'path'
@@ -7,14 +11,11 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import type { ReleaseInfo, CheckResult } from './types.js'
 import { compareVersions, isNewer, isPrerelease } from './version.js'
 import { stateDir } from './paths.js'
-import { resolveUpdateProxy } from './proxy.js'
 
-const REPO = 'evotai/evot'
-const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases?per_page=20`
+const LATEST_URL = 'https://auto.evot.ai/install/latest'
 /**
- * Unauthenticated GitHub allows 60 requests/hour/IP. A one-hour TTL keeps a
- * long-running session to roughly one request per hour while still noticing a
- * release the same day it ships.
+ * A one-hour TTL keeps a long-running session to roughly one request per hour
+ * while still noticing a release the same day it ships.
  */
 const CACHE_TTL = 60 * 60 * 1000
 const REQUEST_TIMEOUT = 10_000
@@ -25,32 +26,15 @@ function cachePath(): string {
 
 interface CacheEntry {
   checked_at: number
-  /** Serialized so a cache hit can surface release notes, not just a version. */
   releases: ReleaseInfo[]
-  etag?: string
-  /**
-   * Last failed check, kept so `/update --status` can explain why a client is
-   * not seeing new releases. Cleared on the next success.
-   */
   last_error?: { at: number; message: string }
 }
 
-interface GithubRelease {
-  draft: boolean
-  prerelease: boolean
-  name: string | null
-  tag_name: string
-  body: string | null
-}
-
-function toReleaseInfo(release: GithubRelease): ReleaseInfo {
-  const tag = release.tag_name
-  return {
-    tag,
-    version: tag.startsWith('v') ? tag.slice(1) : tag,
-    body: release.body ?? undefined,
-    prerelease: release.prerelease,
-  }
+function parseTag(raw: string): ReleaseInfo | null {
+  const tag = raw.trim()
+  if (!/^v\d/.test(tag) || /\s/.test(tag)) return null
+  const version = tag.slice(1)
+  return { tag, version, prerelease: isPrerelease(version) }
 }
 
 /**
@@ -74,63 +58,24 @@ export function selectRelease(
   return best
 }
 
-async function fetchReleases(
-  etag?: string,
-): Promise<{ status: 'ok'; releases: ReleaseInfo[]; etag?: string } | { status: 'not_modified' } | null> {
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'evot-cli',
-    'X-GitHub-Api-Version': '2022-11-28',
-  }
-  if (etag) headers['If-None-Match'] = etag
-
-  // An explicit `proxy` is required rather than relying on ambient variables:
-  // Bun's fetch ignores ALL_PROXY, so the common socks-only setup would send
-  // this request direct while install.sh proxied the download.
-  const { fetchProxy } = await resolveUpdateProxy()
-  const resp = await fetch(RELEASES_URL, {
-    headers,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
-  })
-
-  if (resp.status === 304) return { status: 'not_modified' }
-  if (!resp.ok) return null
-
-  const releases = (await resp.json()) as GithubRelease[]
-  if (!Array.isArray(releases)) return null
-
-  // Draft releases are visible to authenticated maintainers and are never
-  // installable: the workflow publishes assets before undrafting.
-  const usable = releases
-    .filter((r) => !r.draft && (r.name ?? '').startsWith('evot'))
-    .map(toReleaseInfo)
-
-  return { status: 'ok', releases: usable, etag: resp.headers.get('etag') ?? undefined }
+async function fetchLatest(): Promise<ReleaseInfo> {
+  const resp = await fetch(LATEST_URL, { signal: AbortSignal.timeout(REQUEST_TIMEOUT) })
+  if (!resp.ok) throw new Error(`failed to fetch release info: HTTP ${resp.status}`)
+  const info = parseTag(await resp.text())
+  if (!info) throw new Error('failed to fetch release info: unexpected tag')
+  return info
 }
 
 /**
  * Release notes for one specific version.
  *
  * The "What's New" banner must describe the build that is actually running, not
- * whatever is newest: a beta user, or anyone who updated while a newer release
- * already existed, would otherwise be shown notes for a version they do not
- * have. Prefers the cache so a normal startup costs no network call.
+ * whatever is newest. The latest-tag endpoint does not carry notes, so this
+ * only returns a cached body when one exists.
  */
 export async function fetchReleaseNotesFor(version: string): Promise<ReleaseInfo | null> {
   const target = version.replace(/^v/, '')
-  const fromCache = readCache()?.releases.find((r) => r.version === target)
-  if (fromCache?.body) return fromCache
-
-  try {
-    const result = await fetchReleases()
-    if (!result || result.status !== 'ok') return fromCache ?? null
-    writeCache({ checked_at: Date.now(), releases: result.releases, etag: result.etag })
-    return result.releases.find((r) => r.version === target) ?? null
-  } catch {
-    // Cosmetic banner content: never surface a network failure to the caller.
-    return fromCache ?? null
-  }
+  return readCache()?.releases.find((r) => r.version === target) ?? null
 }
 
 function readCache(): CacheEntry | null {
@@ -170,15 +115,12 @@ function decide(
 /**
  * Check for updates.
  *
- * `force` skips the TTL so an explicit `/update` always reflects the registry,
- * but it still sends the cached ETag: GitHub answers 304 for an unchanged
- * release list, which keeps the response cheap without going stale.
+ * `force` skips the TTL so an explicit `/update` always reflects the registry.
  *
  * When the request fails but a cache exists, the cached answer is returned with
  * `stale: true`. That keeps a rate-limited background check from showing the
  * user an error, while still telling the scheduler the network attempt failed
- * so it can back off — an unmarked success would reset its failure budget and
- * keep hammering an endpoint that is already refusing.
+ * so it can back off.
  */
 export async function checkForUpdate(
   currentVersion: string,
@@ -193,35 +135,15 @@ export async function checkForUpdate(
 
   const recordFailure = (message: string): void => {
     if (!cached) return
-    // Keep the release list and its checked_at (so the TTL still throttles a
-    // failing endpoint), but note why the refresh did not happen.
     writeCache({ ...cached, last_error: { at: Date.now(), message } })
   }
 
   try {
-    const result = await fetchReleases(cached?.etag)
-    if (!result) {
-      // A rejected request (rate limit, 5xx) is not a reason to forget what we
-      // already know. Same treatment as a thrown error below.
-      const message = 'failed to fetch release info'
-      if (cached) {
-        recordFailure(message)
-        return decide(currentVersion, cached.releases, { stale: true })
-      }
-      return { kind: 'error', message }
-    }
-
-    if (result.status === 'not_modified') {
-      if (!cached) return { kind: 'error', message: 'failed to fetch release info' }
-      writeCache({ ...cached, checked_at: Date.now(), last_error: undefined })
-      return decide(currentVersion, cached.releases)
-    }
-
-    writeCache({ checked_at: Date.now(), releases: result.releases, etag: result.etag })
-    return decide(currentVersion, result.releases)
+    const latest = await fetchLatest()
+    writeCache({ checked_at: Date.now(), releases: [latest] })
+    return decide(currentVersion, [latest])
   } catch (err: unknown) {
     const message = (err instanceof Error ? err.message : String(err)) || 'network error'
-    // A stale cache still answers the question better than an error banner.
     if (cached) {
       recordFailure(message)
       return decide(currentVersion, cached.releases, { stale: true })
@@ -232,9 +154,6 @@ export async function checkForUpdate(
 
 /**
  * Last recorded check failure, or null when the most recent check succeeded.
- *
- * Background checks deliberately stay quiet, so this is how "why am I not being
- * offered updates?" gets answered after the fact.
  */
 export function lastCheckError(): { at: number; message: string } | null {
   const recorded = readCache()?.last_error

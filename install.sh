@@ -224,12 +224,21 @@ case "${os}-${arch}" in
 esac
 
 # --- Version resolution ---
+# Prefer evot.ai's proxy: the server has a stable egress IP and can attach a
+# token, so it survives GitHub API rate limits that bite anonymous curl users.
+# Fall back to the GitHub API directly if the proxy is unreachable.
 
 if [ -n "${EVOT_INSTALL_VERSION:-}" ]; then
   TAG="$EVOT_INSTALL_VERSION"
 else
-  TAG="$(fetch "https://api.github.com/repos/${REPO}/releases/latest" \
-    | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
+  TAG="$(fetch "https://evot.ai/install/latest" 2>/dev/null || true)"
+  case "$TAG" in
+    v[0-9]*) ;;
+    *)
+      TAG="$(fetch "https://api.github.com/repos/${REPO}/releases/latest" \
+        | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p')"
+      ;;
+  esac
 fi
 
 [ -z "$TAG" ] && error "Failed to determine latest version. GitHub API rate limit?"

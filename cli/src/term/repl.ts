@@ -26,7 +26,6 @@ import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
 import { renderBanner } from './banner.js'
-import stringWidth from 'string-width'
 import {
   buildOutputBlocks,
   buildPromptBlocks,
@@ -738,14 +737,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (spinnerBlock) spinnerBlock = { ...spinnerBlock, marginTop: 0 }
     }
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
-    // Update notice: right-aligned at the input box's top corner — the same
-    // placement Claude Code uses. This area repaints every frame, so it stays
-    // visible while a task runs (unlike the banner, which scrolls away with
-    // history). Staged is green because it wants to be seen: "restart when
-    // convenient". Downloading and manual-only-available are dim background
-    // noise. Failures stay silent; the manual /update reports them with full
-    // context. compactAbove keeps the composer's centering filler off, so the
-    // notice hugs the frame top instead of floating above blank rows.
+    // Update notice: drawn on the input box's top border, right-aligned against
+    // the right corner — the same placement Claude Code uses. This area
+    // repaints every frame, so it stays visible while a task runs (unlike the
+    // banner, which scrolls away with history). Staged is green because it
+    // wants to be seen: "restart when convenient". Downloading and
+    // manual-only-available are dim background noise. Failures stay silent;
+    // the manual /update reports them with full context.
     let updateNotice: ViewBlock['lines'][number]['spans'] | null = null
     if (overlay.kind === 'none') {
       if (updateStatus === 'staged' && updateVersion) {
@@ -765,14 +763,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         ]
       }
     }
-    if (updateNotice) {
-      const textWidth = updateNotice.reduce((sum, s) => sum + stringWidth(s.text), 0)
-      const pad = Math.max(0, renderer.termCols - textWidth - 2)
-      preEditorBlocks.push({
-        lines: [{ spans: [{ text: ' '.repeat(pad) }, ...updateNotice] }],
-        marginTop: spinnerBlock || queueLines.length > 0 ? 0 : 1,
-      })
-    }
+    const topTrailing = updateNotice
+      ? [{ text: ' ' }, ...updateNotice, { text: ' ' }]
+      : undefined
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
     if (adSlotTick.content && !isLoading && !spinnerBlock) {
@@ -808,7 +801,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     footerBlocks.push(...buildPromptBlocks(getPromptVM(), {
       attachedAbove: spinnerBlock !== null || queueLines.length > 0,
       reservedAboveRows: blocksToLines(preEditorBlocks).length,
-      compactAbove: updateNotice !== null,
+      topTrailing,
     }))
 
     return {

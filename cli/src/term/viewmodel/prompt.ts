@@ -39,8 +39,8 @@ export interface PromptLayoutOptions {
   attachedAbove?: boolean
   /** Spinner and queue rows already occupying the live region above the prompt. */
   reservedAboveRows?: number
-  /** Skip the centering filler so blocks above (update notice) hug the frame. */
-  compactAbove?: boolean
+  /** Spans drawn on the top border, right-aligned against the right corner. */
+  topTrailing?: StyledSpan[]
 }
 
 const KNOWN_COMMANDS = new Set(
@@ -131,16 +131,14 @@ export function buildPromptBlocks(input: PromptVMInput, options: PromptLayoutOpt
   // The candidate list already gives the composer height, so the blank-row
   // floor only applies when no menu is open. Otherwise the two stack and push
   // the candidates away from what you typed. Rails are what make the blanks
-  // read as composer space, so an unframed terminal gets none. compactAbove
-  // keeps the composer's full height but moves all filler below the draft,
-  // so a block above (the update notice) hugs the frame top.
+  // read as composer space, so an unframed terminal gets none.
   const filler = completionLines.length > 0 || !frame.framed
     ? 0
     : Math.max(0, minInputRows(rows) - inputRows.length)
   // Split the filler around the draft so a short one sits centred. Odd
   // remainders go below, keeping the text on or above the middle rather than
   // sinking it a row lower than the eye expects.
-  const above = options.compactAbove ? 0 : Math.floor(filler / 2)
+  const above = Math.floor(filler / 2)
   const blank = () => frame.row(line(plain('')))
 
   const blocks: ViewBlock[] = []
@@ -148,12 +146,17 @@ export function buildPromptBlocks(input: PromptVMInput, options: PromptLayoutOpt
   // transcript needs them more than the composer needs an outline. The caret
   // still marks the row as the place you type, and the footer takes the mode
   // back over.
-  if (frame.ruled) blocks.push(block([frame.top(topLabel(modeLabels, overflowLabel('↑', start)))], options.attachedAbove || options.compactAbove ? 0 : 1))
+  if (frame.ruled) {
+    blocks.push(block(
+      [frame.top(topLabel(modeLabels, overflowLabel('↑', start)), options.topTrailing)],
+      options.attachedAbove ? 0 : 1,
+    ))
+  }
   blocks.push(block([
     ...Array.from({ length: above }, blank),
     ...inputRows.map(frame.row),
     ...Array.from({ length: filler - above }, blank),
-  ], frame.ruled ? undefined : ((options.attachedAbove || options.compactAbove) ? 0 : 1)))
+  ], frame.ruled ? undefined : (options.attachedAbove ? 0 : 1)))
 
   if (completionLines.length > 0) {
     // A blank rail row separates what you typed from what is being suggested;

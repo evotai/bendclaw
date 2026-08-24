@@ -49,7 +49,7 @@ export interface Frame {
    */
   readonly ruled: boolean
   /** Top border, optionally labelled (`╭─ ↑ 3 lines ────╮`). */
-  top(label?: string): StyledLine
+  top(label?: string, trailing?: StyledSpan[]): StyledLine
   /** Bottom border, optionally labelled. */
   bottom(label?: string): StyledLine
   /** Lay one content line out to the full frame width, rails included. */
@@ -74,20 +74,29 @@ export function createFrame(columns: number, options: FrameOptions = {}): Frame 
   const contentWidth = Math.max(1, framed ? columns - 2 - gutterWidth * 2 : columns)
   const borderHex = () => hex ?? getTheme().brandHex
 
-  const border = (label: string | undefined, left: string, right: string): StyledLine => {
+  const border = (label: string | undefined, left: string, right: string, trailing?: StyledSpan[]): StyledLine => {
     const hex = borderHex()
-    if (!framed) return line({ text: plainRule(columns, label), hex })
-    // `╭─ ` + label + ` ` on the left, one corner on the right.
-    const lead = label ? `${left}─ ${truncateToWidth(label, Math.max(0, columns - LABEL_CHROME_COST))} ` : left
-    const fill = Math.max(0, columns - stringWidth(lead) - 1)
-    return line({ text: `${lead}${'─'.repeat(fill)}${right}`, hex })
+    const trail = trailing ?? []
+    const trailWidth = trail.reduce((sum, s) => sum + stringWidth(s.text), 0)
+    if (!framed) {
+      const rule = plainRule(Math.max(0, columns - trailWidth), label)
+      return { spans: [{ text: rule, hex }, ...trail] }
+    }
+    // Trailing spans (the update notice) sit just left of the right corner so
+    // they hug the frame instead of floating on a row of their own.
+    const maxLabel = Math.max(0, columns - LABEL_CHROME_COST - trailWidth)
+    const lead = label ? `${left}─ ${truncateToWidth(label, maxLabel)} ` : left
+    const fill = Math.max(0, columns - stringWidth(lead) - trailWidth - 1)
+    const bar = `${lead}${'─'.repeat(fill)}`
+    if (trail.length === 0) return line({ text: `${bar}${right}`, hex })
+    return { spans: [{ text: bar, hex }, ...trail, { text: right, hex }] }
   }
 
   return {
     contentWidth,
     framed,
     ruled,
-    top: label => border(label, '╭', '╮'),
+    top: (label, trailing) => border(label, '╭', '╮', trailing),
     bottom: label => border(label, '╰', '╯'),
     row: styled => {
       const width = spansWidth(styled.spans)

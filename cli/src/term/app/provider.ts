@@ -53,7 +53,10 @@ function cloudRank(option: ModelOption): number {
 }
 
 export function sortModelOptionsForSelector(options: ModelOption[], activeSpec: string): ModelOption[] {
-  const activeProvider = options.find(option => option.spec === activeSpec)?.provider
+  // The active-provider boost only applies to BYOK providers; cloud groups
+  // must stay contiguous even when the active model sits in a provider that
+  // routing split away from the rest of its tier.
+  const activeProvider = options.find(option => option.spec === activeSpec && !isCloudModel(option))?.provider
   return options
     .map((option, index) => ({ option, index }))
     .sort((left, right) => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatModelOptionDetail, formatModelOptionLabel, formatModelLabel, isCloudModel, modelGroupLabel, providerDisplayName, sortModelOptionsForSelector } from '../src/term/app/provider.js'
+import { formatModelOptionDetail, formatModelOptionLabel, formatModelLabel, isCloudModel, modelGroupLabel, modelSelectorItems, providerDisplayName, sortModelOptionsForSelector } from '../src/term/app/provider.js'
 
 const options = [
   { provider: 'anthropic', protocol: 'anthropic' as const, model: 'claude-opus-4-8', spec: 'anthropic:claude-opus-4-8' },
@@ -158,5 +158,30 @@ describe('formatModelLabel', () => {
   test('the footer uses the same heading as the picker', () => {
     expect(providerDisplayName(cloudOptions[1], 'evot-pro')).toBe('Evot Premium')
     expect(providerDisplayName(cloudOptions[0], 'droid')).toBe('droid')
+  })
+})
+
+describe('modelSelectorItems', () => {
+  test('inserts one heading per group and marks the active spec', () => {
+    const items = modelSelectorItems(cloudOptions, 'evot-free:cohere/north-mini:free')
+    expect(items.filter(item => item.header).map(item => item.label)).toEqual([
+      'Evot Free',
+      'Evot Premium',
+      'droid · OpenAI Chat Completions',
+    ])
+    const active = items.find(item => item.id === 'evot-free:cohere/north-mini:free')
+    expect(active?.selected).toBe(true)
+    expect(active?.label).toBe('North Mini')
+    expect(active?.detail).toBe('(Fast and free)')
+  })
+
+  test('keeps the active BYOK provider first, then cloud groups', () => {
+    const items = modelSelectorItems(cloudOptions, 'droid:gpt-5.6-sol')
+    expect(items.filter(item => item.header).map(item => item.label)).toEqual([
+      'droid · OpenAI Chat Completions',
+      'Evot Free',
+      'Evot Premium',
+    ])
+    expect(items.find(item => item.id === 'droid:gpt-5.6-sol')?.selected).toBe(true)
   })
 })

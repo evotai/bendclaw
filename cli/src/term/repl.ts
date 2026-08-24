@@ -10,7 +10,7 @@ import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
 import { setDetectedThemeScheme } from '../render/theme.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
-import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn, type SelectorItem } from './selector.js'
+import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
 import { formatCompactionCompleted } from '../render/verbose.js'
@@ -95,7 +95,7 @@ import {
   type AskUserParams,
 } from './host-tools.js'
 import { extractPlanItems, type PlanModeItem } from './plan-mode.js'
-import { currentModelSpec, formatModelLabel, formatModelOptionDetail, formatModelOptionLabel, isCloudModel, modelGroupLabel, modelOptions, providerDisplayName, selectModelOption, sortModelOptionsForSelector } from './app/provider.js'
+import { currentModelSpec, formatModelLabel, formatModelOptionLabel, isCloudModel, modelOptions, modelSelectorItems, providerDisplayName, selectModelOption } from './app/provider.js'
 import chalk from 'chalk'
 import {
   shouldCollapse,
@@ -180,7 +180,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const adSlotTimer = setInterval(() => {
     if (overlay.kind !== 'none') return
     renderer.requestRender()
-  }, 250)
+  }, 80)
   ;(adSlotTimer as unknown as { unref?: () => void }).unref?.()
 
   let appState: AppState = {
@@ -230,6 +230,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     authNotices().map(n => ({
       id: n.id,
       kind: n.kind,
+      priority: n.priority,
       title: n.title,
       body: n.body_md ?? '',
     })),
@@ -1294,8 +1295,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       isLoading = false
       streamMachine = null
       stopSpinner()
-      // Task finished — surface the ad/notice slot with the freshest campaigns.
-      try { await syncCloudNow(true) } catch {}
+      // Fresh ads/models belong in the background: awaiting the catalog here
+      // stalled the prompt for the whole HTTP round-trip after every turn.
+      void syncCloudNow(true)
       triggerAdSlot(adSlot, Date.now())
       renderer.requestRender()
     }
@@ -2039,18 +2041,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   async function handleSlashInput(text: string) {
-    // Model configuration can change while the CLI is running. Refresh before
-    // resolving `/model` so the selector and model cycling use the latest env file.
     const pendingCommand = resolveCommand(text)
+    // `/model` used to await a cloud catalog fetch here, which froze the TUI
+    // for the whole HTTP round-trip. Open on the cached list instead; a
+    // background sync below refreshes the overlay when the catalog lands.
     if (pendingCommand.kind === 'resolved' && pendingCommand.name === '/model') {
       try {
-        await syncCloudNow(true)
         configInfo = agent.configInfo()
       } catch (err) {
         commitSystem('sys-model-config', chalk.red(`  Failed to reload model config: ${errorText(err)}`))
         renderer.requestRender()
         return
       }
+      void syncCloudNow(true)
     }
 
     let result
@@ -2216,46 +2219,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         commitSystem('sys-r-err', chalk.red(`  Failed to list sessions: ${errorText(err)}`))
       }
     } else if (name === '/model' && !args) {
-      const models = modelOptions(configInfo, agent.model)
-      if (models.length > 1) {
-        const activeSpec = currentModelSpec(configInfo, agent.model)
-        const sortedModels = sortModelOptionsForSelector(models, activeSpec)
-        const items: SelectorItem[] = []
-        let lastGroup: string | undefined
-        for (const option of sortedModels) {
-          // One heading per group, using the label the server pushed.
-          const group = modelGroupLabel(option)
-          if (group !== lastGroup) {
-            items.push({ label: group, header: true, focusable: false, group })
-            lastGroup = group
-          }
-          const detail = formatModelOptionDetail(option)
-          const label = formatModelOptionLabel(option)
-          items.push({
-            label,
-            // Omit empty details so cloud rows render as a single clean line.
-            ...(detail ? { detail } : {}),
-            id: option.spec,
-            group,
-            selected: option.spec === activeSpec,
-            // Searchable by both names, so the real id still finds it.
-            searchText: `${label} ${option.model} ${option.free?.tagline ?? ''} ${detail} ${option.protocol ?? ''}`,
-          })
-        }
-        overlay = {
-          kind: 'selector',
-          state: selectorFocusOn(
-            {
-              ...createSelectorState('Models', items),
-              presentation: 'model',
-              circularNavigation: true,
-            },
-            item => item.id === activeSpec,
-          ),
-        }
-      } else {
-        commitSystem('sys-m', '  Only one model available.')
-      }
+      openModelSelector()
     }
 
     renderer.requestRender()
@@ -2270,17 +2234,26 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   /** In-REPL login: run the device-code flow, then reload model config in
    *  place so free models appear without restarting. If no provider was
    *  configured, the cloud provider becomes active immediately. */
-  /** Re-read the synced catalog: refresh model config and the ad/notice slot.
-   *  Called after login, by the live-sync poller, and on demand. */
-  function reloadCloudContent(): void {
-    const before = adSlot.notices.length
-    const fresh = authNotices().map(n => ({
+  function cloudCampaigns() {
+    return authNotices().map(n => ({
       id: n.id,
       kind: n.kind,
       priority: n.priority,
       title: n.title,
       body: n.body_md ?? '',
     }))
+  }
+
+  function campaignFingerprint(campaign: { id: string; title: string; body: string; kind: string; priority?: number }): string {
+    return `${campaign.id}\0${campaign.kind}\0${campaign.priority ?? 0}\0${campaign.title}\0${campaign.body}`
+  }
+
+  /** Re-read the synced catalog: refresh model config and the ad/notice slot.
+   *  Called after login, by the live-sync poller, and on demand. */
+  function reloadCloudContent(): void {
+    const previous = [...adSlot.notices, ...adSlot.ads]
+    const previousById = new Map(previous.map(campaign => [campaign.id, campaign]))
+    const fresh = cloudCampaigns()
     // Refresh campaigns in place — runtime slot state (whether the slot has
     // been triggered, and where rotation is) must survive a content refresh.
     const keep = {
@@ -2289,58 +2262,125 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       currentId: adSlot.currentId,
       shownAt: adSlot.shownAt,
       rotationDueAt: adSlot.rotationDueAt,
+      queuedId: adSlot.queuedId,
     }
     Object.assign(adSlot, createAdSlotState(fresh), keep)
+    const showing = [...adSlot.notices, ...adSlot.ads].find(campaign => campaign.id === adSlot.currentId)
+    if (adSlot.currentId && !showing) {
+      adSlot.currentId = null
+      adSlot.queuedId = null
+    } else if (showing) {
+      const before = previousById.get(showing.id)
+      if (before && campaignFingerprint(before) !== campaignFingerprint(showing)) {
+        // Same campaign, new copy — retype so the updated markdown appears now.
+        adSlot.shownAt = Date.now()
+        adSlot.queuedId = null
+      }
+    }
+    if (!adSlot.triggered && (adSlot.notices.length > 0 || adSlot.ads.length > 0)) {
+      triggerAdSlot(adSlot, Date.now())
+    }
     try { configInfo = agent.configInfo() } catch {}
   }
 
   // Live sync: re-fetch the cloud catalog so new notices, ads and models
   // appear in-session without a restart. Silent when nothing changed.
   let lastSyncedAt = 0
-  let syncing = false
-  const CLOUD_SYNC_MS = 30_000
+  let inflightSync: Promise<void> | null = null
+  const CLOUD_SYNC_MS = 15_000
   const syncTimer = setInterval(() => {
     void syncCloudNow()
   }, CLOUD_SYNC_MS)
   ;(syncTimer as unknown as { unref?: () => void }).unref?.()
 
   async function syncCloudNow(force = false): Promise<void> {
-    if (syncing || (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS)) return
-    syncing = true
+    if (inflightSync) return inflightSync
+    if (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS) return
+    inflightSync = (async () => {
+      try {
+        const { authSyncModels, authWhoami } = await import('../native/index.js')
+        if (!await authWhoami()) return
+        // Any server-pushed group counts, not just the free tier, so granted
+        // models and split protocol groups are announced too.
+        const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
+        const knownModelIds = new Set(cloudModels().map(m => m.model))
+        const knownCampaignIds = new Set([...adSlot.notices, ...adSlot.ads].map(c => c.id))
+        const knownFingerprints = new Set([...adSlot.notices, ...adSlot.ads].map(campaignFingerprint))
+        await authSyncModels()
+        lastSyncedAt = Date.now()
+        reloadCloudContent()
+        const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
+        const campaigns = [...adSlot.notices, ...adSlot.ads]
+        const addedCampaigns = campaigns.filter(c => !knownCampaignIds.has(c.id))
+        const copyChanged = campaigns.some(c => !knownFingerprints.has(campaignFingerprint(c)))
+        if (addedModels.length > 0) {
+          const names = addedModels.slice(0, 3)
+            .map(m => formatModelOptionLabel(m))
+            .join(', ')
+          const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
+          commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
+        }
+        if (addedCampaigns.length > 0) {
+          // The slot itself announces it: erase what's showing, type the new one.
+          if (!queueAdSlotTransition(adSlot, addedCampaigns[0]!.id)) {
+            triggerAdSlot(adSlot, Date.now())
+          }
+        }
+        const refreshedOpenPicker = refreshOpenModelSelector()
+        if (addedModels.length > 0 || addedCampaigns.length > 0 || copyChanged || refreshedOpenPicker) {
+          renderer.requestRender()
+        }
+      } catch {
+        // offline / not logged in / server unreachable — stay silent
+      }
+    })()
     try {
-      const { authSyncModels, authWhoami } = await import('../native/index.js')
-      if (!await authWhoami()) return
-      // Any server-pushed group counts, not just the free tier, so granted
-      // models and split protocol groups are announced too.
-      const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
-      const knownModelIds = new Set(cloudModels().map(m => m.model))
-      const knownNoticeIds = new Set(adSlot.notices.map(n => n.id))
-      await authSyncModels()
-      lastSyncedAt = Date.now()
-      reloadCloudContent()
-      const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
-      const addedNotices = authNotices().filter(n => !knownNoticeIds.has(n.id))
-      if (addedModels.length > 0) {
-        const names = addedModels.slice(0, 3)
-          .map(m => formatModelOptionLabel(m))
-          .join(', ')
-        const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
-        commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
-      }
-      if (addedNotices.length > 0) {
-        // The slot itself announces it: erase what's showing, type the new one.
-        queueAdSlotTransition(adSlot, addedNotices[0]!.id)
-      }
-      if (addedModels.length > 0 || addedNotices.length > 0) renderer.requestRender()
-    } catch {
-      // offline / not logged in / server unreachable — stay silent
+      await inflightSync
     } finally {
-      syncing = false
+      inflightSync = null
     }
   }
 
   // First pull as soon as the prompt is up, so ads/models aren't 30s stale.
   setTimeout(() => { void syncCloudNow() }, 400).unref?.()
+
+  function openModelSelector(): void {
+    const models = modelOptions(configInfo, agent.model)
+    if (models.length <= 1) {
+      commitSystem('sys-m', '  Only one model available.')
+      return
+    }
+    const activeSpec = currentModelSpec(configInfo, agent.model)
+    overlay = {
+      kind: 'selector',
+      state: selectorFocusOn(
+        {
+          ...createSelectorState('Models', modelSelectorItems(models, activeSpec)),
+          presentation: 'model',
+          circularNavigation: true,
+        },
+        item => item.id === activeSpec,
+      ),
+    }
+  }
+
+  /** Swap the open /model list in place after a catalog refresh. Keeps the
+   *  current query and focused row so typing isn't yanked around. */
+  function refreshOpenModelSelector(): boolean {
+    if (overlay.kind !== 'selector' || overlay.state.presentation !== 'model') return false
+    const models = modelOptions(configInfo, agent.model)
+    if (models.length <= 1) {
+      overlay = { kind: 'none' }
+      commitSystem('sys-m', '  Only one model available.')
+      return true
+    }
+    const activeSpec = currentModelSpec(configInfo, agent.model)
+    overlay = {
+      kind: 'selector',
+      state: selectorExpandItems(overlay.state, modelSelectorItems(models, activeSpec)),
+    }
+    return true
+  }
 
   async function handleSemanticResume(query: string) {
     commitSystem('sys-rsem-busy', chalk.dim('  searching sessions…'))

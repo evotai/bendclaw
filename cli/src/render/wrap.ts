@@ -496,3 +496,94 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 
   return result.length > 0 ? result : ['']
 }
+
+/** Visible graphemes in `str`, ignoring ANSI/OSC/APC. Newlines count. */
+export function visibleGraphemeCount(str: string): number {
+  if (!str) return 0
+  let count = 0
+  let i = 0
+  while (i < str.length) {
+    const ansi = extractAnsiCode(str, i)
+    if (ansi) {
+      i += ansi.length
+      continue
+    }
+    let end = i
+    while (end < str.length && !extractAnsiCode(str, end)) end++
+    for (const _ of graphemeSegmenter.segment(str.slice(i, end))) count++
+    i = end
+  }
+  return count
+}
+
+/** Keep the first `maxGraphemes` visible graphemes of an ANSI string, closing
+ *  any still-open styles so the slice can sit next to unstyled UI chrome. */
+export function sliceVisibleAnsi(text: string, maxGraphemes: number): string {
+  if (!text || maxGraphemes <= 0) return ''
+  const tracker = new AnsiCodeTracker()
+  let count = 0
+  let i = 0
+  let out = ''
+  while (i < text.length && count < maxGraphemes) {
+    const ansi = extractAnsiCode(text, i)
+    if (ansi) {
+      tracker.process(ansi.code)
+      out += ansi.code
+      i += ansi.length
+      continue
+    }
+    let end = i
+    while (end < text.length && !extractAnsiCode(text, end)) end++
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      if (count >= maxGraphemes) break
+      out += segment
+      count++
+    }
+    i = end
+  }
+  const lineEnd = tracker.getLineEndReset()
+  if (lineEnd) out += lineEnd
+  if (tracker.getActiveCodes()) out += '\x1b[0m'
+  return out
+}
+
+/** Keep the head of an ANSI string so it fits `width` columns, appending an
+ *  ellipsis when truncated. Newlines are treated as visible characters. */
+export function truncateAnsiToWidth(text: string, width: number): string {
+  if (width <= 0 || !text) return ''
+  if (visibleWidth(text) <= width) return text
+  if (width <= 1) return '…'.slice(0, width)
+
+  const tracker = new AnsiCodeTracker()
+  let used = 0
+  let i = 0
+  let out = ''
+  const limit = width - 1
+  while (i < text.length) {
+    const ansi = extractAnsiCode(text, i)
+    if (ansi) {
+      tracker.process(ansi.code)
+      out += ansi.code
+      i += ansi.length
+      continue
+    }
+    let end = i
+    while (end < text.length && !extractAnsiCode(text, end)) end++
+    let stop = false
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      const gw = graphemeWidth(segment)
+      if (used + gw > limit) {
+        stop = true
+        break
+      }
+      out += segment
+      used += gw
+    }
+    if (stop) break
+    i = end
+  }
+  const lineEnd = tracker.getLineEndReset()
+  if (lineEnd) out += lineEnd
+  if (tracker.getActiveCodes()) out += '\x1b[0m'
+  return `${out}…`
+}

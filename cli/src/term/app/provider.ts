@@ -1,4 +1,5 @@
 import type { ConfigInfo, ModelOption } from '../../native/index.js'
+import type { SelectorItem } from '../selector.js'
 
 /** Return configured provider/model pairs, preserving duplicate model ids. */
 export function modelOptions(configInfo: ConfigInfo | undefined, fallbackModel: string): ModelOption[] {
@@ -103,4 +104,28 @@ export function providerDisplayName(option: ModelOption | undefined, fallback = 
 
 export function selectModelOption(configInfo: ConfigInfo | undefined, spec: string): ModelOption | undefined {
   return configInfo?.availableModels.find(option => option.spec === spec)
+}
+
+/** Rows for the /model overlay: one heading per group, then each model. */
+export function modelSelectorItems(options: ModelOption[], activeSpec: string): SelectorItem[] {
+  const items: SelectorItem[] = []
+  let lastGroup: string | undefined
+  for (const option of sortModelOptionsForSelector(options, activeSpec)) {
+    const group = modelGroupLabel(option)
+    if (group !== lastGroup) {
+      items.push({ label: group, header: true, focusable: false, group })
+      lastGroup = group
+    }
+    const detail = formatModelOptionDetail(option)
+    const label = formatModelOptionLabel(option)
+    items.push({
+      label,
+      ...(detail ? { detail } : {}),
+      id: option.spec,
+      group,
+      selected: option.spec === activeSpec,
+      searchText: `${label} ${option.model} ${option.free?.tagline ?? ''} ${detail} ${option.protocol ?? ''}`,
+    })
+  }
+  return items
 }

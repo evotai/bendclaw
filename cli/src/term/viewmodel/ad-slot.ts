@@ -1,6 +1,6 @@
-import { dim, line, colored, type ViewBlock } from './types.js'
-import stringWidth from 'string-width'
-import { truncateToWidth } from './width.js'
+import { ansi, line, colored, plain, type ViewBlock } from './types.js'
+import { renderMarkdown } from '../../render/markdown.js'
+import { sliceVisibleAnsi, truncateAnsiToWidth, visibleGraphemeCount, visibleWidth } from '../../render/wrap.js'
 
 export interface AdContent {
   id: string
@@ -124,7 +124,7 @@ export function tickAdSlot(state: AdSlotState, now: number): { content: AdConten
   const queued = byId(state, state.queuedId)
   if (queued) {
     const elapsed = now - state.shownAt
-    const eraseDoneAt = fullText(content).length * ERASE_STEP_MS
+    const eraseDoneAt = Math.max(1, visibleGraphemeCount(tickerText(content))) * ERASE_STEP_MS
     if (elapsed < eraseDoneAt) {
       return { content, phase: 'erasing', progress: 1 - elapsed / eraseDoneAt }
     }
@@ -199,7 +199,7 @@ export function triggerAdSlot(state: AdSlotState, now: number): AdContent | null
   return content
 }
 
-// ---- typewriter (single line, types out then holds) ------------------------
+// ---- typewriter (markdown body, types out then holds) ----------------------
 
 /** How often one character is revealed, in ms. */
 export const TYPE_STEP_MS = 35
@@ -208,12 +208,50 @@ export const ERASE_STEP_MS = 45
 /** Blank pause between erasing one item and typing the next. */
 export const AD_GAP_MS = 900
 
-/**
- * The line's text: title and body, nothing else — no kind label, no heading
- * above or below the rules.
- */
-function fullText(content: AdContent): string {
-  return [content.title, content.body].filter(Boolean).join('   \u00b7   ')
+/** Title plus markdown body. Parsed as markdown, then flattened to one ticker
+ *  line so the slot never grows past a single row. */
+function sourceMarkdown(content: AdContent): string {
+  const title = content.title.trim()
+  const body = content.body.trim()
+  if (title && body) return `${title}\n\n${body}`
+  return title || body
+}
+
+const renderedCache = new Map<string, string>()
+
+function renderedMarkdown(content: AdContent): string {
+  const source = sourceMarkdown(content)
+  if (!source) return ''
+  const hit = renderedCache.get(source)
+  if (hit !== undefined) return hit
+  let rendered: string
+  try {
+    rendered = renderMarkdown(source, { blockSpacing: 'compact' })
+  } catch {
+    rendered = source
+  }
+  if (renderedCache.size > 64) {
+    const first = renderedCache.keys().next().value
+    if (first !== undefined) renderedCache.delete(first)
+  }
+  renderedCache.set(source, rendered)
+  return rendered
+}
+
+function flattenToOneLine(rendered: string): string {
+  return rendered
+    .split(/\r\n|\r|\n/)
+    .map(row => row.trimEnd())
+    .filter(row => visibleWidth(row) > 0)
+    .join('   \u00b7   ')
+}
+
+function tickerText(content: AdContent): string {
+  return flattenToOneLine(renderedMarkdown(content))
+}
+
+function campaignWidth(content: AdContent): number {
+  return visibleWidth(tickerText(content))
 }
 
 /** Characters visible at `now`, given when typing started. */
@@ -221,9 +259,16 @@ export function typedLength(shownAt: number, now: number): number {
   return Math.max(0, Math.floor((now - shownAt) / TYPE_STEP_MS))
 }
 
+function revealMarkdown(rendered: string, keep: number): string {
+  const total = visibleGraphemeCount(rendered)
+  if (keep <= 0) return ''
+  if (keep >= total) return rendered
+  return sliceVisibleAnsi(rendered, keep)
+}
+
 /**
- * The slot: a single line that types itself out character by character, then
- * holds until rotation. Minimal footprint, calm motion.
+ * The slot: a single markdown ticker between two rules. Typed in character by
+ * character, then held until rotation. Never wraps — overflow is truncated.
  */
 export function buildAdSlotBlocks(
   state: AdSlotState,
@@ -234,28 +279,26 @@ export function buildAdSlotBlocks(
   const { content, phase } = tick
   if (!content || phase === 'gone' || columns < 30) return []
 
-  // Rule width covers the widest campaign in the pool — stable across
-  // rotations instead of resizing per item.
-  const widest = [...state.notices, ...state.ads]
-    .reduce((max, c) => Math.max(max, stringWidth(fullText(c))), 0)
-  const innerWidth = Math.max(20, Math.min(widest + 3, columns - 6))
+  const innerWidth = Math.max(20, Math.min(
+    [...state.notices, ...state.ads].reduce((max, campaign) => Math.max(max, campaignWidth(campaign)), 0) + 3,
+    columns - 6,
+  ))
   const rule = colored('  ' + '─'.repeat(innerWidth), 'yellow')
 
-  const full = fullText(content)
-  let shown: string
+  const rendered = tickerText(content)
+  const total = visibleGraphemeCount(rendered)
+  let keep: number
   if (phase === 'erasing') {
-    // Wipe one character at a time from the end, then hold blank.
-    const kept = Math.max(0, full.length - Math.floor((now - state.shownAt) / ERASE_STEP_MS))
-    shown = full.slice(0, kept)
+    keep = Math.max(0, total - Math.floor((now - state.shownAt) / ERASE_STEP_MS))
   } else {
-    shown = full.slice(0, typedLength(state.shownAt, now))
+    keep = typedLength(state.shownAt, now)
   }
-  const visible = truncateToWidth(shown, innerWidth - 1)
+  const shown = truncateAnsiToWidth(revealMarkdown(rendered, keep), innerWidth - 1)
 
   return [{
     lines: [
       line(rule),
-      line(colored(' ', 'yellow'), dim(' '), colored(visible, 'white')),
+      line(plain('  '), ansi(shown)),
       line(rule),
     ],
     marginTop: 1,

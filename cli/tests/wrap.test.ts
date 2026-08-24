@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'
-import { wrapTextWithAnsi } from '../src/render/wrap.js'
+import { wrapTextWithAnsi, sliceVisibleAnsi, truncateAnsiToWidth, visibleGraphemeCount } from '../src/render/wrap.js'
 
 // Visible width per wrapped line, measured with the independent string-width
 // library so the assertion doesn't depend on wrap.ts's own width logic.
@@ -73,5 +73,33 @@ describe('wrapTextWithAnsi', () => {
     for (let i = 0; i < lines.length - 1; i++) {
       expect(lines[i]).toContain('\x1b[24m')
     }
+  })
+})
+
+describe('sliceVisibleAnsi', () => {
+  test('keeps the first n visible graphemes and drops the rest', () => {
+    const styled = '\x1b[31mhello world\x1b[39m'
+    expect(stripAnsi(sliceVisibleAnsi(styled, 5))).toBe('hello')
+    expect(visibleGraphemeCount(sliceVisibleAnsi(styled, 5))).toBe(5)
+  })
+
+  test('ignores ANSI when counting graphemes', () => {
+    const styled = '\x1b[1m**\x1b[22mabc'
+    expect(visibleGraphemeCount(styled)).toBe(5)
+    expect(stripAnsi(sliceVisibleAnsi(styled, 2))).toBe('**')
+  })
+})
+
+describe('truncateAnsiToWidth', () => {
+  test('keeps short text unchanged', () => {
+    expect(truncateAnsiToWidth('hello', 10)).toBe('hello')
+  })
+
+  test('truncates to width with an ellipsis and preserves ANSI', () => {
+    const styled = '\x1b[31mhello world this is long\x1b[39m'
+    const cut = truncateAnsiToWidth(styled, 10)
+    expect(width(cut)).toBeLessThanOrEqual(10)
+    expect(stripAnsi(cut)).toBe('hello wor…')
+    expect(cut).toContain('\x1b[31m')
   })
 })

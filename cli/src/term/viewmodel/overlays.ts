@@ -4,6 +4,7 @@ import { CURSOR_MARKER } from '../renderer.js'
 import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import type { AskState } from '../ask.js'
+import { getTheme } from '../../render/theme.js'
 
 export type OverlayState =
   | { kind: 'none' }
@@ -47,7 +48,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
   const lines: StyledLine[] = [
     border,
     line(plain('')),
-    line(colored('Only showing models from configured providers. Run evot login to add cloud models.', 'yellow')),
+    line(dim('Only showing models from configured providers. Run evot login to add cloud models.')),
     line(plain('')),
     buildModelSearchLine(state.query, width),
     line(plain('')),
@@ -63,6 +64,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
   )
   const end = Math.min(start + maxVisible, state.items.length)
 
+  const { brandHex, accentHex, selectionBgHex, selectionMutedHex } = getTheme()
   let visibleListRowSeen = false
   for (let index = start; index < end; index++) {
     const item = state.items[index]!
@@ -72,18 +74,31 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
       // The viewport can begin halfway through a large group, with its header
       // scrolled offscreen. Still separate the next group from those rows.
       if (visibleListRowSeen) lines.push(line(plain('')))
-      lines.push(line(plain('  '), colored(`— ${item.label} —`, 'white', { bold: true })))
+      lines.push(line(plain('  '), { text: item.label, hex: accentHex, bold: true }))
       visibleListRowSeen = true
       continue
     }
 
     const focused = index === state.focusIndex
-    lines.push(line(
-      focused ? colored('→ ', 'cyan') : plain('  '),
-      focused ? colored(item.label, 'cyan') : dim(item.label),
-      ...(item.detail ? [dim(` ${item.detail}`)] : []),
-      ...(item.selected ? [colored(' ✓', 'green')] : []),
-    ))
+    const bg = focused ? selectionBgHex : undefined
+    const prefix = focused
+      ? { text: '❯ ', hex: brandHex, bold: true, bg }
+      : plain('  ')
+    const name = focused
+      ? { text: item.label, hex: brandHex, bold: true, bg }
+      : dim(item.label)
+    const detail = item.detail
+      ? focused
+        ? { text: ` ${item.detail}`, hex: selectionMutedHex, bg }
+        : dim(` ${item.detail}`)
+      : undefined
+    const check = item.selected
+      ? { text: ' ✓', hex: brandHex, bold: true, ...(bg ? { bg } : {}) }
+      : undefined
+    lines.push({
+      spans: [prefix, name, ...(detail ? [detail] : []), ...(check ? [check] : [])],
+      ...(bg ? { bg } : {}),
+    })
     visibleListRowSeen = true
   }
 

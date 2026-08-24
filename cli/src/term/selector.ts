@@ -134,8 +134,19 @@ export function selectorBackspace(state: SelectorState): SelectorState {
 export function selectorExpandItems(state: SelectorState, allItems: SelectorItem[]): SelectorState {
   // Replacing the pool can reorder or drop rows, so any armed delete is
   // dropped: the confirming keypress must never land on a different session.
+  const focused = state.items[state.focusIndex]
   const updated = { ...state, allItems, pendingDeleteId: undefined, subtitle: undefined }
-  return state.query ? applyFilter(updated, state.query) : { ...updated, items: allItems }
+  const next = state.query
+    ? applyFilter(updated, state.query)
+    : {
+        ...updated,
+        items: allItems,
+        focusIndex: firstFocusable(allItems),
+        scrollOffset: ensureVisible(updated.scrollOffset, firstFocusable(allItems), allItems.length),
+      }
+  if (!focused || focused.header) return next
+  // Keep the row the user was looking at across an async catalog refresh.
+  return selectorFocusOn(next, item => focused.id ? item.id === focused.id : item.label === focused.label)
 }
 
 export function selectorClearQuery(state: SelectorState): SelectorState {

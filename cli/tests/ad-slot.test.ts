@@ -1,22 +1,38 @@
 import { describe, test, expect } from 'bun:test'
+import stripAnsi from 'strip-ansi'
 
 import {
   createAdSlotState,
   tickAdSlot,
   triggerAdSlot,
   buildAdSlotBlocks,
-  AD_ENTER_MS,
   AD_STEADY_MS,
   AD_GAP_MS,
   ERASE_STEP_MS,
 } from '../src/term/viewmodel/ad-slot.js'
 import type { AdContent } from '../src/term/viewmodel/ad-slot.js'
+import { styledLineToAnsi } from '../src/term/viewmodel/types.js'
 
 const notice: AdContent = { id: 'n1', kind: 'notice', priority: 10, title: 'New model: Kimi K3', body: 'fast inference' }
 const ad1: AdContent = { id: 'a1', kind: 'ad', title: 'Ad One', body: 'try it' }
 const ad2: AdContent = { id: 'a2', kind: 'ad', title: 'Ad Two', body: 'also try it' }
+const markdownAd: AdContent = {
+  id: 'md1',
+  kind: 'ad',
+  title: '**Pro** is live',
+  body: 'try `evot login` or [docs](https://evot.ai)',
+}
 
 const T0 = 1_000_000
+
+function slotText(blocks: ReturnType<typeof buildAdSlotBlocks>): string {
+  return stripAnsi(blocks.flatMap(block => block.lines.map(styledLineToAnsi)).join('\n'))
+}
+
+function bodyText(blocks: ReturnType<typeof buildAdSlotBlocks>): string {
+  const lines = blocks[0]?.lines ?? []
+  return stripAnsi(lines.slice(1, -1).map(styledLineToAnsi).join('\n')).trim()
+}
 
 
 describe('ad slot lifecycle', () => {
@@ -96,7 +112,7 @@ describe('ad slot lifecycle', () => {
       const tick = tickAdSlot(state, u)
       if (tick.phase !== 'erasing') break
       const blocks = buildAdSlotBlocks(state, tick, 200, u)
-      widths.push(blocks[0]!.lines[1]!.spans!.map(s => s.text).join('').trim().length)
+      widths.push(bodyText(blocks).length)
     }
     expect(widths.length).toBeGreaterThan(3)
     for (let i = 1; i < widths.length; i++) {
@@ -119,9 +135,7 @@ describe('ad slot lifecycle', () => {
     // mid-gap the line renders empty while the old content is still pinned
     const mid = tickAdSlot(state, eraseEnd - AD_GAP_MS / 2)
     if (mid.phase === 'erasing') {
-      const text = buildAdSlotBlocks(state, mid, 200, eraseEnd - AD_GAP_MS / 2)[0]!
-        .lines[1]!.spans!.map(s => s.text).join('').trim()
-      expect(text).toBe('')
+      expect(bodyText(buildAdSlotBlocks(state, mid, 200, eraseEnd - AD_GAP_MS / 2))).toBe('')
     }
   })
 })
@@ -136,8 +150,9 @@ describe('buildAdSlotBlocks rendering', () => {
     const blocks = buildAdSlotBlocks(state, tick, 100)
     expect(blocks.length).toBe(1)
     expect(blocks[0]!.lines.length).toBe(3)   // rule + ticker + rule
-    const text = blocks[0]!.lines.map(l => (l.spans ?? []).map(s => s.text).join('')).join('\n')
+    const text = slotText(blocks)
     expect(text).toContain('New model: Kimi K3')
+    expect(text).toContain('fast inference')
     expect(text).not.toContain('Notice:')
   })
 
@@ -146,8 +161,7 @@ describe('buildAdSlotBlocks rendering', () => {
     triggerAdSlot(state, T0)
     tickAdSlot(state, T0)
     const tick = tickAdSlot(state, T0 + 15_000)
-    const text = buildAdSlotBlocks(state, tick, 200)
-      .flatMap(b => b.lines.map(l => (l.spans ?? []).map(s => s.text).join(''))).join('')
+    const text = slotText(buildAdSlotBlocks(state, tick, 200))
     expect(text).toContain('Ad One')
     expect(text).toContain('try it')
     // No kind label, no CTA arrow — just the copy.
@@ -176,12 +190,12 @@ describe('buildAdSlotBlocks rendering', () => {
 
     // early frame: only a few characters visible
     const early = buildAdSlotBlocks(state, tickAdSlot(state, T0 + TYPE_STEP_MS * 3), 200, T0 + TYPE_STEP_MS * 3)
-    const earlyText = early[0]!.lines[1]!.spans!.map(x => x.text).join('')
+    const earlyText = bodyText(early)
     expect(earlyText.length).toBeLessThan(20)
 
     // long after typing finished: the whole line is visible
     const later = buildAdSlotBlocks(state, tickAdSlot(state, T0 + TYPE_STEP_MS * 500), 200, T0 + TYPE_STEP_MS * 500)
-    const laterText = later[0]!.lines[1]!.spans!.map(x => x.text).join('')
+    const laterText = bodyText(later)
     expect(laterText).toContain('Ad One')
     expect(laterText).toContain('try it')
     expect(laterText).not.toContain('Ad:')
@@ -193,7 +207,7 @@ describe('buildAdSlotBlocks rendering', () => {
     tickAdSlot(state, T0)
     const tick = tickAdSlot(state, T0 + 15_000)
     const blocks = buildAdSlotBlocks(state, tick, 200)
-    const text = blocks[0]!.lines[1]!.spans!.map(s => s.text).join('')
+    const text = bodyText(blocks)
     expect(text).toContain('New model: Kimi K3')
     expect(text).not.toContain('Notice:')
   })
@@ -205,7 +219,7 @@ describe('buildAdSlotBlocks rendering', () => {
     // shownAt is far in the past, so every character is already wiped
     const blocks = buildAdSlotBlocks(state, tick, 100, T0 + 60_000)
     expect(blocks[0]!.lines.length).toBe(3)   // rule + blank ticker + rule
-    const text = blocks[0]!.lines[1]!.spans!.map(s => s.text).join('').trim()
+    const text = bodyText(blocks)
     expect(text).toBe('')
   })
 
@@ -215,6 +229,39 @@ describe('buildAdSlotBlocks rendering', () => {
     expect(buildAdSlotBlocks(state, gone, 100)).toEqual([])
     const tick = tickAdSlot(state, T0 + 15_000)
     expect(buildAdSlotBlocks(state, tick, 20)).toEqual([])
+  })
+
+  test('renders markdown emphasis, code, and links without leaking markup', () => {
+    const state = createAdSlotState([markdownAd])
+    triggerAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 15_000)
+    const text = slotText(buildAdSlotBlocks(state, tick, 120, T0 + 15_000))
+    expect(text).toContain('Pro is live')
+    expect(text).toContain('evot login')
+    expect(text).toContain('docs')
+    expect(text).not.toContain('**Pro**')
+    expect(text).not.toContain('`evot login`')
+    expect(text).not.toContain('[docs](')
+  })
+
+  test('markdown body stays on one ticker line', () => {
+    const campaign: AdContent = {
+      id: 'list',
+      kind: 'ad',
+      title: 'Tips',
+      body: '- **faster** replies\n- try `evot login`',
+    }
+    const state = createAdSlotState([campaign])
+    triggerAdSlot(state, T0)
+    const tick = tickAdSlot(state, T0 + 15_000)
+    const blocks = buildAdSlotBlocks(state, tick, 80, T0 + 15_000)
+    expect(blocks[0]!.lines.length).toBe(3)
+    const text = slotText(blocks)
+    expect(text).toContain('Tips')
+    expect(text).toContain('faster')
+    expect(text).toContain('evot login')
+    expect(text).not.toContain('**faster**')
+    expect(bodyText(blocks).includes('\n')).toBe(false)
   })
 
   test('every rendered line passes styledLineToAnsi without crashing', async () => {

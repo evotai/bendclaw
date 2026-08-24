@@ -136,15 +136,30 @@ describe('renderSelector via viewmodel', () => {
     expect(lines[4]).toBe('providers. Run evot login to add cloud')
     expect(lines[5]).toBe('models.')
     expect(lines[7]).toStartWith('>  ')
-    expect(lines[9]).toBe('  — openai —')
-    expect(lines[10]).toBe('→ grok-4.5 ✓')
+    expect(lines[9]).toBe('  openai')
+    expect(lines[10]).toBe('❯ grok-4.5 ✓')
     expect(lines[11]).toBe('')
-    expect(lines[12]).toBe('  — droid —')
+    expect(lines[12]).toBe('  droid')
     expect(lines[13]).toBe('  gpt-5.6-sol')
     expect(lines[15]).toBe('  Model Name: grok-4.5')
     expect(lines.at(-1)).toBe('─'.repeat(40))
     expect(lines.join('\n')).not.toContain('Models  2')
     expect(lines.join('\n')).not.toContain('enter select')
+  })
+
+  test('model selector uses the brand palette instead of cyan and yellow', () => {
+    const state = {
+      ...createSelectorState('Models', [
+        { label: 'Evot Premium', header: true, focusable: false, group: 'pro' },
+        { label: 'GPT 5.6 Sol', group: 'pro', selected: true },
+      ]),
+      presentation: 'model' as const,
+    }
+    const raw = buildSelectorRegionLines(state, 80).join('\n')
+    expect(raw).toContain('\x1b[38;2;240;198;116m') // accent gold heading
+    expect(raw).toContain('\x1b[38;2;181;188;249m') // brand periwinkle focus
+    expect(raw).not.toContain('\x1b[36m') // no cyan
+    expect(raw).not.toContain('\x1b[33m') // no yellow banner
   })
 
   test('model filtering keeps provider groups without repeated badges', () => {
@@ -162,7 +177,7 @@ describe('renderSelector via viewmodel', () => {
     const text = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
       .join('\n')
-    expect(text).toContain('  — droid —\n→ gpt-5.6-sol')
+    expect(text).toContain('  droid\n❯ gpt-5.6-sol')
     expect(text).not.toContain('[droid]')
   })
 
@@ -181,14 +196,14 @@ describe('renderSelector via viewmodel', () => {
     }
     const lines = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
-    const listStart = lines.indexOf('  — openai —')
+    const listStart = lines.indexOf('  openai')
 
     expect(lines.slice(listStart, listStart + 8)).toEqual([
-      '  — openai —',
-      '→ gpt-5.6-sol ✓',
+      '  openai',
+      '❯ gpt-5.6-sol ✓',
       '  grok-4.5',
       '',
-      '  — anthropic —',
+      '  anthropic',
       '  claude-opus-4-8',
       '  claude-sonnet-5',
       '',
@@ -210,7 +225,7 @@ describe('renderSelector via viewmodel', () => {
     }
     const lines = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
-    const headerIndex = lines.indexOf('  — anthropic · Anthropic Messages —')
+    const headerIndex = lines.indexOf('  anthropic · Anthropic Messages')
 
     expect(headerIndex).toBeGreaterThan(0)
     expect(lines[headerIndex - 1]).toBe('')
@@ -596,6 +611,45 @@ describe('selectorExpandItems', () => {
     const expanded = [{ label: 'a' }, { label: 'b' }, { label: 'c' }]
     state = selectorExpandItems(state, expanded)
     expect(state.items.length).toBe(3)
+  })
+
+  test('keeps the focused row when an async refresh prepends items', () => {
+    const initial = [
+      { label: 'Evot Free', header: true, focusable: false, group: 'free' },
+      { label: 'north-mini', id: 'evot-free:north-mini', group: 'free' },
+      { label: 'openai', header: true, focusable: false, group: 'openai' },
+      { label: 'grok-4.5', id: 'openai:grok-4.5', group: 'openai' },
+    ]
+    let state = { ...createSelectorState('Models', initial), presentation: 'model' as const }
+    state = selectorFocusOn(state, item => item.id === 'openai:grok-4.5')
+    expect(state.items[state.focusIndex]?.id).toBe('openai:grok-4.5')
+
+    const expanded = [
+      { label: 'Evot Premium', header: true, focusable: false, group: 'pro' },
+      { label: 'claude-sonnet-5', id: 'evot-pro:claude-sonnet-5', group: 'pro' },
+      ...initial,
+    ]
+    state = selectorExpandItems(state, expanded)
+    expect(state.items[state.focusIndex]?.id).toBe('openai:grok-4.5')
+    expect(state.query).toBe('')
+  })
+
+  test('keeps a typed query after an async refresh', () => {
+    const initial = [
+      { label: 'grok-4.5', id: 'openai:grok-4.5', group: 'openai', searchText: 'grok-4.5 openai' },
+      { label: 'gpt-5.6-sol', id: 'droid:gpt-5.6-sol', group: 'droid', searchText: 'gpt-5.6-sol droid' },
+    ]
+    let state = { ...createSelectorState('Models', initial), presentation: 'model' as const }
+    for (const char of 'grok') state = selectorType(state, char)
+    expect(state.items.map(item => item.id)).toEqual(['openai:grok-4.5'])
+
+    const expanded = [
+      { label: 'north-mini', id: 'evot-free:north-mini', group: 'free', searchText: 'north-mini evot-free' },
+      ...initial,
+    ]
+    state = selectorExpandItems(state, expanded)
+    expect(state.query).toBe('grok')
+    expect(state.items.map(item => item.id)).toEqual(['openai:grok-4.5'])
   })
 })
 

@@ -118,17 +118,18 @@ describe('repl selector control', () => {
     if (armed.kind !== 'update') return
     expect(armed.state.pendingDeleteId).toBe('session-one')
 
-    // listSessionsWithText resolving reorders the pool: focus now points at a
-    // different session than the one the user armed.
+    // listSessionsWithText resolving reorders the pool. Keep the focused
+    // session, but drop the armed delete so a confirming keypress cannot fire.
     const reordered = selectorExpandItems(armed.state, [
       { label: 'two', id: 'session-two', detail: 'second' },
       { label: 'one', id: 'session-one', detail: 'first' },
     ])
     expect(reordered.pendingDeleteId).toBeUndefined()
+    expect(reordered.items[reordered.focusIndex]?.id).toBe('session-one')
 
     const next = handleSelectorControl(reordered, key('delete'))
     expect(next.kind).toBe('update')
-    if (next.kind === 'update') expect(next.state.pendingDeleteId).toBe('session-two')
+    if (next.kind === 'update') expect(next.state.pendingDeleteId).toBe('session-one')
   })
 
   test('non resume delete is ignored', () => {

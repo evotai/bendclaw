@@ -74,6 +74,70 @@ fn extract_no_known_fields() {
     assert_eq!(msg, None);
 }
 
+#[test]
+fn extract_openrouter_metadata_raw_json() {
+    let value = serde_json::json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Provider returned error"
+        },
+        "metadata": {
+            "raw": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long\"}}",
+            "provider_name": "Stealth"
+        }
+    });
+    let msg = extract_json_error_message(&value).expect("message");
+    assert!(msg.starts_with("invalid_request_error: Provider returned error"));
+    assert!(msg.contains("prompt is too long"));
+    assert_eq!(msg.matches("prompt is too long").count(), 1);
+}
+
+#[test]
+fn extract_openrouter_metadata_raw_plain_text() {
+    let value = serde_json::json!({
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Provider returned error",
+            "metadata": {"raw": "max_tokens too large"}
+        }
+    });
+    let msg = extract_json_error_message(&value).expect("message");
+    assert!(msg.starts_with("invalid_request_error: Provider returned error"));
+    assert!(msg.contains("max_tokens too large"));
+    assert_eq!(msg.matches("max_tokens too large").count(), 1);
+}
+
+#[test]
+fn extract_does_not_duplicate_raw_already_in_the_message() {
+    let value = serde_json::json!({
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Unsupported tool schema"
+        },
+        "metadata": {"raw": "Unsupported tool schema"}
+    });
+    let msg = extract_json_error_message(&value);
+    assert_eq!(
+        msg,
+        Some("invalid_request_error: Unsupported tool schema".into())
+    );
+}
+
+#[test]
+fn extract_opaque_raw_is_still_appended() {
+    let value = serde_json::json!({
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Provider returned error"
+        },
+        "metadata": {"raw": "ERROR", "provider_name": "Stealth"}
+    });
+    let msg = extract_json_error_message(&value).expect("message");
+    assert!(msg.contains("Provider returned error"));
+    assert!(msg.contains("ERROR"));
+}
+
 // ---------------------------------------------------------------------------
 // classify_json_error
 // ---------------------------------------------------------------------------
@@ -152,6 +216,24 @@ fn classify_json_400_bad_request_is_not_retryable() {
     });
     let err = classify_json_error(&value);
     assert!(matches!(err, ProviderError::Api(_)));
+    assert!(!evotengine::retry::should_retry(&err));
+}
+
+#[test]
+fn classify_openrouter_wrapped_overflow_from_metadata_raw() {
+    let value = serde_json::json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "Provider returned error"
+        },
+        "metadata": {
+            "raw": "{\"error\":{\"message\":\"prompt is too long: 213462 tokens > 200000 maximum\"}}",
+            "provider_name": "Stealth"
+        }
+    });
+    let err = classify_json_error(&value);
+    assert!(err.is_context_overflow());
     assert!(!evotengine::retry::should_retry(&err));
 }
 

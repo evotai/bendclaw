@@ -200,6 +200,10 @@ pub async fn read_json_body(
 /// - `{ "error": { "message": "..." } }` (OpenAI)
 /// - `{ "message": "..." }` (generic)
 /// - `{ "type": "..." }` (generic)
+///
+/// OpenRouter puts the upstream reason in `metadata.raw` next to a generic
+/// `Provider returned error` message. That field is part of the envelope, not
+/// a rewrite of it: append `raw` when it is not already in the display string.
 pub fn extract_json_error_message(value: &serde_json::Value) -> Option<String> {
     let error_obj = value.get("error");
 
@@ -227,12 +231,36 @@ pub fn extract_json_error_message(value: &serde_json::Value) -> Option<String> {
                 .and_then(|v| v.as_str())
         });
 
-    match (error_kind, error_message) {
-        (Some(t), Some(m)) => Some(format!("{t}: {m}")),
-        (None, Some(m)) => Some(m.to_string()),
-        (Some(t), None) => Some(t.to_string()),
-        (None, None) => None,
+    let mut display = match (error_kind, error_message) {
+        (Some(kind), Some(message)) => format!("{kind}: {message}"),
+        (None, Some(message)) => message.to_string(),
+        (Some(kind), None) => kind.to_string(),
+        (None, None) => String::new(),
+    };
+    if let Some(raw) = raw_provider_error(value) {
+        if !display.contains(raw) {
+            if display.is_empty() {
+                display = raw.to_string();
+            } else {
+                display.push('\n');
+                display.push_str(raw);
+            }
+        }
     }
+    if display.is_empty() {
+        None
+    } else {
+        Some(display)
+    }
+}
+
+fn raw_provider_error(value: &serde_json::Value) -> Option<&str> {
+    value
+        .pointer("/error/metadata/raw")
+        .or_else(|| value.pointer("/metadata/raw"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
 }
 
 /// Preserve the complete bounded JSON envelope as classification evidence.

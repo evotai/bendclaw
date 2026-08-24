@@ -1,6 +1,7 @@
-import { ansi, line, colored, plain, type ViewBlock } from './types.js'
+import { ansi, line, plain, type ViewBlock } from './types.js'
 import { renderMarkdown } from '../../render/markdown.js'
 import { sliceVisibleAnsi, truncateAnsiToWidth, visibleGraphemeCount, visibleWidth } from '../../render/wrap.js'
+import { getTheme } from '../../render/theme.js'
 
 export interface AdContent {
   id: string
@@ -283,7 +284,7 @@ export function buildAdSlotBlocks(
     [...state.notices, ...state.ads].reduce((max, campaign) => Math.max(max, campaignWidth(campaign)), 0) + 3,
     columns - 6,
   ))
-  const rule = colored('  ' + '─'.repeat(innerWidth), 'yellow')
+  const rule = { text: '  ' + '─'.repeat(innerWidth), hex: getTheme().brandHex }
 
   const rendered = tickerText(content)
   const total = visibleGraphemeCount(rendered)

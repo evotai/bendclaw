@@ -8,7 +8,7 @@ import {
 } from './input.js'
 import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
-import { setDetectedThemeScheme } from '../render/theme.js'
+import { getTheme, setDetectedThemeScheme } from '../render/theme.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
 import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
@@ -26,6 +26,7 @@ import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
 import { renderBanner } from './banner.js'
+import stringWidth from 'string-width'
 import {
   buildOutputBlocks,
   buildPromptBlocks,
@@ -737,10 +738,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (spinnerBlock) spinnerBlock = { ...spinnerBlock, marginTop: 0 }
     }
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
-    // Update notice: drawn on the input box's top border, right-aligned against
-    // the right corner — the same placement Claude Code uses. This area
-    // repaints every frame, so it stays visible while a task runs (unlike the
-    // banner, which scrolls away with history). Staged is green because it
+    // Update notice: a right-aligned row sitting on the input box, not inside
+    // its border. Rendered after the ad slot so the ticker keeps the left and
+    // this notice hugs the frame's top-right corner. Staged is green because it
     // wants to be seen: "restart when convenient". Downloading and
     // manual-only-available are dim background noise. Failures stay silent;
     // the manual /update reports them with full context.
@@ -748,28 +748,33 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (overlay.kind === 'none') {
       if (updateStatus === 'staged' && updateVersion) {
         updateNotice = [
-          { text: '✓ ', hex: '#3f9142' },
-          { text: `Update downloaded v${updateVersion}`, hex: '#3f9142' },
+          { text: '✓ ', hex: getTheme().brandHex },
+          { text: `Update downloaded v${updateVersion}`, hex: getTheme().brandHex },
           { text: ' · Restart to apply', dim: true },
         ]
       } else if (updateStatus === 'downloading' && updateVersion) {
         updateNotice = [{ text: `⬇ Auto-updating to v${updateVersion}…`, dim: true }]
       } else if (updateStatus === 'idle' && updateAvailable && !spinnerBlock) {
-        // Auto-download off or still queued: the only state where /update is
-        // the user's action, so naming the command here is correct.
         updateNotice = [
           { text: `↑ evot v${updateAvailable.version} available`, dim: true },
           { text: ' — run /update', dim: true },
         ]
       }
     }
-    const topTrailing = updateNotice
-      ? [{ text: ' ' }, ...updateNotice, { text: ' ' }]
-      : undefined
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
     if (adSlotTick.content && !isLoading && !spinnerBlock) {
       preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols))
+    }
+    if (updateNotice) {
+      const textWidth = updateNotice.reduce((sum, s) => sum + stringWidth(s.text), 0)
+      const pad = Math.max(0, renderer.termCols - textWidth)
+      preEditorBlocks.push({
+        lines: [{ spans: [{ text: ' '.repeat(pad) }, ...updateNotice] }],
+        // Sit on the frame: no blank row between this and the composer.
+        // Keep a blank above only when nothing else already occupies the slot.
+        marginTop: preEditorBlocks.length > 0 ? 0 : 1,
+      })
     }
 
     // A selector replaces only pi's editorContainer. Its preceding queue/status
@@ -799,9 +804,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const modalLines = blocksToLines(buildOverlayBlocks(overlay, renderer.termCols))
     const footerBlocks = [...preEditorBlocks]
     footerBlocks.push(...buildPromptBlocks(getPromptVM(), {
-      attachedAbove: spinnerBlock !== null || queueLines.length > 0,
+      attachedAbove: spinnerBlock !== null || queueLines.length > 0 || updateNotice !== null,
       reservedAboveRows: blocksToLines(preEditorBlocks).length,
-      topTrailing,
     }))
 
     return {

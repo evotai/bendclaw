@@ -39,8 +39,6 @@ export interface PromptLayoutOptions {
   attachedAbove?: boolean
   /** Spinner and queue rows already occupying the live region above the prompt. */
   reservedAboveRows?: number
-  /** Spans drawn on the top border, right-aligned against the right corner. */
-  topTrailing?: StyledSpan[]
 }
 
 const KNOWN_COMMANDS = new Set(
@@ -146,12 +144,7 @@ export function buildPromptBlocks(input: PromptVMInput, options: PromptLayoutOpt
   // transcript needs them more than the composer needs an outline. The caret
   // still marks the row as the place you type, and the footer takes the mode
   // back over.
-  if (frame.ruled) {
-    blocks.push(block(
-      [frame.top(topLabel(modeLabels, overflowLabel('↑', start)), options.topTrailing)],
-      options.attachedAbove ? 0 : 1,
-    ))
-  }
+  if (frame.ruled) blocks.push(block([frame.top(topLabel(modeLabels, overflowLabel('↑', start)))], options.attachedAbove ? 0 : 1))
   blocks.push(block([
     ...Array.from({ length: above }, blank),
     ...inputRows.map(frame.row),

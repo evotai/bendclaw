@@ -103,8 +103,8 @@ function buildFooterCandidate(
 ): FooterCandidate {
   const dashboard = layout.dashboard && input.dashboardUrl
     ? [
-        { text: 'dashboard ', hex: '#7fae7f' } satisfies StyledSpan,
-        { text: input.dashboardUrl, hex: '#7fae7f', link: input.dashboardUrl } satisfies StyledSpan,
+        { text: 'dashboard ', dim: true } satisfies StyledSpan,
+        { text: input.dashboardUrl, dim: true, link: input.dashboardUrl } satisfies StyledSpan,
       ]
     : null
 

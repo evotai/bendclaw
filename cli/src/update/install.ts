@@ -9,7 +9,18 @@ import { applyProxyToEnv, resolveUpdateProxy } from './proxy.js'
 const INSTALL_SCRIPT_BASE = 'https://raw.githubusercontent.com/evotai/evot'
 const SCRIPT_FETCH_TIMEOUT = 30_000
 const SCRIPT_FETCH_ATTEMPTS = 3
-const SCRIPT_RETRY_BASE_DELAY = 1_000
+
+/**
+ * Backoff before re-fetching install.sh.
+ *
+ * Overridable so tests can exercise the retry path without waiting real
+ * seconds: three attempts otherwise spend a fixed 1s + 2s asleep, which is
+ * nearly all of the runtime of a test whose point is the retry logic.
+ */
+function scriptRetryBaseDelay(): number {
+  const override = Number(process.env.EVOT_SCRIPT_RETRY_BASE_DELAY_MS)
+  return Number.isFinite(override) && override >= 0 ? override : 1_000
+}
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -55,7 +66,7 @@ async function fetchInstallScript(tag?: string): Promise<{ script: string } | { 
     }
 
     if (attempt < SCRIPT_FETCH_ATTEMPTS) {
-      await sleep(SCRIPT_RETRY_BASE_DELAY * 2 ** (attempt - 1))
+      await sleep(scriptRetryBaseDelay() * 2 ** (attempt - 1))
     }
   }
   return { error: lastError || 'failed to download install script' }

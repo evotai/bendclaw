@@ -12,6 +12,9 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'evot-update-test-'))
   process.env.EVOT_INSTALL_DIR = join(root, 'bin')
   delete process.env.EVOT_HOME
+  // Collapse the install-script retry backoff, which is otherwise a fixed
+  // 1s + 2s of pure waiting in the test that covers the retry path.
+  process.env.EVOT_SCRIPT_RETRY_BASE_DELAY_MS = '1'
 })
 
 afterEach(() => {
@@ -19,6 +22,7 @@ afterEach(() => {
   process.execPath = originalExecPath
   delete process.env.EVOT_INSTALL_DIR
   delete process.env.EVOT_HOME
+  delete process.env.EVOT_SCRIPT_RETRY_BASE_DELAY_MS
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -153,7 +157,15 @@ exit 22
     const proc = Bun.spawn(['sh', installShPath], {
       stdout: 'pipe',
       stderr: 'pipe',
-      env: { ...process.env, PATH: `${env.FAKE_BIN}:/usr/bin:/bin`, ...env },
+      env: {
+        ...process.env,
+        PATH: `${env.FAKE_BIN}:/usr/bin:/bin`,
+        // Collapse the retry backoff. Three attempts otherwise sleep a fixed
+        // 1s + 2s, which dominated these tests' runtime and pushed the
+        // retry-exercising ones past the default timeout.
+        EVOT_DOWNLOAD_RETRY_BASE_DELAY: '0.01',
+        ...env,
+      },
     })
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -561,5 +573,37 @@ printf 'evot v2026.7.19\\n'
     expect(downloadFn).toContain('--tries=1')
     // The outer loop is what supplies the attempts.
     expect(script).toContain('DOWNLOAD_ATTEMPTS=3')
+  })
+
+  /**
+   * `-s` hides curl's transfer meter, so a ~40 MB download printed one line and
+   * then looked frozen with no bytes, rate or ETA. The meter is opt-in on a
+   * terminal only: piping the installer into a log would otherwise accumulate
+   * thousands of carriage-returned progress lines.
+   */
+  test('shows download progress on a terminal and stays quiet when piped', () => {
+    const script = readFileSync(installShPath, 'utf8')
+    const downloadFn = script.slice(
+      script.indexOf('\ndownload() {'),
+      script.indexOf('\n# Download, verify checksum'),
+    )
+
+    // The asset download must not hard-code -s; quietness is decided by the tty
+    // check and passed in.
+    expect(downloadFn).not.toContain('-fsSL')
+    expect(downloadFn.match(/\$CURL_QUIET/g)).toHaveLength(2)
+    expect(downloadFn.match(/\$WGET_PROGRESS/g)).toHaveLength(2)
+
+    // stderr, not stdout: the meter is written to stderr, and stdout is piped
+    // for the `curl | sh` invocation that is the documented entry point.
+    expect(script).toContain('if [ -t 2 ]; then')
+    expect(script).toContain('CURL_QUIET="-s"')
+
+    // -S must survive in both branches so a hard failure is still reported when
+    // the meter is off, rather than the install dying silently.
+    expect(downloadFn.match(/-fL \$CURL_QUIET -S/g)).toHaveLength(2)
+
+    // --show-progress predates neither wget nor every distro's build of it.
+    expect(script).toContain("wget --help 2>&1 | grep -q -- '--show-progress'")
   })
 })

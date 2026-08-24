@@ -40,6 +40,40 @@ fi
 # when it does not.
 DOWNLOAD_ATTEMPTS=3
 
+# Seconds to wait before the first retry; each attempt waits a multiple of it.
+#
+# Overridable so tests can exercise the retry paths without sleeping real
+# seconds: three attempts otherwise cost a fixed 1s + 2s of pure waiting, which
+# is most of their runtime and made them flaky against a 5s default timeout.
+DOWNLOAD_RETRY_BASE_DELAY="${EVOT_DOWNLOAD_RETRY_BASE_DELAY:-1}"
+
+# Progress reporting for the release asset.
+#
+# `-s` suppresses curl's transfer meter, so a ~40 MB download printed one line
+# and then appeared frozen for however long the transfer took -- no bytes, no
+# rate, no ETA, and no way for the user to tell a slow link from a hung one.
+#
+# The meter is enabled only when stderr is a terminal. Piping the installer into
+# a log or a CI job would otherwise accumulate thousands of carriage-returned
+# progress lines, so those keep the quiet behaviour. `-S` is retained in both
+# cases so a hard error is still reported when the meter is off.
+#
+# curl's default meter is preferred over its `-#` bar because it reports rate and
+# time remaining, not just percentage. wget only shows a meter under `-q` when
+# --show-progress is passed, and that flag landed in wget 1.16, so it is probed
+# rather than assumed.
+if [ -t 2 ]; then
+  CURL_QUIET=""
+  WGET_PROGRESS="--show-progress"
+  if [ "$DOWNLOADER" = "wget" ] \
+    && ! wget --help 2>&1 | grep -q -- '--show-progress'; then
+    WGET_PROGRESS=""
+  fi
+else
+  CURL_QUIET="-s"
+  WGET_PROGRESS=""
+fi
+
 # Abort a transfer that has effectively stopped moving.
 #
 # --connect-timeout only bounds the connect phase. Reaching the release CDN can
@@ -72,11 +106,11 @@ download() {
   _url="$1"; _output="$2"; _resume="${3:-yes}"
   if [ "$DOWNLOADER" = "curl" ]; then
     if [ "$_resume" = "yes" ]; then
-      curl -fsSL --connect-timeout 20 \
+      curl -fL $CURL_QUIET -S --connect-timeout 20 \
         --speed-limit "$STALL_MIN_BYTES_PER_SEC" --speed-time "$STALL_WINDOW_SECONDS" \
         --continue-at - -o "$_output" "$_url"
     else
-      curl -fsSL --connect-timeout 20 \
+      curl -fL $CURL_QUIET -S --connect-timeout 20 \
         --speed-limit "$STALL_MIN_BYTES_PER_SEC" --speed-time "$STALL_WINDOW_SECONDS" \
         -o "$_output" "$_url"
     fi
@@ -84,9 +118,11 @@ download() {
     # wget's --timeout already covers reads as well as DNS and connect, so a
     # stalled transfer is bounded without an extra flag.
     if [ "$_resume" = "yes" ]; then
-      wget -q --tries=1 --timeout="$STALL_WINDOW_SECONDS" --continue -O "$_output" "$_url"
+      wget -q $WGET_PROGRESS --tries=1 --timeout="$STALL_WINDOW_SECONDS" \
+        --continue -O "$_output" "$_url"
     else
-      wget -q --tries=1 --timeout="$STALL_WINDOW_SECONDS" -O "$_output" "$_url"
+      wget -q $WGET_PROGRESS --tries=1 --timeout="$STALL_WINDOW_SECONDS" \
+        -O "$_output" "$_url"
     fi
   fi
 }
@@ -131,7 +167,7 @@ download_verified() {
       return 1
     fi
     warn "  Download failed, retrying ($((_attempt + 1))/${DOWNLOAD_ATTEMPTS})..."
-    sleep "$_attempt"
+    sleep "$(awk "BEGIN{print $_attempt * $DOWNLOAD_RETRY_BASE_DELAY}")"
     _attempt=$((_attempt + 1))
   done
 }

@@ -36,10 +36,14 @@ export function modelGroupLabel(option: ModelOption): string {
   return [option.provider, protocolLabel(option.protocol)].filter(Boolean).join(' · ')
 }
 
-/** Per-row extra shown after the name. The group heading already carries the
- *  provider and protocol, so only a NEW badge is worth the space. */
+/** Per-row extra after the name: tagline as `(tag)`, then NEW if the server marked it. */
 export function formatModelOptionDetail(option: ModelOption): string {
-  return isCloudModel(option) && option.free?.is_new ? 'NEW' : ''
+  const tag = option.free?.tagline?.trim()
+  const parts = [
+    tag ? `(${tag})` : '',
+    isCloudModel(option) && option.free?.is_new ? 'NEW' : '',
+  ].filter(Boolean)
+  return parts.join(' ')
 }
 
 /** Rank a provider: server-ordered cloud groups first, then BYOK providers. */
@@ -87,8 +91,14 @@ export function formatModelOptionLabel(option: ModelOption): string {
   return shown || option.model
 }
 
-export function formatModelLabel(model: string, provider: string): string {
-  return provider ? `${model}@${provider}` : model
+export function formatModelLabel(model: string, provider: string, groupLabel?: string): string {
+  const shown = groupLabel?.trim() || provider
+  return shown ? `${model}@${shown}` : model
+}
+
+/** Display name for a provider: the server heading when it has one. */
+export function providerDisplayName(option: ModelOption | undefined, fallback = ''): string {
+  return option?.group_label?.trim() || option?.provider || fallback
 }
 
 export function selectModelOption(configInfo: ConfigInfo | undefined, spec: string): ModelOption | undefined {

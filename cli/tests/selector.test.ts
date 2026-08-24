@@ -136,10 +136,10 @@ describe('renderSelector via viewmodel', () => {
     expect(lines[4]).toBe('providers. Run evot login to add cloud')
     expect(lines[5]).toBe('models.')
     expect(lines[7]).toStartWith('>  ')
-    expect(lines[9]).toBe('  openai')
+    expect(lines[9]).toBe('  — openai —')
     expect(lines[10]).toBe('→ grok-4.5 ✓')
     expect(lines[11]).toBe('')
-    expect(lines[12]).toBe('  droid')
+    expect(lines[12]).toBe('  — droid —')
     expect(lines[13]).toBe('  gpt-5.6-sol')
     expect(lines[15]).toBe('  Model Name: grok-4.5')
     expect(lines.at(-1)).toBe('─'.repeat(40))
@@ -162,7 +162,7 @@ describe('renderSelector via viewmodel', () => {
     const text = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
       .join('\n')
-    expect(text).toContain('  droid\n→ gpt-5.6-sol')
+    expect(text).toContain('  — droid —\n→ gpt-5.6-sol')
     expect(text).not.toContain('[droid]')
   })
 
@@ -181,14 +181,14 @@ describe('renderSelector via viewmodel', () => {
     }
     const lines = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
-    const listStart = lines.indexOf('  openai')
+    const listStart = lines.indexOf('  — openai —')
 
     expect(lines.slice(listStart, listStart + 8)).toEqual([
-      '  openai',
+      '  — openai —',
       '→ gpt-5.6-sol ✓',
       '  grok-4.5',
       '',
-      '  anthropic',
+      '  — anthropic —',
       '  claude-opus-4-8',
       '  claude-sonnet-5',
       '',
@@ -210,7 +210,7 @@ describe('renderSelector via viewmodel', () => {
     }
     const lines = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
-    const headerIndex = lines.indexOf('  anthropic · Anthropic Messages')
+    const headerIndex = lines.indexOf('  — anthropic · Anthropic Messages —')
 
     expect(headerIndex).toBeGreaterThan(0)
     expect(lines[headerIndex - 1]).toBe('')

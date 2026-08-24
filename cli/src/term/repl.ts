@@ -95,7 +95,7 @@ import {
   type AskUserParams,
 } from './host-tools.js'
 import { extractPlanItems, type PlanModeItem } from './plan-mode.js'
-import { currentModelSpec, formatModelLabel, formatModelOptionDetail, formatModelOptionLabel, isCloudModel, modelGroupLabel, modelOptions, selectModelOption, sortModelOptionsForSelector } from './app/provider.js'
+import { currentModelSpec, formatModelLabel, formatModelOptionDetail, formatModelOptionLabel, isCloudModel, modelGroupLabel, modelOptions, providerDisplayName, selectModelOption, sortModelOptionsForSelector } from './app/provider.js'
 import chalk from 'chalk'
 import {
   shouldCollapse,
@@ -491,7 +491,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       active: overlay.kind === 'none',
       caretVisible: caretBlink.visible,
       model: appState.model,
-      provider: configInfo?.provider ?? '',
+      provider: providerDisplayName(
+        configInfo?.availableModels.find(
+          m => m.model === appState.model && m.provider === (configInfo?.provider ?? ''))
+          ?? configInfo?.availableModels.find(m => m.model === appState.model),
+        configInfo?.provider ?? '',
+      ),
       planning,
       logMode: logMode !== null,
       dashboardUrl: serverState?.address ?? null,
@@ -2234,7 +2239,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             group,
             selected: option.spec === activeSpec,
             // Searchable by both names, so the real id still finds it.
-            searchText: `${label} ${option.model} ${detail} ${option.protocol ?? ''}`,
+            searchText: `${label} ${option.model} ${option.free?.tagline ?? ''} ${detail} ${option.protocol ?? ''}`,
           })
         }
         overlay = {
@@ -2588,7 +2593,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           const model = selected?.model ?? agent.model
           const provider = selected?.provider ?? configInfo?.provider ?? ''
           appState = { ...appState, model }
-          commitStatusLine({ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(model, provider)}` })
+          commitStatusLine({ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(model, provider, selected?.group_label)}` })
         } catch (err) {
           commitSystem('sys-model-err', chalk.red(`  Failed to switch model: ${errorText(err)}`))
         }

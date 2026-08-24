@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatModelOptionDetail, formatModelOptionLabel, isCloudModel, modelGroupLabel, sortModelOptionsForSelector } from '../src/term/app/provider.js'
+import { formatModelOptionDetail, formatModelOptionLabel, formatModelLabel, isCloudModel, modelGroupLabel, providerDisplayName, sortModelOptionsForSelector } from '../src/term/app/provider.js'
 
 const options = [
   { provider: 'anthropic', protocol: 'anthropic' as const, model: 'claude-opus-4-8', spec: 'anthropic:claude-opus-4-8' },
@@ -88,15 +88,15 @@ describe('cloud model grouping', () => {
   })
 
   test('cloud rows stay bare: the alias already says it', () => {
-    // No tier badge, tagline, or repeated id cluttering every row.
+    // No tier badge or repeated id. A tagline, if set, shows as `(tag)`.
     expect(formatModelOptionDetail(cloudOptions[1]!)).toBe('')
-    expect(formatModelOptionDetail(cloudOptions[2]!)).toBe('')
+    expect(formatModelOptionDetail(cloudOptions[2]!)).toBe('(Fast and free)')
     expect(formatModelOptionDetail(cloudOptions[3]!)).toBe('')
   })
 
   test('only NEW earns a detail line', () => {
     const fresh = { ...cloudOptions[2]!, free: { ...cloudOptions[2]!.free, is_new: true } }
-    expect(formatModelOptionDetail(fresh)).toBe('NEW')
+    expect(formatModelOptionDetail(fresh)).toBe('(Fast and free) NEW')
   })
 
   test('a BYOK model keeps its own id as the label', () => {
@@ -142,5 +142,21 @@ describe('cloud model grouping', () => {
     ]
     const sorted = sortModelOptionsForSelector(renamed, 'none:none')
     expect(sorted.map(o => o.group_label)).toEqual(['Starter', 'Premium'])
+  })
+})
+
+describe('formatModelLabel', () => {
+  test('cloud models show the group heading, not the routing id', () => {
+    expect(formatModelLabel('grok-4.6', 'evot-pro-openai', 'Evot Premium'))
+      .toBe('grok-4.6@Evot Premium')
+  })
+
+  test('BYOK models keep the provider name', () => {
+    expect(formatModelLabel('gpt-5.6-sol', 'droid')).toBe('gpt-5.6-sol@droid')
+  })
+
+  test('the footer uses the same heading as the picker', () => {
+    expect(providerDisplayName(cloudOptions[1], 'evot-pro')).toBe('Evot Premium')
+    expect(providerDisplayName(cloudOptions[0], 'droid')).toBe('droid')
   })
 })

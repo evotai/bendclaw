@@ -72,7 +72,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
       // The viewport can begin halfway through a large group, with its header
       // scrolled offscreen. Still separate the next group from those rows.
       if (visibleListRowSeen) lines.push(line(plain('')))
-      lines.push(line(dim(`  ${item.label}`)))
+      lines.push(line(plain('  '), colored(`— ${item.label} —`, 'white', { bold: true })))
       visibleListRowSeen = true
       continue
     }
@@ -80,8 +80,8 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
     const focused = index === state.focusIndex
     lines.push(line(
       focused ? colored('→ ', 'cyan') : plain('  '),
-      focused ? colored(item.label, 'cyan') : plain(item.label),
-      ...(item.detail ? [dim(`  ${item.detail}`)] : []),
+      focused ? colored(item.label, 'cyan') : dim(item.label),
+      ...(item.detail ? [dim(` ${item.detail}`)] : []),
       ...(item.selected ? [colored(' ✓', 'green')] : []),
     ))
     visibleListRowSeen = true

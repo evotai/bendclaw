@@ -83,7 +83,7 @@ export function handleSlashCommand(text: string, ctx: CommandContext): CommandRe
         return {
           ...baseResult(ctx),
           appState,
-          systemLines: [{ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(next.model, next.provider)}` }],
+          systemLines: [{ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(next.model, next.provider, next.group_label)}` }],
         }
       }
       if (args) {
@@ -96,10 +96,12 @@ export function handleSlashCommand(text: string, ctx: CommandContext): CommandRe
         const model = ctx.agent.model
         const provider = ctx.agent.configInfo().provider
         const appState = { ...ctx.appState, model }
+        const selected = configured ?? ctx.configInfo?.availableModels.find(
+          option => option.model === model && option.provider === provider)
         return {
           ...baseResult(ctx),
           appState,
-          systemLines: [{ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(model, provider)}` }],
+          systemLines: [{ id: 'sys-model', kind: 'system', text: `  Model → ${formatModelLabel(model, provider, selected?.group_label)}` }],
         }
       }
       // No arg — return empty result; handleSlashInput will show selector overlay

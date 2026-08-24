@@ -475,6 +475,41 @@ printf 'evot v2026.7.19\\n'
     expect(readFileSync(statePath, 'utf8')).toBe(oldState)
   })
 
+  /**
+   * macOS caches a code-signature blob per path and invalidates it by mtime. A
+   * path that has already hosted a differently-signed build keeps that stale
+   * blob, so the kernel compares it against the new bytes, finds
+   * cs_mtime != mtime, taints the mapped page and SIGKILLs on first fault.
+   * Signing a staged copy refreshes the wrong path and leaves the destination
+   * entry stale, so the signature has to be applied after the rename.
+   */
+  test('signs macOS artifacts at their destination, after the rename', () => {
+    const script = readFileSync(installShPath, 'utf8')
+
+    const binarySign = script.indexOf('codesign --force --sign - "$INSTALL_DIR/$BINARY"')
+    const bindingSign = script.indexOf('codesign --force --sign - "$LIB_DIR/$BINDING"')
+    expect(binarySign).toBeGreaterThan(-1)
+    expect(bindingSign).toBeGreaterThan(-1)
+
+    const binaryRename = script.indexOf('mv -f "$BINARY_STAGE" "$INSTALL_DIR/$BINARY"')
+    const bindingRename = script.indexOf('mv -f "$BINDING_STAGE" "$LIB_DIR/$BINDING"')
+    expect(binaryRename).toBeGreaterThan(-1)
+    expect(bindingRename).toBeGreaterThan(-1)
+
+    // Destination signing must follow both renames.
+    expect(bindingSign).toBeGreaterThan(bindingRename)
+    expect(binarySign).toBeGreaterThan(binaryRename)
+
+    // The staged copies must never be signed: that refreshes the wrong path.
+    expect(script).not.toContain('codesign --force --sign - "$BINARY_STAGE"')
+    expect(script).not.toContain('codesign --force --sign - "$BINDING_STAGE"')
+
+    // Signing has to happen before the binary is executed for verification,
+    // otherwise the install fails on the very SIGKILL this prevents.
+    const startupCheck = script.indexOf('INSTALLED_VERSION="$(EVOT_HOME=')
+    expect(startupCheck).toBeGreaterThan(binarySign)
+  })
+
   test('writes no install state when the install fails', async () => {
     const installDir = join(root, 'nostate', 'bin')
     mkdirSync(installDir, { recursive: true })

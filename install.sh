@@ -263,8 +263,9 @@ download_verified "$URL" "$TMP/$ASSET" "$SHA_URL" "$PACKAGE_DIR" \
 [ -f "$PACKAGE_DIR/lib/$BINDING" ] || error "Release archive does not contain lib/$BINDING for $TARGET"
 chmod +x "$PACKAGE_DIR/bin/$BINARY"
 
-# Preserve the signatures produced by the release workflow. Clearing download
-# attributes is safe, but re-signing here can make macOS reject a reused inode.
+# Clear download attributes before the candidate is executed. The signature
+# itself is refreshed later, in place at the destination — see the re-sign step
+# after the artifacts are moved.
 if [ "$os" = "darwin" ]; then
   xattr -cr "$PACKAGE_DIR/bin/$BINARY" 2>/dev/null || true
   if [ -d "$PACKAGE_DIR/lib" ]; then
@@ -340,6 +341,32 @@ mv -f "$BINDING_STAGE" "$LIB_DIR/$BINDING"
 BINDING_STAGE=""
 mv -f "$BINARY_STAGE" "$INSTALL_DIR/$BINARY"
 BINARY_STAGE=""
+
+# Re-sign at the destination, after the renames.
+#
+# macOS caches a code-signature blob per path and keys its validity to the
+# file's mtime. When a path has already hosted a differently-signed build --
+# `make install` then `curl | sh`, or any two releases -- the cached blob can
+# outlive the file it described. The kernel then compares the stale blob
+# against the new bytes, finds cs_mtime != mtime, marks the mapped page
+# tainted, and SIGKILLs the process on its first page fault. The victim is
+# usually the .node binding, because it is mapped after the executable has
+# already started, which is why this surfaced as a working `--version` during
+# install and an instant `Killed: 9` afterwards.
+#
+# Signing the staged copies cannot prevent this: a stage is a different path,
+# so it never refreshes the cache entry for the destination. Only signing the
+# final path does, which is why this runs here and not before the renames.
+if [ "$os" = "darwin" ]; then
+  codesign --force --sign - "$LIB_DIR/$BINDING" >/dev/null 2>&1 \
+    || error "Failed to sign $BINDING"
+  codesign --force --sign - "$INSTALL_DIR/$BINARY" >/dev/null 2>&1 \
+    || error "Failed to sign $BINARY"
+  codesign --verify --strict "$LIB_DIR/$BINDING" >/dev/null 2>&1 \
+    || error "Installed $BINDING has an invalid macOS signature"
+  codesign --verify --strict "$INSTALL_DIR/$BINARY" >/dev/null 2>&1 \
+    || error "Installed $BINARY has an invalid macOS signature"
+fi
 
 INSTALLED_VERSION="$(EVOT_HOME="$EVOT_HOME_DIR" "$INSTALL_DIR/$BINARY" --version 2>&1)" \
   || error "Installed evot failed to start: $INSTALLED_VERSION"

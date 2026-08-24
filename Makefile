@@ -126,17 +126,19 @@ install: build-cli
 		dst="$(HOME)/.evotai/lib/$$(basename "$$src")"; \
 		stage="$$dst.new.$$$$"; \
 		cp "$$src" "$$stage"; \
-		if [ "$$(uname -s)" = "Darwin" ]; then \
-			xattr -cr "$$stage"; \
-			codesign --force --sign - "$$stage"; \
-		fi; \
+		if [ "$$(uname -s)" = "Darwin" ]; then xattr -cr "$$stage"; fi; \
 		mv -f "$$stage" "$$dst"; \
+		if [ "$$(uname -s)" = "Darwin" ]; then codesign --force --sign - "$$dst"; fi; \
 	done; \
-	if [ "$$(uname -s)" = "Darwin" ]; then \
-		xattr -cr "$$BIN_STAGE"; \
-		codesign --force --sign - "$$BIN_STAGE"; \
-	fi; \
-	mv -f "$$BIN_STAGE" "$(HOME)/.evotai/bin/evot"
+	if [ "$$(uname -s)" = "Darwin" ]; then xattr -cr "$$BIN_STAGE"; fi; \
+	mv -f "$$BIN_STAGE" "$(HOME)/.evotai/bin/evot"; \
+	if [ "$$(uname -s)" = "Darwin" ]; then codesign --force --sign - "$(HOME)/.evotai/bin/evot"; fi
+	@# Signing happens after the rename, never on the staged copy. macOS caches a
+	@# signature blob per path and invalidates it by mtime, so a path that has
+	@# hosted another build (a release from install.sh, or an earlier `make
+	@# install`) can keep a stale blob. The kernel then sees cs_mtime != mtime,
+	@# taints the mapped page, and SIGKILLs on first fault. Signing a stage
+	@# refreshes the wrong path; only the destination clears the entry.
 	@# A local build is not a tracked release. Drop any install-state.json left
 	@# by install.sh so the startup drift check reports 'unknown' (quiet) instead
 	@# of comparing this dev binary against a recorded release version.

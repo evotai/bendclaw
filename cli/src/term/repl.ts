@@ -751,9 +751,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (overlay.kind === 'none') {
       if (updateStatus === 'staged' && updateVersion) {
         updateNotice = [
-          { text: '✓ ', hex: getTheme().brandHex },
-          { text: `Update downloaded v${updateVersion}`, hex: getTheme().brandHex },
-          { text: ' · Restart to apply', dim: true },
+          { text: '✔ ', hex: getTheme().brandHex },
+          { text: `Update installed v${updateVersion}`, hex: getTheme().brandHex },
+          { text: ' · Restart to update', dim: true },
         ]
       } else if (updateStatus === 'downloading' && updateVersion) {
         updateNotice = [{ text: `⬇ Auto-updating to v${updateVersion}…`, dim: true }]

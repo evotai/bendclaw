@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use evot_engine::provider::CompatCaps;
@@ -221,6 +222,8 @@ pub struct Config {
     pub skills_dirs: Vec<PathBuf>,
     /// The env file path actually used during config loading.
     pub env_file_path: PathBuf,
+    /// Server-pushed thinking defaults, keyed by cloud model id.
+    pub cloud_thinking_levels: HashMap<String, ThinkingLevel>,
 }
 
 impl Config {
@@ -235,6 +238,7 @@ impl Config {
             sandbox: SandboxConfig::default(),
             skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
+            cloud_thinking_levels: HashMap::new(),
         }
     }
 
@@ -274,6 +278,7 @@ impl Config {
         );
         let requested_level = profile
             .thinking_level
+            .or_else(|| self.cloud_thinking_levels.get(&model).copied())
             .or(self.llm.thinking_level)
             .unwrap_or_else(|| model_config.default_thinking_level());
         let thinking_level = model_config.effective_thinking_level(requested_level);

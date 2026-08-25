@@ -428,11 +428,20 @@ impl Agent {
 
     /// Replace the LLM config while inheriting the session's current thinking
     /// level, clamped to what the new model supports. Models without selectable
-    /// reasoning always use `Off`.
+    /// reasoning always use `Off`. Cloud models with a catalog default skip
+    /// this and take that default instead — the server is choosing the effort.
     fn set_llm_preserving_thinking(&self, mut llm: LlmConfig) {
         let current = self.llm.read().thinking_level;
         llm.thinking_level = Self::model_config_for(&llm).effective_thinking_level(current);
         self.set_llm(llm);
+    }
+
+    fn set_llm_for_model_switch(&self, config: &Config, llm: LlmConfig) {
+        if config.cloud_thinking_levels.contains_key(&llm.model) {
+            self.set_llm(llm);
+            return;
+        }
+        self.set_llm_preserving_thinking(llm);
     }
 
     /// The active model's resolved context window in tokens, after applying
@@ -468,7 +477,7 @@ impl Agent {
     pub fn set_model_by_spec(&self, config: &Config, spec: &str) -> Result<()> {
         let (provider_name, model_override) = config.resolve_model_spec(spec)?;
         let llm = config.build_llm(&provider_name, model_override)?;
-        self.set_llm_preserving_thinking(llm);
+        self.set_llm_for_model_switch(config, llm);
         Ok(())
     }
 
@@ -477,7 +486,7 @@ impl Agent {
     pub fn set_provider_by_spec(&self, config: &Config, spec: &str) -> Result<()> {
         let (provider_name, model_override) = config.resolve_model_spec(spec)?;
         let llm = config.build_llm(&provider_name, model_override)?;
-        self.set_llm_preserving_thinking(llm);
+        self.set_llm_for_model_switch(config, llm);
         Ok(())
     }
 

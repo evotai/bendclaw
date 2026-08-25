@@ -43,7 +43,7 @@ const CACHE_JSON: &str = r#"{
     ],
     "models": [
       {"id":"m-one","display_name":"One","protocol":"anthropic","tier":"base"},
-      {"id":"m-two","display_name":"Two","protocol":"anthropic","tier":"base"},
+      {"id":"m-two","display_name":"Two","protocol":"anthropic","tier":"base","thinking_level":"max"},
       {"id":"m-three","display_name":"Three","protocol":"anthropic","tier":"base"}
     ],
     "notices": []
@@ -75,6 +75,11 @@ fn cloud_provider_registered_and_default_when_no_byok() {
     assert_eq!(profile.api_key, "evot.scoped.key");
     assert_eq!(profile.models.first().unwrap(), "m-two");
     assert_eq!(config.llm.provider, "evot-free");
+    assert_eq!(
+        config.cloud_thinking_levels.get("m-two").copied(),
+        Some(evot_engine::ThinkingLevel::Max)
+    );
+    assert!(!config.cloud_thinking_levels.contains_key("m-one"));
 
     let _ = std::fs::remove_dir_all(&env_home);
 }

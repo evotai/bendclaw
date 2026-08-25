@@ -244,6 +244,40 @@ fn model_switch_preserves_or_clamps_thinking_and_fails_fast() -> TestResult {
 }
 
 #[test]
+fn cloud_catalog_thinking_level_wins_on_model_switch() -> TestResult {
+    let dir = TempDir::new()?;
+    let mut config = anthropic_config(&dir);
+    config
+        .providers
+        .insert("evot-free".into(), ProviderProfile {
+            protocol: Protocol::Anthropic,
+            api_key: "evot.scoped.key".into(),
+            base_url: "http://localhost:8787/v1/llm".into(),
+            models: vec!["ox-alpha".into()],
+            compat_caps: Default::default(),
+            route_capabilities: Default::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    config
+        .cloud_thinking_levels
+        .insert("ox-alpha".into(), ThinkingLevel::Max);
+
+    let built = config.build_llm("evot-free", Some("ox-alpha".into()))?;
+    assert_eq!(built.thinking_level, ThinkingLevel::Max);
+
+    let agent = Agent::new(&config, "/work")?;
+    agent.set_thinking_level(ThinkingLevel::Low);
+    agent.set_model_by_spec(&config, "evot-free:ox-alpha")?;
+    assert_eq!(agent.llm().provider, "evot-free");
+    assert_eq!(agent.llm().model, "ox-alpha");
+    assert_eq!(agent.llm().thinking_level, ThinkingLevel::Max);
+    Ok(())
+}
+
+#[test]
 fn resume_reload_reapplies_current_configured_thinking_level() -> TestResult {
     let dir = TempDir::new()?;
     let mut initial = anthropic_config(&dir);

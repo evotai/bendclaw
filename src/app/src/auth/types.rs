@@ -47,6 +47,10 @@ pub struct FreeModelOption {
     /// Cloud provider this model is presented under, e.g. `evot-free`.
     #[serde(default)]
     pub provider: String,
+    /// Thinking level to apply when this model is selected. Empty on older
+    /// servers, or when the catalog leaves the client's current effort alone.
+    #[serde(default)]
+    pub thinking_level: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

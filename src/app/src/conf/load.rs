@@ -825,6 +825,12 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
     };
 
     let mut primary: Option<(String, i64)> = None;
+    let mut thinking_levels = std::collections::HashMap::new();
+    for model in &cache.response.models {
+        if let Ok(level) = thinking_level_from_str(&model.thinking_level) {
+            thinking_levels.insert(model.id.clone(), level);
+        }
+    }
     for group in cache.response.providers {
         if group.models.is_empty() {
             continue;
@@ -866,6 +872,7 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             primary = Some((name, group.sort_order));
         }
     }
+    config.cloud_thinking_levels = thinking_levels;
 
     let Some((primary, _)) = primary else {
         return Ok(());

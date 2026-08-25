@@ -48,7 +48,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number): str
   const lines: StyledLine[] = [
     border,
     line(plain('')),
-    line(dim('Only showing models from configured providers. Run evot login to add cloud models.')),
+    line(dim('Only showing models from configured providers. Run /login to add cloud models.')),
     line(plain('')),
     buildModelSearchLine(state.query, width),
     line(plain('')),
@@ -181,6 +181,8 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['/share [id|url]', 'Share or import a session'],
     ['/compact', 'Compact session context'],
     ['/update', 'Update evot'],
+    ['/login', 'Log in to evot cloud'],
+    ['/logout', 'Log out of evot cloud'],
     ['/clear', 'Clear session context'],
     ['/exit', 'Exit'],
   ]

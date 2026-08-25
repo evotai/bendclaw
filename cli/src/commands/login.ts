@@ -1,46 +1,31 @@
 import { exec } from 'node:child_process'
 
 import { authBegin, authPoll } from '../native/index.js'
-import { defaultDeps, runLoginPolling, type LoginDeps, type LoginOutcome } from './login-flow.js'
+import { DEFAULT_SERVER, defaultDeps, runDeviceLogin, type LoginOutcome } from './login-flow.js'
 
-const DEFAULT_SERVER = process.env.EVOT_SERVER_URL ?? 'https://auto.evot.ai'
+export { DEFAULT_SERVER }
 
 export async function runLogin(): Promise<boolean> {
   console.log('\nevot login\n')
-  const fingerprint = await getFingerprint()
+  const fingerprint = await deviceFingerprint()
 
-  let begin: LoginCodeResponse
   try {
-    begin = await authBegin(DEFAULT_SERVER, fingerprint)
+    const { outcome } = await runDeviceLogin(
+      { ...defaultDeps, begin: authBegin, poll: authPoll },
+      DEFAULT_SERVER,
+      fingerprint,
+      (url) => {
+        openLoginBrowser(url)
+        console.log(`Open this URL in your browser to log in:\n\n  ${url}\n`)
+      },
+    )
+    report(outcome)
+    return outcome.status === 'success'
   } catch (err) {
     console.error(`  ✗ cannot reach evot server (${DEFAULT_SERVER})`)
     console.error(`    ${err instanceof Error ? err.message : err}`)
     process.exit(1)
   }
-  // Open the browser once the login URL is known.
-  let url: string | null = begin.login_url
-  let opened = false
-  const deps: LoginDeps = {
-    ...defaultDeps,
-    begin: async () => begin,
-    poll: authPoll,
-  }
-  const pollWithOpen = async (server: string, code: string, expiresAt: number) => {
-    if (url && !opened) {
-      openBrowser(url)
-      opened = true
-      console.log(`Open this URL in your browser to log in:\n\n  ${url}\n`)
-    }
-    return authPoll(server, code, expiresAt)
-  }
-
-  const { outcome } = await runLoginPolling(
-    { ...deps, poll: pollWithOpen },
-    DEFAULT_SERVER,
-    fingerprint,
-  )
-  report(outcome)
-  return outcome.status === 'success'
 }
 
 function report(outcome: LoginOutcome): void {
@@ -69,14 +54,14 @@ export async function runWhoami(): Promise<number> {
   const { authWhoami } = await import('../native/index.js')
   const user = await authWhoami()
   if (!user) {
-    console.log('  not logged in (run `evot login`, or configure a provider with an API key)')
+    console.log('  not logged in (run `evot login` or `/login`, or configure a provider with an API key)')
     return 1
   }
   console.log(`  ${user.name} <${user.email}> (${user.id})`)
   return 0
 }
 
-async function getFingerprint(): Promise<string> {
+export async function deviceFingerprint(): Promise<string> {
   const { createHash } = await import('node:crypto')
   const os = await import('node:os')
   return createHash('sha256')
@@ -85,7 +70,7 @@ async function getFingerprint(): Promise<string> {
     .slice(0, 32)
 }
 
-function openBrowser(url: string): void {
+export function openLoginBrowser(url: string): void {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start ""' : 'xdg-open'
   exec(`${cmd} "${url}"`, () => {})
 }

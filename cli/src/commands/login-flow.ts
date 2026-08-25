@@ -12,6 +12,8 @@ export type LoginOutcome =
   | { status: 'timeout' }
   | { status: 'denied' }
 
+export const DEFAULT_SERVER = process.env.EVOT_SERVER_URL ?? 'https://auto.evot.ai'
+
 export const defaultDeps: LoginDeps = {
   begin: async () => {
     throw new Error('default deps must not be called')
@@ -31,8 +33,9 @@ export async function runLoginPolling(
   deps: LoginDeps,
   serverUrl: string,
   fingerprint: string,
+  started?: LoginCodeResponse,
 ): Promise<{ outcome: LoginOutcome; begin?: LoginCodeResponse }> {
-  const begin = await deps.begin(serverUrl, fingerprint)
+  const begin = started ?? await deps.begin(serverUrl, fingerprint)
   const deadline = deps.now() + begin.expires_in_ms
 
   for (;;) {
@@ -56,4 +59,21 @@ export async function runLoginPolling(
     }
     if (deps.now() >= deadline) return { outcome: { status: 'timeout' }, begin }
   }
+}
+
+/**
+ * Start the device-code flow, surface the login URL, then poll until the
+ * server answers. `begin` is invoked once so the URL and the polling code
+ * stay on the same login attempt.
+ */
+export async function runDeviceLogin(
+  deps: LoginDeps,
+  serverUrl: string,
+  fingerprint: string,
+  onUrl: (url: string) => void,
+): Promise<{ outcome: LoginOutcome; begin: LoginCodeResponse }> {
+  const begin = await deps.begin(serverUrl, fingerprint)
+  if (begin.login_url) onUrl(begin.login_url)
+  const { outcome } = await runLoginPolling(deps, serverUrl, fingerprint, begin)
+  return { outcome, begin }
 }

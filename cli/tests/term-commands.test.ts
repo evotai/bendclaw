@@ -95,6 +95,16 @@ describe('term commands', () => {
     expect(result.systemLines.length).toBe(0)
   })
 
+  test('/login defers to the async app command path', () => {
+    const result = handleSlashCommand('/login', mkCtx())
+    expect(result.systemLines.length).toBe(0)
+  })
+
+  test('/logout defers to the async app command path', () => {
+    const result = handleSlashCommand('/logout', mkCtx())
+    expect(result.systemLines.length).toBe(0)
+  })
+
   test('removed /history command returns unknown-command message', () => {
     const result = handleSlashCommand('/history', mkCtx())
     expect(result.systemLines[0]?.text).toContain('Unknown command: /history')

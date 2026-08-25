@@ -4,6 +4,7 @@ import type { ConfigInfo } from '../native/index.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { resolveSessionByPrefix } from './app/resume.js'
 import type { OutputLine } from '../render/output.js'
+import { defaultDeps, type LoginDeps } from '../commands/login-flow.js'
 
 export interface ReplCommandContext {
   agent: Agent
@@ -25,6 +26,22 @@ export function formatLogPaths(logPath: string | null, rendererPath: string | nu
 function failureText(label: string, err: unknown): string {
   const message = (err as { message?: string })?.message ?? String(err)
   return chalk.red(`  ${label}: ${message}`)
+}
+
+async function defaultLoginCommandDeps(): Promise<LoginCommandDeps> {
+  const { deviceFingerprint, openLoginBrowser } = await import('../commands/login.js')
+  const { authBegin, authPoll } = await import('../native/index.js')
+  return {
+    fingerprint: deviceFingerprint,
+    begin: authBegin,
+    poll: authPoll,
+    openBrowser: openLoginBrowser,
+  }
+}
+
+async function defaultLogoutCommandDeps(): Promise<LogoutCommandDeps> {
+  const { authLogout, authWhoami } = await import('../native/index.js')
+  return { whoami: authWhoami, logout: authLogout }
 }
 
 export async function handleCopyCommand(ctx: ReplCommandContext): Promise<void> {
@@ -158,6 +175,90 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
     ctx.commitSystem('sys-skill-err', '  Usage: /skill [list | install <source> | remove <name>]')
   }
   ctx.requestRender()
+}
+
+export interface LoginCommandDeps {
+  fingerprint: () => Promise<string>
+  begin: LoginDeps['begin']
+  poll: LoginDeps['poll']
+  openBrowser: (url: string) => void
+  sleep?: LoginDeps['sleep']
+  now?: LoginDeps['now']
+}
+
+/** In-REPL login: device-code flow, then the caller reloads model config. */
+export async function handleLoginCommand(
+  ctx: ReplCommandContext,
+  injected?: LoginCommandDeps,
+): Promise<boolean> {
+  ctx.commitSystem('sys-login', '  starting login...')
+  ctx.requestRender()
+
+  try {
+    const { DEFAULT_SERVER, runDeviceLogin } = await import('../commands/login-flow.js')
+    const deps: LoginCommandDeps = injected ?? await defaultLoginCommandDeps()
+    const { outcome } = await runDeviceLogin(
+      {
+        ...defaultDeps,
+        begin: deps.begin,
+        poll: deps.poll,
+        sleep: deps.sleep ?? defaultDeps.sleep,
+        now: deps.now ?? defaultDeps.now,
+      },
+      DEFAULT_SERVER,
+      await deps.fingerprint(),
+      (url) => {
+        deps.openBrowser(url)
+        ctx.commitSystem('sys-login-url', `  Open this URL to log in:\n\n  ${url}`)
+        ctx.requestRender()
+      },
+    )
+
+    switch (outcome.status) {
+      case 'success': {
+        const lines = [`  ✓ logged in as ${outcome.user.name} <${outcome.user.email}>`]
+        if (outcome.syncError) lines.push(`  ⚠ model sync failed: ${outcome.syncError}`)
+        else lines.push('  ✓ free models synced')
+        ctx.commitSystem('sys-login-ok', lines.join('\n'))
+        return true
+      }
+      case 'denied':
+        ctx.commitSystem('sys-login-err', chalk.red('  ✗ login denied'))
+        return false
+      case 'timeout':
+        ctx.commitSystem('sys-login-err', chalk.red('  ✗ login timed out, try again'))
+        return false
+    }
+  } catch (err) {
+    ctx.commitSystem('sys-login-err', failureText('login failed', err))
+    return false
+  }
+}
+
+export interface LogoutCommandDeps {
+  whoami: () => Promise<{ id: string; name: string; email: string } | null>
+  logout: () => Promise<void>
+}
+
+/** In-REPL logout: drop cloud auth, then the caller reloads model config. */
+export async function handleLogoutCommand(
+  ctx: ReplCommandContext,
+  injected?: LogoutCommandDeps,
+): Promise<boolean> {
+  try {
+    const deps = injected ?? await defaultLogoutCommandDeps()
+    const existing = await deps.whoami()
+    if (!existing) {
+      ctx.commitSystem('sys-logout', '  not logged in')
+      return false
+    }
+    await deps.logout()
+    ctx.commitSystem('sys-logout-ok', `  ✓ logged out ${existing.name} <${existing.email}>`)
+    return true
+  } catch (err) {
+    ctx.commitSystem('sys-logout-err', failureText('logout failed', err))
+    return false
+  }
 }
 
 export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void> {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 
-import { runLoginPolling, type LoginDeps } from '../src/commands/login-flow'
+import { runDeviceLogin, runLoginPolling, type LoginDeps } from '../src/commands/login-flow'
 import type { AuthPollResult, LoginCodeResponse } from '../native/index.js'
 
 function createFakeDeps(pollResults: AuthPollResult[]): {
@@ -76,5 +76,20 @@ describe('runLoginPolling', () => {
     const denied = createFakeDeps([{ status: 'denied' }])
     const deniedOutcome = (await runLoginPolling(denied.deps, 'http://x', 'fp')).outcome
     expect(deniedOutcome.status).toBe('denied')
+  })
+})
+
+describe('runDeviceLogin', () => {
+  test('surfaces the login url before polling', async () => {
+    const { deps, calls } = createFakeDeps([
+      { status: 'success', state: { user: { id: 'u', name: 'bo', email: 'b@x.dev' } } },
+    ])
+    const urls: string[] = []
+    const { outcome, begin } = await runDeviceLogin(deps, 'http://x', 'fp', (url) => urls.push(url))
+    expect(urls).toEqual(['http://x/login?code=CODE1'])
+    expect(begin.code).toBe('CODE1')
+    expect(outcome.status).toBe('success')
+    expect(calls.begins).toBe(1)
+    expect(calls.polls).toBe(1)
   })
 })

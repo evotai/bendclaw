@@ -133,7 +133,7 @@ describe('renderSelector via viewmodel', () => {
     expect(lines[1]).toBe('─'.repeat(40))
     expect(lines[2]).toBe('')
     expect(lines[3]).toBe('Only showing models from configured')
-    expect(lines[4]).toBe('providers. Run evot login to add cloud')
+    expect(lines[4]).toBe('providers. Run /login to add cloud')
     expect(lines[5]).toBe('models.')
     expect(lines[7]).toStartWith('>  ')
     expect(lines[9]).toBe('  openai')

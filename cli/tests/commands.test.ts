@@ -104,6 +104,16 @@ describe('resolveCommand', () => {
     expect(isSlashCommand('/share')).toBe(true)
   })
 
+  test('resolves /login', () => {
+    expect(resolveCommand('/login')).toEqual({ kind: 'resolved', name: '/login', args: '' })
+    expect(isSlashCommand('/login')).toBe(true)
+  })
+
+  test('resolves /logout', () => {
+    expect(resolveCommand('/logout')).toEqual({ kind: 'resolved', name: '/logout', args: '' })
+    expect(isSlashCommand('/logout')).toBe(true)
+  })
+
   test('/c is ambiguous between /clip, /copy, /compact, and /clear', () => {
     const result = resolveCommand('/c')
     expect(result.kind).toBe('ambiguous')

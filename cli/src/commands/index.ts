@@ -16,6 +16,8 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/new', description: 'Start a new session', handler: 'builtin' },
   { name: '/model', description: 'Show or change model', usage: '/model [name]', handler: 'builtin' },
   { name: '/plan', description: 'Enter planning mode', handler: 'builtin' },
+  { name: '/login', description: 'Log in to evot cloud', handler: 'builtin' },
+  { name: '/logout', description: 'Log out of evot cloud', handler: 'builtin' },
 ]
 
 /** Hidden commands — recognised but not shown in /help or ghost hints */

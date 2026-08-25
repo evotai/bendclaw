@@ -145,6 +145,8 @@ import {
   handleCopyCommand,
   handleEnvCommand,
   handleShareCommand,
+  handleLoginCommand,
+  handleLogoutCommand,
   handleSkillCommand,
   handleUpdateCommand,
   type ReplCommandContext,
@@ -195,6 +197,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const editorUndo = new UndoStack<EditorState>()
   let historyState: HistoryState
   let isLoading = false
+  let loginInFlight = false
   // Local foreground commands reuse the animated status row without pretending
   // they are abortable agent streams or showing stale LLM usage.
   let foregroundCommand: 'log-shot' | null = null
@@ -2219,6 +2222,78 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       await handleCopyCommand(replCommands)
     } else if (name === '/update') {
       await handleUpdateCommand(replCommands)
+    } else if (name === '/login') {
+      // Device-code flow in place so free models appear without restarting.
+      // If no provider was configured, the cloud provider becomes active.
+      if (loginInFlight) {
+        commitSystem('sys-login', '  login already in progress')
+      } else {
+        const { authWhoami } = await import('../native/index.js')
+        const existing = await authWhoami()
+        if (existing) {
+          commitSystem('sys-login', `  already logged in as ${existing.name} <${existing.email}>`)
+        } else {
+          loginInFlight = true
+          try {
+            const hadKey = Boolean(configInfo?.hasApiKey)
+            const loggedIn = await handleLoginCommand(replCommands)
+            if (loggedIn) {
+              refreshConfigInfo()
+              reloadCloudContent()
+              if (!hadKey) {
+                const cloud = (configInfo?.availableModels ?? []).find(isCloudModel)
+                if (cloud) {
+                  try {
+                    agent.setProvider(cloud.spec)
+                    refreshConfigInfo()
+                    appState = { ...appState, model: agent.model }
+                    commitStatusLine({
+                      id: 'sys-model',
+                      kind: 'system',
+                      text: `  Model → ${formatModelLabel(agent.model, cloud.provider, cloud.group_label)}`,
+                    })
+                  } catch (err) {
+                    commitSystem('sys-login-model-err', chalk.red(`  Failed to switch to cloud model: ${errorText(err)}`))
+                  }
+                }
+              }
+              void syncCloudNow(true)
+            }
+          } finally {
+            loginInFlight = false
+          }
+        }
+      }
+    } else if (name === '/logout') {
+      if (loginInFlight) {
+        commitSystem('sys-logout', '  login in progress — wait or restart to log out')
+      } else {
+        const previousSpec = currentModelSpec(configInfo, agent.model)
+        const loggedOut = await handleLogoutCommand(replCommands)
+        if (loggedOut) {
+          refreshConfigInfo()
+          reloadCloudContent()
+          const remaining = configInfo?.availableModels ?? []
+          const stillThere = remaining.some(m => m.spec === previousSpec)
+          if (!stillThere) {
+            const next = remaining[0]
+            if (next) {
+              try {
+                agent.setProvider(next.spec)
+                refreshConfigInfo()
+                appState = { ...appState, model: agent.model }
+                commitStatusLine({
+                  id: 'sys-model',
+                  kind: 'system',
+                  text: `  Model → ${formatModelLabel(agent.model, next.provider, next.group_label)}`,
+                })
+              } catch (err) {
+                commitSystem('sys-logout-model-err', chalk.red(`  Failed to leave cloud model: ${errorText(err)}`))
+              }
+            }
+          }
+        }
+      }
     } else if (name === '/act' || name === '/done') {
       if (logMode) {
         logMode = null
@@ -2280,9 +2355,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
    * ranked list with reasons, then opens the resume selector on the ranked
    * sessions. Falls back to the literal-filter selector on failure.
    */
-  /** In-REPL login: run the device-code flow, then reload model config in
-   *  place so free models appear without restarting. If no provider was
-   *  configured, the cloud provider becomes active immediately. */
   function cloudCampaigns() {
     return authNotices().map(n => ({
       id: n.id,

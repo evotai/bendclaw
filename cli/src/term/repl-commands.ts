@@ -261,6 +261,11 @@ export async function handleLogoutCommand(
   }
 }
 
+export async function handleVersionCommand(ctx: ReplCommandContext): Promise<void> {
+  const { version } = await import('../native/index.js')
+  ctx.commitSystem('sys-version', `  evot v${version()}`)
+}
+
 export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void> {
   ctx.commitSystem('sys-upd', '  checking for updates...')
   ctx.requestRender()

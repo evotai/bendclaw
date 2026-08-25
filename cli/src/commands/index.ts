@@ -22,6 +22,8 @@ export const COMMANDS: SlashCommand[] = [
 
 /** Hidden commands — recognised but not shown in /help or ghost hints */
 export const HIDDEN_COMMANDS: SlashCommand[] = [
+  { name: '/update', description: 'Update evot to latest version', handler: 'builtin' },
+  { name: '/version', description: 'Show current version', handler: 'builtin' },
   { name: '/exit', aliases: ['/quit', '/q'], description: 'Exit the REPL', handler: 'builtin' },
   { name: '/act', description: 'Return to normal action mode', handler: 'builtin' },
   { name: '/done', description: 'Exit log/plan mode', handler: 'builtin' },
@@ -34,7 +36,6 @@ export const HIDDEN_COMMANDS: SlashCommand[] = [
   { name: '/clear', description: 'Clear session context', handler: 'builtin' },
   { name: '/env', description: 'Manage variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
   { name: '/log', description: 'Show or analyze session logs; shot exports markdown', usage: '/log [shot | query]', handler: 'builtin' },
-  { name: '/update', description: 'Update evot to latest version', handler: 'builtin' },
   { name: '/_dump', description: 'Dump system prompt + tools + skills as JSON', usage: '/_dump [path]', handler: 'builtin' },
 ]
 

@@ -149,6 +149,7 @@ import {
   handleLogoutCommand,
   handleSkillCommand,
   handleUpdateCommand,
+  handleVersionCommand,
   type ReplCommandContext,
 } from './repl-commands.js'
 
@@ -2222,6 +2223,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       await handleCopyCommand(replCommands)
     } else if (name === '/update') {
       await handleUpdateCommand(replCommands)
+    } else if (name === '/version') {
+      await handleVersionCommand(replCommands)
     } else if (name === '/login') {
       // Device-code flow in place so free models appear without restarting.
       // If no provider was configured, the cloud provider becomes active.

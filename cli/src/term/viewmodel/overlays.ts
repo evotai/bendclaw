@@ -180,7 +180,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['/clip [all]', 'Clip last reply to vault; all = distill session'],
     ['/share [id|url]', 'Share or import a session'],
     ['/compact', 'Compact session context'],
-    ['/update', 'Update evot'],
+    ['/version', 'Show current version'],
     ['/login', 'Log in to evot cloud'],
     ['/logout', 'Log out of evot cloud'],
     ['/clear', 'Clear session context'],

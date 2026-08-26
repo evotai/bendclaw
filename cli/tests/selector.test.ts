@@ -370,6 +370,27 @@ describe('renderSelector via viewmodel', () => {
   })
 })
 
+describe('filter hint', () => {
+  test('empty query shows a search hint on the filter line', () => {
+    const state = createSelectorState('Resume session', items)
+    const text = blocksToLines(buildOverlayBlocks({ kind: 'selector', state }, 120))
+      .map(l => stripAnsi(l)).join('\n')
+
+    expect(text).toContain('Filter')
+    expect(text).toContain('type to search')
+  })
+
+  test('typing replaces the hint with the query', () => {
+    let state = createSelectorState('Resume session', items)
+    for (const char of 'gpt') state = selectorType(state, char)
+    const text = blocksToLines(buildOverlayBlocks({ kind: 'selector', state }, 120))
+      .map(l => stripAnsi(l)).join('\n')
+
+    expect(text).toContain('Filter  gpt')
+    expect(text).not.toContain('type to search')
+  })
+})
+
 describe('preview pane', () => {
   const paneItems = [
     {

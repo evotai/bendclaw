@@ -249,8 +249,12 @@ function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[]
   lines.push(line(plain('')))
   if (state.query) {
     lines.push(line(colored('Filter  ', 'cyan'), plain(state.query), colored('▌', 'cyan')))
-    lines.push(line(plain('')))
+  } else {
+    // Nothing typed yet: the filter line doubles as the discoverability hint,
+    // otherwise there is no on-screen signal that typing filters at all.
+    lines.push(line(colored('Filter  ', 'cyan'), dim(PLACEHOLDER_HINT)))
   }
+  lines.push(line(plain('')))
 
   // The focused row's preview sits beside the list, so rows and pane share the
   // width budget. Without a preview the list keeps the whole line. One column
@@ -328,6 +332,9 @@ function buildSelectorListLines(state: SelectorState): StyledLine[] {
   }
   return lines
 }
+
+/** Placeholder shown on the filter line before anything is typed. */
+const PLACEHOLDER_HINT = 'type to search titles, prompts and transcript text'
 
 /** Gap and rail between the list and its preview pane. */
 const PANE_DIVIDER = '  │ '

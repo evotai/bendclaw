@@ -51,21 +51,26 @@ fn default_true() -> bool {
     true
 }
 
-/// Full settings payload accepted by `POST /api/settings`.
+/// Payload accepted by `POST /api/models`.
+///
+/// Models and channels are edited on separate pages and saved independently, so
+/// each payload carries only its own section. A combined payload would force
+/// every page to round-trip the whole config just to change one field, and a
+/// page that sent an empty `providers` list would wipe the provider set.
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct SettingsUpdate {
+pub struct ModelSettings {
     pub active_provider: String,
     #[serde(default)]
     pub thinking_level: Option<String>,
-    pub providers: Vec<ProviderSettings>,
     #[serde(default)]
-    pub feishu: Option<FeishuSettings>,
+    pub providers: Vec<ProviderSettings>,
 }
 
 /// Build the titled env groups to persist from the resolved `Config`. This is
 /// the single source of truth: the managed block contains the complete
 /// configuration (including secrets), so nothing is ever left stranded outside
-/// it. Call after [`apply_settings`] has merged the update into the config.
+/// it. Call after [`apply_model_settings`] or [`apply_feishu_settings`] has
+/// merged the update into the config.
 ///
 /// Each provider gets its own group; global LLM selection and Feishu are
 /// separate groups. The returned groups feed
@@ -156,7 +161,7 @@ pub fn persist_default_thinking_level(
 /// invalid value aborts the whole apply so the config is never left partial.
 /// On success the active provider's `LlmConfig` should be rebuilt by the caller
 /// via [`Config::active_llm`].
-pub fn apply_settings(config: &mut Config, update: &SettingsUpdate) -> Result<()> {
+pub fn apply_model_settings(config: &mut Config, update: &ModelSettings) -> Result<()> {
     let mut providers: IndexMap<String, ProviderProfile> = IndexMap::new();
     for p in &update.providers {
         let name = p.name.trim().to_lowercase();
@@ -228,39 +233,32 @@ pub fn apply_settings(config: &mut Config, update: &SettingsUpdate) -> Result<()
         .map(thinking_level_from_str)
         .transpose()?;
 
-    if let Some(f) = &update.feishu {
-        let app_id = f.app_id.trim().to_string();
-        if app_id.is_empty() {
-            config.channels.feishu = None;
-        } else {
-            let existing_secret = config
-                .channels
-                .feishu
-                .as_ref()
-                .map(|e| e.app_secret.clone())
-                .unwrap_or_default();
-            let app_secret = match f.app_secret.as_deref().filter(|s| !s.is_empty()) {
-                Some(secret) => secret.to_string(),
-                None => existing_secret,
-            };
-            let allow_from = config
-                .channels
-                .feishu
-                .as_ref()
-                .map(|e| e.allow_from.clone())
-                .unwrap_or_default();
-            config.channels.feishu = Some(FeishuChannelConfig {
-                app_id,
-                app_secret,
-                mention_only: f.mention_only,
-                allow_from,
-            });
-        }
-    }
-
     config.providers = providers;
     config.llm.provider = active;
     config.llm.model_override = None;
+    Ok(())
+}
+
+/// Apply a Feishu channel update in place. An empty `app_id` unlinks the
+/// channel; a blank secret keeps the persisted one.
+pub fn apply_feishu_settings(config: &mut Config, update: &FeishuSettings) -> Result<()> {
+    let app_id = update.app_id.trim().to_string();
+    if app_id.is_empty() {
+        config.channels.feishu = None;
+        return Ok(());
+    }
+    let existing = config.channels.feishu.as_ref();
+    let app_secret = match update.app_secret.as_deref().filter(|s| !s.is_empty()) {
+        Some(secret) => secret.to_string(),
+        None => existing.map(|e| e.app_secret.clone()).unwrap_or_default(),
+    };
+    let allow_from = existing.map(|e| e.allow_from.clone()).unwrap_or_default();
+    config.channels.feishu = Some(FeishuChannelConfig {
+        app_id,
+        app_secret,
+        mention_only: update.mention_only,
+        allow_from,
+    });
     Ok(())
 }
 
@@ -297,9 +295,8 @@ fn mask_secret(value: &str) -> String {
     format!("****{tail}")
 }
 
-/// Serialize the current config into a UI-friendly JSON snapshot with secrets
-/// masked. Used by `GET /api/settings`.
-pub fn settings_snapshot(config: &Config) -> serde_json::Value {
+/// Provider and model state for `GET /api/models`, secrets masked.
+pub fn models_snapshot(config: &Config) -> serde_json::Value {
     let providers: Vec<serde_json::Value> = config
         .providers
         .iter()
@@ -317,6 +314,22 @@ pub fn settings_snapshot(config: &Config) -> serde_json::Value {
         })
         .collect();
 
+    serde_json::json!({
+        "active_provider": config.llm.provider,
+        "thinking_level": config.llm.thinking_level.map(|level| level.as_str()),
+        "protocols": [
+            Protocol::Anthropic.to_string(),
+            Protocol::OpenAi.to_string(),
+            Protocol::OpenAiResponses.to_string(),
+        ],
+        "thinking_levels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "providers": providers,
+        "env_file_path": config.env_file_path.display().to_string(),
+    })
+}
+
+/// Feishu channel state for `GET /api/channels/feishu`, secret masked.
+pub fn feishu_snapshot(config: &Config) -> serde_json::Value {
     let feishu = config
         .channels
         .feishu
@@ -331,15 +344,6 @@ pub fn settings_snapshot(config: &Config) -> serde_json::Value {
         });
 
     serde_json::json!({
-        "active_provider": config.llm.provider,
-        "thinking_level": config.llm.thinking_level.map(|level| level.as_str()),
-        "protocols": [
-            Protocol::Anthropic.to_string(),
-            Protocol::OpenAi.to_string(),
-            Protocol::OpenAiResponses.to_string(),
-        ],
-        "thinking_levels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-        "providers": providers,
         "feishu": feishu,
         "env_file_path": config.env_file_path.display().to_string(),
     })

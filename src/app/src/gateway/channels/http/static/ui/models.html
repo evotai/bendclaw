@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Models · evot</title>
+    <link rel="stylesheet" href="/ui/app.css" />
+    <style>
+      /* Two columns: a provider list that stays put, and the editor for the
+         selected one. A single scrolling stack of full-width cards buried the
+         default-provider choice and forced scrolling once a few providers
+         existed. */
+      .split {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        border: 1px solid var(--line);
+        min-height: 460px;
+      }
+      .plist { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+      .plist-items { flex: 1; min-height: 0; overflow-y: auto; }
+      .plist-foot { border-top: 1px solid var(--line); padding: 10px 12px; }
+
+      .pitem {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        padding: 11px 14px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        border-left: 2px solid transparent;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .pitem:hover { background: var(--fill); color: var(--ink); }
+      .pitem[aria-selected="true"] {
+        background: var(--fill);
+        border-left-color: var(--ink);
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .pitem .pname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pitem .tag { font-size: 11px; color: var(--faint); flex-shrink: 0; }
+      .pitem[aria-selected="true"] .tag { color: var(--muted); }
+
+      .editor { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+      .editor-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .editor-head h3 { font-size: 16px; font-weight: 600; }
+      .editor-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+      .default-badge {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        color: var(--green-ink);
+      }
+      .cloud-note {
+        border: 1px solid var(--line);
+        background: var(--fill);
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .cloud-note code { color: var(--ink); }
+      .envpath { font-size: 12px; color: var(--faint); }
+      .envpath code { color: var(--muted); }
+      @media (max-width: 860px) {
+        .split { grid-template-columns: 1fr; }
+        .plist { border-right: 0; border-bottom: 1px solid var(--line); }
+      }
+    </style>
+  </head>
+  <body></body>
+  <script type="module" src="/ui/models.js"></script>
+</html>

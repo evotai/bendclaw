@@ -53,6 +53,7 @@ approx_constant = "allow"
 
 [dev-dependencies]
 insta = { version = "1", features = ["json", "yaml", "redactions"] }
+tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
 
 [[test]]

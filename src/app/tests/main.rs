@@ -14,6 +14,8 @@ mod command_test;
 mod compact_test;
 #[path = "conf_load_test.rs"]
 mod conf_load_test;
+#[path = "console_routes_test.rs"]
+mod console_routes_test;
 #[path = "dashboard_search_test.rs"]
 mod dashboard_search_test;
 #[path = "delivery_test.rs"]

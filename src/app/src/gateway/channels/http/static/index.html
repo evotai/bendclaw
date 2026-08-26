@@ -3,427 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Evot - Chat</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f9fafb;
-  color: #1a1a1a;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Header */
-.header {
-  padding: 16px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.header h1 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #111;
-}
-.header .actions {
-  display: flex;
-  gap: 8px;
-}
-.btn-icon {
-  width: 36px; height: 36px;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  color: #666;
-  transition: all 0.15s;
-}
-.btn-icon:hover { background: #f3f4f6; border-color: #d1d5db; }
-
-/* Chat area */
-.chat-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  max-width: 800px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-/* Welcome screen */
-.welcome {
-  text-align: center;
-  padding: 80px 20px 40px;
-}
-.welcome h2 {
-  font-size: 28px;
-  font-weight: 600;
-  margin-bottom: 32px;
-  color: #111;
-}
-.suggestions {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-.suggestion {
-  padding: 8px 16px;
-  border-radius: 20px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  cursor: pointer;
-  font-size: 14px;
-  color: #555;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.suggestion:hover { border-color: #c4c4c4; background: #f9fafb; }
-
-/* Messages */
-.message { margin-bottom: 20px; animation: fadeIn 0.2s ease; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-.message-user {
-  display: flex;
-  justify-content: flex-end;
-}
-.message-user .bubble {
-  background: #111;
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: 18px 18px 4px 18px;
-  max-width: 70%;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.message-assistant {
-  padding-left: 4px;
-}
-.message-assistant .text-content {
-  font-size: 15px;
-  line-height: 1.7;
-  color: #1a1a1a;
-  max-width: 100%;
-}
-.message-assistant .text-content p { margin-bottom: 8px; }
-.message-assistant .text-content strong { font-weight: 600; }
-.message-assistant .text-content code {
-  background: #f3f4f6;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'SF Mono', Monaco, monospace;
-  font-size: 13px;
-}
-.message-assistant .text-content pre {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  padding: 12px 16px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 8px 0;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.message-assistant .text-content pre code {
-  background: none;
-  padding: 0;
-  color: inherit;
-}
-
-/* Tool calls */
-.tool-call {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin: 8px 0;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.tool-call .tool-icon {
-  width: 28px; height: 28px;
-  border-radius: 6px;
-  background: #f3f4f6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.tool-call .tool-name {
-  font-weight: 600;
-  color: #374151;
-  margin-right: 6px;
-}
-.tool-call .tool-input {
-  color: #9ca3af;
-  font-family: 'SF Mono', Monaco, monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.tool-call.tool-error { border-color: #fecaca; background: #fef2f2; }
-.tool-call.tool-error .tool-icon { background: #fee2e2; }
-
-.tool-result-output {
-  background: #f9fafb;
-  border-left: 3px solid #e5e7eb;
-  margin: 0 0 8px 36px;
-  padding: 8px 12px;
-  border-radius: 0 8px 8px 0;
-  font-size: 12px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-.tool-result-output pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: 'SF Mono', Monaco, monospace;
-  font-size: 12px;
-  color: #374151;
-  background: none;
-  padding: 0;
-}
-
-/* Thinking */
-.thinking-block {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin: 8px 0;
-  font-size: 13px;
-  color: #92400e;
-  font-style: italic;
-}
-
-/* Result banner */
-.result-banner {
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  border-radius: 12px;
-  padding: 10px 16px;
-  margin: 12px 0;
-  font-size: 14px;
-  color: #065f46;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.result-banner .check { font-size: 16px; }
-.result-banner .stats {
-  color: #047857;
-  font-size: 13px;
-}
-.result-summary {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin: 8px 0 12px;
-}
-.result-summary .summary-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #475569;
-  margin-bottom: 10px;
-}
-.result-summary .summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px 12px;
-}
-.result-summary .summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.result-summary .summary-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #94a3b8;
-}
-.result-summary .summary-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-/* Error */
-.error-banner {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
-  padding: 10px 16px;
-  margin: 12px 0;
-  font-size: 14px;
-  color: #991b1b;
-}
-
-/* Typing indicator */
-.typing {
-  display: flex;
-  gap: 4px;
-  padding: 8px 0;
-}
-.typing span {
-  width: 6px; height: 6px;
-  background: #9ca3af;
-  border-radius: 50%;
-  animation: bounce 1.2s infinite;
-}
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes bounce {
-  0%, 80%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-6px); }
-}
-
-/* Input area */
-.input-area {
-  padding: 16px 24px 24px;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
-}
-.input-wrapper {
-  max-width: 800px;
-  margin: 0 auto;
-  position: relative;
-}
-.input-box {
-  width: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 14px 52px 14px 16px;
-  font-size: 15px;
-  font-family: inherit;
-  outline: none;
-  resize: none;
-  min-height: 52px;
-  max-height: 200px;
-  line-height: 1.5;
-  transition: border-color 0.15s;
-  background: #fff;
-}
-.input-box:focus { border-color: #a3a3a3; }
-.input-box::placeholder { color: #9ca3af; }
-.input-box:disabled { background: #f9fafb; color: #9ca3af; }
-
-.send-btn {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  border: none;
-  background: #111;
-  color: #fff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  transition: all 0.15s;
-}
-.send-btn:hover { background: #333; }
-.send-btn:disabled { background: #d1d5db; cursor: not-allowed; }
-
-/* Session search overlay */
-.search-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: none;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 50;
-}
-.search-overlay.open { display: flex; }
-.search-panel {
-  background: #fff;
-  width: 100%;
-  max-width: 640px;
-  margin-top: 80px;
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  max-height: 70vh;
-}
-.search-input {
-  width: 100%;
-  border: none;
-  border-bottom: 1px solid #e5e7eb;
-  padding: 16px 18px;
-  font-size: 15px;
-  font-family: inherit;
-  outline: none;
-}
-.search-results { overflow-y: auto; padding: 6px; }
-.search-empty { padding: 24px; text-align: center; color: #9ca3af; font-size: 14px; }
-.search-item {
-  padding: 10px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.search-item:hover, .search-item.active { background: #f3f4f6; }
-.search-item .si-title { font-size: 14px; font-weight: 600; color: #111; }
-.search-item .si-meta {
-  font-size: 12px;
-  color: #9ca3af;
-  font-family: 'SF Mono', Monaco, monospace;
-  margin-top: 2px;
-}
-.search-item .si-snippet {
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 4px;
-  line-height: 1.5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.search-item mark {
-  background: #fef08a;
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-</style>
+<title>Chat · evot</title>
+<link rel="stylesheet" href="/ui/app.css">
+<link rel="stylesheet" href="/ui/chat.css">
 </head>
 <body>
 
-<div class="header">
-  <h1>Evot</h1>
-  <div class="actions">
-    <button class="btn-icon" onclick="openSearch()" title="Search sessions">⌕</button>
-    <button class="btn-icon" onclick="newSession()" title="New session">+</button>
-  </div>
+<div class="fill-bar">
+  <span class="session" id="sessionLabel">New session</span>
+  <span class="spacer"></span>
+  <button class="btn-icon" onclick="openSearch()" title="Search sessions" aria-label="Search sessions">⌕</button>
+  <button class="btn-icon" onclick="newSession()" title="New session" aria-label="New session">+</button>
 </div>
 
 <div class="search-overlay" id="searchOverlay" onclick="onOverlayClick(event)">
@@ -472,10 +62,20 @@ const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
 const welcome = document.getElementById('welcome');
+const sessionLabel = document.getElementById('sessionLabel');
 let isStreaming = false;
 // Tracks the resumed session so follow-up messages continue it. The backend
 // creates a fresh session when this is null.
 let currentSessionId = null;
+
+// Name the session in the action bar so a resumed conversation is identifiable
+// after the welcome screen scrolls away.
+function setSessionLabel(sessionId) {
+  if (!sessionLabel) return;
+  sessionLabel.textContent = sessionId
+    ? 'Session ' + sessionId.slice(0, 8)
+    : 'New session';
+}
 
 const toolIcons = {
   'Bash': '>_',
@@ -595,6 +195,7 @@ function renderSummaryGrid(data) {
 async function newSession() {
   await fetch('/api/new', { method: 'POST' });
   currentSessionId = null;
+  setSessionLabel(null);
   chat.innerHTML = `
     <div class="welcome" id="welcome">
       <h2>What can I do for you?</h2>
@@ -894,7 +495,8 @@ function highlight(text, query) {
 function resumeSession(sessionId) {
   closeSearch();
   currentSessionId = sessionId;
-  chat.innerHTML = `<div class="welcome"><h2>Session ${escapeHtml(sessionId.slice(0, 8))}</h2><p style="color:#9ca3af">Send a message to continue this session.</p></div>`;
+  setSessionLabel(sessionId);
+  chat.innerHTML = `<div class="welcome"><h2>Session ${escapeHtml(sessionId.slice(0, 8))}</h2><p class="hint">Send a message to continue this session.</p></div>`;
 }
 
 document.addEventListener('keydown', (e) => {
@@ -907,5 +509,8 @@ document.addEventListener('keydown', (e) => {
 
 input.focus();
 </script>
+<!-- Wraps the console chrome around the markup above. Loaded last and as a
+     module so the classic script has already captured its elements. -->
+<script type="module" src="/ui/chrome.js"></script>
 </body>
 </html>

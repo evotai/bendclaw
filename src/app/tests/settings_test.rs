@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
-use evot::conf::apply_settings;
+use evot::conf::apply_feishu_settings;
+use evot::conf::apply_model_settings;
 use evot::conf::config_to_env_groups;
 use evot::conf::env_writer::write_grouped;
 use evot::conf::env_writer::EnvGroup;
 use evot::conf::Config;
 use evot::conf::FeishuSettings;
+use evot::conf::ModelSettings;
 use evot::conf::ProviderSettings;
-use evot::conf::SettingsUpdate;
 
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -19,12 +20,15 @@ fn flat(groups: &[EnvGroup]) -> std::collections::HashMap<String, String> {
         .collect()
 }
 
-/// Apply `sample_update()` into a fresh config and return the groups derived
-/// from it — mirrors what the server does on save.
+/// Apply the sample model + feishu updates into a fresh config and return the
+/// groups derived from it — mirrors what the server does across both saves.
 fn sample_groups() -> Vec<EnvGroup> {
     let mut config = Config::new(std::env::temp_dir());
-    if let Err(e) = apply_settings(&mut config, &sample_update()) {
-        panic!("apply sample update: {e}");
+    if let Err(e) = apply_model_settings(&mut config, &sample_models()) {
+        panic!("apply sample models: {e}");
+    }
+    if let Err(e) = apply_feishu_settings(&mut config, &sample_feishu()) {
+        panic!("apply sample feishu: {e}");
     }
     config_to_env_groups(&config)
 }
@@ -39,8 +43,8 @@ fn tmp_env_path(tag: &str) -> PathBuf {
     p
 }
 
-fn sample_update() -> SettingsUpdate {
-    SettingsUpdate {
+fn sample_models() -> ModelSettings {
+    ModelSettings {
         active_provider: "anthropic".into(),
         thinking_level: Some("high".into()),
         providers: vec![ProviderSettings {
@@ -51,11 +55,14 @@ fn sample_update() -> SettingsUpdate {
             models: vec!["claude-sonnet-4-6".into(), "claude-opus-4-6".into()],
             thinking_level: Some("xhigh".into()),
         }],
-        feishu: Some(FeishuSettings {
-            app_id: "cli_app".into(),
-            app_secret: Some("feishu-secret".into()),
-            mention_only: false,
-        }),
+    }
+}
+
+fn sample_feishu() -> FeishuSettings {
+    FeishuSettings {
+        app_id: "cli_app".into(),
+        app_secret: Some("feishu-secret".into()),
+        mention_only: false,
     }
 }
 
@@ -98,10 +105,10 @@ fn settings_serialize_to_expected_env_keys() {
 fn blank_global_thinking_level_restores_model_default() {
     let mut config = Config::new(std::env::temp_dir());
     config.llm.thinking_level = Some(evot_engine::ThinkingLevel::High);
-    let mut update = sample_update();
+    let mut update = sample_models();
     update.thinking_level = None;
 
-    if let Err(error) = apply_settings(&mut config, &update) {
+    if let Err(error) = apply_model_settings(&mut config, &update) {
         panic!("apply: {error}");
     }
 
@@ -124,11 +131,15 @@ fn groups_are_titled_and_separated() {
 fn empty_secret_is_not_serialized() {
     // A provider/feishu with no stored secret omits the secret key entirely.
     let mut config = Config::new(std::env::temp_dir());
-    let mut update = sample_update();
-    update.providers[0].api_key = None;
-    update.feishu.as_mut().unwrap().app_secret = Some(String::new());
-    if let Err(e) = apply_settings(&mut config, &update) {
-        panic!("apply: {e}");
+    let mut models = sample_models();
+    models.providers[0].api_key = None;
+    let mut feishu = sample_feishu();
+    feishu.app_secret = Some(String::new());
+    if let Err(e) = apply_model_settings(&mut config, &models) {
+        panic!("apply models: {e}");
+    }
+    if let Err(e) = apply_feishu_settings(&mut config, &feishu) {
+        panic!("apply feishu: {e}");
     }
     let map = flat(&config_to_env_groups(&config));
     assert!(!map.contains_key("EVOT_LLM_ANTHROPIC_API_KEY"));
@@ -253,12 +264,14 @@ fn round_trip_persists_and_reloads() -> TestResult {
 }
 
 #[test]
-fn apply_settings_preserves_blank_secret() -> TestResult {
-    // Seed a config with an existing key, then apply an update that leaves the
-    // api_key blank. The existing secret must survive.
+fn saves_preserve_blank_secrets() -> TestResult {
+    // Seed a config with existing secrets, then re-save with both left blank.
+    // Each page's save must keep the persisted value rather than clearing it.
     let mut config = Config::new(std::env::temp_dir());
-    let mut seed = sample_update();
-    apply_settings(&mut config, &seed)?;
+    let mut models = sample_models();
+    let mut feishu = sample_feishu();
+    apply_model_settings(&mut config, &models)?;
+    apply_feishu_settings(&mut config, &feishu)?;
     assert_eq!(
         config
             .providers
@@ -267,11 +280,10 @@ fn apply_settings_preserves_blank_secret() -> TestResult {
         Some("sk-secret-123")
     );
 
-    seed.providers[0].api_key = None;
-    if let Some(f) = seed.feishu.as_mut() {
-        f.app_secret = None;
-    }
-    apply_settings(&mut config, &seed)?;
+    models.providers[0].api_key = None;
+    feishu.app_secret = None;
+    apply_model_settings(&mut config, &models)?;
+    apply_feishu_settings(&mut config, &feishu)?;
     assert_eq!(
         config
             .providers
@@ -291,18 +303,66 @@ fn apply_settings_preserves_blank_secret() -> TestResult {
 }
 
 #[test]
-fn apply_settings_rejects_unknown_active_provider() {
+fn saving_models_leaves_feishu_untouched() -> TestResult {
+    // The pages save independently, so a Models save must not disturb the
+    // channel config — and vice versa.
     let mut config = Config::new(std::env::temp_dir());
-    let mut update = sample_update();
+    apply_feishu_settings(&mut config, &sample_feishu())?;
+    apply_model_settings(&mut config, &sample_models())?;
+
+    let feishu = config.channels.feishu.as_ref().ok_or("feishu dropped")?;
+    assert_eq!(feishu.app_id, "cli_app");
+    assert_eq!(feishu.app_secret, "feishu-secret");
+    assert!(!feishu.mention_only);
+
+    // And the reverse: saving Feishu keeps providers and the active selection.
+    apply_feishu_settings(&mut config, &FeishuSettings {
+        app_id: "cli_other".into(),
+        app_secret: None,
+        mention_only: true,
+    })?;
+    assert!(config.providers.contains_key("anthropic"));
+    assert_eq!(config.llm.provider, "anthropic");
+    assert_eq!(
+        config
+            .providers
+            .get("anthropic")
+            .map(|p| p.api_key.as_str()),
+        Some("sk-secret-123")
+    );
+    Ok(())
+}
+
+#[test]
+fn blank_feishu_app_id_unlinks_the_channel() -> TestResult {
+    let mut config = Config::new(std::env::temp_dir());
+    apply_feishu_settings(&mut config, &sample_feishu())?;
+    assert!(config.channels.feishu.is_some());
+
+    apply_feishu_settings(&mut config, &FeishuSettings {
+        app_id: "   ".into(),
+        app_secret: None,
+        mention_only: true,
+    })?;
+    assert!(config.channels.feishu.is_none());
+    let map = flat(&config_to_env_groups(&config));
+    assert!(!map.contains_key("EVOT_CHANNEL_FEISHU_APP_ID"));
+    Ok(())
+}
+
+#[test]
+fn apply_model_settings_rejects_unknown_active_provider() {
+    let mut config = Config::new(std::env::temp_dir());
+    let mut update = sample_models();
     update.active_provider = "ghost".into();
-    assert!(apply_settings(&mut config, &update).is_err());
+    assert!(apply_model_settings(&mut config, &update).is_err());
 }
 
 #[test]
 fn reloading_env_file_reflects_external_edits() -> TestResult {
-    // Regression: the settings page must read the env file fresh, so an edit
-    // made outside the dashboard is visible instead of a stale in-memory value.
-    // This mirrors what the server's GET /api/settings reload does.
+    // Regression: the console must read the env file fresh, so an edit made
+    // outside the dashboard is visible instead of a stale in-memory value.
+    // This mirrors what the server's GET /api/models reload does.
     let path = tmp_env_path("external_edit");
     write_grouped(&path, &sample_groups())?;
 
@@ -333,7 +393,7 @@ fn reloading_env_file_reflects_external_edits() -> TestResult {
 #[test]
 fn persist_default_thinking_level_updates_global_and_masking_override() -> TestResult {
     let mut config = Config::new(std::env::temp_dir());
-    apply_settings(&mut config, &sample_update())?;
+    apply_model_settings(&mut config, &sample_models())?;
     config.env_file_path = tmp_env_path("persist_thinking");
 
     // anthropic carries its own override ("xhigh") which would mask the global,
@@ -395,11 +455,10 @@ fn settings_save_works_when_every_provider_is_cloud() -> TestResult {
         });
     config.cloud_providers.insert("evot-free".into());
 
-    apply_settings(&mut config, &SettingsUpdate {
+    apply_model_settings(&mut config, &ModelSettings {
         active_provider: "evot-free".into(),
         thinking_level: Some("high".into()),
         providers: Vec::new(),
-        feishu: None,
     })?;
 
     assert_eq!(config.llm.provider, "evot-free");
@@ -411,8 +470,8 @@ fn settings_save_works_when_every_provider_is_cloud() -> TestResult {
 
 fn config_with_cloud_provider() -> Config {
     let mut config = Config::new(std::env::temp_dir());
-    if let Err(e) = apply_settings(&mut config, &sample_update()) {
-        panic!("apply sample update: {e}");
+    if let Err(e) = apply_model_settings(&mut config, &sample_models()) {
+        panic!("apply sample models: {e}");
     }
     config
         .providers
@@ -451,7 +510,7 @@ fn cloud_provider_is_never_written_to_env() {
 #[test]
 fn cloud_provider_survives_a_settings_save() -> TestResult {
     let mut config = config_with_cloud_provider();
-    apply_settings(&mut config, &sample_update())?;
+    apply_model_settings(&mut config, &sample_models())?;
 
     let cloud = config
         .providers
@@ -466,7 +525,7 @@ fn cloud_provider_survives_a_settings_save() -> TestResult {
 #[test]
 fn cloud_provider_cannot_be_edited_through_settings() -> TestResult {
     let mut config = config_with_cloud_provider();
-    let mut update = sample_update();
+    let mut update = sample_models();
     update.providers.push(ProviderSettings {
         name: "evot-free".into(),
         protocol: "openai".into(),
@@ -475,7 +534,7 @@ fn cloud_provider_cannot_be_edited_through_settings() -> TestResult {
         models: vec!["ghost".into()],
         thinking_level: None,
     });
-    apply_settings(&mut config, &update)?;
+    apply_model_settings(&mut config, &update)?;
 
     let cloud = config
         .providers
@@ -490,9 +549,9 @@ fn cloud_provider_cannot_be_edited_through_settings() -> TestResult {
 #[test]
 fn cloud_provider_stays_selectable_as_active() -> TestResult {
     let mut config = config_with_cloud_provider();
-    let mut update = sample_update();
+    let mut update = sample_models();
     update.active_provider = "evot-free".into();
-    apply_settings(&mut config, &update)?;
+    apply_model_settings(&mut config, &update)?;
 
     assert_eq!(config.llm.provider, "evot-free");
     let map = flat(&config_to_env_groups(&config));

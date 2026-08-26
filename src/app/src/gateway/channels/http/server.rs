@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::response::Html;
 use axum::response::IntoResponse;
+use axum::response::Redirect;
 use axum::response::Sse;
 use axum::routing::get;
 use axum::routing::post;
@@ -16,13 +17,48 @@ use crate::agent::Agent;
 use crate::agent::QueryRequest;
 use crate::agent::SubmitOutcome;
 use crate::conf::Config;
-use crate::conf::SettingsUpdate;
+use crate::conf::FeishuSettings;
+use crate::conf::ModelSettings;
 use crate::error::EvotError;
 use crate::error::Result;
 use crate::gateway::channels::http::stream;
 
 const INDEX_HTML: &str = include_str!("static/index.html");
-const SETTINGS_HTML: &str = include_str!("static/settings/index.html");
+
+// Shared console shell, plus one document per page. Served from the binary so
+// the console works from any working directory.
+const UI_CSS: &str = include_str!("static/ui/app.css");
+const UI_JS: &str = include_str!("static/ui/app.js");
+const MODELS_HTML: &str = include_str!("static/ui/models.html");
+const MODELS_JS: &str = include_str!("static/ui/models.js");
+const FEISHU_HTML: &str = include_str!("static/ui/feishu.html");
+const FEISHU_JS: &str = include_str!("static/ui/feishu.js");
+const CHAT_CSS: &str = include_str!("static/ui/chat.css");
+const CHROME_JS: &str = include_str!("static/ui/chrome.js");
+
+/// Static asset responses. Explicit content types: the router serves these from
+/// memory, so nothing else infers one from a file extension. `no-cache` lets a
+/// reload pick up a rebuilt binary's assets instead of pairing new markup with a
+/// stale cached script.
+fn css(body: &'static str) -> impl IntoResponse {
+    (
+        [
+            ("content-type", "text/css; charset=utf-8"),
+            ("cache-control", "no-cache"),
+        ],
+        body,
+    )
+}
+
+fn js(body: &'static str) -> impl IntoResponse {
+    (
+        [
+            ("content-type", "text/javascript; charset=utf-8"),
+            ("cache-control", "no-cache"),
+        ],
+        body,
+    )
+}
 
 /// `0` means no limit in the storage layer. The dashboard owns pagination, so
 /// `/api/sessions` should return every saved session rather than an arbitrary
@@ -143,19 +179,34 @@ impl Server {
                 ),
             )
             .route(
-                "/settings",
-                get(|| async { Html(SETTINGS_HTML) }),
+                "/api/models",
+                get(|State(server): State<Arc<Server>>| async move { server.get_models() }).post(
+                    |State(server): State<Arc<Server>>,
+                     Json(req): Json<ModelSettings>| async move {
+                        server.update_models(req)
+                    },
+                ),
             )
             .route(
-                "/api/settings",
-                get(|State(server): State<Arc<Server>>| async move { server.get_settings() })
-                    .post(
-                        |State(server): State<Arc<Server>>,
-                         Json(req): Json<SettingsUpdate>| async move {
-                            server.update_settings(req)
-                        },
-                    ),
+                "/api/channels/feishu",
+                get(|State(server): State<Arc<Server>>| async move { server.get_feishu() }).post(
+                    |State(server): State<Arc<Server>>,
+                     Json(req): Json<FeishuSettings>| async move {
+                        server.update_feishu(req)
+                    },
+                ),
             )
+            .route("/models", get(|| async { Html(MODELS_HTML) }))
+            .route("/feishu", get(|| async { Html(FEISHU_HTML) }))
+            .route("/ui/app.css", get(|| async { css(UI_CSS) }))
+            .route("/ui/chat.css", get(|| async { css(CHAT_CSS) }))
+            .route("/ui/app.js", get(|| async { js(UI_JS) }))
+            .route("/ui/chrome.js", get(|| async { js(CHROME_JS) }))
+            .route("/ui/models.js", get(|| async { js(MODELS_JS) }))
+            .route("/ui/feishu.js", get(|| async { js(FEISHU_JS) }))
+            // Kept so existing links and bookmarks still land somewhere useful
+            // now that provider and channel config have their own pages.
+            .route("/settings", get(|| async { Redirect::permanent("/models") }))
             .with_state(self)
             .merge(dashboard)
             .layer(CorsLayer::permissive())
@@ -165,21 +216,27 @@ impl Server {
         Html(INDEX_HTML)
     }
 
-    /// Returns the current LLM provider + Feishu config with secrets masked, so
-    /// the settings page can render the form without ever exposing raw keys.
+    /// Provider + model state with secrets masked, for the Models page.
     ///
     /// Reloads from the env file on disk first, so the page reflects edits made
     /// outside the dashboard (e.g. a hand-edited `evot.env`) rather than a stale
     /// in-memory snapshot. This also keeps the next save's "leave blank to keep"
     /// behavior anchored to the real on-disk secrets.
-    fn get_settings(&self) -> impl IntoResponse {
+    fn get_models(&self) -> impl IntoResponse {
         if let Err(e) = self.reload_config_from_disk() {
             // Fall back to the in-memory config rather than failing the page; a
-            // transient read error shouldn't blank out the settings UI.
-            tracing::warn!("settings: reload from disk failed, serving cached config: {e}");
+            // transient read error shouldn't blank out the page.
+            tracing::warn!("models: reload from disk failed, serving cached config: {e}");
         }
-        let snapshot = crate::conf::settings_snapshot(&self.config.read());
-        Json(snapshot)
+        Json(crate::conf::models_snapshot(&self.config.read()))
+    }
+
+    /// Feishu channel state with the secret masked, for the Feishu page.
+    fn get_feishu(&self) -> impl IntoResponse {
+        if let Err(e) = self.reload_config_from_disk() {
+            tracing::warn!("feishu: reload from disk failed, serving cached config: {e}");
+        }
+        Json(crate::conf::feishu_snapshot(&self.config.read()))
     }
 
     /// Re-read the env file from disk and replace the shared config. Uses the
@@ -192,21 +249,17 @@ impl Server {
         Ok(())
     }
 
-    /// Validate, persist to the env file, and hot-apply a settings update.
-    ///
-    /// LLM changes take effect on the next message (the agent's `LlmConfig` is
-    /// rebuilt here). Feishu changes are persisted but require a restart to
-    /// re-spawn the channel; the response carries `feishu_restart_required` so
-    /// the UI can surface that.
-    fn update_settings(&self, update: SettingsUpdate) -> impl IntoResponse {
-        let feishu_changed = update.feishu.is_some();
-        match self.apply_and_persist(update) {
+    /// Validate, persist, and hot-apply a provider/model update. Takes effect on
+    /// the next message: the agent's `LlmConfig` is rebuilt here.
+    fn update_models(&self, update: ModelSettings) -> impl IntoResponse {
+        match self
+            .apply_and_persist(|candidate| crate::conf::apply_model_settings(candidate, &update))
+        {
             Ok(()) => (
                 axum::http::StatusCode::OK,
                 Json(serde_json::json!({
                     "ok": true,
-                    "feishu_restart_required": feishu_changed,
-                    "settings": crate::conf::settings_snapshot(&self.config.read()),
+                    "models": crate::conf::models_snapshot(&self.config.read()),
                 })),
             )
                 .into_response(),
@@ -218,13 +271,38 @@ impl Server {
         }
     }
 
-    /// Apply the update to the shared config, persist it to the env file, and
-    /// push the rebuilt active LLM into the running agent. Holds the config
-    /// write lock for the whole operation so concurrent edits cannot interleave.
-    fn apply_and_persist(&self, update: SettingsUpdate) -> Result<()> {
+    /// Validate, persist, and apply a Feishu channel update. Persisting is
+    /// enough for the config, but the channel is spawned at startup, so the
+    /// response reports that a restart is needed to pick the change up.
+    fn update_feishu(&self, update: FeishuSettings) -> impl IntoResponse {
+        match self
+            .apply_and_persist(|candidate| crate::conf::apply_feishu_settings(candidate, &update))
+        {
+            Ok(()) => (
+                axum::http::StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": true,
+                    "restart_required": true,
+                    "channel": crate::conf::feishu_snapshot(&self.config.read()),
+                })),
+            )
+                .into_response(),
+            Err(e) => (
+                axum::http::StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    /// Apply `mutate` to a copy of the shared config, persist the result to the
+    /// env file, and push the rebuilt active LLM into the running agent. Holds
+    /// the write lock for the whole operation so concurrent edits from separate
+    /// pages cannot interleave and lose each other's changes.
+    fn apply_and_persist(&self, mutate: impl FnOnce(&mut Config) -> Result<()>) -> Result<()> {
         let mut config = self.config.write();
         let mut candidate = config.clone();
-        crate::conf::apply_settings(&mut candidate, &update)?;
+        mutate(&mut candidate)?;
         // Surface resolution errors (e.g. missing key) before writing the file.
         let llm = candidate.active_llm()?;
         let env_path = candidate.env_file_path.clone();

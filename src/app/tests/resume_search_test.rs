@@ -16,6 +16,7 @@ fn session(id: &str, title: &str, text: &str) -> SessionWithText {
     SessionWithText {
         session: meta,
         search_text: text.to_string(),
+        user_prompts: vec![],
     }
 }
 

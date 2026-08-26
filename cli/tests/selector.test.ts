@@ -9,6 +9,7 @@ import {
   selectorExpandItems,
   selectorFocusOn,
   selectorRemoveItem,
+  type SelectorState,
 } from '../src/term/selector.js'
 import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
@@ -366,6 +367,202 @@ describe('renderSelector via viewmodel', () => {
     // Plain text should still have the label
     const text = lines.map(l => stripAnsi(l)).join('\n')
     expect(text).toContain('gpt-4o')
+  })
+})
+
+describe('preview pane', () => {
+  const paneItems = [
+    {
+      label: 'aaaaaaaa',
+      detail: 'repl   first session',
+      id: 'session-a',
+      searchText: 'aaaaaaaa first session /work repl m1 we tuned the retry budget',
+      preview: ['first session', 'm1 · 4 turns · 2h ago', '', '› we tuned the retry budget'],
+    },
+    {
+      label: 'bbbbbbbb',
+      detail: 'repl   second session',
+      id: 'session-b',
+      searchText: 'bbbbbbbb second session /work repl m1 payment timeout triage',
+      preview: ['second session', 'm1 · 9 turns · 5d ago', '', '› payment timeout triage'],
+    },
+  ]
+
+  function rows(state: SelectorState, columns: number): string[] {
+    return blocksToLines(buildOverlayBlocks({ kind: 'selector', state }, columns)).map(l => stripAnsi(l))
+  }
+
+  test('renders the focused row preview beside the list', () => {
+    const state = createSelectorState('Resume session', paneItems)
+    const text = rows(state, 120).join('\n')
+
+    expect(text).toContain('│')
+    expect(text).toContain('we tuned the retry budget')
+    // Only the focused row's preview is shown.
+    expect(text).not.toContain('payment timeout triage')
+  })
+
+  test('follows focus to the next row', () => {
+    const state = selectorDown(createSelectorState('Resume session', paneItems))
+    const text = rows(state, 120).join('\n')
+
+    expect(text).toContain('payment timeout triage')
+    expect(text).not.toContain('we tuned the retry budget')
+  })
+
+  test('every row keeps the divider in the same column', () => {
+    const state = createSelectorState('Resume session', paneItems)
+    const dividerColumns = new Set(
+      rows(state, 120).filter(row => row.includes('│')).map(row => row.indexOf('│')),
+    )
+
+    expect(dividerColumns.size).toBe(1)
+  })
+
+  test('stays within the terminal width without wrapping rows', () => {
+    const wide = {
+      label: 'cccccccc',
+      detail: 'repl   '.padEnd(200, 'x'),
+      preview: ['a title that is quite long and will need wrapping inside the narrow pane'],
+    }
+    const state = createSelectorState('Resume session', [wide])
+
+    for (const columns of [80, 120, 200]) {
+      const rendered = buildSelectorRegionLines(state, columns).map(l => stripAnsi(l))
+      for (const row of rendered) {
+        expect(stringWidth(row)).toBeLessThanOrEqual(columns)
+      }
+      // A row wrapped by the renderer would add divider-less continuation rows
+      // below the pane; every pane row carries exactly one divider.
+      const paneRows = rendered.filter(row => row.includes('│'))
+      expect(paneRows.length).toBeGreaterThan(0)
+      expect(paneRows.every(row => row.split('│').length === 2)).toBe(true)
+    }
+  })
+
+  test('keeps the header pinned and shows the newest entries when the body overflows', () => {
+    const state = createSelectorState('Resume session', [{
+      label: 'dddddddd',
+      preview: [
+        'long session',
+        'm1 · 40 turns · 1h ago',
+        '',
+        ...Array.from({ length: 30 }, (_, i) => `› turn number ${i + 1}`),
+      ],
+    }])
+    const text = rows(state, 120).join('\n')
+
+    expect(text).toContain('long session')
+    expect(text).toContain('m1 · 40 turns · 1h ago')
+    expect(text).toContain('⋮')
+    // Oldest-first entries, so the tail is what survives the cut.
+    expect(text).toContain('turn number 30')
+    expect(text).not.toContain('turn number 1 ')
+  })
+
+  test('moves the body window to the first filter hit', () => {
+    let state = createSelectorState('Resume session', [{
+      label: 'dddddddd',
+      searchText: 'dddddddd NEBULA-4729 page cache eviction',
+      preview: [
+        'long session',
+        'm1 · 40 turns · 1h ago',
+        '',
+        '› look at NEBULA-4729 first',
+        ...Array.from({ length: 30 }, (_, i) => `› later turn ${i + 1}`),
+      ],
+    }])
+    for (const char of 'nebula') state = selectorType(state, char)
+    const text = rows(state, 120).join('\n')
+
+    expect(text).toContain('NEBULA-4729')
+    expect(text).not.toContain('later turn 30')
+  })
+
+  test('a long title cannot squeeze the body out of the pane', () => {
+    const state = createSelectorState('Resume session', [{
+      label: 'eeeeeeee',
+      preview: [
+        'a session title so long that wrapping it alone would fill the entire preview pane and leave no room at all for the conversation below it',
+        'm1 · 4 turns · 2h ago',
+        '',
+        '› the turn that must stay visible',
+      ],
+    }])
+    const text = rows(state, 120).join('\n')
+
+    expect(text).toContain('the turn that must stay visible')
+  })
+
+  test('caps one entry so a single long turn cannot fill the pane', () => {
+    // A pasted draft arrives as one turn with its newlines already collapsed.
+    const draft = 'polish this tweet and make it shorter '.repeat(20)
+    const state = createSelectorState('Resume session', [{
+      label: 'ffffffff',
+      preview: ['long turn session', 'm1 · 7 turns · 21h ago', '', `› ${draft}`, '› drop the emoji'],
+    }])
+    const paneRows = rows(state, 160)
+      .filter(row => row.includes('│'))
+      .map(row => row.slice(row.indexOf('│') + 1).trimEnd())
+
+    // The draft keeps its marker and a bounded excerpt, marked as cut.
+    const marked = paneRows.filter(row => row.trimStart().startsWith('›'))
+    expect(marked.length).toBe(2)
+    expect(marked[0]).toContain('polish this tweet')
+    expect(marked[0]).not.toContain('drop the emoji')
+    expect(paneRows.some(row => row.endsWith('…'))).toBe(true)
+    // The later turn is still reachable rather than pushed out.
+    expect(paneRows.some(row => row.includes('drop the emoji'))).toBe(true)
+  })
+
+  test('never orphans a continuation row from its marker', () => {
+    // Regression: windowing by wrapped row could cut a multi-row entry in half,
+    // leaving indented text on screen with no `›` to attribute it.
+    //
+    // Entry heights from the end are 2, 1, 2, 2, 2 — suffix sums 2, 3, 5, 7, 9.
+    // The post-cut body budget is 6, which no suffix hits, so a row-based cut
+    // has to land inside an entry while an entry-based one cannot.
+    const words = Array.from({ length: 16 }, (_, i) => `w${i}`).join(' ')
+    const twoRows = (label: string) => `› ${label} ${words}`
+    const state = createSelectorState('Resume session', [{
+      label: 'gggggggg',
+      preview: [
+        'wrapped turns session',
+        'm1 · 9 turns · 21h ago',
+        '',
+        twoRows('alpha'), twoRows('bravo'), twoRows('charlie'), '› delta', twoRows('echo'),
+      ],
+    }])
+    const paneRows = rows(state, 160)
+      .filter(row => row.includes('│'))
+      .map(row => row.slice(row.indexOf('│') + 1).trim())
+      .filter(row => row.length > 0)
+
+    const cut = paneRows.findIndex(row => row.startsWith('⋮'))
+    expect(cut).toBeGreaterThanOrEqual(0)
+
+    // Everything below the cut is body. The first row must open an entry, and
+    // each wrapped entry must keep the continuation that belongs to it.
+    const body = paneRows.slice(cut + 1)
+    expect(body[0]!.startsWith('›')).toBe(true)
+    expect(body.some(row => !row.startsWith('›'))).toBe(true)
+    for (const [index, row] of body.entries()) {
+      if (!row.startsWith('›') || !row.includes('w0')) continue
+      expect(body[index + 1]?.startsWith('w')).toBe(true)
+    }
+  })
+
+  test('narrow terminals keep the single-column list', () => {
+    const state = createSelectorState('Resume session', paneItems)
+    const text = rows(state, 60).join('\n')
+
+    expect(text).not.toContain('│')
+    expect(text).toContain('aaaaaaaa')
+  })
+
+  test('items without a preview render without a pane', () => {
+    const state = createSelectorState('Pick model', items)
+    expect(rows(state, 120).join('\n')).not.toContain('│')
   })
 })
 

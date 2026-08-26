@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use super::Storage;
 use crate::error::Result;
 use crate::search::collect_search_text;
+use crate::search::collect_user_prompts;
 use crate::search::SessionWithText;
 use crate::types::ListSessions;
 use crate::types::ListTranscriptEntries;
@@ -214,6 +215,7 @@ impl Storage for MemoryStorage {
             result.push(SessionWithText {
                 session: session.clone(),
                 search_text,
+                user_prompts: collect_user_prompts(&session_entries),
             });
         }
 

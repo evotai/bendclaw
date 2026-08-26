@@ -8,6 +8,7 @@ use tokio::fs;
 use crate::error::EvotError;
 use crate::error::Result;
 use crate::search::collect_search_text;
+use crate::search::collect_user_prompts;
 use crate::search::SessionWithText;
 use crate::storage::Storage;
 use crate::types::FavoritesDocument;
@@ -650,6 +651,7 @@ impl Storage for FsStorage {
             result.push(SessionWithText {
                 session: session.clone(),
                 search_text,
+                user_prompts: collect_user_prompts(&entries),
             });
         }
 

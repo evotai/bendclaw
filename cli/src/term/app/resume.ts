@@ -85,9 +85,53 @@ export function isResumeSelectorTitle(title: string): boolean {
   return title.startsWith('Resume session')
 }
 
-function formatSessionItem(s: SessionMeta, otherCwd: boolean, searchText: string): SelectorItem {
+/**
+ * Side-pane content for one session: a wall of near-identical titles is what
+ * makes the resume list hard to read, so the pane shows the full title, one
+ * compact identity line, and then the user's own turns — the fastest way to
+ * recognize which conversation this was.
+ *
+ * `source` already appears in the row and `cwd` in the group heading, so
+ * neither is repeated here; a session from another cwd is the exception, since
+ * its path is the thing that distinguishes it.
+ */
+export function sessionPreviewLines(
+  session: SessionMeta,
+  opts: { userPrompts?: string[]; showCwd?: boolean } = {},
+): string[] {
+  const facts = [shortModel(session), `${session.turns || 0} turns`, relativeTime(session.updated_at)]
+  if (opts.showCwd) facts.push(shortenSessionCwd(session.cwd))
+
+  const lines = [sanitizeSessionTitle(session.title), facts.filter(Boolean).join(' · ')]
+  // Prompts arrive with the async full-text load, so the pane starts as the
+  // identity block and fills in once they land.
+  const prompts = opts.userPrompts ?? []
+  if (prompts.length > 0) {
+    lines.push('')
+    lines.push(...prompts.map(prompt => `› ${prompt}`))
+  }
+  return lines
+}
+
+/**
+ * Model without its provider prefix. The pane has one line for identity and a
+ * bare model name is what distinguishes sessions; `anthropic:` in front of
+ * every Claude row spends columns without adding a distinction.
+ */
+function shortModel(session: SessionMeta): string {
+  return session.model || session.provider || ''
+}
+
+/**
+ * Columns the list spends on a title. The side pane carries the full title, so
+ * the row only needs enough of it to tell neighbouring sessions apart — the
+ * saved columns keep turn count and timestamp on screen next to the pane.
+ */
+const TITLE_COLUMN_WIDTH = 44
+
+function formatSessionItem(s: SessionMeta, otherCwd: boolean, searchText: string, preview: string[]): SelectorItem {
   const source = padRight(s.source || '', 6)
-  const title = padRight(sanitizeSessionTitle(s.title), 65)
+  const title = padRight(sanitizeSessionTitle(s.title), TITLE_COLUMN_WIDTH)
   const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
   const time = relativeTime(s.updated_at)
   const cwd = otherCwd ? `  ${shortenSessionCwd(s.cwd)}` : ''
@@ -97,6 +141,7 @@ function formatSessionItem(s: SessionMeta, otherCwd: boolean, searchText: string
     detail: `${source} ${title} ${turns} ${time}${cwd}`,
     searchText,
     contextPrefix: otherCwd ? `${shortenSessionCwd(s.cwd)} · ` : undefined,
+    preview,
   }
 }
 
@@ -106,12 +151,18 @@ export function formatSessionItems(sessions: SessionMeta[], currentCwd: string):
       session,
       otherCwd,
       `${session.session_id} ${session.title ?? ''} ${session.cwd} ${session.source} ${session.provider ?? ''} ${session.model}`,
+      sessionPreviewLines(session, { showCwd: otherCwd }),
     ),
   )
 }
 
 export function formatSessionWithTextItems(items: SessionWithText[], currentCwd: string): SelectorItem[] {
   return groupedSessionItems(items, currentCwd, (session, otherCwd) =>
-    formatSessionItem(session, otherCwd, session.search_text),
+    formatSessionItem(
+      session,
+      otherCwd,
+      session.search_text,
+      sessionPreviewLines(session, { userPrompts: session.user_prompts, showCwd: otherCwd }),
+    ),
   )
 }

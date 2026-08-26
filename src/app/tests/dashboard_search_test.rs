@@ -31,6 +31,13 @@ fn assistant(text: &str) -> TranscriptItem {
     assistant_with_blocks(vec![AssistantBlock::Text { text: text.into() }])
 }
 
+fn user(text: &str) -> TranscriptItem {
+    TranscriptItem::User {
+        text: text.into(),
+        content: vec![],
+    }
+}
+
 #[tokio::test]
 async fn search_text_includes_transcript_content() -> TestResult {
     let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
@@ -315,4 +322,125 @@ fn chat_page_embeds_search_overlay() {
     assert!(html.contains("id=\"searchOverlay\""));
     assert!(html.contains("/api/sessions"));
     assert!(html.contains("function highlight"));
+}
+
+// ---------------------------------------------------------------------------
+// user_prompts — the resume selector's preview pane shows the user's own turns,
+// which `search_text` cannot provide: it flattens every role into one blob.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn user_prompts_keep_only_user_turns_in_order() -> TestResult {
+    let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
+    let session = Session::new(
+        "prompts-sess-001".into(),
+        "/tmp/proj".into(),
+        "test-model".into(),
+        storage.clone(),
+    )
+    .await?;
+
+    session
+        .write_items(vec![
+            user("first ask"),
+            assistant("an answer the pane must not show"),
+            user("second ask"),
+        ])
+        .await?;
+
+    let rows = storage.list_sessions_with_text(10).await?;
+    let row = rows
+        .iter()
+        .find(|r| r.session.session_id == "prompts-sess-001")
+        .ok_or("session not returned")?;
+
+    assert_eq!(row.user_prompts, vec!["first ask", "second ask"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_prompts_skip_compaction_boilerplate() -> TestResult {
+    let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
+    let session = Session::new(
+        "prompts-sess-002".into(),
+        "/tmp/proj".into(),
+        "test-model".into(),
+        storage.clone(),
+    )
+    .await?;
+
+    // Compaction injects a synthetic User item; the user never typed it.
+    session
+        .write_items(vec![
+            evot::compact::context_view::compact_summary_item("earlier work on the parser"),
+            user("carry on from there"),
+        ])
+        .await?;
+
+    let rows = storage.list_sessions_with_text(10).await?;
+    let row = rows
+        .iter()
+        .find(|r| r.session.session_id == "prompts-sess-002")
+        .ok_or("session not returned")?;
+
+    assert_eq!(row.user_prompts, vec!["carry on from there"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_prompts_normalize_newlines_and_cap_long_turns() -> TestResult {
+    let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
+    let session = Session::new(
+        "prompts-sess-003".into(),
+        "/tmp/proj".into(),
+        "test-model".into(),
+        storage.clone(),
+    )
+    .await?;
+
+    let long = "x".repeat(1_000);
+    session
+        .write_items(vec![user("line one\n\nline two"), user(&long)])
+        .await?;
+
+    let rows = storage.list_sessions_with_text(10).await?;
+    let row = rows
+        .iter()
+        .find(|r| r.session.session_id == "prompts-sess-003")
+        .ok_or("session not returned")?;
+
+    // The pane renders one row per turn, so a turn is a single line.
+    assert_eq!(row.user_prompts[0], "line one line two");
+    let capped = &row.user_prompts[1];
+    assert!(capped.chars().count() < 400, "not capped: {}", capped.len());
+    assert!(capped.ends_with('…'));
+    Ok(())
+}
+
+#[tokio::test]
+async fn user_prompts_keep_the_latest_turns_of_a_long_session() -> TestResult {
+    let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
+    let session = Session::new(
+        "prompts-sess-004".into(),
+        "/tmp/proj".into(),
+        "test-model".into(),
+        storage.clone(),
+    )
+    .await?;
+
+    let items: Vec<TranscriptItem> = (0..80).map(|i| user(&format!("turn {i}"))).collect();
+    session.write_items(items).await?;
+
+    let rows = storage.list_sessions_with_text(10).await?;
+    let row = rows
+        .iter()
+        .find(|r| r.session.session_id == "prompts-sess-004")
+        .ok_or("session not returned")?;
+
+    // A resume pane shows a handful of lines, and the newest turns say where
+    // the session left off — so the tail is what is kept.
+    assert!(row.user_prompts.len() <= 24);
+    assert_eq!(row.user_prompts.last().map(String::as_str), Some("turn 79"));
+    assert!(!row.user_prompts.iter().any(|p| p == "turn 0"));
+    Ok(())
 }

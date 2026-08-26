@@ -2,6 +2,7 @@ import stringWidth from 'string-width'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { CURSOR_MARKER } from '../renderer.js'
 import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
+import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'
 import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import type { AskState } from '../ask.js'
 import { getTheme } from '../../render/theme.js'
@@ -234,7 +235,7 @@ function highlightSpans(text: string, query: string, base: Partial<StyledSpan>):
   return spans.length > 0 ? spans : [{ text, ...base }]
 }
 
-function buildSelectorBlocks(state: SelectorState, _columns: number): ViewBlock[] {
+function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[] {
   const selectable = (items: SelectorItem[]) => items.filter(i => !i.header).length
   const countLabel = `${selectable(state.items)}${state.query ? ` of ${selectable(state.allItems)}` : ''}`
   const lines: StyledLine[] = [
@@ -251,42 +252,22 @@ function buildSelectorBlocks(state: SelectorState, _columns: number): ViewBlock[
     lines.push(line(plain('')))
   }
 
-  if (state.items.length === 0) {
-    lines.push(line(dim('  No matching items')))
+  // The focused row's preview sits beside the list, so rows and pane share the
+  // width budget. Without a preview the list keeps the whole line. One column
+  // stays free so a full-width row cannot wrap into the next terminal line.
+  const available = Math.max(1, finiteSize(columns, 80) - 1)
+  const paneWidth = selectorPaneWidth(state, available)
+  const listLines = buildSelectorListLines(state)
+  if (paneWidth > 0) {
+    const preview = state.items[state.focusIndex]?.preview ?? []
+    const paneRows = Math.max(listLines.length, PANE_MIN_ROWS)
+    lines.push(...joinPaneColumns(
+      listLines,
+      buildPreviewLines(preview, state.query, paneWidth, paneRows),
+      available - paneWidth - PANE_DIVIDER.length,
+    ))
   } else {
-    const maxVisible = SELECTOR_VIEWPORT
-    // The window follows scrollOffset (updated one row at a time by up/down),
-    // clamped defensively so the focused row is always on screen.
-    let start = Math.min(Math.max(state.scrollOffset, 0), Math.max(0, state.items.length - maxVisible))
-    if (state.focusIndex < start) start = state.focusIndex
-    else if (state.focusIndex >= start + maxVisible) start = state.focusIndex - maxVisible + 1
-    const end = Math.min(start + maxVisible, state.items.length)
-
-    if (start > 0) {
-      lines.push(line(dim(`  ↑ ${start} above`)))
-    }
-    for (let i = start; i < end; i++) {
-      const item = state.items[i]!
-      if (item.header) {
-        lines.push(item.label ? line(dim(`── ${item.label} ──`)) : line(plain('')))
-        continue
-      }
-      const focused = i === state.focusIndex
-      const prefix: StyledSpan = focused ? colored('❯ ', 'cyan', { bold: true }) : plain('  ')
-      const labelSpans = state.query
-        ? highlightSpans(item.label, state.query, focused ? { bold: true } : {})
-        : [focused ? bold(item.label) : plain(item.label)]
-      const detailSpans = item.detail && state.query
-        ? highlightSpans(`  ${item.detail}`, state.query, { dim: true })
-        : [item.detail ? dim(`  ${item.detail}`) : plain('')]
-      const selectedSpans = item.selected
-        ? [plain(' '), colored('✓', 'green')]
-        : []
-      lines.push(line(prefix, ...labelSpans, ...detailSpans, ...selectedSpans))
-    }
-    if (end < state.items.length) {
-      lines.push(line(dim(`  ↓ ${state.items.length - end} below`)))
-    }
+    lines.push(...listLines)
   }
 
   lines.push(line(plain('')))
@@ -305,6 +286,222 @@ function buildSelectorBlocks(state: SelectorState, _columns: number): ViewBlock[
     ))
   }
   return [block(lines, 1)]
+}
+
+/** The list rows themselves — everything between the filter line and the hints. */
+function buildSelectorListLines(state: SelectorState): StyledLine[] {
+  if (state.items.length === 0) return [line(dim('  No matching items'))]
+
+  const lines: StyledLine[] = []
+  const maxVisible = SELECTOR_VIEWPORT
+  // The window follows scrollOffset (updated one row at a time by up/down),
+  // clamped defensively so the focused row is always on screen.
+  let start = Math.min(Math.max(state.scrollOffset, 0), Math.max(0, state.items.length - maxVisible))
+  if (state.focusIndex < start) start = state.focusIndex
+  else if (state.focusIndex >= start + maxVisible) start = state.focusIndex - maxVisible + 1
+  const end = Math.min(start + maxVisible, state.items.length)
+
+  if (start > 0) {
+    lines.push(line(dim(`  ↑ ${start} above`)))
+  }
+  for (let i = start; i < end; i++) {
+    const item = state.items[i]!
+    if (item.header) {
+      lines.push(item.label ? line(dim(`── ${item.label} ──`)) : line(plain('')))
+      continue
+    }
+    const focused = i === state.focusIndex
+    const prefix: StyledSpan = focused ? colored('❯ ', 'cyan', { bold: true }) : plain('  ')
+    const labelSpans = state.query
+      ? highlightSpans(item.label, state.query, focused ? { bold: true } : {})
+      : [focused ? bold(item.label) : plain(item.label)]
+    const detailSpans = item.detail && state.query
+      ? highlightSpans(`  ${item.detail}`, state.query, { dim: true })
+      : [item.detail ? dim(`  ${item.detail}`) : plain('')]
+    const selectedSpans = item.selected
+      ? [plain(' '), colored('✓', 'green')]
+      : []
+    lines.push(line(prefix, ...labelSpans, ...detailSpans, ...selectedSpans))
+  }
+  if (end < state.items.length) {
+    lines.push(line(dim(`  ↓ ${state.items.length - end} below`)))
+  }
+  return lines
+}
+
+/** Gap and rail between the list and its preview pane. */
+const PANE_DIVIDER = '  │ '
+
+/**
+ * Rows the pane keeps even when the list is shorter. Session summaries need a
+ * few lines of body text to be worth reading; a two-row pane beside a two-row
+ * list would only ever show metadata.
+ */
+const PANE_MIN_ROWS = SELECTOR_VIEWPORT
+
+/** Columns the list keeps for itself before a pane is worth showing. */
+const PANE_MIN_LIST_WIDTH = 46
+
+/** Widest the pane grows to. Beyond this, extra columns go back to the list. */
+const PANE_MAX_WIDTH = 52
+
+/**
+ * Pane width in columns, or 0 when the pane is suppressed. The pane takes a
+ * third of the terminal, but never at the cost of the list becoming unreadable
+ * — narrow terminals keep the single-column layout they had before.
+ */
+function selectorPaneWidth(state: SelectorState, columns: number): number {
+  const focused = state.items[state.focusIndex]
+  if (!focused?.preview || focused.preview.length === 0) return 0
+  const width = Math.min(PANE_MAX_WIDTH, Math.floor(columns / 3))
+  if (width < 24) return 0
+  if (columns - width - PANE_DIVIDER.length < PANE_MIN_LIST_WIDTH) return 0
+  return width
+}
+
+/**
+ * Rows the pane header may claim when there is a body to show. A long title
+ * would otherwise push the body out entirely, and the body is the reason the
+ * pane exists.
+ */
+const PANE_MAX_HEADER_ROWS = 4
+
+/**
+ * Rows one body entry may claim. A single long turn (a pasted draft, a spec)
+ * would otherwise fill the pane by itself and read as an unattributed wall of
+ * text, hiding every other turn in the session.
+ */
+const PANE_MAX_ENTRY_ROWS = 3
+
+/**
+ * Render a preview into the pane. Entries before the first blank are the header
+ * and stay pinned; the rest is the body.
+ *
+ * The body is windowed by entry, never by wrapped row: an entry leads with a
+ * marker (`› `) that attributes the text, so cutting into the middle of one
+ * leaves orphaned continuation rows that read as noise. Entries are ordered
+ * oldest-first, so an overflowing body keeps its tail — the latest turns say
+ * where the session left off. While filtering, the window moves to the first
+ * matching entry instead, so the user can see why the row matched. Either cut
+ * is marked with `⋮`.
+ */
+function buildPreviewLines(preview: string[], query: string, width: number, maxRows: number): StyledLine[] {
+  const split = preview.indexOf('')
+  const header = split === -1 ? preview : preview.slice(0, split)
+  const body = split === -1 ? [] : preview.slice(split + 1)
+
+  const headerRows = header
+    .flatMap((entry, index) => wrapTextWithAnsi(entry, width).map(row => ({ row, heading: index === 0 })))
+    .slice(0, body.length > 0 ? Math.min(PANE_MAX_HEADER_ROWS, maxRows - 1) : maxRows)
+    .map(({ row, heading }) => line(...(
+      query
+        ? highlightSpans(row, query, heading ? { bold: true } : { dim: true })
+        : [heading ? bold(row) : dim(row)]
+    )))
+
+  // A blank row separates header from body, so the body's budget is one less.
+  const budget = Math.max(0, maxRows - headerRows.length - 1)
+  const entries = body.map(entry => entry ? wrapPreviewEntry(entry, width) : [''])
+  const total = entries.reduce((sum, rows) => sum + rows.length, 0)
+  if (entries.length === 0 || budget === 0) return headerRows
+  if (total <= budget) {
+    return [
+      ...headerRows,
+      line(plain('')),
+      ...entries.flat().map(row => previewBodyLine(row, query)),
+    ]
+  }
+
+  // One row of the budget goes to the `⋮` marker so the cut is visible.
+  const visible = selectPreviewEntries(entries, query, budget - 1)
+  return [
+    ...headerRows,
+    line(dim('  ⋮')),
+    ...visible.map(row => previewBodyLine(row, query)),
+  ]
+}
+
+/**
+ * Whole entries that fit `budget` rows: the earliest filter hit onwards, else
+ * the latest turns. Walking forward from the chosen anchor keeps entries in
+ * conversation order and stops before one would be cut in half.
+ */
+function selectPreviewEntries(entries: string[][], query: string, budget: number): string[] {
+  const anchor = previewAnchorEntry(entries, query, budget)
+  const rows: string[] = []
+  for (let i = anchor; i < entries.length; i++) {
+    const entry = entries[i]!
+    if (rows.length + entry.length > budget) break
+    rows.push(...entry)
+  }
+  // A single entry taller than the whole budget still has to say something, so
+  // it is truncated rather than dropped.
+  if (rows.length === 0) return (entries[anchor] ?? []).slice(0, budget)
+  return rows
+}
+
+/** Index of the first entry to show: the earliest filter hit, else the tail. */
+function previewAnchorEntry(entries: string[][], query: string, budget: number): number {
+  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
+  if (tokens.length > 0) {
+    const hit = entries.findIndex(entry => {
+      const text = entry.join(' ').toLowerCase()
+      return tokens.some(token => text.includes(token))
+    })
+    if (hit !== -1) return hit
+  }
+  // Walk back from the end while whole entries still fit.
+  let used = 0
+  let anchor = entries.length
+  while (anchor > 0) {
+    const rows = entries[anchor - 1]?.length ?? 0
+    if (used + rows > budget) break
+    used += rows
+    anchor--
+  }
+  return Math.min(anchor, entries.length - 1)
+}
+
+function previewBodyLine(row: string, query: string): StyledLine {
+  return line(...(query ? highlightSpans(row, query, { dim: true }) : [dim(row)]))
+}
+
+/**
+ * Wrap one preview entry, indenting continuations under a leading marker so a
+ * long entry reads as one block instead of merging into the next. Capped at
+ * [`PANE_MAX_ENTRY_ROWS`], with the cut marked in place.
+ */
+function wrapPreviewEntry(entry: string, width: number): string[] {
+  const marker = /^(\S\s)/.exec(entry)?.[1]
+  const rows = marker
+    ? wrapTextWithAnsi(entry.slice(marker.length), Math.max(1, width - marker.length))
+      .map((row, index) => `${index === 0 ? marker : ' '.repeat(marker.length)}${row}`)
+    : wrapTextWithAnsi(entry, width)
+  if (rows.length <= PANE_MAX_ENTRY_ROWS) return rows
+
+  const kept = rows.slice(0, PANE_MAX_ENTRY_ROWS)
+  const last = kept[PANE_MAX_ENTRY_ROWS - 1] ?? ''
+  kept[PANE_MAX_ENTRY_ROWS - 1] = `${truncateToWidth(last, Math.max(1, width - 1))}…`
+  return kept
+}
+
+/**
+ * Lay the list and pane side by side. Each list row is padded to `listWidth`
+ * so the divider column stays straight regardless of row content, and a row's
+ * own background (model presentation) is not used here, so plain padding is
+ * enough.
+ */
+function joinPaneColumns(listLines: StyledLine[], paneLines: StyledLine[], listWidth: number): StyledLine[] {
+  const rows = Math.max(listLines.length, paneLines.length)
+  const result: StyledLine[] = []
+  for (let i = 0; i < rows; i++) {
+    const left = listLines[i]?.spans ?? [plain('')]
+    const right = paneLines[i]?.spans ?? [plain('')]
+    const spans = spansWidth(left) > listWidth ? truncateSpansToWidth(left, listWidth) : left
+    const padding = Math.max(0, listWidth - spansWidth(spans))
+    result.push(line(...spans, plain(' '.repeat(padding)), dim(PANE_DIVIDER), ...right))
+  }
+  return result
 }
 
 const CHECKBOX_ON = '☒'

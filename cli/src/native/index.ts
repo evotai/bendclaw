@@ -45,6 +45,8 @@ export interface TranscriptItem {
 
 export interface SessionWithText extends SessionMeta {
   search_text: string
+  /** Real user turns, oldest first. Compaction boilerplate is excluded. */
+  user_prompts: string[]
 }
 
 export interface VariableInfo {

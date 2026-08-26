@@ -16,6 +16,9 @@ export interface SelectorItem {
   group?: string
   /** Prefix retained when full-text filtering replaces detail with a snippet. */
   contextPrefix?: string
+  /** Lines shown in the side pane while this row is focused. First line is the
+   *  heading. Rows without a preview render the list at full width. */
+  preview?: string[]
 }
 
 export interface SelectorState {

@@ -15,6 +15,11 @@ pub struct SessionWithText {
     #[serde(flatten)]
     pub session: SessionMeta,
     pub search_text: String,
+    /// Real user turns, oldest first — what the session was actually asked to
+    /// do. `search_text` flattens every role into one blob, so a UI that wants
+    /// to show only the user's side of the conversation cannot recover it from
+    /// there.
+    pub user_prompts: Vec<String>,
 }
 
 pub struct SessionSearcher {
@@ -76,6 +81,40 @@ impl SessionSearcher {
 /// on top of this budget.
 const TRANSCRIPT_TEXT_BUDGET: usize = 6000;
 
+/// Most recent user turns kept per session. A resume UI shows a handful of
+/// lines, so collecting every prompt of a 900-turn session only costs memory.
+const USER_PROMPT_LIMIT: usize = 24;
+
+/// Max characters kept per user turn. Long pasted prompts are truncated: the
+/// point is recognizing the session, not reading it back.
+const USER_PROMPT_MAX_CHARS: usize = 300;
+
+/// The session's real user turns, oldest first, newest-biased when truncated.
+/// Compaction's synthetic summary prompt is skipped — it is boilerplate the
+/// user never typed.
+pub fn collect_user_prompts(entries: &[TranscriptEntry]) -> Vec<String> {
+    let mut prompts: Vec<String> = Vec::new();
+    for entry in entries {
+        let TranscriptItem::User { text, .. } = &entry.item else {
+            continue;
+        };
+        if crate::compact::context_view::is_compact_summary_text(text) {
+            continue;
+        }
+        let text = normalize_ws(text);
+        if text.is_empty() {
+            continue;
+        }
+        prompts.push(clip_head(&text, USER_PROMPT_MAX_CHARS));
+    }
+    // Keep the tail: the latest turns say where the session left off, which is
+    // what a user scanning a resume list is trying to recall.
+    if prompts.len() > USER_PROMPT_LIMIT {
+        prompts.drain(..prompts.len() - USER_PROMPT_LIMIT);
+    }
+    prompts
+}
+
 pub fn collect_search_text(session: &SessionMeta, entries: &[TranscriptEntry]) -> String {
     let mut parts = Vec::new();
     parts.push(session.session_id.clone());
@@ -129,6 +168,17 @@ fn clip_representative(s: &str, max: usize) -> String {
     let start: String = s.chars().take(head).collect();
     let end: String = s.chars().skip(count - tail).collect();
     format!("{start} … {end}")
+}
+
+/// Keep the opening of a body, marking a cut with a trailing ellipsis. Unlike
+/// [`clip_representative`], a single user turn reads top-down: its first
+/// sentence carries the intent, so the tail is what goes.
+fn clip_head(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{head}…")
 }
 
 fn collect_item_text(

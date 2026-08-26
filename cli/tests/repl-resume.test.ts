@@ -9,6 +9,7 @@ import {
   normalizeResumeQuery,
   resolveSessionByPrefix,
   sanitizeSessionTitle,
+  sessionPreviewLines,
 } from '../src/term/app/resume.js'
 import type { SessionMeta, SessionWithText } from '../src/native/index.js'
 
@@ -85,6 +86,49 @@ describe('repl resume helpers', () => {
     expect(items[1]!.searchText).toBe('current full text body')
     expect(items[3]!.searchText).toBe('other full text body')
     expect(items[3]!.contextPrefix).toBe('/other · ')
+  })
+
+  test('session rows carry a preview for the side pane', () => {
+    const items = formatSessionItems(sessions, '/work')
+    expect(items[1]!.preview?.[0]).toBe('cwd session')
+    expect(items[0]!.preview).toBeUndefined()
+  })
+
+  test('sessionPreviewLines states identity on one line', () => {
+    const lines = sessionPreviewLines(sessions[0]!)
+    expect(lines[0]).toBe('cwd session')
+    expect(lines[1]).toBe('m1 · 3 turns · just now')
+    // cwd lives in the group heading and source in the row, so neither is
+    // repeated for a session in the current directory.
+    expect(lines.join('\n')).not.toContain('/work')
+    expect(lines.join('\n')).not.toContain('local')
+  })
+
+  test('sessionPreviewLines adds cwd only for sessions from another directory', () => {
+    expect(sessionPreviewLines(sessions[1]!, { showCwd: true })[1]).toEndWith(' · /other')
+  })
+
+  test('sessionPreviewLines lists user turns under a blank separator', () => {
+    const lines = sessionPreviewLines(sessions[0]!, {
+      userPrompts: ['fix the retry budget', 'now add a test'],
+    })
+
+    expect(lines[2]).toBe('')
+    expect(lines.slice(3)).toEqual(['› fix the retry budget', '› now add a test'])
+  })
+
+  test('sessionPreviewLines omits the separator when no turns are loaded yet', () => {
+    expect(sessionPreviewLines(sessions[0]!, { userPrompts: [] })).toHaveLength(2)
+  })
+
+  test('sessionPreviewLines drops the provider prefix from the model', () => {
+    const session = { ...sessions[0]!, provider: 'anthropic', model: 'claude' }
+    expect(sessionPreviewLines(session)[1]).toStartWith('claude · ')
+  })
+
+  test('sessionPreviewLines falls back to the provider when no model is recorded', () => {
+    const session = { ...sessions[0]!, provider: 'anthropic', model: '' }
+    expect(sessionPreviewLines(session)[1]).toBe('anthropic · 3 turns · just now')
   })
 
   test('resume title shows the portable Ctrl+D delete shortcut', () => {

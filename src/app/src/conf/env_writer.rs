@@ -63,6 +63,53 @@ fn is_managed_key(key: &str) -> bool {
     MANAGED_PREFIXES.iter().any(|p| key.starts_with(p))
 }
 
+pub fn remove_keys(path: &Path, discard: impl Fn(&str) -> bool) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let existing = std::fs::read_to_string(path)
+        .map_err(|e| EvotError::Conf(format!("failed to read {}: {e}", path.display())))?;
+
+    let kept: Vec<&str> = existing
+        .lines()
+        .filter(|line| !active_key(line).is_some_and(&discard))
+        .collect();
+    if kept.len() == existing.lines().count() {
+        return Ok(false);
+    }
+
+    write_atomic(path, &tidy_managed_block(&kept))?;
+    Ok(true)
+}
+
+fn tidy_managed_block(lines: &[&str]) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut in_block = false;
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == BEGIN_MARKER {
+            in_block = true;
+        } else if trimmed == END_MARKER {
+            in_block = false;
+        } else if in_block {
+            let orphan_header = trimmed.starts_with('#')
+                && lines
+                    .get(i + 1)
+                    .is_none_or(|next| active_key(next).is_none());
+            let repeated_blank =
+                trimmed.is_empty() && out.last().is_some_and(|prev| prev.trim().is_empty());
+            if orphan_header || repeated_blank {
+                continue;
+            }
+        }
+        out.push(line);
+    }
+
+    let mut content = out.join("\n");
+    content.push('\n');
+    content
+}
+
 /// Write the given groups into the env file at `path` as a single managed
 /// block, replacing any previous managed block.
 ///

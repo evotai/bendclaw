@@ -56,13 +56,7 @@ async fn sync_models_inner() -> evot::error::Result<evot::auth::ModelsCache> {
 
 #[napi]
 pub fn auth_logout() -> NapiResult<()> {
-    auth::clear_auth().map_err(to_napi)?;
-    if let Ok(path) = auth::models_cache_path() {
-        if path.exists() {
-            std::fs::remove_file(path).map_err(to_napi)?;
-        }
-    }
-    Ok(())
+    auth::logout().map_err(to_napi)
 }
 
 #[napi]

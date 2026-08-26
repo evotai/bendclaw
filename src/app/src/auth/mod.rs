@@ -1,4 +1,5 @@
 pub mod client;
+pub mod logout;
 pub mod store;
 pub mod types;
 
@@ -6,6 +7,8 @@ pub use client::begin_login;
 pub use client::poll_status;
 pub use client::sync_models;
 pub use client::PollOutcome;
+pub use client::DEFAULT_SERVER_URL;
+pub use logout::logout;
 pub use store::auth_file_path;
 pub use store::clear_auth;
 pub use store::load_auth;

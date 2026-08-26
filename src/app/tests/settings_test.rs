@@ -373,3 +373,213 @@ fn persist_default_thinking_level_updates_global_and_masking_override() -> TestR
     std::fs::remove_file(&config.env_file_path)?;
     Ok(())
 }
+
+#[test]
+fn settings_save_works_when_every_provider_is_cloud() -> TestResult {
+    // Fresh install, logged in, no BYOK: the page has nothing editable to send,
+    // so the payload carries an empty provider list and a cloud active name.
+    let mut config = Config::new(std::env::temp_dir());
+    config
+        .providers
+        .insert("evot-free".into(), evot::conf::ProviderProfile {
+            protocol: evot::conf::Protocol::Anthropic,
+            api_key: "evot.scoped.token".into(),
+            base_url: "https://auto.evot.ai/v1/llm".into(),
+            models: vec!["cloud-model".into()],
+            compat_caps: Default::default(),
+            route_capabilities: Default::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    config.cloud_providers.insert("evot-free".into());
+
+    apply_settings(&mut config, &SettingsUpdate {
+        active_provider: "evot-free".into(),
+        thinking_level: Some("high".into()),
+        providers: Vec::new(),
+        feishu: None,
+    })?;
+
+    assert_eq!(config.llm.provider, "evot-free");
+    assert!(config.providers.contains_key("evot-free"));
+    let map = flat(&config_to_env_groups(&config));
+    assert!(!map.contains_key("EVOT_LLM_EVOT_FREE_API_KEY"));
+    Ok(())
+}
+
+fn config_with_cloud_provider() -> Config {
+    let mut config = Config::new(std::env::temp_dir());
+    if let Err(e) = apply_settings(&mut config, &sample_update()) {
+        panic!("apply sample update: {e}");
+    }
+    config
+        .providers
+        .insert("evot-free".into(), evot::conf::ProviderProfile {
+            protocol: evot::conf::Protocol::Anthropic,
+            api_key: "evot.scoped.token".into(),
+            base_url: "https://auto.evot.ai/v1/llm".into(),
+            models: vec!["cloud-model".into()],
+            compat_caps: Default::default(),
+            route_capabilities: Default::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    config.cloud_providers.insert("evot-free".into());
+    config
+}
+
+#[test]
+fn cloud_provider_is_never_written_to_env() {
+    let config = config_with_cloud_provider();
+    let groups = config_to_env_groups(&config);
+    let map = flat(&groups);
+
+    assert!(!map.contains_key("EVOT_LLM_EVOT_FREE_API_KEY"));
+    assert!(!map.contains_key("EVOT_LLM_EVOT_FREE_BASE_URL"));
+    assert!(!map.contains_key("EVOT_LLM_EVOT_FREE_MODEL"));
+    assert!(!groups.iter().any(|g| g.title.contains("evot-free")));
+    assert_eq!(
+        map.get("EVOT_LLM_ANTHROPIC_API_KEY").map(String::as_str),
+        Some("sk-secret-123")
+    );
+}
+
+#[test]
+fn cloud_provider_survives_a_settings_save() -> TestResult {
+    let mut config = config_with_cloud_provider();
+    apply_settings(&mut config, &sample_update())?;
+
+    let cloud = config
+        .providers
+        .get("evot-free")
+        .ok_or("cloud provider dropped by settings save")?;
+    assert_eq!(cloud.api_key, "evot.scoped.token");
+    assert_eq!(cloud.models, vec!["cloud-model"]);
+    assert!(config.providers.contains_key("anthropic"));
+    Ok(())
+}
+
+#[test]
+fn cloud_provider_cannot_be_edited_through_settings() -> TestResult {
+    let mut config = config_with_cloud_provider();
+    let mut update = sample_update();
+    update.providers.push(ProviderSettings {
+        name: "evot-free".into(),
+        protocol: "openai".into(),
+        api_key: Some("attacker-key".into()),
+        base_url: "https://evil.example".into(),
+        models: vec!["ghost".into()],
+        thinking_level: None,
+    });
+    apply_settings(&mut config, &update)?;
+
+    let cloud = config
+        .providers
+        .get("evot-free")
+        .ok_or("cloud provider missing")?;
+    assert_eq!(cloud.base_url, "https://auto.evot.ai/v1/llm");
+    assert_eq!(cloud.api_key, "evot.scoped.token");
+    assert_eq!(cloud.protocol, evot::conf::Protocol::Anthropic);
+    Ok(())
+}
+
+#[test]
+fn cloud_provider_stays_selectable_as_active() -> TestResult {
+    let mut config = config_with_cloud_provider();
+    let mut update = sample_update();
+    update.active_provider = "evot-free".into();
+    apply_settings(&mut config, &update)?;
+
+    assert_eq!(config.llm.provider, "evot-free");
+    let map = flat(&config_to_env_groups(&config));
+    assert_eq!(
+        map.get("EVOT_LLM_PROVIDER").map(String::as_str),
+        Some("evot-free")
+    );
+    assert!(!map.contains_key("EVOT_LLM_EVOT_FREE_API_KEY"));
+    Ok(())
+}
+
+#[test]
+fn saving_settings_cleans_cloud_keys_out_of_an_existing_env_file() -> TestResult {
+    let path = tmp_env_path("selfheal_cloud");
+    std::fs::write(
+        &path,
+        "\
+# >>> evot managed (edited via dashboard) >>>
+
+# Provider: evot-free
+EVOT_LLM_EVOT_FREE_PROTOCOL=anthropic
+EVOT_LLM_EVOT_FREE_API_KEY=evot.scoped.token
+# <<< evot managed <<<
+",
+    )?;
+
+    let config = config_with_cloud_provider();
+    write_grouped(&path, &config_to_env_groups(&config))?;
+
+    let content = std::fs::read_to_string(&path)?;
+    assert!(!content.contains("evot.scoped.token"));
+    assert!(!content.contains("EVOT_LLM_EVOT_FREE_PROTOCOL"));
+    assert!(content.contains("EVOT_LLM_ANTHROPIC_API_KEY=sk-secret-123"));
+
+    std::fs::remove_file(&path)?;
+    Ok(())
+}
+
+#[test]
+fn purge_providers_from_env_removes_stale_cloud_keys() -> TestResult {
+    let path = tmp_env_path("purge_cloud");
+    std::fs::write(
+        &path,
+        "\
+# user note
+EVOT_TELEMETRY_ENDPOINT=http://localhost:3100
+
+# >>> evot managed (edited via dashboard) >>>
+
+# Active selection
+EVOT_LLM_PROVIDER=evot-free
+
+# Provider: evot-free
+EVOT_LLM_EVOT_FREE_PROTOCOL=anthropic
+EVOT_LLM_EVOT_FREE_API_KEY=evot.scoped.token
+
+# Provider: anthropic
+EVOT_LLM_ANTHROPIC_API_KEY=sk-byok
+# <<< evot managed <<<
+EVOT_LLM_EVOT_PRO_OPENAI_API_KEY=evot.other.token
+",
+    )?;
+
+    let purged = evot::conf::purge_providers_from_env(&path, &[
+        "evot-free".to_string(),
+        "evot-pro-openai".to_string(),
+    ])?;
+    assert!(purged);
+
+    let content = std::fs::read_to_string(&path)?;
+    assert!(!content.contains("evot.scoped.token"));
+    assert!(!content.contains("evot.other.token"));
+    assert!(!content.contains("EVOT_LLM_EVOT_FREE_PROTOCOL"));
+    assert!(!content.contains("# Provider: evot-free"));
+    assert!(!content.contains("\n\n\n"));
+    assert!(content.contains("# user note"));
+    assert!(content.contains("EVOT_TELEMETRY_ENDPOINT=http://localhost:3100"));
+    assert!(content.contains("EVOT_LLM_ANTHROPIC_API_KEY=sk-byok"));
+    assert!(content.contains("# Provider: anthropic"));
+    assert!(content.contains("# Active selection"));
+    assert_eq!(content.matches("# >>> evot managed").count(), 1);
+    assert_eq!(content.matches("# <<< evot managed").count(), 1);
+
+    assert!(!evot::conf::purge_providers_from_env(&path, &[
+        "evot-free".to_string()
+    ])?);
+
+    std::fs::remove_file(&path)?;
+    Ok(())
+}

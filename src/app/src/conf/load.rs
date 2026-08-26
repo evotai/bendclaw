@@ -800,6 +800,13 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     }
 
     apply_cloud_provider(&mut config)?;
+    reconcile_cloud_env(&mut config, &env_file_vars);
+
+    if !config.providers.contains_key(&config.llm.provider) {
+        if let Some(first) = config.providers.keys().next() {
+            config.llm.provider = first.clone();
+        }
+    }
 
     // Apply instance isolation: if EVOT_ID is set, redirect fs storage
     if let Some(ref id) = config.id {
@@ -808,6 +815,68 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     }
 
     Ok(config)
+}
+
+fn url_host(url: &str) -> &str {
+    let rest = url
+        .trim()
+        .strip_prefix("https://")
+        .or_else(|| url.trim().strip_prefix("http://"))
+        .unwrap_or_else(|| url.trim());
+    rest.split(['/', '?'])
+        .next()
+        .unwrap_or("")
+        .trim_matches('.')
+}
+
+fn is_cloud_base_url(base_url: &str) -> bool {
+    let host = url_host(base_url);
+    if host.is_empty() {
+        return false;
+    }
+    let default_host = url_host(crate::auth::DEFAULT_SERVER_URL);
+    if host.eq_ignore_ascii_case(default_host) {
+        return true;
+    }
+    std::env::var("EVOT_SERVER_URL")
+        .ok()
+        .is_some_and(|configured| host.eq_ignore_ascii_case(url_host(&configured)))
+}
+
+fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) {
+    let stale: Vec<String> = env_file_vars
+        .iter()
+        .filter_map(|(key, _)| parse_provider_env_key(key).map(|(name, _)| name))
+        .filter(|name| {
+            config.cloud_providers.contains(name)
+                || config
+                    .providers
+                    .get(name)
+                    .is_some_and(|profile| is_cloud_base_url(&profile.base_url))
+        })
+        .collect();
+    if stale.is_empty() {
+        return;
+    }
+
+    for name in &stale {
+        if !config.cloud_providers.contains(name) {
+            config.providers.shift_remove(name);
+        }
+    }
+
+    match crate::conf::purge_providers_from_env(&config.env_file_path, &stale) {
+        Ok(true) => tracing::info!(
+            "removed server-managed provider keys from {}: {}",
+            config.env_file_path.display(),
+            stale.join(", ")
+        ),
+        Ok(false) => {}
+        Err(error) => tracing::warn!(
+            "could not clean server-managed provider keys from {}: {error}",
+            config.env_file_path.display()
+        ),
+    }
 }
 
 /// Register the cloud providers from the models cache when the user is logged
@@ -863,6 +932,7 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             supports_image: None,
         };
         config.providers.insert(name.clone(), profile);
+        config.cloud_providers.insert(name.clone());
         // The server orders its own groups, so the first one it ranks is the
         // landing spot for a fresh install. No tier name is assumed here.
         if primary

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use evot_engine::provider::CompatCaps;
@@ -224,6 +225,7 @@ pub struct Config {
     pub env_file_path: PathBuf,
     /// Server-pushed thinking defaults, keyed by cloud model id.
     pub cloud_thinking_levels: HashMap<String, ThinkingLevel>,
+    pub cloud_providers: HashSet<String>,
 }
 
 impl Config {
@@ -239,6 +241,7 @@ impl Config {
             skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
             cloud_thinking_levels: HashMap::new(),
+            cloud_providers: HashSet::new(),
         }
     }
 

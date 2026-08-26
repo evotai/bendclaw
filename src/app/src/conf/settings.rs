@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use evot_engine::provider::CompatCaps;
 use indexmap::IndexMap;
 
@@ -80,6 +82,9 @@ pub fn config_to_env_groups(config: &Config) -> Vec<EnvGroup> {
     groups.push(global);
 
     for (name, p) in &config.providers {
+        if config.cloud_providers.contains(name) {
+            continue;
+        }
         let seg = provider_to_env_name(name);
         let mut g = EnvGroup::new(format!("Provider: {name}"));
         g.push(format!("EVOT_LLM_{seg}_PROTOCOL"), p.protocol.to_string());
@@ -163,6 +168,9 @@ pub fn apply_settings(config: &mut Config, update: &SettingsUpdate) -> Result<()
                 "provider name '{name}' must not contain ':'"
             )));
         }
+        if config.cloud_providers.contains(&name) {
+            continue;
+        }
         let protocol = parse_protocol(&p.protocol)?;
         let thinking_level = match p.thinking_level.as_deref().filter(|s| !s.is_empty()) {
             Some(level) => Some(thinking_level_from_str(level)?),
@@ -198,6 +206,12 @@ pub fn apply_settings(config: &mut Config, update: &SettingsUpdate) -> Result<()
             max_tokens,
             supports_image,
         });
+    }
+
+    for (name, profile) in &config.providers {
+        if config.cloud_providers.contains(name) {
+            providers.insert(name.clone(), profile.clone());
+        }
     }
 
     let active = update.active_provider.trim().to_lowercase();
@@ -250,6 +264,21 @@ pub fn apply_settings(config: &mut Config, update: &SettingsUpdate) -> Result<()
     Ok(())
 }
 
+pub fn purge_providers_from_env(env_path: &Path, providers: &[String]) -> Result<bool> {
+    if providers.is_empty() {
+        return Ok(false);
+    }
+    let prefixes: Vec<String> = providers
+        .iter()
+        .map(|name| format!("EVOT_LLM_{}_", provider_to_env_name(name)))
+        .collect();
+    crate::conf::env_writer::remove_keys(env_path, |key| {
+        prefixes
+            .iter()
+            .any(|prefix| key.starts_with(prefix.as_str()))
+    })
+}
+
 /// Mask a secret for display: show only the last 4 characters, or an empty
 /// string when unset. Never returns the raw value.
 fn mask_secret(value: &str) -> String {
@@ -277,6 +306,7 @@ pub fn settings_snapshot(config: &Config) -> serde_json::Value {
         .map(|(name, p)| {
             serde_json::json!({
                 "name": name,
+                "cloud": config.cloud_providers.contains(name),
                 "protocol": p.protocol.to_string(),
                 "api_key_set": !p.api_key.trim().is_empty(),
                 "api_key_hint": mask_secret(&p.api_key),

@@ -296,6 +296,18 @@
           const moveUp = i > 0
             ? '<button class="btn ghost small" data-up="' + i + '" title="Make default">↑ Make default</button>'
             : "";
+          if (p.cloud) {
+            return '<div class="provider' + (isActive ? " active-prov" : "") + '" data-i="' + i + '" data-cloud="1">' +
+              '<div class="provider-head"><span class="pname">' + esc(p.name) + "</span>" + defaultBadge +
+              '<span class="badge dim">cloud</span>' +
+              '<span class="spacer"></span>' + moveUp + "</div>" +
+              '<div class="grid cols-2">' +
+              '<div class="field"><label>Protocol</label><input value="' + esc(p.protocol) + '" disabled /></div>' +
+              '<div class="field"><label>Models</label><input value="' + esc(p.models.join(", ")) + '" disabled /></div>' +
+              "</div>" +
+              '<span class="help">Managed by your evot account. Run <code>evot logout</code> to remove.</span>' +
+              "</div>";
+          }
           return '<div class="provider' + (isActive ? " active-prov" : "") + '" data-i="' + i + '">' +
             '<div class="provider-head"><span class="pname">' + esc(p.name) + "</span>" + defaultBadge + keyState +
             '<span class="spacer"></span>' + moveUp +
@@ -352,6 +364,8 @@
         blocks.forEach((el, i) => {
           const p = state.providers[i];
           if (!p) return;
+          // Cloud cards render read-only fields and carry none of the .p-* inputs.
+          if (p.cloud) return;
           p.name = el.querySelector(".p-name").value.trim();
           p.protocol = el.querySelector(".p-protocol").value;
           p.base_url = el.querySelector(".p-base").value.trim();
@@ -365,18 +379,22 @@
 
       function buildPayload() {
         syncFromDom();
-        const providers = state.providers.map((p) => ({
-          name: p.name,
-          protocol: p.protocol,
-          base_url: p.base_url,
-          models: p.models,
-          thinking_level: p.thinking_level,
-          api_key: p._new_key || null,
-        }));
+        // The first provider is the default used for new messages — cloud
+        // providers can hold that slot even though they are not editable here.
+        const active = state.providers.length ? state.providers[0].name : "";
+        const providers = state.providers
+          .filter((p) => !p.cloud)
+          .map((p) => ({
+            name: p.name,
+            protocol: p.protocol,
+            base_url: p.base_url,
+            models: p.models,
+            thinking_level: p.thinking_level,
+            api_key: p._new_key || null,
+          }));
         const newSecret = $("feishu_app_secret").value;
         return {
-          // The first provider is the default used for new messages.
-          active_provider: providers.length ? providers[0].name : "",
+          active_provider: active,
           thinking_level: state.thinking_level || null,
           providers,
           feishu: {

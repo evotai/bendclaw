@@ -324,6 +324,186 @@ fn auth_store_roundtrip() {
     let _ = std::fs::remove_dir_all(&env_home);
 }
 
+const STALE_ENV: &str = "\
+EVOT_LLM_PROVIDER=evot-free
+EVOT_LLM_EVOT_FREE_PROTOCOL=anthropic
+EVOT_LLM_EVOT_FREE_BASE_URL=https://auto.evot.ai/v1/llm
+EVOT_LLM_EVOT_FREE_API_KEY=evot.scoped.key
+EVOT_LLM_ANTHROPIC_API_KEY=sk-byok
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6
+";
+
+#[test]
+fn load_cleans_cloud_keys_out_of_the_env_file_while_logged_in() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-reconcile-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    std::fs::write(env_home.join(".evotai/evot.env"), STALE_ENV).unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    let after = std::fs::read_to_string(env_home.join(".evotai/evot.env"));
+    restore_env_var("HOME", original_home);
+
+    let config = result.unwrap();
+    let content = after.unwrap();
+
+    assert!(!content.contains("evot.scoped.key"));
+    assert!(!content.contains("EVOT_LLM_EVOT_FREE_BASE_URL"));
+    assert!(!content.contains("EVOT_LLM_EVOT_FREE_PROTOCOL"));
+    assert!(content.contains("EVOT_LLM_ANTHROPIC_API_KEY=sk-byok"));
+
+    let free = config.providers.get("evot-free").expect("still registered");
+    assert_eq!(free.base_url, "http://localhost:8787/v1/llm");
+    assert_eq!(free.api_key, "evot.scoped.key");
+    assert!(config.cloud_providers.contains("evot-free"));
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn load_drops_cloud_providers_left_behind_after_logout() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-orphan-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, None, None);
+    std::fs::write(env_home.join(".evotai/evot.env"), STALE_ENV).unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    let after = std::fs::read_to_string(env_home.join(".evotai/evot.env"));
+    restore_env_var("HOME", original_home);
+
+    let config = result.unwrap();
+    assert!(!config.providers.contains_key("evot-free"));
+    assert_eq!(config.llm.provider, "anthropic");
+    assert!(config.active_llm().is_ok());
+
+    let content = after.unwrap();
+    assert!(!content.contains("evot.scoped.key"));
+    assert!(content.contains("EVOT_LLM_ANTHROPIC_API_KEY=sk-byok"));
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn load_leaves_byok_providers_alone() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-byok-keep-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, None, None);
+    std::fs::write(
+        env_home.join(".evotai/evot.env"),
+        "\
+EVOT_LLM_PROVIDER=evot-proxy
+EVOT_LLM_EVOT_PROXY_PROTOCOL=anthropic
+EVOT_LLM_EVOT_PROXY_BASE_URL=https://llm.internal.corp/anthropic
+EVOT_LLM_EVOT_PROXY_API_KEY=sk-corp
+EVOT_LLM_EVOT_PROXY_MODEL=corp-model
+",
+    )
+    .unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    let after = std::fs::read_to_string(env_home.join(".evotai/evot.env"));
+    restore_env_var("HOME", original_home);
+
+    let config = result.unwrap();
+    let proxy = config
+        .providers
+        .get("evot-proxy")
+        .expect("BYOK provider kept despite its evot- prefix");
+    assert_eq!(proxy.api_key, "sk-corp");
+    assert_eq!(config.llm.provider, "evot-proxy");
+    assert!(after
+        .unwrap()
+        .contains("EVOT_LLM_EVOT_PROXY_API_KEY=sk-corp"));
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn load_is_a_no_op_for_a_clean_env_file() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-noop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    let env_path = env_home.join(".evotai/evot.env");
+    let clean = "\
+EVOT_LLM_ANTHROPIC_API_KEY=sk-byok
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6
+";
+    std::fs::write(&env_path, clean).unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    let after = std::fs::read_to_string(&env_path);
+    restore_env_var("HOME", original_home);
+
+    result.unwrap();
+    assert_eq!(after.unwrap(), clean);
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn logout_clears_credentials_and_cache() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-logout-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = auth::logout();
+    let auth_gone = auth::load_auth().map(|state| state.is_none());
+    let cache_gone = auth::load_models_cache().map(|cache| cache.is_none());
+    restore_env_var("HOME", original_home);
+
+    result.expect("logout succeeds");
+    assert!(auth_gone.unwrap());
+    assert!(cache_gone.unwrap());
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn selection_naming_a_missing_provider_falls_back() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-stale-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, None, None);
+    std::fs::write(
+        env_home.join(".evotai/evot.env"),
+        "\
+EVOT_LLM_PROVIDER=evot-free
+EVOT_LLM_ANTHROPIC_API_KEY=sk-byok
+EVOT_LLM_ANTHROPIC_BASE_URL=https://api.anthropic.com
+EVOT_LLM_ANTHROPIC_MODEL=claude-sonnet-4-6
+",
+    )
+    .unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    restore_env_var("HOME", original_home);
+
+    let config = result.unwrap();
+    assert_eq!(config.llm.provider, "anthropic");
+    assert!(config.active_llm().is_ok());
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
 mod wiremock_tests {
     use evot::auth;
     use wiremock::matchers::method;

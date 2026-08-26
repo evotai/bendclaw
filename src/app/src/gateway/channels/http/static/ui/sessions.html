@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sessions · evot</title>
+    <link rel="stylesheet" href="/ui/app.css" />
+    <style>
+      /* Toolbar: search, time filter, and the bulk action for the selection. */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .toolbar .search { flex: 1; min-width: 220px; }
+      .toolbar select { width: auto; min-width: 130px; }
+      .toolbar .count {
+        font-size: 12px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .toolbar .spacer { flex: 1; }
+
+      /* Card grid. Actions are always visible: a hover-only control is a coin
+         flip on touch and invisible to keyboard users. */
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        min-height: 150px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .card:hover { background: var(--fill); }
+      .card.selected { border-color: var(--ink); }
+      .card-top { display: flex; align-items: flex-start; gap: 9px; }
+      .card-top input { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; accent-color: var(--btn); cursor: pointer; }
+      .card-id {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card-id a { color: var(--ink); }
+      .card-acts { display: flex; gap: 5px; flex-shrink: 0; }
+      .iconbtn {
+        width: 26px;
+        height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--muted);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .iconbtn:hover { color: var(--ink); background: var(--fill); }
+      .iconbtn.on { color: var(--amber); border-color: var(--amber); }
+      .iconbtn.del:hover { color: #fff; background: var(--red); border-color: var(--red); }
+
+      .card-title {
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--ink);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .card-body {
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--muted);
+        word-break: break-word;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      /* A search hit shows the whole matched passage rather than a clamp, since
+         the clamp is what hides the reason the row matched. */
+      .card-body.full {
+        display: block;
+        color: var(--ink);
+        white-space: normal;
+      }
+      .card-cwd {
+        font-size: 11px;
+        color: var(--faint);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card-meta {
+        margin-top: auto;
+        padding-top: 9px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--faint);
+        font-variant-numeric: tabular-nums;
+      }
+      mark { background: transparent; color: var(--green-ink); font-weight: 700; }
+
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .pager .btn.active {
+        background: var(--btn);
+        border-color: var(--btn);
+        color: var(--btn-ink);
+      }
+      .pager .info { margin-left: 8px; font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body></body>
+  <script type="module" src="/ui/sessions.js"></script>
+</html>

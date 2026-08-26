@@ -105,7 +105,7 @@ impl Server {
         let addr = format!("{host}:{port}");
         tracing::info!(stage = "server", status = "listening", addr = %addr);
 
-        // Auto-open mission control in browser
+        // Open the console in a browser once the server is up.
         let url = format!("http://{addr}/");
         let _ = std::thread::spawn(move || {
             // Small delay to ensure server is ready

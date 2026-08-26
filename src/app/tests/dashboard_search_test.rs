@@ -248,71 +248,30 @@ async fn delete_session_removes_only_target() -> TestResult {
     Ok(())
 }
 
-/// The dashboard shell is served verbatim via `include_str!`. Guard that the
-/// inline session search stays wired in, since the surrounding React bundle has
-/// no source in-repo to lean on.
+/// The sessions page is served verbatim via `include_str!`, so the behavior it
+/// depends on is guarded here: the endpoints it calls and the affordances the
+/// old dashboard used to provide (search, favorites, paging, bulk cleanup).
 #[test]
-fn dashboard_shell_embeds_search() {
-    let html = include_str!("../src/gateway/channels/http/static/dashboard/index.html");
-    // Inline search bar injected into the "Connected sessions" section.
-    assert!(html.contains("id=\"evot-search-input\""));
-    assert!(html.contains("evot-search-results"));
-    assert!(html.contains("Connected sessions"));
-    assert!(html.contains("/api/sessions"));
-    // Results link to the SPA session route and highlight matches.
-    assert!(html.contains("/sessions/"));
-    assert!(html.contains("evot-hl"));
-    // React's live grid + pagination/sort chrome are hidden via the persistent
-    // takeover stylesheet rule while our own grid is mounted.
-    assert!(html.contains("evot-takeover"));
-    assert!(html.contains(".evot-pagination"));
-    // Detail page exposes a copyable `evot --resume <id>` command.
-    assert!(html.contains("evot-resume-cmd"));
-    assert!(html.contains("evot --resume "));
-    assert!(html.contains("/api/sessions/delete"));
-    // Default card grid: clean card markup with always-visible favorite/delete
-    // actions and the favorites API the dashboard pins and sorts against.
-    assert!(html.contains("evot-session-card"));
-    assert!(html.contains("esc-fav"));
-    assert!(html.contains("esc-del"));
-    assert!(html.contains("deleteOne"));
-    assert!(html.contains("evot-session-pager"));
-    assert!(html.contains("renderPager"));
-    assert!(html.contains("evot-time-filter"));
-    assert!(html.contains("evot-select-filtered"));
-    assert!(html.contains("evot-clean-selected"));
-    assert!(html.contains("matchesTimeFilter"));
-    assert!(html.contains("/api/favorites"));
-    assert!(html.contains("/api/favorites/toggle"));
-    // Session detail page activity readout: summary cards plus scrollable,
-    // expandable activity rows backed by the activity API.
-    assert!(html.contains("evot-activity-panel"));
-    assert!(html.contains("Model"));
-    assert!(html.contains("Current Context"));
-    assert!(html.contains("LLM Calls"));
-    assert!(html.contains("eap-overview"));
-    assert!(html.contains("Token Usage"));
-    assert!(html.contains("Started At"));
-    assert!(html.contains("Last Message"));
-    assert!(html.contains("Total Tokens"));
-    assert!(html.contains("Input / Output"));
-    assert!(html.contains("model"));
-    assert!(html.contains("session_input_tokens"));
-    assert!(html.contains("session_output_tokens"));
-    assert!(html.contains("contextSpark"));
-    assert!(html.contains("Context trend across recent LLM calls"));
-    assert!(html.contains("Peak Context"));
-    assert!(html.contains("Context Compactions"));
-    assert!(!html.contains("Searches</span>"));
-    assert!(html.contains("eap-twist"));
-    assert!(html.contains("eap-filter"));
-    assert!(html.contains("Expand all"));
-    assert!(html.contains("Collapse all"));
-    assert!(html.contains("Trace details"));
-    assert!(html.contains("tool calls & trace"));
-    assert!(html.contains("hideNativeDetailRedundancy"));
-    assert!(html.contains("Activity"));
-    assert!(html.contains("/activity"));
+fn sessions_page_wires_its_endpoints_and_actions() {
+    let js = include_str!("../src/gateway/channels/http/static/ui/sessions.js");
+    // Data sources.
+    assert!(js.contains("/api/sessions"));
+    assert!(js.contains("/api/favorites"));
+    assert!(js.contains("/api/favorites/toggle"));
+    assert!(js.contains("/api/sessions/delete"));
+    assert!(js.contains("/api/vitals"));
+    // Search over the flattened text, with match highlighting.
+    assert!(js.contains("search_text"));
+    assert!(js.contains("function highlight"));
+    assert!(js.contains("<mark>"));
+    // Favorites pin to the front, so a starred session stays reachable.
+    assert!(js.contains("favorites.has"));
+    // Paging, time filtering, and bulk delete.
+    assert!(js.contains("PAGE_SIZE"));
+    assert!(js.contains("matchesTime"));
+    assert!(js.contains("deleteSelected"));
+    // Cards link into the per-session trace.
+    assert!(js.contains("/trace"));
 }
 
 /// The hand-written /chat page exposes the same search affordance.

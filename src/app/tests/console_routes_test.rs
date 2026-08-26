@@ -433,3 +433,98 @@ async fn chat_assets_are_served() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn root_serves_the_sessions_page() -> TestResult {
+    // The React SPA used to own "/". Both it and /sessions now render the same
+    // native page, so an old bookmark and the nav entry agree.
+    for path in ["/", "/sessions"] {
+        let (status, content_type, body) = get(path).await?;
+        assert_eq!(status, StatusCode::OK, "{path} should be reachable");
+        assert!(
+            content_type.starts_with("text/html"),
+            "{path} content-type was {content_type}"
+        );
+        assert!(
+            body.contains("/ui/sessions.js"),
+            "{path} missing its module"
+        );
+        assert!(
+            body.contains("/ui/app.css"),
+            "{path} missing the shell styles"
+        );
+    }
+
+    let (status, content_type, body) = get("/ui/sessions.js").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        content_type.starts_with("text/javascript"),
+        "was {content_type}"
+    );
+    assert!(body.contains("from \"./app.js\""));
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_spa_bundle_is_gone() -> TestResult {
+    // The bundle and its live sockets were only consumed by the deleted SPA.
+    // Leaving the routes behind would keep 1.8MB of assets in the binary.
+    for path in ["/assets/index.js", "/assets/index.css", "/assets/logo.svg"] {
+        let (status, _, _) = get(path).await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path} should be gone");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn vitals_reports_host_gauges() -> TestResult {
+    // The Sessions header reads this once per load, replacing a 2s socket push.
+    let (status, content_type, body) = get("/api/vitals").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("application/json"));
+    let json: serde_json::Value = serde_json::from_str(&body)?;
+    for key in [
+        "cpu_percent",
+        "ram_used",
+        "ram_total",
+        "disk_total",
+        "disk_used",
+    ] {
+        assert!(json.get(key).is_some(), "vitals missing {key}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn trace_page_joins_the_console_shell() -> TestResult {
+    // Reachable at both paths the session cards and old links use.
+    for path in ["/sessions/abc123", "/sessions/abc123/trace"] {
+        let (status, content_type, body) = get(path).await?;
+        assert_eq!(status, StatusCode::OK, "{path} should be reachable");
+        assert!(
+            content_type.starts_with("text/html"),
+            "{path} was {content_type}"
+        );
+        assert!(
+            body.contains("/ui/app.css"),
+            "{path} missing the shell styles"
+        );
+        assert!(
+            body.contains("/ui/chrome.js"),
+            "{path} missing the console chrome"
+        );
+    }
+    let (_, _, body) = get("/sessions/abc123/trace").await?;
+    // The page scrolls normally rather than filling the viewport like chat.
+    assert!(body.contains("data-chrome=\"page\""));
+    // The iframe height protocol existed only for the SPA shell.
+    assert!(
+        !body.contains("postHeight"),
+        "trace still reports iframe height"
+    );
+    assert!(
+        !body.contains("postMessage"),
+        "trace still posts to a parent frame"
+    );
+    Ok(())
+}

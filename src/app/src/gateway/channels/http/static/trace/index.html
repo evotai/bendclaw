@@ -4,40 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Session Trace · evot</title>
+    <link rel="stylesheet" href="/ui/app.css" />
     <style>
+      /* This page predates the console shell and names its own tokens. Rather
+         than rewrite every selector, the local names are rebound to the shared
+         palette, so it inherits the console look and future palette changes
+         reach it too. */
       :root {
-        --bg: #141920;
-        --panel: #1c2230;
-        --panel2: #232b3a;
-        --border: #2d3748;
-        --fg: #e2e8f0;
-        --muted: #7a8599;
+        --bg: #101417;
+        --panel: #171d21;
+        --panel2: #171d21;
+        --border: #ffffff1f;
+        --fg: #e9eeed;
+        --muted: #8b9a9a;
         --accent: #4ade80;
         --accent-dim: rgba(74, 222, 128, 0.12);
         --accent-border: rgba(74, 222, 128, 0.3);
-        --del: #f87171;
-        --cache: #fbbf24;
+        --del: #ff6b60;
+        --cache: #e2a13c;
         --blue: #60a5fa;
         --blue-dim: rgba(96, 165, 250, 0.12);
         --orange: #fb923c;
         --orange-dim: rgba(251, 146, 60, 0.12);
         --purple: #a78bfa;
         --purple-dim: rgba(167, 139, 250, 0.12);
-        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-        --sans: "Inter", system-ui, -apple-system, sans-serif;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: var(--sans);
-        background: var(--bg);
-        color: var(--fg);
-      }
-      .layout { display: flex; gap: 0; height: 580px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); }
-      .list-panel { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: #111720; }
+      .layout { display: flex; gap: 0; height: 580px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg); }
+      .list-panel { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--page, #0a0d10); }
       .list-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); }
       .list-head-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-      .diff-btn { font-size: 10px; font-family: var(--mono); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); cursor: pointer; transition: all .12s; }
+      .diff-btn { font-size: 10px; font-family: var(--mono); padding: 3px 9px; border-radius: 3px; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); cursor: pointer; transition: all .12s; }
       .diff-btn:hover { color: var(--fg); border-color: var(--accent-border); }
       .diff-btn.on { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
       .list {
@@ -48,7 +44,7 @@
       .empty { color: var(--muted); padding: 24px; text-align: center; font-size: 13px; }
       /* trace list items */
       .trace-item {
-        padding: 9px 11px; margin-bottom: 4px; border-radius: 8px;
+        padding: 9px 11px; margin-bottom: 4px; border-radius: 3px;
         border: 1px solid transparent; cursor: pointer; transition: background .1s;
       }
       .trace-item:hover { background: rgba(255,255,255,0.03); }
@@ -58,16 +54,16 @@
       .trace-item-top { display: flex; align-items: center; gap: 8px; }
       .trace-seq { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent); }
       .trace-item-model { font-size: 11px; color: var(--fg); font-weight: 500; }
-      .trace-stop { margin-left: auto; font-size: 9px; padding: 1px 7px; border-radius: 8px; background: var(--panel2); color: var(--muted); text-transform: lowercase; }
+      .trace-stop { margin-left: auto; font-size: 9px; padding: 1px 7px; border-radius: 3px; background: var(--panel2); color: var(--muted); text-transform: lowercase; }
       .trace-stop.tooluse, .trace-stop.tool_use, .trace-stop.tool_calls { background: var(--purple-dim); color: var(--purple); }
       .trace-stop.error { background: rgba(248,113,113,0.12); color: var(--del); }
       .trace-preview { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
       .trace-item-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
       .trace-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
-      .trace-tool-chip { font-family: var(--mono); font-size: 9px; padding: 1px 6px; border-radius: 6px; background: var(--blue-dim); color: var(--blue); }
+      .trace-tool-chip { font-family: var(--mono); font-size: 9px; padding: 1px 6px; border-radius: 3px; background: var(--blue-dim); color: var(--blue); }
 
       /* duration-bar timeline (ported from evot-eval) */
-      .dur-bar { display: flex; height: 22px; margin: 0 0 14px; border-radius: 6px; overflow: hidden; gap: 1px; }
+      .dur-bar { display: flex; height: 22px; margin: 0 0 14px; border-radius: 3px; overflow: hidden; gap: 1px; }
       .dur-seg { position: relative; cursor: pointer; transition: opacity .15s; min-width: 2px; }
       .dur-seg:nth-child(4n+1) { background: #4a5568; }
       .dur-seg:nth-child(4n+2) { background: #5a6a7a; }
@@ -84,7 +80,7 @@
 
       /* span detail */
       .span-detail { font-size: 12px; }
-      .span-time-badge { padding: 8px 14px; margin-bottom: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; font-family: var(--mono); }
+      .span-time-badge { padding: 8px 14px; margin-bottom: 14px; background: var(--panel2); border: 1px solid var(--border); border-radius: 3px; font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; font-family: var(--mono); }
 
       /* three IO sections (INPUT / TOOL RESULTS / OUTPUT), matching evot-eval */
       .io { padding: 16px 0; margin-top: 0; border-top: 1px solid var(--border); }
@@ -95,7 +91,7 @@
       .io-execution .io-title { color: var(--orange); }
       .io-output .io-title { color: var(--accent); }
       .io-meta { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; font-family: var(--mono); }
-      .io-params { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 4px 0 8px; padding: 8px 12px; background: var(--panel2); border-radius: 8px; border: 1px solid var(--border); }
+      .io-params { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 4px 0 8px; padding: 8px 12px; background: var(--panel2); border-radius: 3px; border: 1px solid var(--border); }
       .msg-flow { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
       .msg { margin: 0 0 12px; }
       .msg-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -105,11 +101,11 @@
       .msg-n { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
       .msg-idx { font-family: var(--mono); font-size: 10px; color: var(--muted); opacity: 0.7; }
       .msg-body { padding-left: 12px; border-left: 2px solid var(--border); }
-      .span-reacting { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 8px 12px; background: var(--panel2); border-radius: 8px; border: 1px solid var(--border); }
+      .span-reacting { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 8px 12px; background: var(--panel2); border-radius: 3px; border: 1px solid var(--border); }
       .span-reacting b { color: var(--purple); font-weight: 600; }
 
       /* request envelope folds: system prompt + tool schemas */
-      .req-fold { margin: 6px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); overflow: hidden; }
+      .req-fold { margin: 6px 0; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); overflow: hidden; }
       .req-fold > summary { list-style: none; cursor: pointer; padding: 7px 12px; font-size: 11px; display: flex; align-items: baseline; gap: 8px; }
       .req-fold > summary::-webkit-details-marker { display: none; }
       .req-fold > summary::before { content: '\25B6'; font-size: 9px; color: var(--muted); transition: transform .2s; }
@@ -117,8 +113,8 @@
       .req-fold-title { font-weight: 600; color: var(--accent); text-transform: lowercase; }
       .req-fold-meta { color: var(--muted); font-size: 10px; }
       .req-fold-body { padding: 4px 12px 10px; border-top: 1px solid var(--border); }
-      .req-fold-pre { margin: 8px 0 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; max-height: 360px; overflow: auto; background: var(--panel2); padding: 8px 10px; border-radius: 6px; color: var(--fg); }
-      .tool-def { margin: 8px 0; padding: 8px 10px; background: var(--panel2); border-radius: 6px; }
+      .req-fold-pre { margin: 8px 0 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; max-height: 360px; overflow: auto; background: var(--panel2); padding: 8px 10px; border-radius: 3px; color: var(--fg); }
+      .tool-def { margin: 8px 0; padding: 8px 10px; background: var(--panel2); border-radius: 3px; }
       .tool-def-name { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--blue); }
       .tool-def-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.45; white-space: pre-wrap; }
       .tool-def-params { margin-top: 6px; }
@@ -126,11 +122,11 @@
       .tool-def-params > summary::-webkit-details-marker { display: none; }
       .tool-def-params > summary::before { content: '\25B6'; font-size: 8px; margin-right: 5px; transition: transform .2s; display: inline-block; }
       .tool-def-params[open] > summary::before { transform: rotate(90deg); }
-      .tool-def-params pre { margin: 6px 0 0; font-family: var(--mono); font-size: 10.5px; white-space: pre-wrap; word-break: break-word; line-height: 1.45; max-height: 280px; overflow: auto; background: var(--bg); padding: 8px 10px; border-radius: 6px; color: var(--fg); }
+      .tool-def-params pre { margin: 6px 0 0; font-family: var(--mono); font-size: 10.5px; white-space: pre-wrap; word-break: break-word; line-height: 1.45; max-height: 280px; overflow: auto; background: var(--bg); padding: 8px 10px; border-radius: 3px; color: var(--fg); }
 
       /* overview cards */
       .span-cards { display: flex; flex-wrap: wrap; gap: 10px; }
-      .span-card { padding: 8px 14px; min-width: 90px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+      .span-card { padding: 8px 14px; min-width: 90px; background: var(--panel); border: 1px solid var(--border); border-radius: 3px; }
       .span-card dt { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
       .span-card dd { margin: 3px 0 0; font-family: var(--mono); font-size: 14px; font-weight: 500; color: var(--fg); }
       .span-card dd small { font-size: 10px; color: var(--muted); font-weight: 400; }
@@ -147,13 +143,13 @@
       .cb-thinking pre { color: var(--muted); font-style: italic; background: none; border-left-color: transparent; padding-left: 0; }
 
       /* tool-call rows (collapsed summary + expandable input/result) */
-      .tc-row { margin: 6px 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      .tc-row { margin: 6px 0; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
       .tc-row.tc-open { border-color: var(--accent-border); }
       .tc-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 12px; background: var(--panel); border: none; cursor: pointer; font-size: 12px; color: var(--fg); text-align: left; }
       .tc-head:hover { background: rgba(255,255,255,0.03); }
       .tc-icon { font-size: 13px; flex-shrink: 0; }
       .tc-prefix { font-weight: 600; white-space: nowrap; }
-      .tc-code { font-family: var(--mono); font-size: 11px; background: var(--panel2); padding: 2px 6px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; display: inline-block; vertical-align: middle; color: var(--fg); }
+      .tc-code { font-family: var(--mono); font-size: 11px; background: var(--panel2); padding: 2px 6px; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; display: inline-block; vertical-align: middle; color: var(--fg); }
       .tc-err { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--del); }
       .tc-time { margin-left: auto; font-size: 10px; color: var(--muted); font-family: var(--mono); padding-right: 6px; }
       .tc-chevron { font-size: 10px; color: var(--muted); }
@@ -161,13 +157,13 @@
       .tc-section { margin: 8px 0; }
       .tc-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
       .tc-section-label .tc-err { margin-left: 6px; }
-      .tc-section pre { margin: 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; max-height: 360px; overflow: auto; background: var(--panel2); padding: 8px 10px; border-radius: 6px; color: var(--fg); }
+      .tc-section pre { margin: 0; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; max-height: 360px; overflow: auto; background: var(--panel2); padding: 8px 10px; border-radius: 3px; color: var(--fg); }
       .muted { color: var(--muted); font-size: 12px; }
 
       /* --- Span diff (ported from eval) --- */
       .diff-hint { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
       .diff-head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; font-family: var(--mono); font-size: 12px; }
-      .diff-side { padding: 3px 10px; border-radius: 6px; font-weight: 600; }
+      .diff-side { padding: 3px 10px; border-radius: 3px; font-weight: 600; }
       .diff-side.diff-del { background: rgba(248,113,113,0.12); color: var(--del); }
       .diff-side.diff-add { background: var(--accent-dim); color: var(--accent); }
       .diff-arrow { color: var(--muted); }
@@ -204,7 +200,7 @@
       .sc-collapsible[open] > summary::before { transform: rotate(90deg); }
       .sc-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); display: inline-block; width: 100%; }
 
-      .sc-sequence { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+      .sc-sequence { background: var(--panel); border: 1px solid var(--border); border-radius: 3px; padding: 16px; }
       .sc-seq-grid { display: flex; align-items: flex-start; }
       .sc-seq-labels { width: 90px; flex-shrink: 0; display: flex; flex-direction: column; }
       .sc-seq-label { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
@@ -235,7 +231,7 @@
       .sc-seq-layer.sc-seq-dim { opacity: .15 !important; }
       .sc-seq-layer.sc-seq-highlight { opacity: 1 !important; }
 
-      .sc-table-wrap { overflow: auto; max-height: 520px; border: 1px solid var(--border); border-radius: 12px; }
+      .sc-table-wrap { overflow: auto; max-height: 520px; border: 1px solid var(--border); border-radius: 3px; }
       .sc-table { width: 100%; border-collapse: collapse; font-size: 11px; }
       .sc-table th { text-align: left; padding: 8px 12px; background: var(--panel2); color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
       .sc-table td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
@@ -252,7 +248,16 @@
       .sc-detail-loading { color: var(--muted); font-size: 11px; padding: 6px 0; }
     </style>
   </head>
-  <body>
+  <body data-chrome="page">
+    <div class="page-head">
+      <div>
+        <h1>Session trace</h1>
+        <p class="lede" id="trace-sub"></p>
+      </div>
+      <div class="page-actions">
+        <a class="btn small" href="/sessions">All sessions</a>
+      </div>
+    </div>
     <div class="layout">
       <div class="list-panel">
         <div class="list-head">
@@ -273,6 +278,13 @@
     </details>
     <script>
       const sessionId = decodeURIComponent(location.pathname.split("/")[2] || "");
+
+      // Name the session being viewed. The page is reachable directly, so the
+      // id has to come from the URL rather than a list selection.
+      {
+        const sub = document.getElementById("trace-sub");
+        if (sub) sub.textContent = sessionId || "unknown session";
+      }
 
       // --- tool categories & icons (ported from evot-eval span-renderer) ---
       const TOOL_CATEGORIES = {
@@ -1053,19 +1065,12 @@
         } catch {
           document.getElementById("list").innerHTML = '<div class="empty">Failed to load trace.</div>';
         }
-        postHeight();
       }
 
-      // Report content height to the embedding dashboard so the iframe can grow
-      // to fit the sections below the viewer (no inner scroll truncation).
-      function postHeight() {
-        const h = document.documentElement.scrollHeight;
-        try { parent.postMessage({ type: "evot-trace-height", height: h }, "*"); } catch {}
-      }
-      window.addEventListener("load", postHeight);
-      document.addEventListener("click", () => setTimeout(postHeight, 60));
-      new MutationObserver(() => postHeight()).observe(document.body, { childList: true, subtree: true });
       init();
     </script>
+    <!-- Wraps the console chrome around the markup above. Loaded last so the
+         page's own script has already captured its elements. -->
+    <script type="module" src="/ui/chrome.js"></script>
   </body>
 </html>

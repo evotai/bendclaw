@@ -79,6 +79,8 @@ export interface ModelOption {
   group_label?: string
   /** Where this group sits relative to the others. Cloud models only. */
   group_order?: number
+  /** Catalog rank inside the tier: higher shows earlier. Cloud models only. */
+  sort_order?: number
   /** Present on evot cloud models; carries server-pushed metadata. */
   free?: {
     display_name?: string

@@ -1,305 +1,267 @@
-/* Models page: pick a provider on the left, edit it on the right.
+/* Models settings has two concepts and only two sections:
+ *   Cloud  — account-managed, read-only providers.
+ *   Custom — user-managed providers with an editor.
  *
- * Server contract (GET/POST /api/models): providers arrive ordered, and the
- * first one is the default used for new messages. Secrets are never sent down —
- * only `api_key_set` and a masked hint — so a blank key field on save means
- * "keep what is stored".
- *
- * Cloud providers come from `evot login` and are re-registered from the models
- * cache on every start. They render read-only: editing them here would be
- * silently undone on the next load.
+ * `active_provider` is the authoritative default; provider order is only
+ * presentation. Secrets never arrive from the server, so a blank key field
+ * means keep the stored value.
  */
-import {
-  esc,
-  getJson,
-  mountShell,
-  postJson,
-  setShellCwd,
-  toast,
-} from "./app.js";
+import { esc, getJson, mountShell, postJson, setShellCwd, skeletonHtml, tierLabel, toast } from "./app.js";
 
-/** Server snapshot. Mutated in place as fields are edited, saved as a whole. */
 let state = null;
-/** Name of the provider shown in the editor. */
-let selected = null;
-/** Pending new secrets, keyed by provider name; never populated from a load. */
+let selectedCustom = null;
+/** Cloud default picked but not yet saved; cleared once the save lands. */
+let pendingCloudModel = null;
 const newKeys = new Map();
 
-function isCloud(p) {
-  return p.cloud === true;
+const isCloud = (provider) => provider.cloud === true;
+const customProviders = () => state.providers.filter((provider) => !isCloud(provider));
+const providerByName = (name) => state.providers.find((provider) => provider.name === name) || null;
+const defaultName = () => state.active_provider || "";
+
+function options(values, current) {
+  return values.map((value) =>
+    '<option value="' + esc(value) + '"' + (value === current ? " selected" : "") + ">" +
+    esc(value) + "</option>",
+  ).join("");
 }
 
-function providerByName(name) {
-  return state.providers.find((p) => p.name === name) || null;
+const cloudTiers = () => (Array.isArray(state.cloud_tiers) ? state.cloud_tiers : []);
+
+function modelChips(models) {
+  if (!models.length) return '<span class="model-chip">No models</span>';
+  return models.map((model) => '<span class="model-chip">' + esc(model) + "</span>").join("");
 }
 
-/** The default is positional: whichever provider sits first. */
-function defaultName() {
-  return state.providers.length ? state.providers[0].name : "";
-}
-
-function optionList(values, current) {
-  return values
-    .map(
-      (v) =>
-        '<option value="' + esc(v) + '"' +
-        (v === current ? " selected" : "") +
-        ">" + esc(v) + "</option>",
-    )
-    .join("");
-}
-
-function renderList() {
-  const def = defaultName();
-  return state.providers
-    .map((p) => {
-      const tag = isCloud(p)
-        ? "cloud"
-        : p.api_key_set
-          ? ""
-          : "no key";
-      return (
-        '<button type="button" class="pitem" role="tab" data-name="' +
-        esc(p.name) +
-        '" aria-selected="' +
-        (p.name === selected ? "true" : "false") +
-        '">' +
-        '<span class="dot ' + (isCloud(p) || p.api_key_set ? "on" : "off") + '"></span>' +
-        '<span class="pname">' + esc(p.name) + "</span>" +
-        (p.name === def ? '<span class="tag">default</span>' : "") +
-        (tag ? '<span class="tag">' + esc(tag) + "</span>" : "") +
-        "</button>"
-      );
-    })
-    .join("");
-}
-
-function renderEditor() {
-  const p = providerByName(selected);
-  if (!p) {
-    return '<div class="empty">No provider selected.</div>';
+/**
+ * Cloud directory grouped by catalog tier. The per-protocol provider names the
+ * server splits tiers into never render; each chip carries the provider it is
+ * served by so picking it can persist both halves of the default.
+ */
+function cloudHtml() {
+  const tiers = cloudTiers();
+  if (!tiers.length) {
+    return '<div class="section-empty">No Cloud models. Run <code>evot login</code> to connect your account.</div>';
   }
-  const isDefault = p.name === defaultName();
-  const head =
-    '<div class="editor-head"><h3>' + esc(p.name) + "</h3>" +
-    (isDefault ? '<span class="default-badge">default</span>' : "") +
-    (isCloud(p) ? '<span class="badge">cloud</span>' : "") +
-    '<div class="right">' +
-    (isDefault
-      ? ""
-      : '<button class="btn small" id="makedefault">Set as default</button>') +
-    (isCloud(p)
-      ? ""
-      : '<button class="btn small danger" id="remove">Remove</button>') +
-    "</div></div>";
+  return '<div class="cloud-list">' + tiers.map((group) =>
+    '<div class="cloud-row">' +
+    '<div class="provider-name"><span class="dot on"></span><span>' + esc(tierLabel(group.tier)) + "</span></div>" +
+    '<div class="model-chips">' + group.models.map((model) =>
+      '<button type="button" class="model-chip select' + (model.active ? " active" : "") +
+      '" data-cloud-provider="' + esc(model.provider) +
+      '" data-cloud-model="' + esc(model.id) + '">' + esc(model.id) + "</button>").join("") +
+    "</div></div>").join("") + "</div>";
+}
 
-  if (isCloud(p)) {
-    return (
-      head +
-      '<div class="cloud-note">Managed by your evot account and refreshed on ' +
-      "every start. Run <code>evot logout</code> to remove it.</div>" +
-      '<div class="form">' +
-      '<div class="field"><label>Protocol</label>' +
-      '<input value="' + esc(p.protocol) + '" disabled /></div>' +
-      '<div class="field"><label>Models</label>' +
-      '<input value="' + esc(p.models.join(", ")) + '" disabled /></div>' +
-      "</div>"
-    );
+function customListHtml() {
+  const providers = customProviders();
+  if (!providers.length) return '<div class="section-empty">No custom providers.</div>';
+  return providers.map((provider) =>
+    '<button type="button" class="custom-item" data-custom="' + esc(provider.name) +
+    '" aria-selected="' + (provider.name === selectedCustom ? "true" : "false") + '">' +
+    '<span class="dot ' + (provider.api_key_set ? "on" : "off") + '"></span>' +
+    '<span class="name">' + esc(provider.name) + "</span>" +
+    (provider.name === defaultName()
+      ? '<span class="default-label">Default</span>'
+      : '<span class="state">' + (provider.api_key_set ? "Ready" : "No key") + "</span>") +
+    "</button>",
+  ).join("");
+}
+
+function customEditorHtml() {
+  const provider = providerByName(selectedCustom);
+  if (!provider || isCloud(provider)) {
+    return '<div class="section-empty">Add or select a custom provider to edit it.</div>';
   }
+  const pendingKey = newKeys.get(provider.name) || "";
+  const keyPlaceholder = provider.api_key_set
+    ? "Stored " + provider.api_key_hint + " — leave blank to keep"
+    : "API key";
+  const active = provider.name === defaultName();
 
-  const pendingKey = newKeys.get(p.name);
-  const keyPlaceholder = p.api_key_set
-    ? "stored " + p.api_key_hint + " — leave blank to keep"
-    : "not set";
-
-  return (
-    head +
+  return '<div class="editor-head"><h3>' + esc(provider.name) + "</h3>" +
+    '<div class="actions">' +
+    (active ? '<span class="default-label">Default</span>' : '<button type="button" class="btn small" id="makeDefault">Set default</button>') +
+    '<button type="button" class="btn small danger" id="removeCustom">Remove</button>' +
+    "</div></div>" +
     '<div class="form">' +
-    '<div class="field"><label for="f-name">Name</label>' +
-    '<input id="f-name" value="' + esc(p.name) + '" spellcheck="false" /></div>' +
-    '<div class="field"><label for="f-protocol">Protocol</label>' +
-    '<select id="f-protocol">' + optionList(state.protocols, p.protocol) + "</select></div>" +
-    '<div class="field full"><label for="f-base">Base URL</label>' +
-    '<input id="f-base" value="' + esc(p.base_url) + '" spellcheck="false" /></div>' +
-    '<div class="field full"><label for="f-key">API key</label>' +
-    '<input id="f-key" type="password" autocomplete="off" value="' +
-    esc(pendingKey || "") +
+    '<div class="field"><label for="providerName">Name</label>' +
+    '<input id="providerName" value="' + esc(provider.name) + '" spellcheck="false" /></div>' +
+    '<div class="field"><label for="providerProtocol">Protocol</label>' +
+    '<select id="providerProtocol">' + options(state.protocols, provider.protocol) + "</select></div>" +
+    '<div class="field full"><label for="providerBase">Base URL</label>' +
+    '<input id="providerBase" value="' + esc(provider.base_url) + '" spellcheck="false" placeholder="https://api.example.com/v1" /></div>' +
+    '<div class="field full"><label for="providerKey">API key</label>' +
+    '<input id="providerKey" type="password" autocomplete="off" value="' + esc(pendingKey) +
     '" placeholder="' + esc(keyPlaceholder) + '" />' +
-    '<div class="help">Stored in your env file. Leave blank to keep the current key.</div></div>' +
-    '<div class="field full"><label for="f-models">Models</label>' +
-    '<input id="f-models" value="' + esc(p.models.join(", ")) + '" spellcheck="false" />' +
-    '<div class="help">Comma separated. The first one is used by default.</div></div>' +
-    '<div class="field"><label for="f-thinking">Thinking level</label>' +
-    '<select id="f-thinking"><option value="">use global</option>' +
-    optionList(state.thinking_levels, p.thinking_level || "") +
-    "</select>" +
-    '<div class="help">Overrides the global level for this provider.</div></div>' +
-    "</div>"
-  );
+    '<div class="help">Never shown after save. Leave blank to keep the stored key.</div></div>' +
+    '<div class="field full"><label for="providerModels">Models</label>' +
+    '<input id="providerModels" value="' + esc(provider.models.join(", ")) + '" spellcheck="false" placeholder="model-a, model-b" />' +
+    '<div class="help">Comma separated. The first model is this provider’s default.</div></div>' +
+    '<div class="field"><label for="providerThinking">Thinking override</label>' +
+    '<select id="providerThinking"><option value="">Use global default</option>' +
+    options(state.thinking_levels, provider.thinking_level || "") + "</select></div>" +
+    "</div>";
 }
 
 function render() {
-  const root = document.getElementById("content");
-  root.innerHTML =
-    '<div class="panel"><div class="panel-head"><h3>Global</h3></div>' +
-    '<div class="panel-body"><div class="form">' +
-    '<div class="field"><label for="g-thinking">Thinking level</label>' +
-    '<select id="g-thinking"><option value="">model default</option>' +
-    optionList(state.thinking_levels, state.thinking_level || "") +
-    "</select>" +
-    '<div class="help">Applies to every provider without its own override.</div>' +
-    "</div></div></div></div>" +
-    '<div class="split">' +
-    '<div class="plist"><div class="plist-items" role="tablist">' + renderList() + "</div>" +
-    '<div class="plist-foot"><button class="btn small" id="add">+ Add provider</button></div>' +
-    "</div>" +
-    '<div class="editor" id="editor">' + renderEditor() + "</div>" +
-    "</div>" +
+  const models = cloudTiers().reduce((sum, group) => sum + group.models.length, 0);
+  const tierCount = cloudTiers().length;
+  const customCount = customProviders().length;
+  document.getElementById("content").innerHTML =
+    '<section class="model-section">' +
+    '<div class="section-head"><div class="section-copy"><h2>Cloud</h2>' +
+    '<p>Managed by your evot account. Read-only and refreshed at startup.</p></div>' +
+    '<span class="section-count">' + tierCount + " tier" + (tierCount === 1 ? "" : "s") + " · " +
+      models + " model" + (models === 1 ? "" : "s") + "</span></div>" +
+    cloudHtml() + "</section>" +
+    '<section class="model-section">' +
+    '<div class="section-head"><div class="section-copy"><h2>Custom</h2>' +
+    '<p>Your own API providers, endpoints, keys, and model ids.</p></div>' +
+    '<span class="section-count">' + customCount + " provider" + (customCount === 1 ? "" : "s") + "</span>" +
+    '<button type="button" class="btn small" id="addCustom">+ Add</button></div>' +
+    '<div class="custom-body"><div class="custom-list">' + customListHtml() + "</div>" +
+    '<div class="custom-editor">' + customEditorHtml() + "</div></div>" +
+    "</section>" +
     '<p class="envpath">Saved to <code>' + esc(state.env_file_path) + "</code></p>";
   wire();
 }
 
-/**
- * Copy the editor inputs back into `state`. Called before any action that
- * re-renders or saves, so edits are never lost to a repaint.
- *
- * Cloud providers have no editable inputs, so they are skipped: reading
- * `.value` off absent fields would throw and take the whole save with it.
- */
+/** Copy the visible custom editor into state before any repaint or save. */
 function syncEditor() {
-  const p = providerByName(selected);
-  if (!p || isCloud(p)) return;
-  const name = document.getElementById("f-name");
-  if (!name) return;
+  const provider = providerByName(selectedCustom);
+  const nameInput = document.getElementById("providerName");
+  if (!provider || isCloud(provider) || !nameInput) return;
 
-  const key = document.getElementById("f-key").value;
-  if (key) newKeys.set(p.name, key);
-  else newKeys.delete(p.name);
+  const oldName = provider.name;
+  const key = document.getElementById("providerKey").value;
+  if (key) newKeys.set(oldName, key);
+  else newKeys.delete(oldName);
 
-  const nextName = name.value.trim().toLowerCase();
-  if (nextName && nextName !== p.name) {
-    // Carry a pending secret across the rename so it is not stranded under the
-    // old key when the payload is built.
-    const pending = newKeys.get(p.name);
+  const nextName = nameInput.value.trim().toLowerCase();
+  if (nextName && nextName !== oldName) {
+    const pending = newKeys.get(oldName);
     if (pending !== undefined) {
-      newKeys.delete(p.name);
+      newKeys.delete(oldName);
       newKeys.set(nextName, pending);
     }
-    p.name = nextName;
-    selected = nextName;
+    provider.name = nextName;
+    selectedCustom = nextName;
+    if (state.active_provider === oldName) state.active_provider = nextName;
   }
-
-  p.protocol = document.getElementById("f-protocol").value;
-  p.base_url = document.getElementById("f-base").value.trim();
-  p.models = document
-    .getElementById("f-models")
-    .value.split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-  p.thinking_level = document.getElementById("f-thinking").value || null;
+  provider.protocol = document.getElementById("providerProtocol").value;
+  provider.base_url = document.getElementById("providerBase").value.trim();
+  provider.models = document.getElementById("providerModels").value
+    .split(",").map((model) => model.trim()).filter(Boolean);
+  provider.thinking_level = document.getElementById("providerThinking").value || null;
 }
 
-function syncGlobal() {
-  const g = document.getElementById("g-thinking");
-  if (g) state.thinking_level = g.value || null;
+function syncGlobalThinking() {
+  const select = document.getElementById("globalThinking");
+  if (select) state.thinking_level = select.value || null;
+}
+
+function makeDefault(name) {
+  syncEditor();
+  syncGlobalThinking();
+  if (providerByName(name)) state.active_provider = name;
+  render();
+}
+
+function addCustom() {
+  syncEditor();
+  syncGlobalThinking();
+  let name = "custom";
+  let suffix = 2;
+  while (providerByName(name)) name = "custom-" + suffix++;
+  state.providers.push({
+    name,
+    cloud: false,
+    protocol: state.protocols[0],
+    api_key_set: false,
+    api_key_hint: "",
+    base_url: "",
+    models: [],
+    thinking_level: null,
+  });
+  selectedCustom = name;
+  render();
+}
+
+function removeCustom() {
+  const index = state.providers.findIndex((provider) => provider.name === selectedCustom && !isCloud(provider));
+  if (index < 0) return;
+  const [removed] = state.providers.splice(index, 1);
+  newKeys.delete(removed.name);
+  if (state.active_provider === removed.name) {
+    state.active_provider = state.providers[0]?.name || "";
+  }
+  selectedCustom = customProviders()[0]?.name || null;
+  render();
 }
 
 function wire() {
-  document.querySelectorAll(".pitem").forEach((el) => {
-    el.addEventListener("click", () => {
+  document.querySelectorAll("[data-custom]").forEach((button) => {
+    button.addEventListener("click", () => {
       syncEditor();
-      syncGlobal();
-      selected = el.getAttribute("data-name");
+      syncGlobalThinking();
+      selectedCustom = button.dataset.custom;
       render();
     });
   });
-
-  document.getElementById("add").addEventListener("click", () => {
-    syncEditor();
-    syncGlobal();
-    const base = "new-provider";
-    let name = base;
-    let n = 2;
-    while (providerByName(name)) name = base + "-" + n++;
-    state.providers.push({
-      name,
-      cloud: false,
-      protocol: state.protocols[0],
-      api_key_set: false,
-      api_key_hint: "",
-      base_url: "",
-      models: [],
-      thinking_level: null,
-    });
-    selected = name;
-    render();
+  document.querySelectorAll("[data-default]").forEach((button) => {
+    button.addEventListener("click", () => makeDefault(button.dataset.default));
   });
-
-  const makeDefault = document.getElementById("makedefault");
-  if (makeDefault) {
-    makeDefault.addEventListener("click", () => {
-      syncEditor();
-      syncGlobal();
-      const i = state.providers.findIndex((p) => p.name === selected);
-      if (i > 0) {
-        const [p] = state.providers.splice(i, 1);
-        state.providers.unshift(p);
-      }
-      render();
+  // A cloud chip picks both halves of the default: the tier's provider keeps
+  // serving the request, the model becomes that profile's head.
+  document.querySelectorAll("[data-cloud-model]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (chip.classList.contains("active")) return;
+      state.active_provider = chip.dataset.cloudProvider;
+      pendingCloudModel = chip.dataset.cloudModel;
+      void save();
     });
-  }
-
-  const remove = document.getElementById("remove");
-  if (remove) {
-    remove.addEventListener("click", () => {
-      const i = state.providers.findIndex((p) => p.name === selected);
-      if (i < 0) return;
-      state.providers.splice(i, 1);
-      newKeys.delete(selected);
-      selected = state.providers.length ? state.providers[0].name : null;
-      render();
-    });
-  }
+  });
+  document.getElementById("addCustom").addEventListener("click", addCustom);
+  document.getElementById("makeDefault")?.addEventListener("click", () => makeDefault(selectedCustom));
+  document.getElementById("removeCustom")?.addEventListener("click", removeCustom);
 }
 
-/**
- * Build the payload. Cloud providers are filtered out — they are server-owned —
- * but the active name is read before filtering so a cloud provider can still
- * hold the default slot.
- */
-function buildPayload() {
+function payload() {
   return {
     active_provider: defaultName(),
+    active_model: pendingCloudModel,
     thinking_level: state.thinking_level || null,
-    providers: state.providers
-      .filter((p) => !isCloud(p))
-      .map((p) => ({
-        name: p.name,
-        protocol: p.protocol,
-        base_url: p.base_url,
-        models: p.models,
-        thinking_level: p.thinking_level,
-        api_key: newKeys.get(p.name) || null,
-      })),
+    providers: customProviders().map((provider) => ({
+      name: provider.name,
+      protocol: provider.protocol,
+      base_url: provider.base_url,
+      models: provider.models,
+      thinking_level: provider.thinking_level,
+      api_key: newKeys.get(provider.name) || null,
+    })),
   };
 }
 
 async function save() {
   syncEditor();
-  syncGlobal();
-  const btn = document.getElementById("save");
-  btn.disabled = true;
+  syncGlobalThinking();
+  const button = document.getElementById("saveModels");
+  button.disabled = true;
   try {
-    const res = await postJson("/api/models", buildPayload());
+    const response = await postJson("/api/models", payload());
     newKeys.clear();
-    state = res.models;
-    if (!providerByName(selected)) selected = defaultName() || null;
+    pendingCloudModel = null;
+    state = response.models;
+    if (!providerByName(selectedCustom) || isCloud(providerByName(selectedCustom))) {
+      selectedCustom = customProviders()[0]?.name || null;
+    }
     render();
     toast("Saved");
-  } catch (err) {
-    toast(String(err.message || err), "err");
+  } catch (error) {
+    toast(String(error.message || error), "err");
   } finally {
-    const live = document.getElementById("save");
+    const live = document.getElementById("saveModels");
     if (live) live.disabled = false;
   }
 }
@@ -307,22 +269,32 @@ async function save() {
 async function load() {
   const root = mountShell({
     title: "Models",
-    lede: "Providers the agent can talk to. The first one is used for new messages.",
-    actions: '<button class="btn primary" id="save">Save changes</button>',
+    lede: "Choose account models or configure your own provider.",
+    actions:
+      '<label class="default-thinking">Default thinking <select id="globalThinking"></select></label>' +
+      '<button class="btn primary" id="saveModels">Save changes</button>',
   });
-  root.innerHTML = '<div class="empty">Loading…</div>';
-  // The Save button lives in the shell header, outside the re-rendered content,
-  // so it is wired once here rather than on every render.
-  document.getElementById("save").addEventListener("click", save);
+  root.innerHTML =
+    '<section class="model-section" aria-busy="true">' +
+    '<div class="section-head"><div class="section-copy"><h2>Cloud</h2>' +
+    '<p>Managed by your evot account.</p></div></div>' +
+    skeletonHtml(3, "cloud") + "</section>" +
+    '<section class="model-section" aria-busy="true">' +
+    '<div class="section-head"><div class="section-copy"><h2>Custom</h2>' +
+    '<p>Your own API providers.</p></div></div>' +
+    skeletonHtml(4) + "</section>";
+  document.getElementById("saveModels").addEventListener("click", save);
   try {
     state = await getJson("/api/models");
-    selected = state.active_provider || defaultName() || null;
-    if (!providerByName(selected)) selected = defaultName() || null;
+    selectedCustom = customProviders().find((provider) => provider.name === state.active_provider)?.name ||
+      customProviders()[0]?.name || null;
+    const global = document.getElementById("globalThinking");
+    global.innerHTML = '<option value="">Model default</option>' +
+      options(state.thinking_levels, state.thinking_level || "");
     setShellCwd(state.env_file_path);
     render();
-  } catch (err) {
-    root.innerHTML =
-      '<div class="empty">Could not load models: ' + esc(String(err.message || err)) + "</div>";
+  } catch (error) {
+    root.innerHTML = '<div class="empty">Could not load models: ' + esc(String(error.message || error)) + "</div>";
   }
 }
 

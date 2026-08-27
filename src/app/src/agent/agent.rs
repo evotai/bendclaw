@@ -69,9 +69,15 @@ pub struct QueryRequest {
     pub session_id: Option<String>,
     pub mode: ToolMode,
     pub source: String,
+    /// Optional per-run model snapshot. `submit` fills this from the agent when
+    /// omitted, so every run uses one stable selection across all turns.
+    pub llm: Option<LlmConfig>,
     /// Host-owned tools (ask_user, …) to attach to this run. `None` when the
     /// caller has no host bridge (e.g. gateway/headless callers).
     pub host_tools: Option<HostTools>,
+    /// Workspace for a *new* session. Existing sessions always keep the cwd
+    /// persisted on `SessionMeta`; this field is ignored on resume.
+    pub cwd: Option<String>,
 }
 
 impl QueryRequest {
@@ -83,7 +89,9 @@ impl QueryRequest {
             session_id: None,
             mode: ToolMode::Headless,
             source: String::new(),
+            llm: None,
             host_tools: None,
+            cwd: None,
         }
     }
 
@@ -93,7 +101,9 @@ impl QueryRequest {
             session_id: None,
             mode: ToolMode::Headless,
             source: String::new(),
+            llm: None,
             host_tools: None,
+            cwd: None,
         }
     }
 
@@ -112,6 +122,13 @@ impl QueryRequest {
         self
     }
 
+    /// Pin a resolved model selection to this run. Useful for callers such as
+    /// Chat that expose a per-message model picker.
+    pub fn llm(mut self, llm: LlmConfig) -> Self {
+        self.llm = Some(llm);
+        self
+    }
+
     /// Attach host-owned tools (the host bridge plus its registered specs).
     pub fn host_tools(mut self, host_tools: Option<HostTools>) -> Self {
         self.host_tools = host_tools;
@@ -120,6 +137,14 @@ impl QueryRequest {
 
     pub fn source(mut self, source: impl Into<String>) -> Self {
         self.source = source.into();
+        self
+    }
+
+    /// Bind a workspace directory for a newly created session. Resume always
+    /// keeps the persisted session cwd, so this is a no-op once a session id
+    /// already exists.
+    pub fn cwd(mut self, cwd: impl Into<String>) -> Self {
+        self.cwd = Some(cwd.into());
         self
     }
 }
@@ -199,6 +224,8 @@ pub struct Agent {
     provider_override: RwLock<Option<Arc<dyn evot_engine::provider::StreamProvider>>>,
     /// session_id → (run_id, handle, done_flag)
     active_runs: Arc<parking_lot::Mutex<HashMap<String, ActiveRun>>>,
+    /// Premium landing model for new sessions; None without a special tier.
+    new_session_llm: Option<LlmConfig>,
 }
 
 impl Agent {
@@ -210,6 +237,16 @@ impl Agent {
 
     fn new_inner(config: &Config, cwd: String, storage: Arc<dyn Storage>) -> Result<Self> {
         let system_prompt = format!("You are a helpful assistant. Working directory: {cwd}");
+        // Premium tier wins for fresh sessions; BYOK/Free-only stay None.
+        let new_session_llm = config
+            .preferred_new_session_llm()
+            .and_then(|(provider, model)| {
+                let llm = config.build_llm(&provider, Some(model));
+                if let Err(error) = &llm {
+                    tracing::warn!(%error, "premium landing model unusable; keeping live selection");
+                }
+                llm.ok()
+            });
         Ok(Self {
             llm: RwLock::new(
                 config
@@ -231,6 +268,7 @@ impl Agent {
             sandbox: super::sandbox::SandboxPolicy::from_config(&config.sandbox),
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            new_session_llm,
         })
     }
 
@@ -573,6 +611,26 @@ impl Agent {
         }
     }
 
+    /// Abort the current run for a session and wait until its cleanup callback
+    /// has completed. Returns whether a run was active when the request began.
+    pub async fn abort_run_and_wait_for_completion(&self, session_id: &str) -> Result<bool> {
+        let active = self.has_active_run(session_id);
+        if !active {
+            return Ok(false);
+        }
+        let cancel = tokio_util::sync::CancellationToken::new();
+        match self.abort_run_and_wait(session_id, &cancel).await {
+            AbortRunOutcome::Stopped => Ok(true),
+            AbortRunOutcome::Cancelled => Err(EvotError::Run(
+                "run abort was unexpectedly cancelled".to_string(),
+            )),
+            AbortRunOutcome::TimedOut => Err(EvotError::Run(format!(
+                "active run did not stop within {} seconds",
+                RUN_ABORT_WAIT_TIMEOUT.as_secs()
+            ))),
+        }
+    }
+
     async fn abort_run_and_wait(
         &self,
         session_id: &str,
@@ -646,7 +704,7 @@ impl Agent {
 
     // -- query ---------------------------------------------------------------
 
-    pub async fn submit(self: &Arc<Self>, request: QueryRequest) -> Result<SubmitOutcome> {
+    pub async fn submit(self: &Arc<Self>, mut request: QueryRequest) -> Result<SubmitOutcome> {
         // Session-independent commands are handled before resolve_session,
         // which would otherwise persist an empty session when the caller has
         // no session yet (e.g. `/resume <query>` from a fresh CLI).
@@ -656,8 +714,19 @@ impl Agent {
             let msg = self.handle_resume_search(&query).await?;
             return Ok(SubmitOutcome::Command(msg));
         }
+
+        // Freeze one selection for session metadata and every turn in this run.
+        // Without this snapshot, concurrent callers changing the live model
+        // could make a run start or auto-continue on a different provider.
+        let llm = request.llm.clone().unwrap_or_else(|| self.llm());
+        request.llm = Some(llm.clone());
         let session = self
-            .resolve_session(request.session_id.as_deref(), &request.source)
+            .resolve_session(
+                request.session_id.as_deref(),
+                &request.source,
+                &llm,
+                request.cwd.as_deref(),
+            )
             .await?;
         self.submit_to_session(request, session).await
     }
@@ -844,6 +913,15 @@ impl Agent {
     ) -> Result<Run> {
         let session_id = session.meta().await.session_id.clone();
         let run_id = crate::types::new_id();
+        // `submit_to_session` is also public and may bypass `submit`, so keep a
+        // fallback snapshot here for channel callers that did not pin one.
+        let llm = request.llm.clone().unwrap_or_else(|| self.llm());
+        session
+            .set_model_selection(llm.provider.clone(), llm.model.clone())
+            .await?;
+        session
+            .set_thinking_level(Self::persisted_thinking_level_for(&llm))
+            .await;
 
         // Session-level safety net: abort any existing active run for this session.
         // This ensures no two runs overlap on the same session, regardless of caller
@@ -858,8 +936,8 @@ impl Agent {
             status = "started",
             run_id = %run_id,
             session_id = %session_id,
-            provider = ?self.llm.read().provider,
-            model = %self.llm.read().model,
+            provider = ?llm.provider,
+            model = %llm.model,
         );
 
         // Completion is a one-shot signal, not a polled flag. This avoids a
@@ -886,6 +964,7 @@ impl Agent {
             session: Arc::clone(&session),
             mode: request.mode,
             session_id: session_id.clone(),
+            llm,
             host_tools: request.host_tools.clone(),
         });
 
@@ -933,6 +1012,7 @@ impl Agent {
             sandbox,
             provider_override: _,
             active_runs: _,
+            new_session_llm: _,
         } = self.as_ref();
 
         let forked = Arc::new(Self {
@@ -952,6 +1032,7 @@ impl Agent {
             },
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            new_session_llm: None,
         });
         Ok(ForkedAgent {
             agent: forked,
@@ -963,7 +1044,9 @@ impl Agent {
 
     pub async fn list_sessions(&self, limit: usize) -> Result<Vec<SessionMeta>> {
         let storage = self.storage.read().clone();
-        storage.list_sessions(ListSessions { limit }).await
+        storage
+            .list_sessions(ListSessions { limit, offset: 0 })
+            .await
     }
 
     pub async fn list_sessions_with_text(
@@ -1023,21 +1106,47 @@ impl Agent {
     }
 
     pub async fn create_session(&self, source: &str) -> Result<SessionMeta> {
-        let (provider, model) = {
-            let llm = self.llm.read();
-            (llm.provider.clone(), llm.model.clone())
+        self.create_session_in(source, None).await
+    }
+
+    /// Create a blank session, optionally bound to an explicit workspace.
+    pub async fn create_session_in(
+        &self,
+        source: &str,
+        cwd: Option<String>,
+    ) -> Result<SessionMeta> {
+        self.create_session_with_llm(source, cwd, None).await
+    }
+
+    /// Create a blank session pinned to an explicit (provider, model).
+    async fn create_session_with_llm(
+        &self,
+        source: &str,
+        cwd: Option<String>,
+        llm: Option<(String, String)>,
+    ) -> Result<SessionMeta> {
+        let (provider, model) = match llm {
+            Some(pair) => pair,
+            None => {
+                // Promote the Premium landing so session and runs agree.
+                let live = self.llm.read().clone();
+                match self.new_session_llm.as_ref() {
+                    Some(p) if p.provider != live.provider || p.model != live.model => {
+                        *self.llm.write() = p.clone();
+                        (p.provider.clone(), p.model.clone())
+                    }
+                    _ => (live.provider.clone(), live.model.clone()),
+                }
+            }
         };
         let storage = self.storage.read().clone();
         let id = crate::types::new_id();
-        let session = Session::new_with_provider_source(
-            id,
-            self.cwd.clone(),
-            provider,
-            model,
-            source,
-            storage,
-        )
-        .await?;
+        let dir = match cwd {
+            Some(path) => canonical_workspace(&path)?,
+            None => self.cwd.clone(),
+        };
+        let session =
+            Session::new_with_provider_source(id, dir, provider, model, source, storage).await?;
         Ok(session.meta().await)
     }
 
@@ -1085,8 +1194,9 @@ impl Agent {
 
     // -- private -------------------------------------------------------------
 
-    fn build_system_prompt(&self, mode: ToolMode) -> (String, Vec<Section>) {
+    fn build_system_prompt(&self, mode: ToolMode, cwd: &str) -> (String, Vec<Section>) {
         let mut sections = self.system_prompt_sections.read().clone();
+        bind_workspace_sections(&mut sections, cwd);
 
         let ctx = DynamicContext {
             mode: prompt_mode(mode),
@@ -1143,8 +1253,16 @@ impl Agent {
     ) -> Result<String> {
         let session_id = session.session_id().await;
         // build_turn runs the full per-turn assembly (tools, skills).
+        let llm = self.llm();
         let turn = self
-            .build_turn(mode, Arc::clone(session), &session_id, Vec::new(), None)
+            .build_turn(
+                &llm,
+                mode,
+                Arc::clone(session),
+                &session_id,
+                Vec::new(),
+                None,
+            )
             .await?;
 
         let dump = build_prompt_dump(mode, &turn);
@@ -1179,12 +1297,12 @@ impl Agent {
         &self,
         session_id: Option<&str>,
         source: &str,
+        llm: &LlmConfig,
+        cwd: Option<&str>,
     ) -> Result<Arc<Session>> {
-        let (provider, model) = {
-            let llm = self.llm.read();
-            (llm.provider.clone(), llm.model.clone())
-        };
-        let thinking_level = self.persisted_thinking_level();
+        let provider = llm.provider.clone();
+        let model = llm.model.clone();
+        let thinking_level = Self::persisted_thinking_level_for(llm);
         let storage = self.storage.read().clone();
         let session = match session_id {
             Some(id) => match Session::open(id, storage.clone()).await? {
@@ -1195,7 +1313,7 @@ impl Agent {
                 None => {
                     Session::new_with_provider_source(
                         id.to_string(),
-                        self.cwd.clone(),
+                        Self::create_cwd(cwd, &self.cwd)?,
                         provider,
                         model,
                         source,
@@ -1208,7 +1326,7 @@ impl Agent {
                 let id = crate::types::new_id();
                 Session::new_with_provider_source(
                     id,
-                    self.cwd.clone(),
+                    Self::create_cwd(cwd, &self.cwd)?,
                     provider,
                     model,
                     source,
@@ -1230,29 +1348,35 @@ impl Agent {
     /// (e.g. a config-set level the model rejects). Resume restores this
     /// snapshot over the config default, so gating on membership keeps the
     /// metadata meaningful.
-    fn persisted_thinking_level(&self) -> Option<String> {
-        let level = self.llm.read().thinking_level;
-        if self.supported_thinking_levels().contains(&level) {
+    fn persisted_thinking_level_for(llm: &LlmConfig) -> Option<String> {
+        let level = llm.thinking_level;
+        if Self::supported_thinking_levels_for(llm).contains(&level) {
             Some(level.as_str().to_string())
         } else {
             None
         }
     }
 
+    fn create_cwd(requested: Option<&str>, fallback: &str) -> Result<String> {
+        match requested {
+            Some(path) => canonical_workspace(path),
+            None => Ok(fallback.to_string()),
+        }
+    }
+
     async fn build_turn(
         &self,
+        llm: &LlmConfig,
         mode: ToolMode,
         session: Arc<Session>,
         session_id: &str,
         input: Vec<evot_engine::Content>,
         host_tools: Option<HostTools>,
     ) -> Result<runtime::TurnInput> {
-        let llm = self.llm.read().clone();
+        let llm = llm.clone();
         if llm.provider.is_empty() {
             return Err(EvotError::Conf(
-                "No LLM provider configured. Add one in the dashboard settings \
-                 or set EVOT_LLM_PROVIDER and the matching EVOT_LLM_*_API_KEY \
-                 in your env file."
+                "No model available yet. Log in via the dashboard sidebar, run `evot login` here, or add a provider on the Models page."
                     .to_string(),
             ));
         }
@@ -1270,7 +1394,8 @@ impl Agent {
             .unwrap_or_default();
         // Build path guard from sandbox policy. System dirs cover skill scan
         // directories plus the memory vault used by the builtin memory skill.
-        let cwd_path = std::path::Path::new(&self.cwd);
+        let cwd = session.meta().await.cwd;
+        let cwd_path = std::path::Path::new(&cwd);
         let skill_dirs = self.skills_dirs.read().clone();
         let selected_skill_names = self.skill_names.read().clone();
         let skills = load_turn_skills(&skill_dirs, selected_skill_names.as_deref())?;
@@ -1294,7 +1419,7 @@ impl Agent {
             host_tools,
         );
 
-        let (mut system_prompt, mut sections) = self.build_system_prompt(mode);
+        let (mut system_prompt, mut sections) = self.build_system_prompt(mode, &cwd);
         if let Some(section) = skills_prompt_section(&skills) {
             let insert_at = sections
                 .iter()
@@ -1354,6 +1479,7 @@ struct AgentTurnFactory {
     session: Arc<Session>,
     mode: ToolMode,
     session_id: String,
+    llm: LlmConfig,
     host_tools: Option<HostTools>,
 }
 
@@ -1362,6 +1488,7 @@ impl TurnFactory for AgentTurnFactory {
     async fn build(&self, input: Vec<evot_engine::Content>) -> Result<runtime::TurnInput> {
         self.agent
             .build_turn(
+                &self.llm,
                 self.mode,
                 Arc::clone(&self.session),
                 &self.session_id,
@@ -1628,6 +1755,70 @@ fn resolve_dump_path(target: Option<&str>) -> Result<PathBuf> {
         .join(".evotai")
         .join("dumps")
         .join(format!("prompt-{stamp}.json")))
+}
+
+fn canonical_workspace(cwd: &str) -> Result<String> {
+    let path = crate::conf::paths::expand_home_path(cwd.trim())?;
+    if path.as_os_str().is_empty() {
+        return Err(EvotError::Conf("workspace path must not be empty".into()));
+    }
+    let metadata = std::fs::metadata(&path).map_err(|error| {
+        EvotError::Conf(format!(
+            "workspace '{}' is not accessible: {error}",
+            path.display()
+        ))
+    })?;
+    if !metadata.is_dir() {
+        return Err(EvotError::Conf(format!(
+            "workspace '{}' is not a directory",
+            path.display()
+        )));
+    }
+    let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+fn bind_workspace_sections(sections: &mut Vec<Section>, cwd: &str) {
+    use crate::agent::prompt::SystemPrompt;
+    for section in sections.iter_mut() {
+        match section.name {
+            "environment" => section.text = SystemPrompt::environment_text(cwd),
+            "project_context" => {
+                section.text = SystemPrompt::project_context_text(cwd).unwrap_or_default();
+            }
+            _ => {}
+        }
+    }
+    if !sections.iter().any(|section| section.name == "environment") {
+        let insert_at = sections
+            .iter()
+            .position(|section| section.name == "dynamic_boundary")
+            .unwrap_or(sections.len());
+        sections.insert(insert_at, Section {
+            name: "environment",
+            text: SystemPrompt::environment_text(cwd),
+        });
+    }
+    if let Some(text) = SystemPrompt::project_context_text(cwd) {
+        if let Some(section) = sections
+            .iter_mut()
+            .find(|section| section.name == "project_context")
+        {
+            if section.text.is_empty() {
+                section.text = text;
+            }
+        } else {
+            let insert_at = sections
+                .iter()
+                .position(|section| matches!(section.name, "environment" | "dynamic_boundary"))
+                .unwrap_or(sections.len());
+            sections.insert(insert_at, Section {
+                name: "project_context",
+                text,
+            });
+        }
+    }
+    sections.retain(|section| !(section.name == "project_context" && section.text.is_empty()));
 }
 
 // ---------------------------------------------------------------------------

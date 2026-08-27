@@ -514,10 +514,15 @@ impl Storage for FsStorage {
         }
 
         sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        if params.limit > 0 {
-            sessions.truncate(params.limit);
-        }
-        Ok(sessions)
+        Ok(sessions
+            .into_iter()
+            .skip(params.offset)
+            .take(if params.limit == 0 {
+                usize::MAX
+            } else {
+                params.limit
+            })
+            .collect())
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<bool> {
@@ -624,7 +629,9 @@ impl Storage for FsStorage {
     }
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
-        let sessions = self.list_sessions(ListSessions { limit }).await?;
+        let sessions = self
+            .list_sessions(ListSessions { limit, offset: 0 })
+            .await?;
         let mut result = Vec::with_capacity(sessions.len());
 
         for session in &sessions {

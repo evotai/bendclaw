@@ -12,6 +12,61 @@ export function esc(value) {
 }
 
 let toastTimer = 0;
+let loadBarCount = 0;
+let loadBarEl = null;
+let loadBarHide = 0;
+
+function loadBar() {
+  if (!loadBarEl || !document.body.contains(loadBarEl)) {
+    const el = document.createElement("div");
+    el.className = "load-bar";
+    el.setAttribute("aria-hidden", "true");
+    loadBarEl = el;
+  }
+  // Keep the bar a direct child of body: page chrome relocates existing
+  // children, and a nested bar can be clipped by overflow:hidden regions.
+  if (loadBarEl.parentNode !== document.body) document.body.appendChild(loadBarEl);
+  return loadBarEl;
+}
+
+/** Top-of-window refresh bar, shared by every in-flight JSON request. */
+export function beginLoad() {
+  loadBarCount += 1;
+  const el = loadBar();
+  window.clearTimeout(loadBarHide);
+  el.className = "load-bar on";
+}
+
+export function endLoad() {
+  loadBarCount = Math.max(0, loadBarCount - 1);
+  if (loadBarCount > 0) return;
+  const el = loadBar();
+  el.className = "load-bar done";
+  loadBarHide = window.setTimeout(() => {
+    if (loadBarCount === 0) el.className = "load-bar";
+  }, 220);
+}
+
+/** Shimmer rows matching the admin skeleton. */
+export function skeletonHtml(rows = 5, kind = "line") {
+  if (kind === "form") {
+    return '<div class="panel" aria-busy="true">' +
+      '<div class="panel-body">' +
+      Array.from({ length: rows }, () =>
+        '<div class="sk-row"><span class="sk mid"></span></div>' +
+        '<div class="sk-row"><span class="sk wide"></span></div>',
+      ).join("") +
+      "</div></div>";
+  }
+  if (kind === "cloud") {
+    return Array.from({ length: rows }, () =>
+      '<div class="sk-row"><span class="sk mid"></span><span class="sk wide"></span></div>',
+    ).join("");
+  }
+  return Array.from({ length: rows }, () =>
+    '<div class="sk-row"><span class="sk wide"></span><span class="sk narrow"></span></div>',
+  ).join("");
+}
 
 /**
  * Show a transient message. `kind` may be "err" to render it as a failure.
@@ -34,9 +89,14 @@ export function toast(message, kind) {
 
 /** GET JSON, throwing on a non-2xx so callers can use one catch path. */
 export async function getJson(url) {
-  const res = await fetch(url, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+  beginLoad();
+  try {
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  } finally {
+    endLoad();
+  }
 }
 
 /**
@@ -44,22 +104,28 @@ export async function getJson(url) {
  * a 4xx, so the message is lifted out of the body when present — a bare status
  * code would hide why a save was rejected.
  */
-export async function postJson(url, body) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  let data = null;
+export async function postJson(url, body, opts) {
+  beginLoad();
   try {
-    data = await res.json();
-  } catch {
-    data = null;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      ...(opts || {}),
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok || (data && data.ok === false)) {
+      throw new Error((data && data.error) || "HTTP " + res.status);
+    }
+    return data;
+  } finally {
+    endLoad();
   }
-  if (!res.ok || (data && data.ok === false)) {
-    throw new Error((data && data.error) || "HTTP " + res.status);
-  }
-  return data;
 }
 
 /** Mark the sidenav entry whose href matches the current path. */
@@ -76,10 +142,9 @@ export function markActiveNav() {
    change instead of copies drifting apart. Every entry must resolve to a real
    route: a dead nav item is worse than a missing one.
 
-   "/" is still the React dashboard, so it is labelled for what it shows today
-   rather than for the Overview page that will replace it. */
+   The console's home is Chat; the sessions list folded into it and "/"
+   redirects there, so no nav row points at either. */
 const NAV = [
-  { href: "/", name: "Sessions" },
   { href: "/chat", name: "Chat" },
   { href: "/models", name: "Models" },
   { href: "/feishu", name: "Feishu" },
@@ -197,4 +262,18 @@ export function relTime(iso) {
   const days = Math.floor(secs / 86400);
   if (days < 30) return days + "d ago";
   return new Date(then).toLocaleDateString();
+}
+
+/* Catalog tier → display name. THE single copy: the Models page's Cloud rows
+   and the Chat composer's optgroups both render server tier ids through this,
+   so a relabel lands everywhere at once and the per-protocol provider names
+   (evot-pro-anthropic, …) never reach either surface. Unknown tiers degrade to
+   Title Case of the raw id, so a new server-side tier groups fine on its own
+   instead of vanishing or leaking enum soup. */
+const TIER_LABELS = { base: "Evot Free", special: "Evot Premium" };
+
+export function tierLabel(tier) {
+  const key = String(tier || "").trim().toLowerCase();
+  if (!key) return "";
+  return TIER_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
 }

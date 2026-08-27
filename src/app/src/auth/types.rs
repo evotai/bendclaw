@@ -51,6 +51,10 @@ pub struct FreeModelOption {
     /// servers, or when the catalog leaves the client's current effort alone.
     #[serde(default)]
     pub thinking_level: String,
+    /// Display rank within its provider group (lower shows earlier). Zero on
+    /// older servers, which keeps the catalog's own order.
+    #[serde(default)]
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

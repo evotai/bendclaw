@@ -149,8 +149,21 @@ async fn memory_storage_list_sessions() -> TestResult {
         .save_session(SessionMeta::new("s2".into(), "/tmp".into(), "m".into()))
         .await?;
 
-    let sessions = storage.list_sessions(ListSessions { limit: 10 }).await?;
+    let sessions = storage
+        .list_sessions(ListSessions {
+            limit: 10,
+            offset: 0,
+        })
+        .await?;
     assert_eq!(sessions.len(), 2);
+
+    let page = storage
+        .list_sessions(ListSessions {
+            limit: 1,
+            offset: 1,
+        })
+        .await?;
+    assert_eq!(page.len(), 1);
     Ok(())
 }
 

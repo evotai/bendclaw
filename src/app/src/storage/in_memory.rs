@@ -69,11 +69,18 @@ impl Storage for MemoryStorage {
             .lock()
             .ok()
             .map(|map| {
+                // Newest first, matching the fs backend's ordering.
                 let mut sessions: Vec<_> = map.values().cloned().collect();
-                if params.limit > 0 {
-                    sessions.truncate(params.limit);
-                }
+                sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
                 sessions
+                    .into_iter()
+                    .skip(params.offset)
+                    .take(if params.limit == 0 {
+                        usize::MAX
+                    } else {
+                        params.limit
+                    })
+                    .collect()
             })
             .unwrap_or_default();
         Ok(result)
@@ -184,18 +191,9 @@ impl Storage for MemoryStorage {
     }
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
-        let sessions: Vec<SessionMeta> = self
-            .sessions
-            .lock()
-            .ok()
-            .map(|map| {
-                let mut s: Vec<_> = map.values().cloned().collect();
-                if limit > 0 {
-                    s.truncate(limit);
-                }
-                s
-            })
-            .unwrap_or_default();
+        let sessions = self
+            .list_sessions(ListSessions { limit, offset: 0 })
+            .await?;
 
         let entries: Vec<TranscriptEntry> = self
             .entries

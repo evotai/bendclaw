@@ -165,16 +165,30 @@ impl SystemPrompt {
     pub fn with_environment_static(mut self) -> Self {
         self.sections.push(Section {
             name: "environment",
-            text: format!("Current working directory: {}", self.cwd),
+            text: Self::environment_text(&self.cwd),
         });
         self
     }
 
+    pub fn environment_text(cwd: &str) -> String {
+        format!("Current working directory: {cwd}")
+    }
+
     /// Load project context from well-known files and preserve each source path.
     pub fn with_project_context(mut self) -> Self {
+        if let Some(text) = Self::project_context_text(&self.cwd) {
+            self.sections.push(Section {
+                name: "project_context",
+                text,
+            });
+        }
+        self
+    }
+
+    pub fn project_context_text(cwd: &str) -> Option<String> {
         let mut files = Vec::new();
         for name in PROJECT_CONTEXT_FILES {
-            let path = Path::new(&self.cwd).join(name);
+            let path = Path::new(cwd).join(name);
             if let Ok(content) = std::fs::read_to_string(&path) {
                 let content = content.trim();
                 if !content.is_empty() {
@@ -182,27 +196,23 @@ impl SystemPrompt {
                 }
             }
         }
-        if !files.is_empty() {
-            let mut context = String::from(
-                "<project_context>\n\nProject-specific instructions and guidelines:\n\n",
-            );
-            for (index, (path, content)) in files.iter().enumerate() {
-                if index > 0 {
-                    context.push('\n');
-                }
-                context.push_str(&format!(
-                    "<project_instructions path=\"{}\">\n{}\n</project_instructions>\n",
-                    path.display(),
-                    content
-                ));
-            }
-            context.push_str("\n</project_context>");
-            self.sections.push(Section {
-                name: "project_context",
-                text: context,
-            });
+        if files.is_empty() {
+            return None;
         }
-        self
+        let mut context =
+            String::from("<project_context>\n\nProject-specific instructions and guidelines:\n\n");
+        for (index, (path, content)) in files.iter().enumerate() {
+            if index > 0 {
+                context.push('\n');
+            }
+            context.push_str(&format!(
+                "<project_instructions path=\"{}\">\n{}\n</project_instructions>\n",
+                path.display(),
+                content
+            ));
+        }
+        context.push_str("\n</project_context>");
+        Some(context)
     }
 
     /// Consume the builder and produce the final prompt string.

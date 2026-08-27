@@ -80,6 +80,11 @@ fn cloud_provider_registered_and_default_when_no_byok() {
         Some(evot_engine::ThinkingLevel::Max)
     );
     assert!(!config.cloud_thinking_levels.contains_key("m-one"));
+    // Tiers land beside the levels so the console can group by them.
+    assert_eq!(
+        config.cloud_model_tiers.get("m-two").map(String::as_str),
+        Some("base")
+    );
 
     let _ = std::fs::remove_dir_all(&env_home);
 }
@@ -146,16 +151,19 @@ const MULTI_CACHE_JSON: &str = r#"{
        "default_model":"claude-free","models":["claude-free"]},
       {"name":"evot-free-openai","label":"Evot Free","sort_order":0,"protocol":"openai",
        "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
-       "default_model":"gpt-free","models":["gpt-free","gpt-free-mini"]},
+       "default_model":"gpt-free","models":["gpt-free-mini","aardvark-openai","gpt-free"]},
       {"name":"evot-pro","label":"Evot Premium","sort_order":1,"protocol":"anthropic",
        "base_url":"http://localhost:8787/v1/llm","api_key":"evot.scoped.key",
-       "default_model":"claude-pro","models":["claude-pro"]}
+       "default_model":"claude-pro","models":["aaa-pro","zzz-pro","claude-pro"]}
     ],
     "models": [
       {"id":"claude-free","protocol":"anthropic","tier":"base","provider":"evot-free"},
-      {"id":"gpt-free","protocol":"openai","tier":"base","provider":"evot-free"},
-      {"id":"gpt-free-mini","protocol":"openai","tier":"base","provider":"evot-free"},
-      {"id":"claude-pro","protocol":"anthropic","tier":"special","provider":"evot-pro"}
+      {"id":"gpt-free","protocol":"openai","tier":"base","provider":"evot-free-openai","sort_order":2},
+      {"id":"gpt-free-mini","protocol":"openai","tier":"base","provider":"evot-free-openai","sort_order":7},
+      {"id":"aardvark-openai","protocol":"openai","tier":"base","provider":"evot-free-openai","sort_order":3},
+      {"id":"claude-pro","protocol":"anthropic","tier":"special","provider":"evot-pro"},
+      {"id":"aaa-pro","protocol":"anthropic","tier":"special","provider":"evot-pro","sort_order":5},
+      {"id":"zzz-pro","protocol":"anthropic","tier":"special","provider":"evot-pro","sort_order":1}
     ],
     "notices": []
   }
@@ -183,15 +191,52 @@ fn each_cloud_protocol_becomes_its_own_provider() {
         .get("evot-free-openai")
         .expect("openai group registered");
     assert_eq!(compat.protocol.to_string(), "openai");
-    assert_eq!(compat.models.first().unwrap(), "gpt-free");
+    // The head is the server default; the rest preserves the catalog's own
+    // rank-descending array. Ranking at merge points re-sorts by sort_order,
+    // so the profile only has to stay faithful to the wire.
+    assert_eq!(compat.models, vec![
+        "gpt-free".to_string(),
+        "gpt-free-mini".to_string(),
+        "aardvark-openai".to_string()
+    ]);
 
     let pro = config.providers.get("evot-pro").expect("pro registered");
     assert_eq!(pro.protocol.to_string(), "anthropic");
-    assert_eq!(pro.models, vec!["claude-pro".to_string()]);
+    assert_eq!(pro.models, vec![
+        "claude-pro".to_string(),
+        "aaa-pro".to_string(),
+        "zzz-pro".to_string()
+    ]);
 
-    // The lowest sort_order is where a fresh install lands, never the granted
-    // tier. Ordering comes from the server, not from the provider name.
-    assert_eq!(config.llm.provider, "evot-free");
+    // Premium (`special`) wins the landing spot when the account has it.
+    // Lowest sort_order is only the fallback when every group is Free.
+    assert_eq!(config.llm.provider, "evot-pro");
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+/// A persisted Free selection from an old env file is not honored past a
+/// Premium landing spot: the TUI footer and every new session derive from
+/// this in-memory value at startup, before any session exists.
+#[test]
+fn persisted_free_selection_yields_to_premium_at_load() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-yield-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(MULTI_CACHE_JSON));
+    std::fs::write(
+        env_home.join(".evotai/evot.env"),
+        "EVOT_LLM_PROVIDER=evot-free\n",
+    )
+    .unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    restore_env_var("HOME", original_home);
+    let config = result.unwrap();
+
+    assert_eq!(config.llm.provider, "evot-pro");
 
     let _ = std::fs::remove_dir_all(&env_home);
 }

@@ -13,7 +13,7 @@
  *   then: ansiToHtml → self-contained HTML (+ optional Chrome PNG)
  */
 
-import { mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { homedir } from 'os'
 import chalk from 'chalk'
@@ -862,34 +862,38 @@ async function tryChromeScreenshot(
   const userDataDir = join(dirname(pngPath), `.chrome-shot-${process.pid}-${port}`)
   mkdirSync(userDataDir, { recursive: true })
 
-  const proc = Bun.spawn(
-    [
-      chrome,
-      '--headless=new',
-      '--disable-gpu',
-      '--hide-scrollbars',
-      '--no-first-run',
-      '--no-default-browser-check',
-      `--user-data-dir=${userDataDir}`,
-      `--remote-debugging-port=${port}`,
-      `--window-size=${size.width},${Math.max(size.height, 600)}`,
-      '--force-device-scale-factor=1',
-      'about:blank',
-    ],
-    { stdout: 'ignore', stderr: 'pipe' },
-  )
-
+  let proc: ReturnType<typeof Bun.spawn> | undefined
   try {
+    proc = Bun.spawn(
+      [
+        chrome,
+        '--headless=new',
+        '--disable-gpu',
+        '--hide-scrollbars',
+        '--no-first-run',
+        '--no-default-browser-check',
+        `--user-data-dir=${userDataDir}`,
+        `--remote-debugging-port=${port}`,
+        `--window-size=${size.width},${Math.max(size.height, 600)}`,
+        '--force-device-scale-factor=1',
+        ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
+        'about:blank',
+      ],
+      { stdout: 'ignore', stderr: 'pipe' },
+    )
     const wsUrl = await waitForChromeWs(port, 8000)
     if (!wsUrl) return undefined
     onProgress?.('capturing_png')
     const ok = await captureViaCdp(wsUrl, fileUrl, pngPath, size.width)
     return ok ? pngPath : undefined
   } catch {
+    // Missing Chrome, sandbox, or CDP failure must not fail the HTML export.
     return undefined
   } finally {
-    proc.kill()
-    try { await proc.exited } catch { /* ignore */ }
+    if (proc) {
+      proc.kill()
+      try { await proc.exited } catch { /* ignore */ }
+    }
     try {
       const { rmSync } = await import('fs')
       rmSync(userDataDir, { recursive: true, force: true })
@@ -1026,20 +1030,71 @@ async function captureViaCdp(
   }
 }
 
-function resolveChromeBinary(): string | null {
-  const candidates = [
-    process.env.EVOT_CHROME,
-    process.env.CHROME_PATH,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+export interface ResolveChromeBinaryOptions {
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  which?: (command: string) => string | null | undefined
+  exists?: (path: string) => boolean
+}
+
+function isFilesystemPath(candidate: string): boolean {
+  return (
+    candidate.startsWith('/') ||
+    candidate.startsWith('.') ||
+    candidate.includes('/') ||
+    candidate.includes('\\') ||
+    /^[A-Za-z]:/.test(candidate)
+  )
+}
+
+/** First existing Chrome/Chromium binary. Linux servers must not inherit the macOS .app path. */
+export function resolveChromeBinary(opts: ResolveChromeBinaryOptions = {}): string | null {
+  const env = opts.env ?? process.env
+  const platform = opts.platform ?? process.platform
+  const which = opts.which ?? ((command: string) => Bun.which(command))
+  const exists = opts.exists ?? existsSync
+
+  const candidates: Array<string | undefined> = [
+    env.EVOT_CHROME,
+    env.CHROME_PATH,
+  ]
+  if (platform === 'darwin') {
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+    )
+  } else if (platform === 'win32') {
+    candidates.push(
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    )
+  } else {
+    candidates.push(
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+      '/opt/google/chrome/chrome',
+    )
+  }
+  candidates.push(
     'google-chrome',
     'google-chrome-stable',
     'chromium',
     'chromium-browser',
-  ]
-  for (const c of candidates) {
-    if (!c) continue
-    return c
+    'chrome',
+  )
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    if (isFilesystemPath(candidate)) {
+      if (exists(candidate)) return candidate
+      continue
+    }
+    const resolved = which(candidate)
+    if (resolved) return resolved
   }
   return null
 }

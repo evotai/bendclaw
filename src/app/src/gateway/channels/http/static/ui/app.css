@@ -1,14 +1,9 @@
 /* Shared shell for the evot local console: topbar, sidenav, panels, forms.
    One stylesheet backs every page so navigation never changes typeface,
-   spacing, or color.
-
-   Flat by construction: 1px borders do the layering, not shadows, and radii
-   stay at 3px. Surfaces step --page -> --bg -> --fill, so a panel reads as
-   raised without a drop shadow.
-
-   Fonts are system stacks on purpose. The console is served from localhost and
-   is expected to work offline; a webfont @import would block first paint on a
-   disconnected machine for no visual gain at these sizes. */
+   spacing, or color. Type, skeleton bars, and the top refresh bar match the
+   evot-server admin so the two surfaces read as one product. IBM Plex Mono
+   is loaded by each document (same <link> as admin), not via @import, so a
+   slow font host cannot block this stylesheet. */
 
 :root {
   color-scheme: dark;
@@ -29,17 +24,19 @@
   --red-line: #ff6b6040;
   --red-fill: #ff6b6014;
   --amber: #e2a13c;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+  --sk: #1d2429;
+  --sk-hi: #273037;
+  --font: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --mono: var(--font);
+  --sans: var(--font);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: var(--page); color: var(--ink); }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  font-family: var(--mono);
+  font-family: var(--font);
   font-size: 13px;
   line-height: 1.5;
   min-height: 100vh;
@@ -205,6 +202,69 @@ html.fill, html.fill body { height: 100%; overflow: hidden; }
 .panel-foot .right { margin-left: auto; display: flex; gap: 8px; }
 .hint { font-size: 12.5px; color: var(--muted); }
 .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+
+/* ---- skeleton (admin shimmer) ---- */
+.sk {
+  display: block;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--sk);
+  background-image: linear-gradient(90deg, var(--sk) 0, var(--sk-hi) 40%, var(--sk) 80%);
+  background-size: 220px 100%;
+  background-repeat: no-repeat;
+  animation: sk-shimmer 1.15s ease-in-out infinite;
+}
+.sk.wide { width: 82%; }
+.sk.mid { width: 58%; }
+.sk.narrow { width: 34%; }
+.sk + .sk { margin-top: 7px; }
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 8px 10px;
+}
+.sk-row .sk { margin: 0; }
+.sk-row .sk.wide { flex: 1; width: auto; }
+.sk-row .sk.narrow { width: 42px; flex-shrink: 0; }
+@keyframes sk-shimmer {
+  0% { background-position: -220px 0; }
+  100% { background-position: calc(100% + 220px) 0; }
+}
+
+/* Top-of-window refresh bar. Nested fetches share one bar via a counter. */
+.load-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+  height: 2px;
+  width: 0;
+  background: var(--green-ink);
+  box-shadow: 0 0 8px var(--green-ink);
+  pointer-events: none;
+  opacity: 0;
+}
+.load-bar.on {
+  opacity: 1;
+  animation: load-bar-run 1.15s ease-in-out infinite;
+}
+.load-bar.done {
+  width: 100%;
+  animation: none;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+@keyframes load-bar-run {
+  0% { width: 0; }
+  50% { width: 70%; }
+  100% { width: 92%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk, .load-bar.on { animation: none; }
+  .load-bar.on { width: 92%; }
+}
 
 /* ---- stats ---- */
 .stats {

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
+use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::Html;
 use axum::response::IntoResponse;
 use axum::response::Redirect;
@@ -22,6 +25,8 @@ use crate::conf::ModelSettings;
 use crate::error::EvotError;
 use crate::error::Result;
 use crate::gateway::channels::http::stream;
+use crate::types::ListSessions;
+use crate::types::SessionMeta;
 
 const INDEX_HTML: &str = include_str!("static/index.html");
 
@@ -34,12 +39,11 @@ const MODELS_JS: &str = include_str!("static/ui/models.js");
 const FEISHU_HTML: &str = include_str!("static/ui/feishu.html");
 const FEISHU_JS: &str = include_str!("static/ui/feishu.js");
 const CHAT_CSS: &str = include_str!("static/ui/chat.css");
+const CHAT_JS: &str = include_str!("static/ui/chat.js");
 const CHROME_JS: &str = include_str!("static/ui/chrome.js");
+const BRAND_ICON: &[u8] = include_bytes!("static/brand/icon.png");
 
-/// Static asset responses. Explicit content types: the router serves these from
-/// memory, so nothing else infers one from a file extension. `no-cache` lets a
-/// reload pick up a rebuilt binary's assets instead of pairing new markup with a
-/// stale cached script.
+/// Static assets: explicit content types; `no-cache` keeps markup/script in sync.
 fn css(body: &'static str) -> impl IntoResponse {
     (
         [
@@ -60,11 +64,11 @@ fn js(body: &'static str) -> impl IntoResponse {
     )
 }
 
-/// `0` means no limit in the storage layer. The dashboard owns pagination, so
-/// `/api/sessions` should return every saved session rather than an arbitrary
-/// first page.
+/// `0` = no limit: the full-text index wants every session.
 const SESSION_SEARCH_LIMIT: usize = 0;
 
+/// Sidebar page size for `/api/sessions`.
+const SESSION_PAGE_SIZE: usize = 30;
 /// Cap on ids accepted per `/api/sessions/delete` call. Bounds the work a single
 /// request can trigger; the UI never selects more than the listed pool anyway.
 const MAX_DELETE_BATCH: usize = 200;
@@ -74,6 +78,42 @@ struct ChatRequest {
     message: String,
     #[serde(default)]
     session_id: Option<String>,
+    /// Optional runtime selection from the Chat composer. Both provider and
+    /// model are required together; the choice is validated before a run starts.
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    thinking_level: Option<String>,
+    /// Workspace for a *new* session. Resume always keeps the persisted cwd.
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct AbortChatRequest {
+    session_id: String,
+}
+
+/// Mid-run message for the active run, delivered at the next interruption
+/// point.
+#[derive(Deserialize)]
+struct SteerChatRequest {
+    session_id: String,
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct NewChatRequest {
+    /// Workspace to bind the new session to; defaults to the server cwd.
+    #[serde(default)]
+    cwd: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct WorkspaceRequest {
+    path: String,
 }
 
 #[derive(Deserialize)]
@@ -86,11 +126,62 @@ struct ToggleFavoriteRequest {
     id: String,
 }
 
+/// Query params for the session list. The sidebar pages through lightweight
+/// rows; full transcript text rides only an explicit `full=1`, which is the
+/// search dialog's lazy one-shot index build.
+#[derive(Deserialize)]
+struct SessionListParams {
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    full: bool,
+}
+
 pub struct Server {
     agent: Arc<Agent>,
     /// The live, mutable runtime config. Shared so the settings API can read a
     /// masked snapshot and apply edits in place, then persist to the env file.
     config: Arc<RwLock<Config>>,
+    /// Newest-first session snapshot: page slices, never per-page rescans.
+    recent_cache: parking_lot::Mutex<Option<(std::time::Instant, Vec<SessionMeta>)>>,
+    /// Device login in progress (start until poll settles).
+    login: parking_lot::Mutex<Option<PendingLogin>>,
+}
+
+/// A device login the dashboard started and the poll endpoint settles.
+#[derive(Clone)]
+struct PendingLogin {
+    base_url: String,
+    code: String,
+    expires_at: i64,
+}
+
+/// Snapshot freshness window; new/delete also invalidate explicitly.
+const RECENT_CACHE_TTL: std::time::Duration = std::time::Duration::from_millis(750);
+
+/// Empty New-chat drafts never appear in listings; resume-by-id still works.
+fn not_draft(meta: &SessionMeta) -> bool {
+    meta.turns > 0 || meta.title.is_some()
+}
+
+/// Stable per-device id for the login handshake, mirroring the CLI recipe.
+fn device_fingerprint() -> String {
+    let host = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    format!(
+        "{host}:{}:{}:{user}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+    .chars()
+    .take(64)
+    .collect()
 }
 
 impl Server {
@@ -98,33 +189,14 @@ impl Server {
         Arc::new(Self {
             agent,
             config: Arc::new(RwLock::new(config)),
+            recent_cache: parking_lot::Mutex::new(None),
+            login: parking_lot::Mutex::new(None),
         })
     }
 
     pub async fn start(self: Arc<Self>, host: String, port: u16) -> Result<()> {
         let addr = format!("{host}:{port}");
         tracing::info!(stage = "server", status = "listening", addr = %addr);
-
-        // Open the console in a browser once the server is up.
-        let url = format!("http://{addr}/");
-        let _ = std::thread::spawn(move || {
-            // Small delay to ensure server is ready
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            #[cfg(target_os = "macos")]
-            {
-                let _ = std::process::Command::new("open").arg(&url).spawn();
-            }
-            #[cfg(target_os = "linux")]
-            {
-                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let _ = std::process::Command::new("cmd")
-                    .args(["/C", "start", &url])
-                    .spawn();
-            }
-        });
 
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
@@ -153,8 +225,92 @@ impl Server {
                 ),
             )
             .route(
+                "/api/chat/abort",
+                post(
+                    |State(server): State<Arc<Server>>,
+                     Json(req): Json<AbortChatRequest>| async move {
+                        server.abort_chat(req).await
+                    },
+                ),
+            )
+            .route(
+                "/api/chat/new",
+                post(
+                    |State(server): State<Arc<Server>>, body: Option<Json<NewChatRequest>>| async move {
+                        server.new_chat(body.map(|Json(req)| req)).await
+                    },
+                ),
+            )
+            .route(
+                "/api/chat/steer",
+                post(
+                    |State(server): State<Arc<Server>>,
+                     Json(req): Json<SteerChatRequest>| async move {
+                        server.steer_chat(req)
+                    },
+                ),
+            )
+            .route(
+                "/api/chat/options",
+                get(|State(server): State<Arc<Server>>| async move { server.chat_options() }),
+            )
+            .route(
+                "/api/workspace",
+                get(|State(server): State<Arc<Server>>| async move { server.workspace() }).post(
+                    |State(server): State<Arc<Server>>,
+                     Json(req): Json<WorkspaceRequest>| async move {
+                        server.resolve_workspace(req)
+                    },
+                ),
+            )
+            .route(
+                "/api/sessions/{id}",
+                get(
+                    |State(server): State<Arc<Server>>, Path(id): Path<String>| async move {
+                        server.session_detail(&id).await
+                    },
+                ),
+            )
+            .route(
                 "/api/sessions",
-                get(|State(server): State<Arc<Server>>| async move { server.sessions().await }),
+                get(
+                    |State(server): State<Arc<Server>>,
+                     Query(params): Query<SessionListParams>| async move {
+                        server.sessions(params).await
+                    },
+                ),
+            )
+            .route(
+                "/brand/icon.png",
+                get(|| async {
+                    (
+                        [
+                            ("content-type", "image/png"),
+                            ("cache-control", "public, max-age=604800"),
+                        ],
+                        BRAND_ICON,
+                    )
+                }),
+            )
+            .route(
+                "/api/auth/session",
+                get(|State(server): State<Arc<Server>>| async move { server.auth_session() }),
+            )
+            .route(
+                "/api/auth/login/start",
+                post(|State(server): State<Arc<Server>>| async move { server.login_start().await }),
+            )
+            .route(
+                "/api/auth/login/poll",
+                get(|State(server): State<Arc<Server>>| async move { server.login_poll().await }),
+            )
+            .route(
+                "/api/auth/logout",
+                post(|State(server): State<Arc<Server>>| async move { server.auth_logout().await }),
+            )
+            .route(
+                "/api/notices",
+                get(|State(server): State<Arc<Server>>| async move { server.notices() }),
             )
             .route(
                 "/api/sessions/delete",
@@ -201,11 +357,16 @@ impl Server {
             .route("/ui/app.css", get(|| async { css(UI_CSS) }))
             .route("/ui/chat.css", get(|| async { css(CHAT_CSS) }))
             .route("/ui/app.js", get(|| async { js(UI_JS) }))
+            .route("/ui/chat.js", get(|| async { js(CHAT_JS) }))
             .route("/ui/chrome.js", get(|| async { js(CHROME_JS) }))
             .route("/ui/models.js", get(|| async { js(MODELS_JS) }))
             .route("/ui/feishu.js", get(|| async { js(FEISHU_JS) }))
             // Kept so existing links and bookmarks still land somewhere useful
             // now that provider and channel config have their own pages.
+            // The console's front door is Chat. Sessions management folds
+            // into Chat (recent list + search); /sessions remains a direct
+            // link for bookmarks and the trace viewer.
+            .route("/", get(|| async { Redirect::to("/chat") }))
             .route("/settings", get(|| async { Redirect::permanent("/models") }))
             .with_state(self)
             .merge(dashboard)
@@ -315,25 +476,63 @@ impl Server {
         Ok(())
     }
 
-    /// Returns recent sessions, each with a flattened `search_text` field
-    /// (id, title, cwd, model plus transcript snippets) so the chat UI can do
-    /// client-side substring filtering and highlight matches, mirroring the
-    /// terminal `/resume` selector.
-    async fn sessions(&self) -> impl IntoResponse {
-        match self
-            .agent
-            .list_sessions_with_text(SESSION_SEARCH_LIMIT)
-            .await
-        {
-            Ok(sessions) => Json(sessions).into_response(),
-            Err(e) => {
-                tracing::warn!("chat: failed to list sessions with text: {e}");
-                (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to list sessions",
-                )
-                    .into_response()
+    /// Newest-first rows for slicing, from a snapshot; zero-turn drafts stay hidden.
+    async fn recent_snapshot(&self) -> Result<Vec<SessionMeta>> {
+        if let Some((at, rows)) = self.recent_cache.lock().as_ref() {
+            if at.elapsed() < RECENT_CACHE_TTL {
+                return Ok(rows.clone());
             }
+        }
+        let all = self
+            .agent
+            .storage()
+            .list_sessions(ListSessions {
+                limit: 0,
+                offset: 0,
+            })
+            .await?;
+        let rows: Vec<SessionMeta> = all.into_iter().filter(not_draft).collect();
+        *self.recent_cache.lock() = Some((std::time::Instant::now(), rows.clone()));
+        Ok(rows)
+    }
+
+    fn invalidate_recent_cache(&self) {
+        *self.recent_cache.lock() = None;
+    }
+
+    /// Paged session list for the sidebar. `limit`/`offset` page lightweight
+    /// rows (no transcript text) so opening the console costs one small
+    /// request no matter how many sessions exist; scrolling asks for the next
+    /// page. `full=1` returns every row with the flattened `search_text`
+    /// (transcript snippets included) — only the search dialog requests that,
+    /// once, when it first opens.
+    async fn sessions(&self, params: SessionListParams) -> impl IntoResponse {
+        let failed = |e| {
+            tracing::warn!("chat: failed to list sessions: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list sessions",
+            )
+                .into_response()
+        };
+        if params.full {
+            // Search pays for transcript text; the sidebar never does.
+            return match self.agent.list_sessions_with_text(SESSION_SEARCH_LIMIT).await
+            {
+                Ok(rows) => Json(serde_json::json!({
+                    "items": rows.into_iter().filter(|row| not_draft(&row.session)).collect::<Vec<_>>()
+                }))
+                .into_response(),
+                Err(e) => failed(e),
+            };
+        }
+        match self.recent_snapshot().await {
+            Ok(all) => {
+                let offset = params.offset.unwrap_or(0).min(all.len());
+                let end = (offset + params.limit.unwrap_or(SESSION_PAGE_SIZE)).min(all.len());
+                Json(serde_json::json!({ "items": &all[offset..end] })).into_response()
+            }
+            Err(e) => failed(e),
         }
     }
 
@@ -379,6 +578,9 @@ impl Server {
                 tracing::warn!("failed to prune deleted sessions from favorites: {e}");
             }
         }
+        if deleted > 0 {
+            self.invalidate_recent_cache();
+        }
         Json(serde_json::json!({
             "deleted": deleted,
             "requested": req.ids.len(),
@@ -420,8 +622,516 @@ impl Server {
         }
     }
 
+    /// Runtime model directory for the Chat composer. Unlike `/api/models`,
+    /// this is about choosing a model for the next run, so it includes each
+    /// model's actual supported thinking levels and the agent's live selection.
+    fn chat_options(&self) -> impl IntoResponse {
+        let config = self.config.read();
+        let current = self.agent.llm();
+        let providers: Vec<serde_json::Value> = config
+            .providers
+            .iter()
+            .map(|(name, profile)| {
+                let models: Vec<serde_json::Value> = profile
+                    .models
+                    .iter()
+                    .filter_map(|model| {
+                        match config.build_llm(name, Some(model.clone())) {
+                            Ok(llm) => {
+                                let thinking_levels = if llm.model_config.reasoning() {
+                                    llm.model_config
+                                        .supported_thinking_levels()
+                                        .iter()
+                                        .map(|level| level.as_str())
+                                        .collect::<Vec<_>>()
+                                } else {
+                                    Vec::new()
+                                };
+                                // The effective default after the catalog map
+                                // and model metadata resolve: the composer
+                                // preselects this when the user switches to
+                                // the model.
+                                let mut entry = serde_json::json!({
+                                    "id": model,
+                                    "thinking_levels": thinking_levels,
+                                    "sort_order": config.cloud_model_sorts.get(model).copied().unwrap_or(0),
+                                });
+                                if !thinking_levels.is_empty() {
+                                    entry["default_thinking_level"] =
+                                        serde_json::json!(llm.thinking_level.as_str());
+                                }
+                                Some(entry)
+                            }
+                            Err(error) => {
+                                tracing::warn!(provider = %name, model = %model, %error, "chat: model omitted from directory");
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+                serde_json::json!({
+                    "name": name,
+                    "cloud": config.cloud_providers.contains(name),
+                    // Tier of the group's head model, so the composer can
+                    // label cloud optgroups like the Models page does
+                    // (Evot Free / Evot Premium) instead of exposing the
+                    // per-protocol provider names.
+                    "tier": profile
+                        .models
+                        .first()
+                        .and_then(|m| config.cloud_model_tiers.get(m))
+                        .cloned()
+                        .unwrap_or_default(),
+                    "models": models,
+                })
+            })
+            .collect();
+
+        Json(serde_json::json!({
+            "current": {
+                "provider": current.provider,
+                "model": current.model,
+                "thinking_level": current.thinking_level.as_str(),
+            },
+            "providers": providers,
+        }))
+    }
+
+    /// Validate and atomically apply the composer's runtime selection. The
+    /// Models page owns persisted defaults; Chat only changes the running agent
+    /// and the session metadata stamped by the next submit.
+    fn apply_chat_selection(&self, req: &ChatRequest) -> Result<crate::conf::LlmConfig> {
+        let (provider, model) = match (&req.provider, &req.model) {
+            (None, None) => return Ok(self.agent.llm()),
+            (Some(provider), Some(model)) => (provider, model),
+            _ => {
+                return Err(EvotError::Conf(
+                    "chat model selection requires both provider and model".into(),
+                ));
+            }
+        };
+
+        let config = self.config.read();
+        let profile = config
+            .providers
+            .get(provider)
+            .ok_or_else(|| EvotError::Conf(format!("provider '{provider}' is not configured")))?;
+        if !profile.models.iter().any(|configured| configured == model) {
+            return Err(EvotError::Conf(format!(
+                "model '{model}' is not configured for provider '{provider}'"
+            )));
+        }
+
+        let mut llm = config.build_llm(provider, Some(model.clone()))?;
+        if let Some(name) = req.thinking_level.as_deref() {
+            let level = crate::conf::thinking_level_from_str(name)?;
+            let supported = llm.model_config.supported_thinking_levels();
+            if !supported.contains(&level) {
+                return Err(EvotError::Conf(format!(
+                    "thinking level '{name}' is not supported by {provider}/{model}"
+                )));
+            }
+            llm.thinking_level = level;
+        }
+        drop(config);
+        self.agent.set_llm(llm.clone());
+        Ok(llm)
+    }
+
+    // -- account (login / notices) ------------------------------------------
+
+    /// Who the sidebar shows; `logged_in: false` renders the login row.
+    fn auth_session(&self) -> impl IntoResponse {
+        match crate::auth::load_auth() {
+            Ok(Some(state)) => Json(serde_json::json!({
+                "logged_in": true,
+                "name": state.user.name,
+                "email": state.user.email,
+            }))
+            .into_response(),
+            Ok(None) => Json(serde_json::json!({ "logged_in": false })).into_response(),
+            Err(e) => {
+                tracing::warn!("auth session read failed: {e}");
+                Json(serde_json::json!({ "logged_in": false })).into_response()
+            }
+        }
+    }
+
+    /// Start a device login; the poll endpoint settles it in place.
+    async fn login_start(&self) -> impl IntoResponse {
+        let fingerprint = device_fingerprint();
+        let base_url = crate::auth::client::DEFAULT_SERVER_URL;
+        match crate::auth::begin_login(base_url, &fingerprint).await {
+            Ok(code) => {
+                *self.login.lock() = Some(PendingLogin {
+                    base_url: base_url.to_string(),
+                    code: code.code.clone(),
+                    expires_at: code.expires_at,
+                });
+                Json(serde_json::json!({
+                    "login_url": code.login_url,
+                    "code": code.code,
+                    "interval_ms": code.interval_ms,
+                }))
+                .into_response()
+            }
+            Err(e) => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    /// Settle the pending login: persist auth, sync the catalog, hot-reload.
+    async fn login_poll(&self) -> impl IntoResponse {
+        let pending = self.login.lock().clone();
+        let Some(pending) = pending else {
+            return Json(serde_json::json!({ "status": "idle" })).into_response();
+        };
+        match crate::auth::poll_status(&pending.base_url, &pending.code, pending.expires_at).await {
+            Ok(crate::auth::PollOutcome::Pending) => {
+                Json(serde_json::json!({ "status": "pending" })).into_response()
+            }
+            Ok(crate::auth::PollOutcome::Expired) => {
+                *self.login.lock() = None;
+                Json(serde_json::json!({ "status": "expired" })).into_response()
+            }
+            Ok(crate::auth::PollOutcome::Denied) => {
+                *self.login.lock() = None;
+                Json(serde_json::json!({ "status": "denied" })).into_response()
+            }
+            Ok(crate::auth::PollOutcome::Success { user }) => {
+                *self.login.lock() = None;
+                let sync = async {
+                    crate::auth::save_auth(&user)?;
+                    let response = crate::auth::sync_models(&user).await?;
+                    // The cache file is what config loading reads to register
+                    // the cloud providers; skipping it makes login a no-op.
+                    crate::auth::save_models_cache(&crate::auth::ModelsCache {
+                        synced_at: chrono::Utc::now().timestamp_millis(),
+                        response,
+                    })?;
+                    Ok::<(), crate::error::EvotError>(())
+                };
+                // Strictly ordered: the reload reads the cache file that the
+                // sync just wrote, so these can never run concurrently.
+                let sync = sync.await;
+                let reload = self.reload_after_auth_change();
+                match (sync, reload) {
+                    (Ok(()), Ok(_)) => {
+                        let providers = self
+                            .config
+                            .read()
+                            .providers
+                            .iter()
+                            .filter(|(name, _)| self.config.read().cloud_providers.contains(*name))
+                            .count();
+                        Json(serde_json::json!({
+                            "status": "success",
+                            "name": user.user.name,
+                            "email": user.user.email,
+                            "providers": providers,
+                        }))
+                        .into_response()
+                    }
+                    (Ok(()), Err(e)) => Json(serde_json::json!({
+                        "status": "success",
+                        "name": user.user.name,
+                        "email": user.user.email,
+                        "reload_error": e.to_string(),
+                    }))
+                    .into_response(),
+                    (Err(e), _) => (
+                        axum::http::StatusCode::BAD_GATEWAY,
+                        Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+                    )
+                        .into_response(),
+                }
+            }
+            Err(e) => (
+                axum::http::StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    /// Sign out: clear auth + catalog, drop cloud providers in place.
+    async fn auth_logout(&self) -> impl IntoResponse {
+        match (crate::auth::logout(), self.reload_after_auth_change()) {
+            (Ok(()), Ok(_)) => Json(serde_json::json!({ "ok": true })).into_response(),
+            (Err(e), _) | (_, Err(e)) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    /// Server-pushed notices (banner + ads), highest priority first.
+    fn notices(&self) -> impl IntoResponse {
+        let items = match crate::auth::load_models_cache() {
+            Ok(Some(cache)) => cache
+                .response
+                .notices
+                .into_iter()
+                .take(3)
+                .map(|n| serde_json::json!({ "kind": n.kind, "title": n.title, "body": n.body_md }))
+                .collect(),
+            _ => Vec::new(),
+        };
+        Json(serde_json::json!({ "items": items })).into_response()
+    }
+
+    /// Swap in a fresh config after auth.json changed. A still-valid live
+    /// selection survives; otherwise the fresh load takes over (which
+    /// activates the Premium landing on a first login).
+    fn reload_after_auth_change(&self) -> Result<()> {
+        let selection = self.config.read().llm.clone();
+        let env_path = self.config.read().env_file_path.clone();
+        // A never-saved env file is not an error: fall back to the default
+        // path, which creates its own baseline.
+        let fresh = if env_path.exists() {
+            Config::load_with_env_file(env_path.to_str())?
+        } else {
+            Config::load_with_env_file(None)?
+        };
+        let keep = fresh
+            .providers
+            .get(&selection.provider)
+            .is_some_and(|p| !p.api_key.trim().is_empty());
+        let llm = if keep {
+            fresh.build_llm(&selection.provider, selection.model_override.clone())?
+        } else {
+            // Logged out with no BYOK left: an unconfigured agent is honest.
+            fresh
+                .active_llm()
+                .unwrap_or_else(|_| crate::conf::LlmConfig::unconfigured())
+        };
+        *self.config.write() = fresh;
+        self.agent.set_llm(llm);
+        Ok(())
+    }
+
+    /// New chat commits a blank session up front; the composer owns its id.
+    async fn new_chat(&self, req: Option<NewChatRequest>) -> impl IntoResponse {
+        let cwd = req.and_then(|r| r.cwd);
+        self.sweep_stale_drafts().await;
+        match self.agent.create_session_in("http", cwd).await {
+            Ok(meta) => {
+                self.invalidate_recent_cache();
+                Json(serde_json::json!({
+                    "session_id": meta.session_id,
+                    "cwd": meta.cwd,
+                    "title": meta.title,
+                    "model": meta.model,
+                    "provider": meta.provider,
+                }))
+                .into_response()
+            }
+            Err(error) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "ok": false, "error": error.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    /// Sweep forgotten New-chat drafts (>24h, no turns) so they don't pile up.
+    async fn sweep_stale_drafts(&self) {
+        let cutoff = (std::time::SystemTime::now() - std::time::Duration::from_secs(24 * 60 * 60))
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let Ok(rows) = self
+            .agent
+            .storage()
+            .list_sessions(ListSessions {
+                limit: 0,
+                offset: 0,
+            })
+            .await
+        else {
+            return;
+        };
+        let stale: Vec<String> = rows
+            .into_iter()
+            .filter(|meta| {
+                meta.turns == 0
+                    && meta.title.is_none()
+                    && !self.agent.has_active_run(&meta.session_id)
+                    && chrono::DateTime::parse_from_rfc3339(&meta.updated_at)
+                        .map(|t| t.timestamp() < cutoff)
+                        .unwrap_or(false)
+            })
+            .map(|meta| meta.session_id)
+            .take(20)
+            .collect();
+        for id in &stale {
+            if let Err(e) = self.agent.delete_session(id).await {
+                tracing::warn!(session_id = %id, "draft sweep delete failed: {e}");
+            }
+        }
+        if !stale.is_empty() {
+            self.invalidate_recent_cache();
+            tracing::info!(count = stale.len(), "swept stale new-chat drafts");
+        }
+    }
+
+    fn workspace(&self) -> impl IntoResponse {
+        Json(serde_json::json!({
+            "cwd": self.agent.cwd(),
+            "label": workspace_label(self.agent.cwd()),
+        }))
+    }
+
+    fn resolve_workspace(&self, req: WorkspaceRequest) -> impl IntoResponse {
+        match crate::conf::paths::expand_home_path(req.path.trim()) {
+            Ok(path) => {
+                let path = path.to_string_lossy().into_owned();
+                match std::fs::metadata(&path) {
+                    Ok(meta) if meta.is_dir() => {
+                        let canonical = std::fs::canonicalize(&path)
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .unwrap_or(path);
+                        Json(serde_json::json!({
+                            "ok": true,
+                            "cwd": canonical,
+                            "label": workspace_label(&canonical),
+                        }))
+                        .into_response()
+                    }
+                    Ok(_) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "ok": false,
+                            "error": format!("{path} is not a directory"),
+                        })),
+                    )
+                        .into_response(),
+                    Err(error) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "ok": false,
+                            "error": format!("{path} is not accessible: {error}"),
+                        })),
+                    )
+                        .into_response(),
+                }
+            }
+            Err(error) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "ok": false, "error": error.to_string() })),
+            )
+                .into_response(),
+        }
+    }
+
+    async fn session_detail(&self, id: &str) -> impl IntoResponse {
+        match self.agent.find_session(id).await {
+            Ok(Some(meta)) => {
+                let nodes = match self.agent.load_resume_transcript(id).await {
+                    Ok(items) => super::chat::replay_nodes(&items),
+                    Err(error) => {
+                        tracing::warn!(session_id = %id, "chat: failed to load transcript: {error}");
+                        Vec::new()
+                    }
+                };
+                // Stats items never reach the replayed node list (they are not
+                // context), so the whole-session readings are folded here from
+                // the raw entries instead.
+                let stats = match self.agent.storage().load_active_entries(id).await {
+                    Ok(entries) => super::chat::session_stats(&entries),
+                    Err(error) => {
+                        tracing::warn!(session_id = %id, "chat: failed to load stats: {error}");
+                        super::chat::ChatStats::default()
+                    }
+                };
+                Json(serde_json::json!({
+                    "session": {
+                        "session_id": meta.session_id,
+                        "cwd": meta.cwd,
+                        "title": meta.title,
+                        "model": meta.model,
+                        "provider": meta.provider,
+                    },
+                    "stats": stats,
+                    "nodes": nodes.into_iter().map(|node| node.to_sse_json()).collect::<Vec<_>>(),
+                }))
+                .into_response()
+            }
+            Ok(None) => (StatusCode::NOT_FOUND, "session not found").into_response(),
+            Err(error) => {
+                tracing::warn!(session_id = %id, "chat: failed to load session: {error}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to load session").into_response()
+            }
+        }
+    }
+
+    async fn abort_chat(&self, req: AbortChatRequest) -> impl IntoResponse {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": "session_id must not be empty",
+                })),
+            );
+        }
+        match self
+            .agent
+            .abort_run_and_wait_for_completion(session_id)
+            .await
+        {
+            Ok(active) => (
+                StatusCode::OK,
+                Json(serde_json::json!({ "ok": true, "active": active })),
+            ),
+            Err(error) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": error.to_string(),
+                })),
+            ),
+        }
+    }
+
+    /// Queue a message onto the run that is already streaming for this
+    /// session. Returns `active: false` when no run is in flight, so the
+    /// browser can fall back to sending a normal turn.
+    fn steer_chat(&self, req: SteerChatRequest) -> impl IntoResponse {
+        let session_id = req.session_id.trim();
+        let message = req.message.trim();
+        if session_id.is_empty() || message.is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": "session_id and message must not be empty",
+                })),
+            );
+        }
+        if !self.agent.has_active_run(session_id) {
+            return (
+                StatusCode::OK,
+                Json(serde_json::json!({ "ok": true, "active": false })),
+            );
+        }
+        self.agent
+            .steer(session_id, vec![evot_engine::Content::Text {
+                text: message.to_string(),
+            }]);
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "active": true })),
+        )
+    }
+
     async fn chat(self: Arc<Self>, req: ChatRequest) -> impl IntoResponse {
-        let stream = self.chat_stream(req.message, req.session_id);
+        let stream = self.chat_stream(req);
         Sse::new(stream).keep_alive(
             axum::response::sse::KeepAlive::new()
                 .interval(std::time::Duration::from_secs(15))
@@ -431,23 +1141,49 @@ impl Server {
 
     fn chat_stream(
         self: Arc<Self>,
-        message: String,
-        session_id: Option<String>,
+        req: ChatRequest,
     ) -> impl futures::stream::Stream<
         Item = std::result::Result<axum::response::sse::Event, std::convert::Infallible>,
     > {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            let request = QueryRequest::text(&message)
-                .session_id(session_id)
+            let llm = match self.apply_chat_selection(&req) {
+                Ok(llm) => llm,
+                Err(error) => {
+                    let _ = tx.send(stream::error_event(error.to_string())).await;
+                    let _ = tx.send(stream::done_event()).await;
+                    return;
+                }
+            };
+
+            let mut request = QueryRequest::text(&req.message)
+                .session_id(req.session_id.clone())
+                .llm(llm)
                 .source("http");
+            if req.session_id.is_none() {
+                if let Some(cwd) = req.cwd.clone() {
+                    request = request.cwd(cwd);
+                }
+            }
 
             let drain_run = |mut query_run: crate::agent::Run, tx: tokio::sync::mpsc::Sender<_>| async move {
-                while let Some(event) = query_run.next().await {
-                    for sse in stream::map_run_event(&event) {
-                        if tx.send(sse).await.is_err() {
-                            break;
+                loop {
+                    tokio::select! {
+                        // A dropped browser response is also a stop request. Do
+                        // not leave the model or tools running without a client.
+                        _ = tx.closed() => {
+                            query_run.abort();
+                            return;
+                        }
+                        event = query_run.next() => {
+                            let Some(event) = event else { return };
+                            for sse in stream::map_run_event(&event) {
+                                if tx.send(sse).await.is_err() {
+                                    query_run.abort();
+                                    return;
+                                }
+                            }
                         }
                     }
                 }
@@ -455,6 +1191,14 @@ impl Server {
 
             match self.agent.submit(request).await {
                 Ok(SubmitOutcome::Run(query_run)) => {
+                    let session_event = match self.agent.find_session(&query_run.session_id).await {
+                        Ok(Some(meta)) => stream::session_meta_event(&meta),
+                        _ => stream::session_event(&query_run.session_id),
+                    };
+                    if tx.send(session_event).await.is_err() {
+                        query_run.abort();
+                        return;
+                    }
                     drain_run(query_run, tx.clone()).await;
                 }
                 Ok(SubmitOutcome::Command(text)) => {
@@ -470,4 +1214,13 @@ impl Server {
 
         tokio_stream::wrappers::ReceiverStream::new(rx)
     }
+}
+
+fn workspace_label(cwd: &str) -> String {
+    std::path::Path::new(cwd)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or(cwd)
+        .to_string()
 }

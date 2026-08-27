@@ -193,6 +193,79 @@ async fn agent_create_session_persists_empty_repl_session() -> TestResult {
 }
 
 #[tokio::test]
+async fn new_session_binds_requested_workspace_and_resume_keeps_it() -> TestResult {
+    let dir = TempDir::new()?;
+    let workspace = dir.path().join("project");
+    std::fs::create_dir_all(&workspace)?;
+    let mut config = evot::conf::Config::new(dir.path().to_path_buf());
+    config.providers.insert("test".into(), ProviderProfile {
+        protocol: Protocol::OpenAi,
+        api_key: "test-key".into(),
+        base_url: "http://localhost".into(),
+        models: vec!["test-model".into()],
+        compat_caps: Default::default(),
+        route_capabilities: Default::default(),
+        thinking_level: None,
+        context_window: None,
+        max_tokens: None,
+        supports_image: None,
+    });
+    config.llm.provider = "test".into();
+    let storage = open_storage(&config.storage)?;
+    let agent = Agent::new_with_provider_for_test(
+        &config,
+        "/work",
+        storage,
+        evot_engine::provider::MockProvider::text("ok"),
+    )?;
+
+    let outcome = agent
+        .submit(
+            QueryRequest::text("hello")
+                .cwd(workspace.to_string_lossy().into_owned())
+                .source("http"),
+        )
+        .await?;
+    let mut run = match outcome {
+        SubmitOutcome::Run(run) => run,
+        SubmitOutcome::Command(message) => {
+            return Err(format!("unexpected command: {message}").into());
+        }
+    };
+    let session_id = run.session_id.clone();
+    while run.next().await.is_some() {}
+
+    let created = agent
+        .find_session(&session_id)
+        .await?
+        .ok_or_else(|| missing_error("missing workspace session"))?;
+    let expected = std::fs::canonicalize(&workspace)?;
+    assert_eq!(created.cwd, expected.to_string_lossy());
+
+    let follow = agent
+        .submit(
+            QueryRequest::text("again")
+                .session_id(Some(session_id.clone()))
+                .cwd("/tmp")
+                .source("http"),
+        )
+        .await?;
+    let mut follow_run = match follow {
+        SubmitOutcome::Run(run) => run,
+        SubmitOutcome::Command(message) => {
+            return Err(format!("unexpected command: {message}").into());
+        }
+    };
+    while follow_run.next().await.is_some() {}
+    let resumed = agent
+        .find_session(&session_id)
+        .await?
+        .ok_or_else(|| missing_error("missing resumed session"))?;
+    assert_eq!(resumed.cwd, created.cwd);
+    Ok(())
+}
+
+#[tokio::test]
 async fn resume_transcript_replays_retained_messages_with_lightweight_compact_card() -> TestResult {
     let dir = TempDir::new()?;
     let mut config = evot::conf::Config::new(dir.path().to_path_buf());

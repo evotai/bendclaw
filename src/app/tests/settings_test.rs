@@ -46,6 +46,7 @@ fn tmp_env_path(tag: &str) -> PathBuf {
 fn sample_models() -> ModelSettings {
     ModelSettings {
         active_provider: "anthropic".into(),
+        active_model: None,
         thinking_level: Some("high".into()),
         providers: vec![ProviderSettings {
             name: "anthropic".into(),
@@ -457,6 +458,7 @@ fn settings_save_works_when_every_provider_is_cloud() -> TestResult {
 
     apply_model_settings(&mut config, &ModelSettings {
         active_provider: "evot-free".into(),
+        active_model: None,
         thinking_level: Some("high".into()),
         providers: Vec::new(),
     })?;

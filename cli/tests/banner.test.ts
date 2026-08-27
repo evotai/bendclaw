@@ -58,6 +58,36 @@ describe('renderBanner', () => {
     expect(banner).not.toContain('Model')
     expect(banner).not.toContain('available')
     expect(banner).not.toContain('/skill list')
+  })
+
+  test('logged-out banner points at the Models page of the running UI', () => {
+    const { cwd, skillsDir } = createFixture(1)
+    const banner = stripAnsi(renderBanner({
+      version: 'test',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: false },
+      columns: 80,
+      rows: 40,
+      skillsDirs: [skillsDir],
+      serverState: { address: 'http://127.0.0.1:8082', pid: 1 },
+    }))
+
+    expect(banner).toContain('Not logged in')
+    expect(banner).toContain('http://127.0.0.1:8082/models')
+  })
+
+  test('hides skill paths in the listing', () => {
+    const { cwd, skillsDir } = createFixture(1)
+    const banner = stripAnsi(renderBanner({
+      version: 'test',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns: 80,
+      rows: 40,
+      skillsDirs: [skillsDir],
+    }))
     expect(banner).not.toContain(join(skillsDir, 'skill-00'))
   })
 

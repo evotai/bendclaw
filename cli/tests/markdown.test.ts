@@ -53,6 +53,24 @@ describe('renderMarkdown', () => {
     expect(result).toContain('x')
   })
 
+  test('thinking headings keep a blank line above and below even in compact spacing', () => {
+    const result = stripAnsi(renderThinkingMarkdown([
+      '不用花里胡哨的',
+      '### 当前设计的主要问题',
+      '1. 协议分裂',
+      '### 推荐的干净方案',
+      '核心原则：',
+      '#### 1. 定义稳定的 ChatNode',
+      '```rust',
+      'enum ChatEvent {}',
+      '```',
+    ].join('\n')))
+
+    expect(result).toContain('不用花里胡哨的\n\n### 当前设计的主要问题\n\n1. 协议分裂')
+    expect(result).toContain('1. 协议分裂\n\n### 推荐的干净方案\n\n核心原则：')
+    expect(result).toContain('核心原则：\n\n#### 1. 定义稳定的 ChatNode\n\n```rust')
+  })
+
   test('renders plain text', () => {
     expect(render('hello world')).toBe('hello world')
   })

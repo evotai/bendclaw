@@ -1,516 +1,170 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chat · evot</title>
-<link rel="stylesheet" href="/ui/app.css">
-<link rel="stylesheet" href="/ui/chat.css">
-</head>
-<body data-chrome="fill">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat · evot</title>
+    <link rel="icon" type="image/png" href="/brand/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/ui/app.css" />
+    <link rel="stylesheet" href="/ui/chat.css" />
+  </head>
+  <body>
+    <div class="chat-app">
+      <aside class="chat-sidebar">
+        <a class="chat-brand" href="/" aria-label="Evot sessions">
+          <span class="chat-mark" aria-hidden="true">◆</span>
+          <span>evot</span>
+        </a>
 
-<div class="fill-bar">
-  <span class="session" id="sessionLabel">New session</span>
-  <span class="spacer"></span>
-  <button class="btn-icon" onclick="openSearch()" title="Search sessions" aria-label="Search sessions">⌕</button>
-  <button class="btn-icon" onclick="newSession()" title="New session" aria-label="New session">+</button>
-</div>
-
-<div class="search-overlay" id="searchOverlay" onclick="onOverlayClick(event)">
-  <div class="search-panel">
-    <input
-      class="search-input"
-      id="searchInput"
-      type="text"
-      placeholder="Search sessions by title, path, or content…"
-      oninput="onSearchInput()"
-      onkeydown="onSearchKey(event)"
-      autocomplete="off"
-    />
-    <div class="search-results" id="searchResults"></div>
-  </div>
-</div>
-
-<div class="chat-container" id="chat">
-  <div class="welcome" id="welcome">
-    <h2>What can I do for you?</h2>
-    <div class="suggestions">
-      <div class="suggestion" onclick="sendSuggestion('List all Rust files in this project')">📁 List Rust files</div>
-      <div class="suggestion" onclick="sendSuggestion('Read Cargo.toml and explain the dependencies')">📄 Read Cargo.toml</div>
-      <div class="suggestion" onclick="sendSuggestion('Count lines of code in the src directory')">📊 Count lines</div>
-      <div class="suggestion" onclick="sendSuggestion('What is my Rust version and OS?')">💻 System info</div>
-    </div>
-  </div>
-</div>
-
-<div class="input-area">
-  <div class="input-wrapper">
-    <textarea
-      class="input-box"
-      id="input"
-      placeholder="Assign a task or ask anything"
-      rows="1"
-      onkeydown="handleKey(event)"
-      oninput="autoResize(this)"
-    ></textarea>
-    <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
-  </div>
-</div>
-
-<script>
-const chat = document.getElementById('chat');
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('sendBtn');
-const welcome = document.getElementById('welcome');
-const sessionLabel = document.getElementById('sessionLabel');
-let isStreaming = false;
-// Tracks the resumed session so follow-up messages continue it. The backend
-// creates a fresh session when this is null.
-let currentSessionId = null;
-
-// Name the session in the action bar so a resumed conversation is identifiable
-// after the welcome screen scrolls away.
-function setSessionLabel(sessionId) {
-  if (!sessionLabel) return;
-  sessionLabel.textContent = sessionId
-    ? 'Session ' + sessionId.slice(0, 8)
-    : 'New session';
-}
-
-const toolIcons = {
-  'Bash': '>_',
-  'Read': '📄',
-  'Write': '📝',
-  'Edit': '✏️',
-  'Glob': '🔍',
-  'Grep': '🔎',
-  'WebFetch': '🌐',
-  'WebSearch': '🔎',
-  'Agent': '🤖',
-  'TaskCreate': '📋',
-};
-
-function getToolIcon(name) {
-  if (toolIcons[name]) return toolIcons[name];
-  if (name.startsWith('mcp__')) return '🔌';
-  return '🔧';
-}
-
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-}
-
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-}
-
-function sendSuggestion(text) {
-  input.value = text;
-  sendMessage();
-}
-
-function scrollToBottom() {
-  chat.scrollTop = chat.scrollHeight;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function renderMarkdown(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/^- (.+)$/gm, '• $1');
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = '<p>' + html + '</p>';
-  html = html.replace(/\n/g, '<br>');
-  return html;
-}
-
-function formatCost(cost) {
-  if (!Number.isFinite(cost)) return '$0.0000';
-  return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
-}
-
-function formatDuration(durationMs) {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return '0ms';
-  return durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${Math.round(durationMs)}ms`;
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-function renderSummaryGrid(data) {
-  const summary = data.summary || {};
-  const stream = summary.stream || {};
-  const totalTokens = (data.input_tokens || 0) + (data.output_tokens || 0);
-  const llmMs = summary.api_duration_ms || 0;
-  const toolMs = summary.tool_duration_ms || 0;
-  const otherMs = Math.max((data.duration_ms || 0) - llmMs - toolMs, 0);
-
-  const items = [
-    ['Cost', formatCost(data.cost || 0)],
-    ['Total', formatDuration(data.duration_ms || 0)],
-    ['LLM', formatDuration(llmMs)],
-    ['Tools', formatDuration(toolMs)],
-    ['Other', formatDuration(otherMs)],
-    ['Tokens', `${totalTokens}`],
-  ];
-
-  if (stream.first_ttfb_ms != null) items.push(['TTFB', formatDuration(stream.first_ttfb_ms)]);
-  if (stream.first_ttft_ms != null) items.push(['TTFT', formatDuration(stream.first_ttft_ms)]);
-  if ((stream.total_stream_duration_ms || 0) > 0) items.push(['Stream', formatDuration(stream.total_stream_duration_ms)]);
-  if ((stream.total_chunk_count || 0) > 0) items.push(['Chunks', `${stream.total_chunk_count}`]);
-  if ((stream.total_bytes_received || 0) > 0) items.push(['Bytes', formatBytes(stream.total_bytes_received)]);
-  if ((stream.request_count || 0) > 0) items.push(['Requests', `${stream.request_count}`]);
-
-  return `
-    <div class="result-summary">
-      <div class="summary-title">Execution Summary</div>
-      <div class="summary-grid">
-        ${items.map(([label, value]) => `
-          <div class="summary-item">
-            <div class="summary-label">${escapeHtml(label)}</div>
-            <div class="summary-value">${escapeHtml(value)}</div>
+        <button class="new-chat" id="newChat" type="button">
+          <span aria-hidden="true">＋</span><span>New chat</span>
+        </button>
+        <button class="session-search" id="openSearch" type="button">
+          <span aria-hidden="true">⌕</span><span>Search sessions</span><kbd>⌘K</kbd>
+        </button>
+        <div class="sidebar-label">Recent</div>
+        <nav class="recent-sessions" id="recentSessions" aria-label="Recent sessions">
+          <div class="sidebar-empty" aria-busy="true">
+            <div class="sk-row"><span class="sk wide"></span></div>
+            <div class="sk-row"><span class="sk mid"></span></div>
+            <div class="sk-row"><span class="sk wide"></span></div>
+            <div class="sk-row"><span class="sk mid"></span></div>
+            <div class="sk-row"><span class="sk wide"></span></div>
           </div>
-        `).join('')}
+        </nav>
+        <nav class="sidebar-links" aria-label="Console">
+          <a href="/models">Models</a>
+          <a href="/feishu">Feishu</a>
+        </nav>
+        <div class="sidebar-auth" id="authBox" aria-live="polite"></div>
+      </aside>
+
+      <main class="conversation hero" id="conversation">
+        <header class="conversation-head">
+          <div>
+            <div class="conversation-title" id="sessionTitle">New chat</div>
+            <div class="conversation-meta" id="sessionMeta">Start a new session</div>
+          </div>
+          <a class="head-link" id="traceLink" href="/sessions" hidden>Trace</a>
+        </header>
+
+        <div class="chat-scroll" id="chat" aria-live="polite">
+          <div class="welcome" id="welcome">
+            <div class="welcome-mark" aria-hidden="true">◆</div>
+            <h1>What can I help you build?</h1>
+            <p>Ask about this project, make a change, or continue a saved session.</p>
+            <button class="workspace-chip" id="workspaceChip" type="button" aria-haspopup="dialog">
+              <span class="workspace-folder" aria-hidden="true">⌂</span>
+              <span id="workspaceLabel">Choose workspace</span>
+            </button>
+            <div class="suggestions">
+              <button type="button" data-prompt="Explain this codebase and its architecture">Explain this codebase</button>
+              <button type="button" data-prompt="Find the most important bugs to fix next">Find important bugs</button>
+              <button type="button" data-prompt="Run the relevant tests and summarize the result">Run relevant tests</button>
+            </div>
+          </div>
+        </div>
+
+        <button class="to-bottom" id="toBottom" type="button" aria-label="Scroll to latest" hidden>
+          <span aria-hidden="true">↓</span>
+        </button>
+
+        <div class="composer-seat" data-composer-seat>
+          <div id="noticeSlot" aria-live="polite"></div>
+          <div class="composer-card">
+            <textarea
+              id="input"
+              rows="1"
+              placeholder="Ask anything, @ to mention, / for commands"
+              aria-label="Message"
+            ></textarea>
+            <div class="composer-row">
+              <div class="composer-tools">
+                <div class="command-picker">
+                  <button
+                    class="round-tool"
+                    id="commandBtn"
+                    type="button"
+                    aria-label="Commands"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="commandMenu"
+                  >＋</button>
+                  <div class="command-menu" id="commandMenu" role="listbox" aria-label="Commands" hidden>
+                    <button type="button" role="option" data-command="/clear">
+                      <span><strong>Clear session</strong><small>Start this session over</small></span><kbd>/clear</kbd>
+                    </button>
+                    <button type="button" role="option" data-command="/compact ">
+                      <span><strong>Compact context</strong><small>Summarize older conversation</small></span><kbd>/compact</kbd>
+                    </button>
+                    <button type="button" role="option" data-command="/clip all">
+                      <span><strong>Save to memory</strong><small>Archive durable knowledge</small></span><kbd>/clip all</kbd>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-trailing">
+                <div class="seat-picker" id="modelPicker">
+                  <button
+                    class="seat-trigger"
+                    id="modelSelect"
+                    type="button"
+                    aria-label="Model"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="modelMenu"
+                    disabled
+                  ><span class="seat-label" id="modelLabel">Model</span></button>
+                  <div class="seat-menu" id="modelMenu" role="listbox" aria-label="Models" hidden></div>
+                </div>
+                <div class="seat-picker effort-picker" id="thinkingPicker" hidden>
+                  <button
+                    class="seat-trigger"
+                    id="thinkingSelect"
+                    type="button"
+                    aria-label="Thinking level"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="thinkingMenu"
+                    disabled
+                  ><span class="seat-label" id="thinkingLabel">Thinking</span></button>
+                  <div class="seat-menu" id="thinkingMenu" role="listbox" aria-label="Thinking levels" hidden></div>
+                </div>
+                <span class="context-meter" id="contextMeter" hidden>
+                  <button
+                    class="context-trigger"
+                    id="contextTrigger"
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded="false"
+                  >
+                    <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+                      <circle class="context-track" cx="7" cy="7" r="5.5" />
+                      <circle class="context-fill" id="contextFill" cx="7" cy="7" r="5.5" transform="rotate(-90 7 7)" />
+                    </svg>
+                  </button>
+                  <div class="context-panel" id="contextPanel" role="dialog" aria-label="Context used" hidden></div>
+                </span>
+                <button class="send-btn" id="sendBtn" type="button" aria-label="Send message" disabled>↑</button>
+              </div>
+            </div>
+          </div>
+          <div class="stats-line" id="statsLine" hidden></div>
+        </div>
+      </main>
+    </div>
+
+    <div class="search-overlay" id="searchOverlay" aria-hidden="true">
+      <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search sessions">
+        <input id="searchInput" type="search" placeholder="Search chats by title, path, or message content…" autocomplete="off" />
+        <div class="search-results" id="searchResults"></div>
       </div>
     </div>
-  `;
-}
 
-async function newSession() {
-  await fetch('/api/new', { method: 'POST' });
-  currentSessionId = null;
-  setSessionLabel(null);
-  chat.innerHTML = `
-    <div class="welcome" id="welcome">
-      <h2>What can I do for you?</h2>
-      <div class="suggestions">
-        <div class="suggestion" onclick="sendSuggestion('List all Rust files in this project')">📁 List Rust files</div>
-        <div class="suggestion" onclick="sendSuggestion('Read Cargo.toml and explain the dependencies')">📄 Read Cargo.toml</div>
-        <div class="suggestion" onclick="sendSuggestion('Count lines of code in the src directory')">📊 Count lines</div>
-        <div class="suggestion" onclick="sendSuggestion('What is my Rust version and OS?')">💻 System info</div>
-      </div>
-    </div>`;
-}
-
-async function sendMessage() {
-  const text = input.value.trim();
-  if (!text || isStreaming) return;
-
-  const w = document.getElementById('welcome');
-  if (w) w.remove();
-
-  chat.innerHTML += `<div class="message message-user"><div class="bubble">${escapeHtml(text)}</div></div>`;
-
-  input.value = '';
-  input.style.height = 'auto';
-  isStreaming = true;
-  sendBtn.disabled = true;
-  input.disabled = true;
-
-  const typingId = 'typing-' + Date.now();
-  chat.innerHTML += `<div class="message message-assistant" id="${typingId}"><div class="typing"><span></span><span></span><span></span></div></div>`;
-  scrollToBottom();
-
-  let accumulatedText = '';
-  let assistantDiv = null;
-  let textContentDiv = null;
-
-  try {
-    const resp = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, session_id: currentSessionId }),
-    });
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const jsonStr = line.slice(6);
-        if (!jsonStr) continue;
-
-        let event;
-        try { event = JSON.parse(jsonStr); } catch { continue; }
-
-        const typingEl = document.getElementById(typingId);
-        if (typingEl) typingEl.remove();
-
-        if (!assistantDiv) {
-          assistantDiv = document.createElement('div');
-          assistantDiv.className = 'message message-assistant';
-          chat.appendChild(assistantDiv);
-        }
-
-        switch (event.type) {
-          case 'text':
-            accumulatedText += event.data.text;
-            if (!textContentDiv) {
-              textContentDiv = document.createElement('div');
-              textContentDiv.className = 'text-content';
-              assistantDiv.appendChild(textContentDiv);
-            }
-            textContentDiv.innerHTML = renderMarkdown(accumulatedText);
-            scrollToBottom();
-            break;
-
-          case 'tool_use': {
-            textContentDiv = null;
-            accumulatedText = '';
-            const inputStr = JSON.stringify(event.data.input || {});
-            const tc = document.createElement('div');
-            tc.className = 'tool-call';
-            tc.id = 'tool-' + event.data.id;
-            tc.innerHTML = `
-              <div class="tool-icon">${getToolIcon(event.data.name)}</div>
-              <span class="tool-name">${escapeHtml(event.data.name)}</span>
-              <span class="tool-input">${escapeHtml(inputStr)}</span>
-            `;
-            assistantDiv.appendChild(tc);
-            scrollToBottom();
-            break;
-          }
-
-          case 'tool_result': {
-            const toolCallEl = document.getElementById('tool-' + event.data.tool_use_id);
-            if (toolCallEl) {
-              const resultDiv = document.createElement('div');
-              resultDiv.className = 'tool-result-output';
-              const content = event.data.content || '';
-              const truncated = content.length > 500 ? content.substring(0, 500) + '...' : content;
-              resultDiv.innerHTML = `<pre>${escapeHtml(truncated)}</pre>`;
-              toolCallEl.insertAdjacentElement('afterend', resultDiv);
-              scrollToBottom();
-            }
-            break;
-          }
-
-          case 'thinking': {
-            const th = document.createElement('div');
-            th.className = 'thinking-block';
-            th.textContent = event.data.thinking;
-            assistantDiv.appendChild(th);
-            scrollToBottom();
-            break;
-          }
-
-          case 'result': {
-            const d = event.data;
-            const costStr = formatCost(d.cost || 0);
-            const durStr = formatDuration(d.duration_ms || 0);
-            const banner = document.createElement('div');
-            banner.className = 'result-banner';
-            banner.innerHTML = `
-              <span class="check">✅</span>
-              <span>Done</span>
-              <span class="stats">· ${costStr} · ${durStr} · ${d.input_tokens + d.output_tokens} tokens</span>
-            `;
-            assistantDiv.appendChild(banner);
-            assistantDiv.insertAdjacentHTML('beforeend', renderSummaryGrid(d));
-            scrollToBottom();
-            break;
-          }
-
-          case 'error': {
-            const errDiv = document.createElement('div');
-            errDiv.className = 'error-banner';
-            errDiv.textContent = '❌ ' + (event.data?.message || 'Unknown error');
-            assistantDiv.appendChild(errDiv);
-            scrollToBottom();
-            break;
-          }
-
-          case 'done':
-            break;
-        }
-      }
-    }
-  } catch (err) {
-    const typingEl = document.getElementById(typingId);
-    if (typingEl) typingEl.remove();
-    chat.innerHTML += `<div class="error-banner">❌ ${escapeHtml(err.message)}</div>`;
-  }
-
-  isStreaming = false;
-  sendBtn.disabled = false;
-  input.disabled = false;
-  input.focus();
-  scrollToBottom();
-}
-
-// ── Session search ─────────────────────────────────────────────
-// Mirrors the terminal `/resume` selector: load sessions with full
-// search_text once, then filter client-side by case-insensitive substring
-// and highlight matches. Results are ordered by match position.
-const searchOverlay = document.getElementById('searchOverlay');
-const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
-let allSessions = [];
-let searchMatches = [];
-let searchActive = 0;
-
-async function openSearch() {
-  searchOverlay.classList.add('open');
-  searchInput.value = '';
-  searchInput.focus();
-  renderSearchResults('');
-  try {
-    const resp = await fetch('/api/sessions');
-    if (resp.ok) {
-      allSessions = await resp.json();
-      renderSearchResults(searchInput.value.trim());
-    }
-  } catch { /* offline — keep whatever we have */ }
-}
-
-function closeSearch() {
-  searchOverlay.classList.remove('open');
-}
-
-function onOverlayClick(e) {
-  if (e.target === searchOverlay) closeSearch();
-}
-
-function onSearchInput() {
-  searchActive = 0;
-  renderSearchResults(searchInput.value.trim());
-}
-
-function onSearchKey(e) {
-  if (e.key === 'Escape') { closeSearch(); return; }
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    searchActive = Math.min(searchActive + 1, searchMatches.length - 1);
-    paintActive();
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    searchActive = Math.max(searchActive - 1, 0);
-    paintActive();
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    const hit = searchMatches[searchActive];
-    if (hit) resumeSession(hit.session_id);
-  }
-}
-
-function paintActive() {
-  const items = searchResults.querySelectorAll('.search-item');
-  items.forEach((el, i) => el.classList.toggle('active', i === searchActive));
-  const el = items[searchActive];
-  if (el) el.scrollIntoView({ block: 'nearest' });
-}
-
-function renderSearchResults(query) {
-  searchMatches = filterSessions(allSessions, query);
-  if (searchMatches.length === 0) {
-    searchResults.innerHTML = `<div class="search-empty">${allSessions.length ? 'No matches' : 'No sessions yet'}</div>`;
-    return;
-  }
-  searchResults.innerHTML = searchMatches.map((s, i) => {
-    const title = s.title || '(untitled)';
-    const meta = `${s.session_id.slice(0, 8)} · ${s.cwd || ''}`;
-    const snippet = query ? snippetFor(s.search_text || '', query) : '';
-    return `
-      <div class="search-item${i === searchActive ? ' active' : ''}" onclick="resumeSession('${s.session_id}')">
-        <div class="si-title">${highlight(title, query)}</div>
-        <div class="si-meta">${highlight(meta, query)}</div>
-        ${snippet ? `<div class="si-snippet">${snippet}</div>` : ''}
-      </div>`;
-  }).join('');
-}
-
-// Case-insensitive substring match against the flattened search_text, sorted
-// by match position so earlier (usually title/path) hits rank first.
-function filterSessions(sessions, query) {
-  if (!query) return sessions;
-  const q = query.toLowerCase();
-  return sessions
-    .map(s => ({ s, idx: (s.search_text || '').toLowerCase().indexOf(q) }))
-    .filter(m => m.idx !== -1)
-    .sort((a, b) => a.idx - b.idx)
-    .map(m => m.s);
-}
-
-// Extract a context window around the first match, like the resume snippet.
-function snippetFor(source, query, width = 120) {
-  const lower = source.toLowerCase();
-  const idx = lower.indexOf(query.toLowerCase());
-  if (idx === -1) return '';
-  const half = Math.floor((width - query.length) / 2);
-  const start = Math.max(0, idx - half);
-  const end = Math.min(source.length, idx + query.length + half);
-  let text = source.slice(start, end).replace(/\s+/g, ' ').trim();
-  if (start > 0) text = '…' + text;
-  if (end < source.length) text = text + '…';
-  return highlight(text, query);
-}
-
-// Escape then wrap every case-insensitive occurrence of query in <mark>.
-// The query is escaped too so it matches the already-escaped text (e.g. a
-// query containing < or & still highlights correctly).
-function highlight(text, query) {
-  const escaped = escapeHtml(text);
-  if (!query) return escaped;
-  const escapedQuery = escapeHtml(query);
-  const lowerText = escaped.toLowerCase();
-  const lowerQuery = escapedQuery.toLowerCase();
-  if (!lowerQuery) return escaped;
-  let out = '';
-  let pos = 0;
-  for (;;) {
-    const idx = lowerText.indexOf(lowerQuery, pos);
-    if (idx === -1) { out += escaped.slice(pos); break; }
-    out += escaped.slice(pos, idx);
-    out += '<mark>' + escaped.slice(idx, idx + lowerQuery.length) + '</mark>';
-    pos = idx + lowerQuery.length;
-  }
-  return out;
-}
-
-function resumeSession(sessionId) {
-  closeSearch();
-  currentSessionId = sessionId;
-  setSessionLabel(sessionId);
-  chat.innerHTML = `<div class="welcome"><h2>Session ${escapeHtml(sessionId.slice(0, 8))}</h2><p class="hint">Send a message to continue this session.</p></div>`;
-}
-
-document.addEventListener('keydown', (e) => {
-  const mod = e.metaKey || e.ctrlKey;
-  if (mod && e.key.toLowerCase() === 'k') {
-    e.preventDefault();
-    searchOverlay.classList.contains('open') ? closeSearch() : openSearch();
-  }
-});
-
-input.focus();
-</script>
-<!-- Wraps the console chrome around the markup above. Loaded last and as a
-     module so the classic script has already captured its elements. -->
-<script type="module" src="/ui/chrome.js"></script>
-</body>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/ui/chat.js"></script>
+  </body>
 </html>

@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Session Trace · evot</title>
+    <link rel="icon" type="image/png" href="/brand/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/ui/app.css" />
     <style>
       /* This page predates the console shell and names its own tokens. Rather
@@ -255,7 +259,7 @@
         <p class="lede" id="trace-sub"></p>
       </div>
       <div class="page-actions">
-        <a class="btn small" href="/sessions">All sessions</a>
+        <a class="btn small" id="back-to-chat" href="/chat">Back to chat</a>
       </div>
     </div>
     <div class="layout">
@@ -264,7 +268,13 @@
           <span class="list-head-title">requests</span>
           <button id="diff-btn" class="diff-btn" title="Turn on, then pick two requests to compare">Diff: off</button>
         </div>
-        <div class="list" id="list"><div class="empty">Loading…</div></div>
+        <div class="list" id="list" aria-busy="true">
+          <div class="sk-row"><span class="sk wide"></span><span class="sk narrow"></span></div>
+          <div class="sk-row"><span class="sk mid"></span><span class="sk narrow"></span></div>
+          <div class="sk-row"><span class="sk wide"></span><span class="sk narrow"></span></div>
+          <div class="sk-row"><span class="sk mid"></span><span class="sk narrow"></span></div>
+          <div class="sk-row"><span class="sk wide"></span><span class="sk narrow"></span></div>
+        </div>
       </div>
       <div class="detail" id="detail"><div class="empty">Select a request to view its trace.</div></div>
     </div>
@@ -278,6 +288,41 @@
     </details>
     <script>
       const sessionId = decodeURIComponent(location.pathname.split("/")[2] || "");
+      let loadBarCount = 0;
+      let loadBarEl = null;
+      let loadBarHide = 0;
+      function loadBar() {
+        if (!loadBarEl || !document.body.contains(loadBarEl)) {
+          const el = document.createElement("div");
+          el.className = "load-bar";
+          el.setAttribute("aria-hidden", "true");
+          loadBarEl = el;
+        }
+        if (loadBarEl.parentNode !== document.body) document.body.appendChild(loadBarEl);
+        return loadBarEl;
+      }
+      async function loadJson(url) {
+        loadBarCount += 1;
+        const el = loadBar();
+        window.clearTimeout(loadBarHide);
+        el.className = "load-bar on";
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return await r.json();
+        } finally {
+          loadBarCount = Math.max(0, loadBarCount - 1);
+          if (loadBarCount === 0) {
+            el.className = "load-bar done";
+            loadBarHide = window.setTimeout(() => {
+              if (loadBarCount === 0) el.className = "load-bar";
+            }, 220);
+          }
+        }
+      }
+      // Returning lands in Chat with this same session reopened.
+      document.getElementById("back-to-chat").href =
+        "/chat?session=" + encodeURIComponent(sessionId);
 
       // Name the session being viewed. The page is reachable directly, so the
       // id has to come from the URL rather than a list selection.
@@ -675,9 +720,7 @@
       async function fetchSpan(seq) {
         let d = detailCache.get(seq);
         if (d) return d;
-        const r = await fetch(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
-        if (!r.ok) throw new Error("load failed");
-        d = await r.json();
+        d = await loadJson(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
         detailCache.set(seq, d);
         return d;
       }
@@ -849,11 +892,12 @@
         const detailEl = document.getElementById("detail");
         let d = detailCache.get(seq);
         if (!d) {
-          detailEl.innerHTML = '<div class="empty">Loading\u2026</div>';
+          detailEl.innerHTML =
+            '<div class="sk-row"><span class="sk wide"></span></div>' +
+            '<div class="sk-row"><span class="sk mid"></span></div>' +
+            '<div class="sk-row"><span class="sk wide"></span></div>';
           try {
-            const r = await fetch(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
-            if (!r.ok) { detailEl.innerHTML = '<div class="empty">Failed to load request.</div>'; return; }
-            d = await r.json();
+            d = await loadJson(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
             detailCache.set(seq, d);
           } catch {
             detailEl.innerHTML = '<div class="empty">Failed to load request.</div>';
@@ -1024,12 +1068,14 @@
             }
             row.classList.add("sc-row-expanded"); cell.classList.add("sc-cell-active");
             detailEl.classList.add("open");
-            detailEl.innerHTML = '<div class="sc-detail-loading">Loading\u2026</div>';
+            detailEl.innerHTML =
+              '<div class="sk-row"><span class="sk wide"></span></div>' +
+              '<div class="sk-row"><span class="sk mid"></span></div>';
             let d = detailCache.get(seq);
             if (!d) {
               try {
-                const r = await fetch(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
-                d = await r.json(); detailCache.set(seq, d);
+                d = await loadJson(`/api/session/${encodeURIComponent(sessionId)}/events/${seq}`);
+                detailCache.set(seq, d);
               } catch { detailEl.innerHTML = '<div class="sc-detail-loading">Failed to load.</div>'; return; }
             }
             detailEl.innerHTML = "";
@@ -1052,9 +1098,7 @@
       async function init() {
         document.getElementById("diff-btn").addEventListener("click", toggleDiffMode);
         try {
-          const r = await fetch(`/api/session/${encodeURIComponent(sessionId)}/events`);
-          if (!r.ok) { document.getElementById("list").innerHTML = '<div class="empty">Failed to load trace.</div>'; return; }
-          const spans = await r.json();
+          const spans = await loadJson(`/api/session/${encodeURIComponent(sessionId)}/events`);
           allSpans = spans;
           renderList(spans);
           if (spans.length) {

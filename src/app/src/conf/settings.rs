@@ -60,6 +60,10 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ModelSettings {
     pub active_provider: String,
+    /// Default model within `active_provider`; cloud chips select arbitrary
+    /// models, which persists by moving the id to the front of that profile.
+    #[serde(default)]
+    pub active_model: Option<String>,
     #[serde(default)]
     pub thinking_level: Option<String>,
     #[serde(default)]
@@ -236,6 +240,31 @@ pub fn apply_model_settings(config: &mut Config, update: &ModelSettings) -> Resu
     config.providers = providers;
     config.llm.provider = active;
     config.llm.model_override = None;
+
+    // A cloud default model persists by reordering its profile; the head of
+    // the active profile is what every un-pinned request resolves to.
+    if let Some(id) = update
+        .active_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let owner = config.providers.iter().find_map(|(name, p)| {
+            (config.cloud_providers.contains(name) && p.models.iter().any(|m| m == id))
+                .then(|| name.clone())
+        });
+        let Some(owner) = owner else {
+            return Err(EvotError::Conf(format!(
+                "active model '{id}' is not served by a cloud provider"
+            )));
+        };
+        let profile = config.providers.get_mut(&owner);
+        if let Some(profile) = profile {
+            if let Some(pos) = profile.models.iter().position(|m| m == id) {
+                profile.models.rotate_left(pos);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -314,6 +343,39 @@ pub fn models_snapshot(config: &Config) -> serde_json::Value {
         })
         .collect();
 
+    // Cloud models grouped by tier; per-protocol names never surface.
+    let mut cloud_tiers: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
+    for (name, p) in config.providers.iter() {
+        if !config.cloud_providers.contains(name) {
+            continue;
+        }
+        for model in &p.models {
+            let tier = config
+                .cloud_model_tiers
+                .get(model)
+                .cloned()
+                .unwrap_or_else(|| "cloud".into());
+            let entry = serde_json::json!({
+                "id": model,
+                "provider": name,
+                "active": *name == config.llm.provider && Some(model) == p.models.first(),
+                "sort_order": config.cloud_model_sorts.get(model).copied().unwrap_or(0),
+            });
+            match cloud_tiers.iter_mut().find(|(known, _)| *known == tier) {
+                Some((_, models)) => models.push(entry),
+                None => cloud_tiers.push((tier, vec![entry])),
+            }
+        }
+    }
+    // Rank a merged tier globally: higher sort_order shows earlier.
+    for (_, models) in &mut cloud_tiers {
+        models.sort_by_key(|entry| std::cmp::Reverse(entry["sort_order"].as_i64().unwrap_or(0)));
+    }
+    let cloud_tiers: Vec<serde_json::Value> = cloud_tiers
+        .into_iter()
+        .map(|(tier, models)| serde_json::json!({ "tier": tier, "models": models }))
+        .collect();
+
     serde_json::json!({
         "active_provider": config.llm.provider,
         "thinking_level": config.llm.thinking_level.map(|level| level.as_str()),
@@ -324,6 +386,7 @@ pub fn models_snapshot(config: &Config) -> serde_json::Value {
         ],
         "thinking_levels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         "providers": providers,
+        "cloud_tiers": cloud_tiers,
         "env_file_path": config.env_file_path.display().to_string(),
     })
 }

@@ -715,7 +715,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       )
       spinnerBlock = {
         lines: wrapTextWithAnsi(spinnerText, renderer.termCols).map(text => ({ spans: [{ text }] })),
-        marginTop: 1,
       }
     }
 
@@ -2611,7 +2610,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           `  HTML: ${result.htmlPath}`,
         ]
         if (result.pngPath) lines.push(`  PNG:  ${result.pngPath}`)
-        else lines.push('  PNG:  (Chrome not available — HTML only)')
+        else lines.push('  PNG:  (no Chrome/Chromium — HTML only. Install chromium or set EVOT_CHROME.)')
         commitSystem('sys-log-shot', lines.join('\n'))
       } catch (err) {
         commitSystem('sys-log-err', chalk.red(`  Shot failed: ${errorText(err)}`))

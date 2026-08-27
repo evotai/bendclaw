@@ -63,6 +63,9 @@ const PROFILES: &[(&str, ModelProfile)] = &[
     // direct Z.ai endpoints and vendor-prefixed specs ("zai/ox-alpha").
     ("ox-alpha",         OX_ALPHA),
     ("stealth/ox-alpha", OX_ALPHA),
+    // GLM 5.3 Flash is Ox Alpha shipped under its release id, so it keeps the
+    // three-tier low/high/max ladder instead of the GLM-5.2 fallback.
+    ("glm-5.3-flash", OX_ALPHA),
 ];
 
 pub(super) fn resolve(id: &str) -> Option<ModelProfile> {

@@ -1,309 +1,56 @@
 use std::convert::Infallible;
 
-use serde_json::json;
-
+use super::chat;
 use crate::agent::RunEvent;
-use crate::agent::RunEventPayload;
-use crate::types::AssistantBlock;
+use crate::types::SessionMeta;
 
 pub type SseEvent = std::result::Result<axum::response::sse::Event, Infallible>;
 
 pub fn done_event() -> SseEvent {
-    event("done", &json!(null))
+    encode(&chat::done_node().to_sse_json())
 }
 
 pub fn error_event(message: impl Into<String>) -> SseEvent {
-    event("error", &json!({ "message": message.into() }))
+    encode(&chat::error_node(message).to_sse_json())
 }
 
 pub fn text_event(text: &str) -> SseEvent {
-    event("text", &json!({ "text": text }))
+    encode(&chat::command_node(text).to_sse_json())
+}
+
+/// Stable JSON shape for the session identity sent at the start of a run.
+pub fn session_event_json(session_id: &str) -> serde_json::Value {
+    chat::session_node_from_id(session_id, None).to_sse_json()
+}
+
+pub fn session_meta_event(meta: &SessionMeta) -> SseEvent {
+    encode(&chat::session_node(meta).to_sse_json())
+}
+
+/// Identify the session created or resumed for this stream. Sent before run
+/// output so browser clients can bind follow-up messages to the same session.
+pub fn session_event(session_id: &str) -> SseEvent {
+    encode(&session_event_json(session_id))
 }
 
 /// Map a RunEvent to a list of SSE JSON payloads (stable, testable).
-/// Each returned Value has shape: { "type": "...", "data": {...} }
+/// Each returned Value has shape: { "type": "...", ...node fields }
 pub fn map_run_event_json(run_event: &RunEvent) -> Vec<serde_json::Value> {
-    let mut events = Vec::new();
-
-    match &run_event.payload {
-        RunEventPayload::AssistantToolCall {
-            content_index,
-            tool_call_id,
-            tool_name,
-            phase,
-            delta,
-            args,
-        } => {
-            events.push(json!({
-                "type": "tool_call_delta",
-                "data": {
-                    "content_index": content_index,
-                    "id": tool_call_id,
-                    "name": tool_name,
-                    "phase": phase,
-                    "delta": delta,
-                    "input": args,
-                }
-            }));
-        }
-        RunEventPayload::AssistantCompleted { content, .. } => {
-            for block in content {
-                match block {
-                    AssistantBlock::Text { .. } => {}
-                    AssistantBlock::ToolCall {
-                        id, name, input, ..
-                    } => {
-                        events.push(json!({
-                            "type": "tool_call",
-                            "data": { "id": id, "name": name, "input": input }
-                        }));
-                    }
-                    AssistantBlock::Thinking { text, .. } if !text.is_empty() => {
-                        events.push(json!({ "type": "thinking", "data": { "thinking": text } }));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        RunEventPayload::ToolFinished {
-            tool_call_id,
-            content,
-            is_error,
-            ..
-        } => {
-            events.push(json!({
-                "type": "tool_result",
-                "data": {
-                    "tool_call_id": tool_call_id,
-                    "content": content,
-                    "is_error": is_error,
-                }
-            }));
-        }
-        RunEventPayload::RunFinished {
-            turn_count,
-            usage,
-            duration_ms,
-            compact_history,
-            ..
-        } => {
-            events.push(json!({
-                "type": "result",
-                "data": {
-                    "turn_count": turn_count,
-                    "input_tokens": usage.input,
-                    "output_tokens": usage.output,
-                    "duration_ms": duration_ms,
-                    "compactions": compact_history.iter().map(|c| json!({
-                        "level": c.level,
-                        "from_tokens": c.from_tokens,
-                        "to_tokens": c.to_tokens,
-                        "action_map": c.action_map,
-                    })).collect::<Vec<_>>(),
-                }
-            }));
-        }
-        RunEventPayload::Error { message } => {
-            events.push(json!({ "type": "error", "data": { "message": message } }));
-        }
-        RunEventPayload::AssistantDelta {
-            content_type,
-            delta,
-            ..
-        } => {
-            if matches!(content_type, crate::agent::AssistantContentType::Text) && !delta.is_empty()
-            {
-                events.push(json!({ "type": "text", "data": { "text": delta } }));
-            }
-        }
-        RunEventPayload::LlmCallStarted {
-            turn,
-            attempt,
-            injected_count,
-            model,
-            message_count,
-            message_bytes,
-            estimated_context_tokens,
-            system_prompt_tokens,
-            tool_definition_tokens,
-            tool_count,
-            message_stats,
-            budget_tokens,
-            context_window,
-        } => {
-            events.push(json!({
-                "type": "llm_call_started",
-                "data": {
-                    "turn": turn,
-                    "attempt": attempt,
-                    "injected_count": injected_count,
-                    "model": model,
-                    "message_count": message_count,
-                    "message_bytes": message_bytes,
-                    "estimated_context_tokens": estimated_context_tokens,
-                    "system_prompt_tokens": system_prompt_tokens,
-                    "tool_definition_tokens": tool_definition_tokens,
-                    "tool_count": tool_count,
-                    "message_stats": message_stats,
-                    "budget_tokens": budget_tokens,
-                    "context_window": context_window,
-                }
-            }));
-        }
-        RunEventPayload::LlmCallRetry {
-            turn,
-            attempt,
-            max_retries,
-            delay_ms,
-            error,
-        } => {
-            events.push(json!({
-                "type": "api_retry",
-                "data": {
-                    "turn": turn,
-                    "attempt": attempt,
-                    "max_retries": max_retries,
-                    "retry_delay_ms": delay_ms,
-                    "error": error,
-                }
-            }));
-        }
-        RunEventPayload::QuotaWaiting { delay_ms, error } => {
-            events.push(json!({
-                "type": "quota_waiting",
-                "data": {
-                    "retry_delay_ms": delay_ms,
-                    "error": error,
-                }
-            }));
-        }
-        RunEventPayload::OutageWaiting { delay_ms, error } => {
-            events.push(json!({
-                "type": "outage_waiting",
-                "data": {
-                    "retry_delay_ms": delay_ms,
-                    "error": error,
-                }
-            }));
-        }
-        RunEventPayload::LlmCallCompleted {
-            turn,
-            attempt,
-            usage,
-            error,
-            metrics,
-            context_window,
-            stop_reason,
-            tool_calls,
-            response_model,
-            ..
-        } => {
-            let mut data = json!({
-                "turn": turn,
-                "attempt": attempt,
-                "input_tokens": usage.input,
-                "output_tokens": usage.output,
-                "cache_read": usage.cache_read,
-                "cache_write": usage.cache_write,
-                "error": error,
-                "context_window": context_window,
-                "stop_reason": stop_reason,
-            });
-            if let serde_json::Value::Object(ref mut map) = data {
-                if let Some(m) = metrics {
-                    map.insert("duration_ms".into(), json!(m.duration_ms));
-                    map.insert("ttfb_ms".into(), json!(m.ttfb_ms));
-                    map.insert("ttft_ms".into(), json!(m.ttft_ms));
-                    map.insert("streaming_ms".into(), json!(m.streaming_ms));
-                    map.insert("chunk_count".into(), json!(m.chunk_count));
-                }
-                if let Some(tc) = tool_calls {
-                    map.insert("tool_calls".into(), json!(tc));
-                }
-                if let Some(rm) = response_model {
-                    map.insert("response_model".into(), json!(rm));
-                }
-            }
-            events.push(json!({
-                "type": "llm_call_completed",
-                "data": data,
-            }));
-        }
-        RunEventPayload::ContextCompactionStarted {
-            reason,
-            message_count,
-            estimated_tokens,
-            budget_tokens,
-            reserve_tokens,
-            trigger_threshold,
-            system_prompt_tokens,
-            tool_definition_tokens,
-            context_window,
-            will_retry,
-            message_stats,
-        } => {
-            events.push(json!({
-                "type": "context_compaction_started",
-                "data": {
-                    "reason": reason,
-                    "message_count": message_count,
-                    "estimated_tokens": estimated_tokens,
-                    "budget_tokens": budget_tokens,
-                    "reserve_tokens": reserve_tokens,
-                    "trigger_threshold": trigger_threshold,
-                    "system_prompt_tokens": system_prompt_tokens,
-                    "tool_definition_tokens": tool_definition_tokens,
-                    "context_window": context_window,
-                    "will_retry": will_retry,
-                    "message_stats": message_stats,
-                }
-            }));
-        }
-        RunEventPayload::ContextCompactionCompleted {
-            reason,
-            result,
-            summary,
-            context_window,
-            will_retry,
-        } => {
-            events.push(json!({
-                "type": "context_compaction_completed",
-                "data": {
-                    "reason": reason,
-                    "result": result,
-                    "summary": summary,
-                    "context_window": context_window,
-                    "will_retry": will_retry,
-                }
-            }));
-        }
-        RunEventPayload::ContextCompactionPhase { phase } => {
-            events.push(json!({
-                "type": "context_compaction_phase",
-                "data": {
-                    "phase": phase,
-                }
-            }));
-        }
-        _ => {}
-    }
-
-    events
+    chat::map_run_event(run_event)
+        .into_iter()
+        .map(|node| node.to_sse_json())
+        .collect()
 }
 
 pub fn map_run_event(run_event: &RunEvent) -> Vec<SseEvent> {
     map_run_event_json(run_event)
-        .iter()
-        .map(|payload| match serde_json::to_string(payload) {
-            Ok(json) => Ok(axum::response::sse::Event::default().data(json)),
-            Err(_) => Ok(axum::response::sse::Event::default().data(String::new())),
-        })
+        .into_iter()
+        .map(|payload| encode(&payload))
         .collect()
 }
 
-fn event(event_type: &str, data: &serde_json::Value) -> SseEvent {
-    let payload = json!({ "type": event_type, "data": data });
-    match serde_json::to_string(&payload) {
+fn encode(payload: &serde_json::Value) -> SseEvent {
+    match serde_json::to_string(payload) {
         Ok(json) => Ok(axum::response::sse::Event::default().data(json)),
         Err(_) => Ok(axum::response::sse::Event::default().data(String::new())),
     }

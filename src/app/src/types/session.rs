@@ -91,4 +91,7 @@ impl SessionMeta {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ListSessions {
     pub limit: usize,
+    /// Rows to skip before the first returned one (newest-first paging).
+    #[serde(default)]
+    pub offset: usize,
 }

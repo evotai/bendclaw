@@ -88,7 +88,12 @@ async fn list_sessions_uses_transcript_activity_for_running_sessions() -> TestRe
         ))
         .await?;
 
-    let sessions = storage.list_sessions(ListSessions { limit: 0 }).await?;
+    let sessions = storage
+        .list_sessions(ListSessions {
+            limit: 0,
+            offset: 0,
+        })
+        .await?;
     assert_eq!(sessions.len(), 2);
     assert_eq!(sessions[0].session_id, "sess-running");
     assert!(sessions[0].updated_at > sessions[1].updated_at);

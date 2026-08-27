@@ -17,6 +17,7 @@ import {
   ansiMaxColumns,
   shotScaleFactor,
   withPngDpi,
+  resolveChromeBinary,
 } from '../src/commands/log-shot.js'
 import { mkdtempSync, readFileSync, rmSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
@@ -350,5 +351,62 @@ describe('log-shot ansi + render', () => {
     const m = html.match(/\.shot-frame \{\s*width: (\d+)ch/)
     expect(m).not.toBeNull()
     expect(Number(m![1])).toBeLessThan(80)
+  })
+})
+
+describe('resolveChromeBinary', () => {
+  const none = {
+    env: {} as NodeJS.ProcessEnv,
+    which: () => null,
+    exists: () => false,
+  }
+
+  test('linux does not inherit the macOS Chrome.app path', () => {
+    expect(resolveChromeBinary({ ...none, platform: 'linux' })).toBeNull()
+  })
+
+  test('linux prefers an existing chromium binary over PATH names', () => {
+    const exists = (path: string) => path === '/usr/bin/chromium-browser'
+    expect(resolveChromeBinary({
+      ...none,
+      platform: 'linux',
+      exists,
+    })).toBe('/usr/bin/chromium-browser')
+  })
+
+  test('linux resolves chromium from PATH when no absolute path exists', () => {
+    expect(resolveChromeBinary({
+      ...none,
+      platform: 'linux',
+      which: command => command === 'chromium' ? '/opt/bin/chromium' : null,
+    })).toBe('/opt/bin/chromium')
+  })
+
+  test('darwin only uses Chrome.app when the file exists', () => {
+    const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    expect(resolveChromeBinary({
+      ...none,
+      platform: 'darwin',
+      exists: path => path === mac,
+    })).toBe(mac)
+    expect(resolveChromeBinary({ ...none, platform: 'darwin' })).toBeNull()
+  })
+
+  test('EVOT_CHROME wins when the override exists', () => {
+    expect(resolveChromeBinary({
+      ...none,
+      platform: 'linux',
+      env: { EVOT_CHROME: '/opt/chrome/chrome' } as NodeJS.ProcessEnv,
+      exists: path => path === '/opt/chrome/chrome',
+    })).toBe('/opt/chrome/chrome')
+  })
+
+  test('missing EVOT_CHROME override is skipped instead of spawned', () => {
+    expect(resolveChromeBinary({
+      ...none,
+      platform: 'linux',
+      env: { EVOT_CHROME: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' } as NodeJS.ProcessEnv,
+      which: command => command === 'chromium' ? '/usr/bin/chromium' : null,
+    })).toBe('/usr/bin/chromium')
   })
 })

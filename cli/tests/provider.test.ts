@@ -193,3 +193,48 @@ describe('modelSelectorItems', () => {
     ])
   })
 })
+
+describe('catalog rank across split cloud providers', () => {
+  // Production shape: routing splits a tier into one provider per protocol,
+  // and each model carries its catalog rank (higher shows earlier).
+  const split = [
+    {
+      provider: 'evot-pro-anthropic', protocol: 'anthropic' as const,
+      model: 'glm-5.3-flash', spec: 'evot-pro-anthropic:glm-5.3-flash',
+      group_label: 'Evot Premium', group_order: 1, sort_order: 10,
+      free: { display_name: 'GLM 5.3 Flash (Former Ox Alpha)', tier: 'special' },
+    },
+    {
+      provider: 'evot-pro-anthropic', protocol: 'anthropic' as const,
+      model: 'claude-opus-5', spec: 'evot-pro-anthropic:claude-opus-5',
+      group_label: 'Evot Premium', group_order: 1, sort_order: 0,
+      free: { display_name: 'Claude Opus 5', tier: 'special' },
+    },
+    {
+      provider: 'evot-pro-anthropic', protocol: 'anthropic' as const,
+      model: 'gpt-5.6-sol', spec: 'evot-pro-anthropic:gpt-5.6-sol',
+      group_label: 'Evot Premium', group_order: 1, sort_order: 0,
+      free: { display_name: 'GPT 5.6 Sol', tier: 'special' },
+    },
+    {
+      provider: 'evot-pro-openai', protocol: 'openai' as const,
+      model: 'grok-4.6', spec: 'evot-pro-openai:grok-4.6',
+      group_label: 'Evot Premium', group_order: 1, sort_order: 9,
+      free: { display_name: 'Grok 4.6', tier: 'special' },
+    },
+  ]
+
+  test('the rank cuts across protocol providers inside one tier', () => {
+    const sorted = sortModelOptionsForSelector(split, 'none:none')
+    // 10 then 9, then the rank-0 pair in server order.
+    expect(sorted.map(option => option.model)).toEqual([
+      'glm-5.3-flash', 'grok-4.6', 'claude-opus-5', 'gpt-5.6-sol',
+    ])
+  })
+
+  test('picker rows stay grouped under the tier heading', () => {
+    const items = modelSelectorItems(split, 'none:none')
+    expect(items.filter(item => item.header).map(item => item.label))
+      .toEqual(['Evot Premium'])
+  })
+})

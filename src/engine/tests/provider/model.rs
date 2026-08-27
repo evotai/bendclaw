@@ -433,6 +433,44 @@ fn route_capability_names_are_parsed_separately_from_transport_caps() {
     assert_eq!(CompatCaps::from_name("remote_compaction"), None);
 }
 
+/// GLM 5.3 Flash is Ox Alpha under its release id: three tiers with Max as
+/// default. The cloud catalog's `max` default must land natively instead of
+/// clamping to the GLM-5.2 fallback's Xhigh.
+#[test]
+fn glm_5_3_flash_uses_the_ox_alpha_ladder() {
+    let flash = ModelConfig::anthropic("glm-5.3-flash", "GLM 5.3 Flash");
+    assert_eq!(flash.supported_thinking_levels(), vec![
+        ThinkingLevel::Low,
+        ThinkingLevel::High,
+        ThinkingLevel::Max
+    ]);
+    assert_eq!(flash.default_thinking_level(), ThinkingLevel::Max);
+    // The server-owned default passes through unclamped.
+    assert_eq!(
+        flash.effective_thinking_level(ThinkingLevel::Max),
+        ThinkingLevel::Max
+    );
+
+    // The GLM-5.2 ladder is unchanged, and unknown glm ids still inherit it.
+    for id in ["glm-5.2", "glm-5.4-turbo"] {
+        let glm = ModelConfig::anthropic(id, id);
+        assert_eq!(
+            glm.supported_thinking_levels(),
+            vec![
+                ThinkingLevel::Off,
+                ThinkingLevel::High,
+                ThinkingLevel::Xhigh
+            ],
+            "{id}"
+        );
+        assert_eq!(
+            glm.effective_thinking_level(ThinkingLevel::Max),
+            ThinkingLevel::Xhigh,
+            "{id}: max clamps down to the GLM-5.2 top tier"
+        );
+    }
+}
+
 #[test]
 fn newer_uncatalogued_ids_inherit_family_windows() {
     for id in ["glm-5.3", "glm-5.2-pro", "zai/glm-5.3", "glm-4.7"] {

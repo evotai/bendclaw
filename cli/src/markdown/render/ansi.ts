@@ -1010,6 +1010,7 @@ export function formatTokens(tokens: Token[], options: FormatTokensOptions = {})
   }
   let out = ''
   let prevWasBlock = false
+  let prevWasHeading = false
 
   // The trailing content token is still growing during streaming; formatting
   // it is never cached (see cache note above).
@@ -1029,12 +1030,19 @@ export function formatTokens(tokens: Token[], options: FormatTokensOptions = {})
     const rendered = cachedFormatToken(token, theme, index !== lastContentIndex)
     if (!rendered) continue
     const isBlock = BLOCK_TYPES.has(token.type)
-    // Insert blank line between consecutive block-level elements
-    if (isBlock && prevWasBlock && options.blockSpacing !== 'compact') {
+    const isHeading = token.type === 'heading'
+    // Insert a blank line between consecutive block-level elements. Compact
+    // thinking collapses ordinary paragraph/list gaps, but headings still need
+    // a row of air or they glue to the previous block (`###` sitting on the
+    // last prose line).
+    if (isBlock && prevWasBlock && (
+      options.blockSpacing !== 'compact' || isHeading || prevWasHeading
+    )) {
       out += EOL
     }
     out += rendered
     prevWasBlock = isBlock
+    if (isBlock) prevWasHeading = isHeading
   }
 
   // Strip only leading/trailing newlines. `.trim()` would also eat leading

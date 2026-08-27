@@ -21,12 +21,6 @@ const EVOT_LOGO = [
   ' ╚══════╝  ╚═══╝   ╚═════╝    ╚═╝   ',
 ]
 
-function formatPath(path: string): string {
-  const home = homedir()
-  if (path === home) return '~'
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
-}
-
 function getContextFiles(cwd: string): string[] {
   return PROJECT_CONTEXT_FILES.filter(name => existsSync(join(cwd, name)))
 }
@@ -136,9 +130,10 @@ export function renderBanner(opts: BannerOptions): string {
   }
 
   if (configInfo && !configInfo.hasApiKey) {
-    const envPath = configInfo.envPath ? formatPath(configInfo.envPath) : '.env'
     detailLines.push('')
-    detailLines.push(chalk.hex('#ffff00')(`  ⚠ No API key — edit ${envPath}`))
+    detailLines.push(chalk.hex('#ffff00')('  ⚠ Not logged in — /login for cloud models, or add a key on the Models page'))
+    const base = serverState?.address?.replace(/\/+$/, '')
+    if (base) detailLines.push(chalk.hex(MUTED)(`    ${base}/models`))
   }
 
   if (installDrift) {

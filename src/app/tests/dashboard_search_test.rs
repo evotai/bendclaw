@@ -1,10 +1,9 @@
 //! Tests for the dashboard session-search feature.
 //!
-//! The web search UI (dashboard shell + /chat page) does client-side substring
-//! filtering and highlighting over the `search_text` field returned by
-//! `list_sessions_with_text`. These tests pin the backend contract that feeds
-//! that UI, plus a guard that the dashboard shell actually embeds the search
-//! markup that calls `/api/sessions`.
+//! The chat sidebar does client-side substring filtering and highlighting
+//! over the `search_text` field returned by `list_sessions_with_text`.
+//! These tests pin the backend contract that feeds it, plus a guard that the
+//! chat page embeds the search markup that calls `/api/sessions`.
 
 use std::sync::Arc;
 
@@ -187,7 +186,12 @@ async fn list_sessions_with_text_respects_limit() -> TestResult {
         s.write_items(vec![assistant("hello")]).await?;
     }
 
-    let total = storage.list_sessions(ListSessions { limit: 100 }).await?;
+    let total = storage
+        .list_sessions(ListSessions {
+            limit: 100,
+            offset: 0,
+        })
+        .await?;
     assert_eq!(total.len(), 5);
 
     let limited = storage.list_sessions_with_text(2).await?;
@@ -235,7 +239,12 @@ async fn delete_session_removes_only_target() -> TestResult {
 
     // Deleting an existing session reports true and removes just that one.
     assert!(storage.delete_session("del-b").await?);
-    let remaining = storage.list_sessions(ListSessions { limit: 100 }).await?;
+    let remaining = storage
+        .list_sessions(ListSessions {
+            limit: 100,
+            offset: 0,
+        })
+        .await?;
     let ids: Vec<&str> = remaining.iter().map(|s| s.session_id.as_str()).collect();
     assert_eq!(remaining.len(), 2);
     assert!(ids.contains(&"del-a"));
@@ -248,39 +257,33 @@ async fn delete_session_removes_only_target() -> TestResult {
     Ok(())
 }
 
-/// The sessions page is served verbatim via `include_str!`, so the behavior it
-/// depends on is guarded here: the endpoints it calls and the affordances the
-/// old dashboard used to provide (search, favorites, paging, bulk cleanup).
+/// Chat owns the session sidebar and the full-text search dialog; the
+/// standalone sessions page is gone, so its affordances live here: paged
+/// recent list, armed delete, and highlighted match snippets.
 #[test]
-fn sessions_page_wires_its_endpoints_and_actions() {
-    let js = include_str!("../src/gateway/channels/http/static/ui/sessions.js");
-    // Data sources.
-    assert!(js.contains("/api/sessions"));
-    assert!(js.contains("/api/favorites"));
-    assert!(js.contains("/api/favorites/toggle"));
-    assert!(js.contains("/api/sessions/delete"));
-    assert!(js.contains("/api/vitals"));
-    // Search over the flattened text, with match highlighting.
-    assert!(js.contains("search_text"));
-    assert!(js.contains("function highlight"));
-    assert!(js.contains("<mark>"));
-    // Favorites pin to the front, so a starred session stays reachable.
-    assert!(js.contains("favorites.has"));
-    // Paging, time filtering, and bulk delete.
-    assert!(js.contains("PAGE_SIZE"));
-    assert!(js.contains("matchesTime"));
-    assert!(js.contains("deleteSelected"));
-    // Cards link into the per-session trace.
-    assert!(js.contains("/trace"));
-}
-
-/// The hand-written /chat page exposes the same search affordance.
-#[test]
-fn chat_page_embeds_search_overlay() {
+fn chat_page_embeds_session_navigation() {
     let html = include_str!("../src/gateway/channels/http/static/index.html");
+    let js = include_str!("../src/gateway/channels/http/static/ui/chat.js");
+    assert!(html.contains("id=\"recentSessions\""));
     assert!(html.contains("id=\"searchOverlay\""));
-    assert!(html.contains("/api/sessions"));
-    assert!(html.contains("function highlight"));
+    assert!(html.contains("id=\"modelSelect\""));
+    assert!(html.contains("id=\"thinkingSelect\""));
+    assert!(js.contains("/api/sessions"));
+    assert!(js.contains("search_text"));
+    assert!(js.contains("/api/sessions/delete"));
+    assert!(js.contains("snippetAround"));
+    assert!(js.contains("<mark>"));
+    // Recent pages from the server; search pays for transcript text later.
+    assert!(js.contains("loadRecentPage"));
+    // Account row + notices refresh in place after login/logout.
+    assert!(js.contains("/api/auth/session"));
+    assert!(js.contains("/api/notices"));
+    assert!(js.contains("chooseModel(meta.provider, meta.model)"));
+    assert!(js.contains("/api/sessions?full=true"));
+    assert!(js.contains("skeletonHtml"));
+    // A trace deep-dive hands the reader back to the same conversation.
+    assert!(js.contains("URLSearchParams"));
+    assert!(js.contains("target = \"_blank\""));
 }
 
 // ---------------------------------------------------------------------------

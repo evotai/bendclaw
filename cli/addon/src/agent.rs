@@ -380,6 +380,13 @@ impl NapiAgent {
                     if let Some((label, order)) = cloud_groups.get(provider) {
                         entry["group_label"] = serde_json::json!(label);
                         entry["group_order"] = serde_json::json!(order);
+                        // Catalog rank inside the tier: higher shows earlier
+                        // when the picker merges protocol providers.
+                        entry["sort_order"] = serde_json::json!(config
+                            .cloud_model_sorts
+                            .get(model)
+                            .copied()
+                            .unwrap_or(0));
                         if let Some(meta) = free_meta.get(model) {
                             entry["free"] = serde_json::json!({
                                 "display_name": meta.display_name,

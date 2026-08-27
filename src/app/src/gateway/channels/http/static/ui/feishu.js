@@ -14,6 +14,7 @@ import {
   mountShell,
   postJson,
   setShellCwd,
+  skeletonHtml,
   toast,
 } from "./app.js";
 
@@ -89,7 +90,7 @@ async function load() {
     lede: "Link a Feishu bot so the agent can be reached from chat.",
     actions: '<button class="btn primary" id="save">Save changes</button>',
   });
-  root.innerHTML = '<div class="empty">Loading…</div>';
+  root.innerHTML = skeletonHtml(3, "form");
   document.getElementById("save").addEventListener("click", save);
   try {
     state = await getJson("/api/channels/feishu");

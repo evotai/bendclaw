@@ -5,12 +5,17 @@ use std::sync::Arc;
 
 use evot::agent::session::Session;
 use evot::agent::Agent;
+use evot::agent::QueryRequest;
+use evot::agent::RunEventPayload;
+use evot::agent::SubmitOutcome;
 use evot::conf::Config;
 use evot::conf::Protocol;
 use evot::conf::ProviderProfile;
 use evot::conf::StorageConfig;
 use evot::storage::open_storage;
+use evot::storage::MemoryStorage;
 use evot_engine::provider::CompatCaps;
+use evot_engine::provider::MockProvider;
 use evot_engine::ThinkingLevel;
 use tempfile::TempDir;
 
@@ -362,6 +367,53 @@ async fn session_thinking_level_round_trips_through_storage() -> TestResult {
         reopened.meta().await.thinking_level,
         Some("high".to_string())
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn pinned_request_model_survives_live_model_changes() -> TestResult {
+    let dir = TempDir::new()?;
+    let mut config = anthropic_config(&dir);
+    let profile = config
+        .providers
+        .get_mut("anthropic")
+        .ok_or("missing anthropic profile")?;
+    profile.models = vec!["claude-opus-4-6".into(), "claude-sonnet-4-6".into()];
+
+    let pinned = config.build_llm("anthropic", Some("claude-opus-4-6".into()))?;
+    let live = config.build_llm("anthropic", Some("claude-sonnet-4-6".into()))?;
+    let storage = Arc::new(MemoryStorage::new());
+    let agent =
+        Agent::new_with_provider_for_test(&config, "/work", storage, MockProvider::text("ok"))?;
+
+    // Simulate another Chat request changing the live default after this
+    // request captured its selection but before submit starts its run.
+    let request = QueryRequest::text("keep the pinned model").llm(pinned);
+    agent.set_llm(live);
+    let outcome = agent.submit(request).await?;
+    let mut run = match outcome {
+        SubmitOutcome::Run(run) => run,
+        SubmitOutcome::Command(message) => {
+            return Err(format!("unexpected command outcome: {message}").into());
+        }
+    };
+    let session_id = run.session_id.clone();
+    let mut started_model = None;
+    while let Some(event) = run.next().await {
+        if let RunEventPayload::LlmCallStarted { model, .. } = event.payload {
+            started_model = Some(model);
+        }
+    }
+
+    assert_eq!(started_model.as_deref(), Some("claude-opus-4-6"));
+    let meta = agent
+        .find_session(&session_id)
+        .await?
+        .ok_or("pinned run did not persist its session")?;
+    assert_eq!(meta.provider, "anthropic");
+    assert_eq!(meta.model, "claude-opus-4-6");
+    // The live selection remains available as the next request's default.
+    assert_eq!(agent.llm().model, "claude-sonnet-4-6");
     Ok(())
 }
 

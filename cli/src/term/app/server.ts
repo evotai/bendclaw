@@ -13,7 +13,7 @@ export async function tryStartServer(port?: number, envFile?: string): Promise<S
   const info = await startServerBackground(port, undefined, envFile)
   if (info === null) return null
   activePort = info.port
-  // The dashboard is surfaced as a clickable link in the banner rather than
+  // The UI URL is surfaced as a clickable link in the banner rather than
   // auto-opened — popping a browser tab on every launch is disruptive.
   return {
     port: info.port,

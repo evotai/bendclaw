@@ -225,6 +225,10 @@ pub struct Config {
     pub env_file_path: PathBuf,
     /// Server-pushed thinking defaults, keyed by cloud model id.
     pub cloud_thinking_levels: HashMap<String, ThinkingLevel>,
+    /// Catalog tier per cloud model id (`base` / `special`).
+    pub cloud_model_tiers: HashMap<String, String>,
+    /// Catalog display rank per cloud model id (higher shows earlier).
+    pub cloud_model_sorts: HashMap<String, i64>,
     pub cloud_providers: HashSet<String>,
 }
 
@@ -241,6 +245,8 @@ impl Config {
             skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
             cloud_thinking_levels: HashMap::new(),
+            cloud_model_tiers: HashMap::new(),
+            cloud_model_sorts: HashMap::new(),
             cloud_providers: HashSet::new(),
         }
     }
@@ -295,6 +301,31 @@ impl Config {
             thinking_level,
             model_config,
         })
+    }
+
+    /// Landing (provider, model) for a new session; Premium tier preferred.
+    pub fn preferred_new_session_llm(&self) -> Option<(String, String)> {
+        let premium = self.providers.iter().find_map(|(name, profile)| {
+            if !self.cloud_providers.contains(name) {
+                return None;
+            }
+            profile.models.iter().find_map(|model| {
+                (self.cloud_model_tiers.get(model).map(String::as_str) == Some("special"))
+                    .then(|| (name.clone(), model.clone()))
+            })
+        });
+        if let Some(pair) = premium {
+            return Some(pair);
+        }
+        if self.cloud_providers.contains(&self.llm.provider) {
+            let model = self.llm.model_override.clone().or_else(|| {
+                self.providers
+                    .get(&self.llm.provider)
+                    .and_then(|profile| profile.models.first().cloned())
+            })?;
+            return Some((self.llm.provider.clone(), model));
+        }
+        None
     }
 
     /// Parse a model spec and return (provider_name, optional_model_override).

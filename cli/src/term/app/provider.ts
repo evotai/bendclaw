@@ -75,6 +75,10 @@ export function sortModelOptionsForSelector(options: ModelOption[], activeSpec: 
       const headingOrder = leftHeading.localeCompare(rightHeading)
       if (headingOrder !== 0) return headingOrder
 
+      // Same tier: catalog rank cuts across protocol providers.
+      const rankDiff = (right.option.sort_order ?? 0) - (left.option.sort_order ?? 0)
+      if (rankDiff !== 0) return rankDiff
+
       const providerOrder = left.option.provider.localeCompare(right.option.provider)
       if (providerOrder !== 0) return providerOrder
 

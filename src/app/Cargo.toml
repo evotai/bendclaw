@@ -39,7 +39,7 @@ tracing-subscriber.workspace = true
 unicode-width = "0.2"
 uuid.workspace = true
 tempfile = "3"
-sysinfo = "0.33"
+hostname = "0.4"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"

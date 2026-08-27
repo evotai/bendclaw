@@ -893,12 +893,18 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         return Ok(());
     };
 
-    let mut primary: Option<(String, i64)> = None;
+    let mut primary: Option<(String, i64, bool)> = None;
     let mut thinking_levels = std::collections::HashMap::new();
+    let mut model_tiers = std::collections::HashMap::new();
+    let mut model_sorts = std::collections::HashMap::new();
     for model in &cache.response.models {
         if let Ok(level) = thinking_level_from_str(&model.thinking_level) {
             thinking_levels.insert(model.id.clone(), level);
         }
+        if !model.tier.is_empty() {
+            model_tiers.insert(model.id.clone(), model.tier.clone());
+        }
+        model_sorts.insert(model.id.clone(), model.sort_order);
     }
     for group in cache.response.providers {
         if group.models.is_empty() {
@@ -910,14 +916,19 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             EvotError::Conf(format!("unsupported cloud protocol: {}", group.protocol))
         })?;
 
-        // Keep the server's default first so it is preselected.
+        // Head = server default; the rest keeps the catalog's rank order.
         let head = if group.models.contains(&group.default_model) {
             group.default_model.clone()
         } else {
             group.models[0].clone()
         };
-        let mut ordered = vec![head.clone()];
-        ordered.extend(group.models.into_iter().filter(|m| *m != head));
+        let premium = group
+            .models
+            .iter()
+            .any(|model| model_tiers.get(model).map(String::as_str) == Some("special"));
+        let ordered = std::iter::once(head.clone())
+            .chain(group.models.into_iter().filter(|m| *m != head))
+            .collect::<Vec<_>>();
 
         let profile = ProviderProfile {
             protocol,
@@ -933,23 +944,41 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         };
         config.providers.insert(name.clone(), profile);
         config.cloud_providers.insert(name.clone());
-        // The server orders its own groups, so the first one it ranks is the
-        // landing spot for a fresh install. No tier name is assumed here.
-        if primary
-            .as_ref()
-            .is_none_or(|(_, rank)| group.sort_order < *rank)
-        {
-            primary = Some((name, group.sort_order));
+        // Premium group wins the landing spot; ties follow server ranking.
+        let better = match &primary {
+            None => true,
+            Some((_, rank, is_premium)) => match (premium, *is_premium) {
+                (true, false) => true,
+                (false, true) => false,
+                _ => group.sort_order < *rank,
+            },
+        };
+        if better {
+            primary = Some((name, group.sort_order, premium));
         }
     }
     config.cloud_thinking_levels = thinking_levels;
+    config.cloud_model_tiers = model_tiers;
+    config.cloud_model_sorts = model_sorts;
 
-    let Some((primary, _)) = primary else {
+    let Some((primary, _, landing_is_premium)) = primary else {
         return Ok(());
     };
 
-    // Auto-activate a cloud provider only when nothing usable is configured
-    // (fresh install). An existing BYOK selection always wins.
+    // A leftover Free cloud selection yields to the Premium landing spot.
+    if landing_is_premium && config.cloud_providers.contains(&config.llm.provider) {
+        let current_tier = config
+            .providers
+            .get(&config.llm.provider)
+            .and_then(|profile| profile.models.first())
+            .and_then(|model| config.cloud_model_tiers.get(model));
+        if current_tier.map(String::as_str) != Some("special") {
+            config.llm.provider = primary;
+        }
+        return Ok(());
+    }
+
+    // Auto-activate only when nothing usable is configured; BYOK always wins.
     let current_unconfigured = config
         .providers
         .get(&config.llm.provider)

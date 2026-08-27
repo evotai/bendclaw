@@ -12,6 +12,7 @@
 
 ## 📢 News
 
+- **2026-08-27** `GPT-5.6 Luna` is free through Aug 31 🎉 — just `evot login`.
 - **2026-08-24** Free model of the week: [`stealth/ox-alpha`](https://openrouter.ai/stealth/ox-alpha) — free on OpenRouter for a week.
 
 ## Performance

@@ -625,7 +625,11 @@ impl Server {
     /// Runtime model directory for the Chat composer. Unlike `/api/models`,
     /// this is about choosing a model for the next run, so it includes each
     /// model's actual supported thinking levels and the agent's live selection.
+    /// Reloads from disk so a long-open Chat sees external config edits.
     fn chat_options(&self) -> impl IntoResponse {
+        if let Err(e) = self.reload_config_from_disk() {
+            tracing::warn!("chat options: reload from disk failed, serving cached config: {e}");
+        }
         let config = self.config.read();
         let current = self.agent.llm();
         let providers: Vec<serde_json::Value> = config

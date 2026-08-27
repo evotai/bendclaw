@@ -110,6 +110,7 @@ export async function applyStagedOnStartup(currentVersion: string): Promise<stri
     return null
   }
 
+  // Fast path: apply what is staged; background checks re-stage newer releases.
   const result = await executeInstall(staged.tag, { EVOT_INSTALL_ASSET: staged.assetPath })
   if (!result.success) return null
   clearStaged()

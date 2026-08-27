@@ -12,7 +12,7 @@
  *   evot-v<version>-<target>.tar.gz.sha256  sidecar used by install.sh
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { createWriteStream } from 'fs'
 import { join } from 'path'
 import type { ReleaseInfo } from './types.js'
@@ -44,6 +44,22 @@ export class StageAborted extends Error {}
 
 function stagingRoot(): string {
   return join(stateDir(), 'staging')
+}
+
+/** Prune staging entries superseded by the currently staged version. */
+function pruneSupersededVersions(current: string): void {
+  try {
+    for (const entry of readdirSync(stagingRoot())) {
+      if (entry === current || entry.endsWith('.json')) continue
+      rmSync(join(stagingRoot(), entry), { recursive: true, force: true })
+    }
+  } catch { /* best effort */ }
+}
+
+/** Drop whatever readStaged would not consider current, siblings included. */
+export function pruneStaleStaging(): void {
+  const staged = readStaged()
+  if (staged) pruneSupersededVersions(staged.version)
 }
 
 function versionDir(version: string): string {
@@ -265,6 +281,7 @@ export async function stageUpdate(
       staged_at: Date.now(),
     }
     writeFileSync(join(stagingRoot(), 'staged.json'), JSON.stringify(manifest))
+    pruneSupersededVersions(release.version)
 
     return {
       tag: release.tag,

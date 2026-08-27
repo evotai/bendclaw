@@ -15,7 +15,8 @@
 import { EventEmitter } from 'events'
 import type { ReleaseInfo } from './types.js'
 import { checkForUpdate } from './check.js'
-import { readStaged, stageUpdate } from './stage.js'
+import { compareVersions } from './version.js'
+import { readStaged, stageUpdate, pruneStaleStaging } from './stage.js'
 
 const INITIAL_DELAY = 10_000          // 10s after start
 const PERIODIC_CHECK = 30 * 60_000    // 30 min interval
@@ -54,7 +55,10 @@ export class UpdateManager extends EventEmitter {
     // A previous session may have left a verified download behind. Surface it
     // immediately instead of waiting for the first check to re-discover it.
     const staged = readStaged()
-    if (staged) this.status = { kind: 'staged', version: staged.version }
+    if (staged) {
+      this.status = { kind: 'staged', version: staged.version }
+      pruneStaleStaging()
+    }
   }
 
   /** Start the scheduler: delayed first check + periodic checks. */
@@ -128,7 +132,8 @@ export class UpdateManager extends EventEmitter {
   private maybeStage(release: ReleaseInfo): void {
     if (process.env.EVOT_AUTO_DOWNLOAD === '0') return
     if (this.stopped || this.stagingAbort) return
-    if (this.status.kind === 'staged' && this.status.version >= release.version) return
+    // CalVer compare: string order sorts 2026.9.30 after 2026.10.1.
+    if (this.status.kind === 'staged' && compareVersions(this.status.version, release.version) >= 0) return
 
     this.setStatus({ kind: 'downloading', version: release.version })
     const controller = new AbortController()

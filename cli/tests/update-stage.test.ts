@@ -225,4 +225,47 @@ describe('staging', () => {
       void server.stop(true)
     }
   })
+
+  test('a newer release restages in the background and prunes the old download', async () => {
+    const stagedOld = async () => {
+      const archive = await makeArchive('2026.9.30')
+      const server = startFixtureServer(archive)
+      try {
+        const { stageUpdate } = await import('../src/update/stage.js')
+        await stageUpdate({ tag: 'v2026.9.30', version: '2026.9.30' }, new AbortController().signal)
+        expect(readStaged()?.version).toBe('2026.9.30')
+        expect(existsSync(join(home, 'staging', '2026.9.30'))).toBe(true)
+      } finally {
+        void server.stop(true)
+      }
+    }
+    await stagedOld()
+
+    const archive = await makeArchive('2026.10.1')
+    const server = startFixtureServer(archive)
+    try {
+      require('fs').writeFileSync(join(home, 'update-check.json'), JSON.stringify({
+        checked_at: Date.now(),
+        releases: [{ tag: 'v2026.10.1', version: '2026.10.1', prerelease: false }],
+      }))
+
+      const statuses: UpdateStatus[] = []
+      const mgr = new UpdateManager('2026.4.13')
+      mgr.on('update-status', (s: UpdateStatus) => statuses.push(s))
+
+      await mgr.check()
+      for (let i = 0; i < 50 && mgr.getStatus().kind !== 'staged'; i++) {
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+
+      expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.10.1' })
+      expect(readStaged()?.version).toBe('2026.10.1')
+      // The superseded month-end download must not linger on disk.
+      expect(existsSync(join(home, 'staging', '2026.9.30'))).toBe(false)
+      expect(statuses.some(s => s.kind === 'downloading')).toBe(true)
+      mgr.cleanup()
+    } finally {
+      void server.stop(true)
+    }
+  })
 })

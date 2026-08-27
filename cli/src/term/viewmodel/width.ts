@@ -21,6 +21,16 @@ export function spansWidth(spans: StyledSpan[]): number {
   return visibleWidth(spans.map(span => span.text).join(''))
 }
 
+/** Right-align `right` within `columns`; keeps a ≥1-column gap on overflow. */
+export function joinLeftRight(
+  left: StyledSpan[],
+  right: StyledSpan[],
+  columns: number,
+): StyledSpan[] {
+  const gap = Math.max(1, columns - spansWidth(left) - spansWidth(right))
+  return [...left, { text: ' '.repeat(gap) }, ...right]
+}
+
 /** Clamp a terminal dimension, falling back when the value is not finite. */
 export function finiteSize(value: number, fallback: number): number {
   return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : fallback

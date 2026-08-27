@@ -6,6 +6,7 @@ import { getTheme, resetThemeCache } from '../src/render/theme.js'
 import { visibleWidth } from '../src/render/wrap.js'
 import { CURSOR_MARKER } from '../src/term/renderer.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
+import { joinLeftRight, spansWidth } from '../src/term/viewmodel/width.js'
 import { buildPromptBlocks, type PromptVMInput } from '../src/term/viewmodel/prompt.js'
 import { buildPromptFooterBlocks } from '../src/term/viewmodel/prompt-footer.js'
 
@@ -245,6 +246,7 @@ describe('prompt editor', () => {
     expect(buildPromptBlocks(defaultInput())[0]!.marginTop).toBe(1)
     expect(buildPromptBlocks(defaultInput(), { attachedAbove: true })[0]!.marginTop).toBe(0)
   })
+
 
   test('shows exit hint', () => {
     expect(renderPlain(defaultInput({ exitHint: true }))).toContain('Press Ctrl+C again to exit')
@@ -923,5 +925,22 @@ describe('prompt footer', () => {
     expect(lines[0]).toContain('gpt-5.6-sol@openai')
     expect(lines[1]).toBe('')
     expect(lines.join('\n')).not.toContain('Enter a coding task or / for commands')
+  })
+})
+
+describe('joinLeftRight', () => {
+  test('right-aligns the trailing spans on one row', () => {
+    const left = [{ text: '* Waiting for model… (7.5s) · esc to interrupt' }]
+    const right = [{ text: '⬇ Auto-updating to v2026.8.26.2…' }]
+    const columns = 120
+    const joined = joinLeftRight(left, right, columns)
+    expect(spansWidth(joined)).toBe(columns)
+    expect(joined.map(span => span.text).join('')).toEndWith('⬇ Auto-updating to v2026.8.26.2…')
+    expect(joined[1]!.text.startsWith(' ')).toBe(true)
+  })
+
+  test('keeps a one-column gap when the two sides collide', () => {
+    const joined = joinLeftRight([{ text: 'left' }], [{ text: 'right' }], 8)
+    expect(joined.map(span => span.text).join('')).toBe('left right')
   })
 })

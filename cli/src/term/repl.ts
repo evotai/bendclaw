@@ -26,7 +26,6 @@ import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
 import { renderBanner } from './banner.js'
-import stringWidth from 'string-width'
 import {
   buildOutputBlocks,
   buildPromptBlocks,
@@ -41,6 +40,7 @@ import {
   type PromptVMInput,
   type ViewBlock,
 } from './viewmodel/index.js'
+import { joinLeftRight, spansWidth } from './viewmodel/width.js'
 import { createAdSlotState, tickAdSlot, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, type AdSlotState } from './viewmodel/ad-slot.js'
 import { HistoryRenderCache } from './viewmodel/history-cache.js'
 import { Committer } from './committer.js'
@@ -715,6 +715,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       )
       spinnerBlock = {
         lines: wrapTextWithAnsi(spinnerText, renderer.termCols).map(text => ({ spans: [{ text }] })),
+        // Separating blank above the status row; queue rows bring their own.
+        marginTop: 1,
       }
     }
 
@@ -740,13 +742,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // Queue already owns the blank line above the input unit.
       if (spinnerBlock) spinnerBlock = { ...spinnerBlock, marginTop: 0 }
     }
-    if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
-    // Update notice: a right-aligned row sitting on the input box, not inside
-    // its border. Rendered after the ad slot so the ticker keeps the left and
-    // this notice hugs the frame's top-right corner. Staged is green because it
-    // wants to be seen: "restart when convenient". Downloading and
-    // manual-only-available are dim background noise. Failures stay silent;
-    // the manual /update reports them with full context.
+    // Update notice: sits on the same row as the spinner so a long wait
+    // never grows an extra blank line above the composer. Staged is green
+    // because it wants to be seen: "restart when convenient". Downloading
+    // and manual-only-available are dim background noise. Failures stay
+    // silent; the manual /update reports them with full context.
     let updateNotice: ViewBlock['lines'][number]['spans'] | null = null
     if (overlay.kind === 'none') {
       if (updateStatus === 'staged' && updateVersion) {
@@ -764,14 +764,26 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         ]
       }
     }
+    if (spinnerBlock && updateNotice) {
+      const last = spinnerBlock.lines.length - 1
+      const left = spinnerBlock.lines[last]?.spans ?? []
+      spinnerBlock = {
+        ...spinnerBlock,
+        lines: [
+          ...spinnerBlock.lines.slice(0, last),
+          { spans: joinLeftRight(left, updateNotice, renderer.termCols) },
+        ],
+      }
+      updateNotice = null
+    }
+    if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
     if (adSlotTick.content && !isLoading && !spinnerBlock) {
       preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols))
     }
     if (updateNotice) {
-      const textWidth = updateNotice.reduce((sum, s) => sum + stringWidth(s.text), 0)
-      const pad = Math.max(0, renderer.termCols - textWidth)
+      const pad = Math.max(0, renderer.termCols - spansWidth(updateNotice))
       preEditorBlocks.push({
         lines: [{ spans: [{ text: ' '.repeat(pad) }, ...updateNotice] }],
         // Sit on the frame: no blank row between this and the composer.

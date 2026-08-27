@@ -1,6 +1,7 @@
 import { describe, test, expect, skipIf } from 'bun:test'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const EVOT_BIN = join(import.meta.dirname, '..', '..', 'dist', 'evot')
@@ -52,9 +53,11 @@ function stripAnsi(text: string): string {
 }
 
 async function startEvot(): Promise<Session> {
+  // Isolated EVOT_HOME: a dev machine may hold a staged release newer than this binary.
+  const isolatedHome = mkdtempSync(join(tmpdir(), 'evot-smoke-home-'))
   const child = spawn('python3', ['-c', PTY_RELAY, EVOT_BIN], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, TERM: 'xterm-256color', EVOT_MOUSE: '0' },
+    env: { ...process.env, TERM: 'xterm-256color', EVOT_MOUSE: '0', EVOT_HOME: isolatedHome },
   })
   let all = ''
   let seen = 0
@@ -72,6 +75,7 @@ async function startEvot(): Promise<Session> {
       child.stdin!.write('\x03')
       await wait(500)
       child.kill('SIGKILL')
+      rmSync(isolatedHome, { recursive: true, force: true })
     },
   }
 }

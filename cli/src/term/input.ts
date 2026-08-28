@@ -37,6 +37,8 @@ export type KeyEvent =
   | { type: 'page-down' }
   | { type: 'ctrl'; key: string }
   | { type: 'paste'; text: string }
+  /** Terminal reported a paste shortcut as a key, so the clipboard read is ours. */
+  | { type: 'paste-clipboard' }
 
 export type KeyHandler = (event: KeyEvent) => void
 
@@ -60,6 +62,8 @@ export interface EnhancedKeyboardSession {
 const MOD_SHIFT = 1
 const MOD_ALT = 2
 const MOD_CTRL = 4
+// Kitty super/meta bit (Cmd on macOS).
+const MOD_SUPER = 8
 const KITTY_KP_ENTER = 57414
 const ENABLE_KITTY_DISAMBIGUATE = '\x1b[>1u'
 const QUERY_KITTY_KEYBOARD = '\x1b[?u'
@@ -393,6 +397,12 @@ function modifiedArrowEvent(final: string, modifier: number): KeyEvent {
 
 function keyEventFromCodepoint(codepoint: number, modifier: number): KeyEvent | undefined {
   const normalizedModifier = modifier & ~(64 + 128) // ignore caps/num lock bits
+  // Warp reports Cmd+V as a key event under kitty disambiguate; without this
+  // branch the sequence was dropped and Cmd+V did nothing.
+  if ((normalizedModifier & MOD_SUPER) !== 0) {
+    if (codepoint === 118 || codepoint === 86) return { type: 'paste-clipboard' }
+    return undefined
+  }
   if (codepoint === 13 || codepoint === KITTY_KP_ENTER) {
     if ((normalizedModifier & MOD_CTRL) !== 0) return { type: 'ctrl-enter' }
     if ((normalizedModifier & MOD_SHIFT) !== 0) return { type: 'shift-enter' }

@@ -110,9 +110,11 @@ function darkTheme(): Theme {
     cursorFgHex: '#1a1d24',
 
     text: plain,
-    bold: style(s => chalk.bold(s)),
+    // Hue, not just weight: terminals whose font lacks a bold face drop SGR 1,
+    // which made `**bold**` read as body text.
+    bold: style(s => chalk.hex(accentHex).bold(s)),
     italic: style(s => chalk.italic(s)),
-    boldItalic: style(s => chalk.bold.italic(s)),
+    boldItalic: style(s => chalk.hex(accentHex).bold.italic(s)),
     strikethrough: style(s => chalk.dim.strikethrough(s)),
     underline: style(s => chalk.underline(s)),
     // link style follows claudecode: rely on OSC 8 for clickability and keep
@@ -184,9 +186,10 @@ function lightTheme(): Theme {
     cursorFgHex: '#ffffff',
 
     text: plain,
-    bold: style(s => chalk.bold(s)),
+    // See darkTheme: emphasis needs a hue, darker gold to hold contrast on white.
+    bold: style(s => chalk.hex(accentHex).bold(s)),
     italic: style(s => chalk.italic(s)),
-    boldItalic: style(s => chalk.bold.italic(s)),
+    boldItalic: style(s => chalk.hex(accentHex).bold.italic(s)),
     strikethrough: style(s => chalk.dim.strikethrough(s)),
     underline: style(s => chalk.underline(s)),
     // See darkTheme: link stays neutral and relies on OSC 8 for clickability.

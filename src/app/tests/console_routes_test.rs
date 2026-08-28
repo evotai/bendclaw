@@ -608,6 +608,9 @@ async fn chat_assets_are_served() -> TestResult {
     // Notices are a live ticker: full bodies, no titles, marquee on overflow.
     assert!(body.contains(".notice-banner.scroll"));
     assert!(body.contains("@keyframes notice-marquee"));
+    // Ticker chunks keep inline styling: links clickable, emphasis tinted.
+    assert!(body.contains(".notice-chunk a"));
+    assert!(body.contains(".notice-chunk strong"));
     // Assistant markdown covers block structure, not just inline code.
     assert!(body.contains(".code-block"));
     assert!(body.contains(".table-wrap"));
@@ -635,9 +638,12 @@ async fn chat_assets_are_served() -> TestResult {
     // message creates the session, carrying the chosen workspace cwd.
     assert!(!body.contains("/api/chat/new"));
     assert!(body.contains("payload.cwd = workspace.cwd"));
-    // Notices ride the live ticker: body content only, polled while visible.
+    // Notices ride the live ticker: title + body as markdown, polled live.
     assert!(body.contains("notice.body"));
+    assert!(body.contains("notice.title"));
     assert!(body.contains("flattenNoticeHtml"));
+    // Flattening drops structural tags but keeps inline styling alive.
+    assert!(body.contains("blockquote|pre|div|table"));
     assert!(body.contains("NOTICE_POLL_MS"));
     assert!(body.contains("visibilitychange"));
     assert!(body.contains("/api/chat/abort"));

@@ -2045,23 +2045,25 @@ async function refreshAuthBox() {
 
 /**
  * Notices: a live ticker above the composer, mirroring the TUI ad slot —
- * full body content (no title), one flattened line, polled while visible.
+ * title and body rendered as markdown on one flattened line, polled while
+ * visible, scrolling when the line overflows.
  */
 const NOTICE_POLL_MS = 20_000;
 let lastNoticesHtml = null;
 
 /**
  * Rendered markdown flattened to one ticker line: block rows, list items and
- * table cells become `·`-separated text; chrome (copy buttons, language
- * labels) drops out.
+ * table cells become `·`-separated text. Structural tags drop, but inline
+ * styling (strong, em, del, code) and links survive, so common markdown —
+ * bold, italic, links like [EFF](https://eff.org) — reads as styled content.
  */
 function flattenNoticeHtml(html) {
   const sep = '<span class="notice-sep" aria-hidden="true">·</span>';
   const flat = html
     .replace(/<div class="code-head">[\s\S]*?<\/div>/g, "")
     .replace(/<button[^>]*>[\s\S]*?<\/button>/g, "")
-    .replace(/<\/(p|h[1-6]|li|blockquote|pre|div|th|td)>|<(br|hr)\s*\/?>/g, "\u0001")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<\/(p|h[1-6]|li|blockquote|pre|div|th|td|tr|table|thead|tbody|ul|ol)>|<(br|hr)\s*\/?>/g, "\u0001")
+    .replace(/<\/?(:?p|h[1-6]|ul|ol|li|blockquote|pre|div|table|thead|tbody|tr|th|td)\b[^>]*>/g, "")
     .replace(/\u0001+/g, sep);
   return flat.endsWith(sep) ? flat.slice(0, -sep.length) : flat;
 }
@@ -2078,8 +2080,11 @@ async function refreshNotices() {
   }
   const chunks = items
     .map((notice) => {
-      // The body is the announcement; the title never rides the ticker.
-      const source = String(notice.body || notice.title || "").trim();
+      // TUI sourceMarkdown semantics: title and body render together, the
+      // blank line between them flattening into the `·` separator.
+      const title = String(notice.title || "").trim();
+      const body = String(notice.body || "").trim();
+      const source = title && body ? title + "\n\n" + body : title || body;
       if (!source) return "";
       const kind = notice.kind === "ad" ? " ad" : "";
       return '<span class="notice-chunk' + kind + '">' +

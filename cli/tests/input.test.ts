@@ -229,5 +229,14 @@ describe('parseInput', () => {
     test('Alt+Delete becomes alt-d', () => {
       expect(parse('\x1b[3;3~')).toEqual([{ type: 'alt-d' }])
     })
+
+    test('Cmd+V asks us to read the clipboard ourselves', () => {
+      expect(parse('\x1b[118;9u')).toEqual([{ type: 'paste-clipboard' }])
+      expect(parse('\x1b[86;10u')).toEqual([{ type: 'paste-clipboard' }]) // cmd+shift+V
+      expect(parse('\x1b[118;9:3u')).toEqual([]) // key release, so one press pastes once
+      expect(parse('\x1b[99;9u')).toEqual([]) // other cmd combos stay the terminal's
+      expect(parse('\x16')).toEqual([{ type: 'ctrl', key: 'v' }])
+      expect(parse('\x1b[118;5u')).toEqual([{ type: 'ctrl', key: 'v' }])
+    })
   })
 })

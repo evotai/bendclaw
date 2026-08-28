@@ -109,6 +109,7 @@ import {
   resolveSubmitText,
 } from './input/paste_refs.js'
 import { getImageFromClipboard } from './input/clipboard_image.js'
+import { getTextFromClipboard } from './input/clipboard_text.js'
 import { storeImage, formatImageSourceText } from './input/image_store.js'
 import type { ContentBlock } from '../native/index.js'
 import { tryStartServer, type ServerState } from './app/server.js'
@@ -1202,6 +1203,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   }
 
+  /** Paste clipboard contents (Cmd+V). Image wins when both are present. */
+  async function tryPasteClipboard() {
+    const img = await getImageFromClipboard()
+    if (img) {
+      await tryPasteImage()
+      return
+    }
+    const text = await getTextFromClipboard()
+    if (text) {
+      insertPaste(text)
+      renderer.requestRender()
+    }
+  }
+
   /** Build content blocks for images. Returns blocks and resolved image IDs. */
   function buildImageContentBlocks(): { blocks: ContentBlock[]; resolvedIds: Set<number> } | null {
     const displayText = getDisplayText()
@@ -1998,6 +2013,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'paste':
         insertPaste(event.text)
         renderer.requestRender()
+        break
+      case 'paste-clipboard':
+        void tryPasteClipboard()
         break
       case 'delete':
         deleteAtCursor()

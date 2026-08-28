@@ -264,6 +264,60 @@ describe('buildAdSlotBlocks rendering', () => {
     expect(bodyText(blocks).includes('\n')).toBe(false)
   })
 
+  test('emphasis keeps bold/italic SGR and hyperlinks stay balanced', async () => {
+    // Common campaign markdown must render styled in the slot: bold, italic,
+    // and links survive typing, flattening, and truncation — as OSC 8 on
+    // hyperlink terminals, and as visible "text (url)" fallback elsewhere.
+    const { default: chalk } = await import('chalk')
+    const prevLevel = chalk.level
+    const prevHyperlink = process.env.FORCE_HYPERLINK
+    const prevTerm = process.env.TERM
+    chalk.level = 3
+    try {
+      process.env.FORCE_HYPERLINK = '1'
+      const state = createAdSlotState([{ id: 'em1', kind: 'notice', title: 'Announcement',
+        body: 'Sponsored by **Databend** — read *more* at [EFF](https://eff.org)' }])
+      triggerAdSlot(state, T0)
+      const ansi = buildAdSlotBlocks(state, tickAdSlot(state, T0 + 15_000), 120, T0 + 15_000)
+        .flatMap(block => block.lines.map(styledLineToAnsi)).join('\n')
+      expect(ansi).toContain('\x1b[1mDatabend\x1b[22m')
+      expect(ansi).toContain('\x1b[3mmore\x1b[23m')
+      expect(ansi).toContain('\x1b]8;;https://eff.org\x07')
+      expect(ansi).toContain('\x1b]8;;\x07')
+      // Emphasis needs a hue: fonts without a bold face drop bare SGR 1.
+      expect(ansi).toContain('\x1b[38;2;240;198;116m\x1b[1mDatabend')
+
+      // A narrow terminal slices the line mid-link: every OSC 8 open it cuts
+      // into must keep its closer, so the hyperlink state cannot leak.
+      const cut = createAdSlotState([{ id: 'em2', kind: 'notice', title: 'Announcement',
+        body: 'Read [the full announcement from EFF](https://eff.org) today' }])
+      triggerAdSlot(cut, T0)
+      const narrow = buildAdSlotBlocks(cut, tickAdSlot(cut, T0 + 15_000), 44, T0 + 15_000)
+        .flatMap(block => block.lines.map(styledLineToAnsi)).join('\n')
+      const opens = (narrow.match(/\x1b]8;;[^\x07]+\x07/g) ?? []).length
+      const closes = (narrow.match(/\x1b\]8;;\x07/g) ?? []).length
+      expect(opens).toBeGreaterThan(0)
+      expect(opens).toBe(closes)
+
+      delete process.env.FORCE_HYPERLINK
+      process.env.TERM = 'dumb'
+      const plain = createAdSlotState([{ id: 'em3', kind: 'notice', title: 'Announcement',
+        body: 'Sponsored by **Databend** at [EFF](https://eff.org)' }])
+      triggerAdSlot(plain, T0)
+      const fallback = buildAdSlotBlocks(plain, tickAdSlot(plain, T0 + 15_000), 120, T0 + 15_000)
+        .flatMap(block => block.lines.map(styledLineToAnsi)).join('\n')
+      expect(fallback).toContain('\x1b[1mDatabend\x1b[22m')
+      expect(stripAnsi(fallback)).toContain('EFF (https://eff.org)')
+      expect(fallback).not.toContain('\x1b]8;;')
+    } finally {
+      chalk.level = prevLevel
+      if (prevHyperlink === undefined) delete process.env.FORCE_HYPERLINK
+      else process.env.FORCE_HYPERLINK = prevHyperlink
+      if (prevTerm === undefined) delete process.env.TERM
+      else process.env.TERM = prevTerm
+    }
+  })
+
   test('every rendered line passes styledLineToAnsi without crashing', async () => {
     const { styledLineToAnsi } = await import('../src/term/viewmodel/types.js')
     for (const cols of [100, 60, 31]) {

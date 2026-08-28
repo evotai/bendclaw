@@ -983,6 +983,8 @@ body { background: var(--page); }
 .notice-track { display: inline-flex; align-items: baseline; white-space: nowrap; min-width: 100%; }
 .notice-copy { display: inline-flex; align-items: baseline; gap: 3em; padding-right: 3em; }
 .notice-chunk.ad { color: #e2a13c; }
+.notice-chunk a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.notice-chunk strong, .notice-chunk em { color: var(--ink); }
 .notice-sep { margin: 0 .9em; color: var(--faint); }
 .notice-banner.scroll .notice-track { animation: notice-marquee var(--notice-duration, 30s) linear infinite; }
 .notice-banner.scroll:hover .notice-track { animation-play-state: paused; }

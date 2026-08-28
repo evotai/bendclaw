@@ -272,8 +272,10 @@ jobs:
             x86_64-unknown-linux-gnu)  BINDING="evot-napi.linux-x64-gnu.node" ;;
             aarch64-unknown-linux-gnu) BINDING="evot-napi.linux-arm64-gnu.node" ;;
           esac
-          strip --strip-unneeded "target/${{ matrix.target }}/release/libevot_napi.so"
-          cp "target/${{ matrix.target }}/release/libevot_napi.so" "${BINDING}"
+          # addon is a member of the root workspace: artifacts land in the
+          # workspace-root target dir, i.e. ../target relative to cli/.
+          strip --strip-unneeded "../target/${{ matrix.target }}/release/libevot_napi.so"
+          cp "../target/${{ matrix.target }}/release/libevot_napi.so" "${BINDING}"
           # Guard: the released binding must not require glibc newer than 2.17.
           MAX_GLIBC="$(LANG=C readelf -W --version-info --dyn-syms "${BINDING}" \
             | grep 'Name: GLIBC' \

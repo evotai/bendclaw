@@ -277,10 +277,12 @@ jobs:
           strip --strip-unneeded "../target/${{ matrix.target }}/release/libevot_napi.so"
           cp "../target/${{ matrix.target }}/release/libevot_napi.so" "${BINDING}"
           # Guard: the released binding must not require glibc newer than 2.17.
+          # Capture only [0-9.] after "Name: GLIBC_" — a greedy (.+) would eat
+          # the space before "Flags" and break the string comparison below.
           MAX_GLIBC="$(LANG=C readelf -W --version-info --dyn-syms "${BINDING}" \
             | grep 'Name: GLIBC' \
-            | sed -re 's/.*GLIBC_(.+) Flags.*/\1/g' \
-            | sort -t . -k1,1n -k2,2n \
+            | sed -re 's/.*Name: GLIBC_([0-9.]+).*/\1/g' \
+            | sort -t . -k1,1n -k2,2n -k3,3n \
             | tail -n 1)"
           [ "${MAX_GLIBC}" = "2.17" ] \
             || { echo "error: ${BINDING} requires GLIBC_${MAX_GLIBC}, expected 2.17" >&2; exit 1; }

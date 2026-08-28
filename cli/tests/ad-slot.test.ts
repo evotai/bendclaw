@@ -280,12 +280,17 @@ describe('buildAdSlotBlocks rendering', () => {
       triggerAdSlot(state, T0)
       const ansi = buildAdSlotBlocks(state, tickAdSlot(state, T0 + 15_000), 120, T0 + 15_000)
         .flatMap(block => block.lines.map(styledLineToAnsi)).join('\n')
-      expect(ansi).toContain('\x1b[1mDatabend\x1b[22m')
-      expect(ansi).toContain('\x1b[3mmore\x1b[23m')
+      // Cells carry their own background, so emphasis opens on the first cell
+      // and closes after the last rather than wrapping a contiguous run.
+      expect(ansi).toContain('\x1b[38;2;240;198;116m\x1b[1mD')
+      expect(ansi).toContain('\x1b[22m\x1b[39m')
+      expect(ansi).toContain('\x1b[3mm')
+      expect(ansi).toContain('\x1b[23m')
       expect(ansi).toContain('\x1b]8;;https://eff.org\x07')
       expect(ansi).toContain('\x1b]8;;\x07')
-      // Emphasis needs a hue: fonts without a bold face drop bare SGR 1.
-      expect(ansi).toContain('\x1b[38;2;240;198;116m\x1b[1mDatabend')
+      expect(stripAnsi(ansi)).toContain('Sponsored by Databend')
+      // Every cell is tinted, so the band reads as its own surface.
+      expect(ansi).toContain('\x1b[48;2;')
 
       // A narrow terminal slices the line mid-link: every OSC 8 open it cuts
       // into must keep its closer, so the hyperlink state cannot leak.
@@ -306,7 +311,8 @@ describe('buildAdSlotBlocks rendering', () => {
       triggerAdSlot(plain, T0)
       const fallback = buildAdSlotBlocks(plain, tickAdSlot(plain, T0 + 15_000), 120, T0 + 15_000)
         .flatMap(block => block.lines.map(styledLineToAnsi)).join('\n')
-      expect(fallback).toContain('\x1b[1mDatabend\x1b[22m')
+      expect(fallback).toContain('\x1b[1mD')
+      expect(stripAnsi(fallback)).toContain('Sponsored by Databend')
       expect(stripAnsi(fallback)).toContain('EFF (https://eff.org)')
       expect(fallback).not.toContain('\x1b]8;;')
     } finally {

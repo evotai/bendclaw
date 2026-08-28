@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'
-import { wrapTextWithAnsi, sliceVisibleAnsi, truncateAnsiToWidth, visibleGraphemeCount } from '../src/render/wrap.js'
+import { wrapTextWithAnsi, sliceVisibleAnsi, splitAnsiIntoCells, truncateAnsiToWidth, visibleGraphemeCount } from '../src/render/wrap.js'
 
 // Visible width per wrapped line, measured with the independent string-width
 // library so the assertion doesn't depend on wrap.ts's own width logic.
@@ -101,5 +101,41 @@ describe('truncateAnsiToWidth', () => {
     expect(width(cut)).toBeLessThanOrEqual(10)
     expect(stripAnsi(cut)).toBe('hello wor…')
     expect(cut).toContain('\x1b[31m')
+  })
+})
+
+describe('splitAnsiIntoCells', () => {
+  test('one entry per column, so callers can style each cell', () => {
+    expect(splitAnsiIntoCells('abc')).toEqual(['a', 'b', 'c'])
+    expect(splitAnsiIntoCells('')).toEqual([])
+  })
+
+  test('escapes ride the next visible cell rather than becoming cells', () => {
+    // Colour state flows through the row in terminal order: nothing re-emits
+    // the foreground per cell, so a background fill can wrap each one.
+    expect(splitAnsiIntoCells('a\x1b[1mB\x1b[22mc')).toEqual(['a', '\x1b[1mB', '\x1b[22mc'])
+  })
+
+  test('wide glyphs get a filler entry so indices stay aligned to columns', () => {
+    expect(splitAnsiIntoCells('中x')).toEqual(['中', '', 'x'])
+    expect(splitAnsiIntoCells('🎉!')).toEqual(['🎉', '', '!'])
+  })
+
+  test('trailing codes attach to the last cell, keeping the count honest', () => {
+    const cells = splitAnsiIntoCells('\x1b]8;;https://x\x07link\x1b]8;;\x07')
+    expect(cells).toHaveLength(4)
+    expect(cells[0]).toBe('\x1b]8;;https://x\x07l')
+    expect(cells[3]).toBe('k\x1b]8;;\x07')
+  })
+
+  test('cell count matches visible width across mixed content', () => {
+    for (const text of ['abc', 'a\x1b[1mB\x1b[22mc', '中文x', 'hi 🎉 ok', '\x1b]8;;u\x07lnk\x1b]8;;\x07']) {
+      expect(splitAnsiIntoCells(text)).toHaveLength(width(text))
+    }
+  })
+
+  test('pure escapes survive as a zero-width entry', () => {
+    // Nothing to attach to, and dropping it would lose the colour state.
+    expect(splitAnsiIntoCells('\x1b[1m')).toEqual(['\x1b[1m'])
   })
 })

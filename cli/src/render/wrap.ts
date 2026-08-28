@@ -549,6 +549,47 @@ export function sliceVisibleAnsi(text: string, maxGraphemes: number): string {
 
 /** Keep the head of an ANSI string so it fits `width` columns, appending an
  *  ellipsis when truncated. Newlines are treated as visible characters. */
+/**
+ * Split an ANSI string into one entry per terminal column.
+ *
+ * Escape sequences carry no width, so they ride along on the next visible cell
+ * rather than becoming cells of their own: colour state then flows through the
+ * row in terminal order, and OSC 8 hyperlinks stay intact instead of being cut
+ * into per-cell links. A double-width glyph yields its cell followed by an
+ * empty filler entry, so entry count still equals column count — except for
+ * input that is nothing but escapes, which yields a single zero-width entry so
+ * the colour state is not silently dropped.
+ */
+export function splitAnsiIntoCells(text: string): string[] {
+  const cells: string[] = []
+  let pendingCodes = ''
+  let i = 0
+  while (i < text.length) {
+    const ansi = extractAnsiCode(text, i)
+    if (ansi) {
+      pendingCodes += ansi.code
+      i += ansi.length
+      continue
+    }
+    let end = i
+    while (end < text.length && !extractAnsiCode(text, end)) end++
+    for (const { segment } of graphemeSegmenter.segment(text.slice(i, end))) {
+      cells.push(pendingCodes + segment)
+      pendingCodes = ''
+      // Wide glyphs own two columns; the filler keeps indices aligned to cells.
+      for (let pad = 1; pad < graphemeWidth(segment); pad++) cells.push('')
+    }
+    i = end
+  }
+  // Trailing codes (a hyperlink close, a reset) belong to the last cell —
+  // as their own entry they would inflate the count past the column count.
+  if (pendingCodes) {
+    if (cells.length > 0) cells[cells.length - 1] += pendingCodes
+    else cells.push(pendingCodes)
+  }
+  return cells
+}
+
 export function truncateAnsiToWidth(text: string, width: number): string {
   if (width <= 0 || !text) return ''
   if (visibleWidth(text) <= width) return text

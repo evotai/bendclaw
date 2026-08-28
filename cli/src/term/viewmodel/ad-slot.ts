@@ -1,6 +1,6 @@
-import { ansi, line, plain, type ViewBlock } from './types.js'
+import { line, plain, type StyledSpan, type ViewBlock } from './types.js'
 import { renderMarkdown } from '../../render/markdown.js'
-import { sliceVisibleAnsi, truncateAnsiToWidth, visibleGraphemeCount, visibleWidth } from '../../render/wrap.js'
+import { sliceVisibleAnsi, splitAnsiIntoCells, truncateAnsiToWidth, visibleGraphemeCount, visibleWidth } from '../../render/wrap.js'
 import { getTheme } from '../../render/theme.js'
 
 export interface AdContent {
@@ -268,7 +268,61 @@ function revealMarkdown(rendered: string, keep: number): string {
 }
 
 /**
- * The slot: a single markdown ticker between two rules. Typed in character by
+ * Dark tints for the slot's dithered fill, derived from the theme's selection
+ * hex so the band tracks light/dark without new theme fields. The spread is
+ * deliberately narrow: enough texture to mark the slot as its own surface,
+ * not enough to compete with the copy sitting on it.
+ */
+function bandTints(): string[] {
+  const base = getTheme().selectionBgHex
+  const r = Number.parseInt(base.slice(1, 3), 16)
+  const g = Number.parseInt(base.slice(3, 5), 16)
+  const b = Number.parseInt(base.slice(5, 7), 16)
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return [base]
+  const hex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+  const shift = (f: number) => `#${hex(r * f)}${hex(g * f)}${hex(b * f)}`
+  return [shift(0.78), shift(0.88), shift(1), shift(0.92)]
+}
+
+/**
+ * Deterministic per-column noise in [0,1).
+ *
+ * Hashed rather than random on purpose: the TUI repaints on every spinner tick
+ * and keystroke, so a random field would crawl and flicker. The same column
+ * always lands on the same tint, making the band hold still.
+ */
+function columnNoise(column: number): number {
+  let x = Math.imul(column + 1, 2654435761)
+  x ^= x >>> 15
+  x = Math.imul(x, 2246822507)
+  x ^= x >>> 13
+  return (x >>> 0) / 4294967296
+}
+
+/**
+ * Lay the ticker over a dithered band of `width` columns.
+ *
+ * Splitting into one span per column is what makes the fill possible: `bg`
+ * wraps each cell last, so it survives the foreground colours markdown already
+ * baked into the text, and trailing blanks get the same treatment as the copy.
+ */
+function bandSpans(rendered: string, width: number): StyledSpan[] {
+  const tints = bandTints()
+  const cells = splitAnsiIntoCells(rendered)
+  const spans: StyledSpan[] = []
+  for (let column = 0; column < width; column++) {
+    const cell = cells[column]
+    // Filler entries for the second half of a wide glyph carry no text; they
+    // must not become a padded space or the row would drift a column.
+    if (cell === '') continue
+    const tint = tints[Math.floor(columnNoise(column) * tints.length)]
+    spans.push({ text: cell ?? ' ', bg: tint })
+  }
+  return spans
+}
+
+/**
+ * The slot: a single markdown ticker on a dithered band. Typed in character by
  * character, then held until rotation. Never wraps — overflow is truncated.
  */
 export function buildAdSlotBlocks(
@@ -299,7 +353,7 @@ export function buildAdSlotBlocks(
   return [{
     lines: [
       line(rule),
-      line(plain('  '), ansi(shown)),
+      line(plain('  '), ...bandSpans(shown, innerWidth)),
       line(rule),
     ],
     marginTop: 1,

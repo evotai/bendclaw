@@ -264,14 +264,11 @@ where
     let (ws_url, ping_interval_secs) =
         get_ws_endpoint(ctx.client, ctx.app_id, ctx.app_secret).await?;
 
-    let tls =
-        native_tls::TlsConnector::new().map_err(|e| EvotError::Run(format!("native tls: {e}")))?;
-    let connector = tokio_tungstenite::Connector::NativeTls(tls);
-
-    let (ws_stream, _) =
-        tokio_tungstenite::connect_async_tls_with_config(&ws_url, None, false, Some(connector))
-            .await
-            .map_err(|e| EvotError::Run(format!("feishu ws connect: {e}")))?;
+    // Rustls (webpki roots) via tokio-tungstenite's default connector — avoids
+    // linking against the system OpenSSL so releases stay portable to older distros.
+    let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|e| EvotError::Run(format!("feishu ws connect: {e}")))?;
 
     let (mut write, mut read) = ws_stream.split();
 

@@ -16,7 +16,6 @@ clap.workspace = true
 futures.workspace = true
 fs2 = "=0.4.3"
 indexmap.workspace = true
-native-tls = "0.2"
 parking_lot.workspace = true
 prost = "0.13"
 regex = "1"
@@ -30,7 +29,7 @@ sha2 = "0.10"
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 toml.workspace = true
 tower-http.workspace = true

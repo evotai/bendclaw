@@ -18,7 +18,6 @@ tracing = "0.1"
 parking_lot = { workspace = true }
 reqwest = { workspace = true }
 reqwest-eventsource = "0.6"
-readability = { workspace = true }
 htmd = { workspace = true }
 futures = "0.3"
 jsonrepair = "0.1"

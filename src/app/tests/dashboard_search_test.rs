@@ -278,9 +278,13 @@ fn chat_page_embeds_session_navigation() {
     // Account row + notices refresh in place after login/logout.
     assert!(js.contains("/api/auth/session"));
     assert!(js.contains("/api/notices"));
-    assert!(js.contains("chooseModel(meta.provider, meta.model)"));
     assert!(js.contains("/api/sessions?full=true"));
     assert!(js.contains("skeletonHtml"));
+    // New never pre-creates a draft session: every New (cwd switch included)
+    // lands on the welcome hero, and the first message carries the workspace.
+    assert!(js.contains("returnToWelcome()"));
+    assert!(!js.contains("/api/chat/new"));
+    assert!(js.contains("payload.cwd = workspace.cwd"));
     // A trace deep-dive hands the reader back to the same conversation.
     assert!(js.contains("URLSearchParams"));
     assert!(js.contains("target = \"_blank\""));

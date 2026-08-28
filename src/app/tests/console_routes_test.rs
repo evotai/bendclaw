@@ -605,6 +605,9 @@ async fn chat_assets_are_served() -> TestResult {
     assert!(body.contains(".io-label"));
     // The hero welcome clears the floating composer band.
     assert!(body.contains(".conversation.hero .welcome { padding-bottom: 240px; }"));
+    // Notices are a live ticker: full bodies, no titles, marquee on overflow.
+    assert!(body.contains(".notice-banner.scroll"));
+    assert!(body.contains("@keyframes notice-marquee"));
     // Assistant markdown covers block structure, not just inline code.
     assert!(body.contains(".code-block"));
     assert!(body.contains(".table-wrap"));
@@ -628,7 +631,15 @@ async fn chat_assets_are_served() -> TestResult {
     assert!(body.contains("/api/chat/options"));
     assert!(body.contains("chooseModel"));
     assert!(body.contains("paintModelMenu"));
-    assert!(body.contains("chooseModel(meta.provider, meta.model)"));
+    // New never pre-creates a draft: the welcome hero returns and the first
+    // message creates the session, carrying the chosen workspace cwd.
+    assert!(!body.contains("/api/chat/new"));
+    assert!(body.contains("payload.cwd = workspace.cwd"));
+    // Notices ride the live ticker: body content only, polled while visible.
+    assert!(body.contains("notice.body"));
+    assert!(body.contains("flattenNoticeHtml"));
+    assert!(body.contains("NOTICE_POLL_MS"));
+    assert!(body.contains("visibilitychange"));
     assert!(body.contains("/api/chat/abort"));
     assert!(body.contains("/api/chat/steer"));
     assert!(body.contains("/api/workspace"));

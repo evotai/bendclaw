@@ -18,12 +18,10 @@ async function main() {
   // (whoami, logout) must not pay for it.
   if (opts.command === 'repl' || opts.command === 'login' || opts.command === 'prompt') {
     try {
-      const { applyStagedOnStartup } = await import('./update/index.js')
+      const { applyStagedOnStartup, reportAppliedUpdate } = await import('./update/index.js')
       const { version } = await import('./native/index.js')
       const applied = await applyStagedOnStartup(version())
-      if (applied) {
-        console.log(`  ✓ evot updated to v${applied} in the background; this session is running the new version.`)
-      }
+      if (applied) reportAppliedUpdate(applied, opts.command)
     } catch { /* never block launch on update bookkeeping */ }
   }
 

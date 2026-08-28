@@ -273,12 +273,12 @@ function setWorkspace(cwd, { locked = false } = {}) {
   }
 }
 
-function setSession(id, meta = {}, { locked, startNote = false } = {}) {
+function setSession(id, meta = {}, { locked } = {}) {
   currentSessionId = id || null;
   const session = sessions.find((item) => item.session_id === id);
   const cwd = meta.cwd || session?.cwd || "";
   $("sessionTitle").textContent = meta.title || (session ? sessionLabel(session) : id ? "Session " + id.slice(0, 8) : "New chat");
-  $("sessionMeta").textContent = startNote ? "Start a new session" : cwd || (id ? id : "Start a new session");
+  $("sessionMeta").textContent = cwd || (id ? id : "Start a new session");
   const trace = $("traceLink");
   trace.hidden = !id;
   if (id) {
@@ -545,31 +545,14 @@ function bindWelcome() {
   }
 }
 
-/** Create the blank session the composer then owns; `cwd` binds at creation. */
-async function createNewSession(cwd) {
-  if (streaming) return;
-  try {
-    const meta = await postJson("/api/chat/new", cwd ? { cwd } : {});
-    hideTurnStatus();
-    streamSessionId = null;
-    setStats(null);
-    // An untouched cwd is not a commitment: the picker stays live until the
-    // user picks a directory (or sends, which settles the draft).
-    setSession(meta.session_id, meta, { locked: Boolean(cwd), startNote: !cwd });
-    if (meta.provider && meta.model) chooseModel(meta.provider, meta.model);
-    conversation.classList.remove("hero");
-    chat.innerHTML = '<div class="resume-note"><strong>Empty session</strong><span>Send a message to continue.</span></div>';
-    scheduleScroll(true);
-    void loadRecentPage({ reset: true });
-  } catch (error) {
-    toast(String(error.message || error), "err");
-  }
-}
-
 function newChat() {
   if (streaming) return;
   closeCommandMenu();
-  void createNewSession();
+  closeWorkspace();
+  // No draft session is created here: the session is born with the first
+  // message, so every New — a cwd switch included — lands on the welcome
+  // hero instead of a blank transcript.
+  returnToWelcome();
   input.focus();
 }
 
@@ -2060,16 +2043,73 @@ async function refreshAuthBox() {
   }
 }
 
+/**
+ * Notices: a live ticker above the composer, mirroring the TUI ad slot —
+ * full body content (no title), one flattened line, polled while visible.
+ */
+const NOTICE_POLL_MS = 20_000;
+let lastNoticesHtml = null;
+
+/**
+ * Rendered markdown flattened to one ticker line: block rows, list items and
+ * table cells become `·`-separated text; chrome (copy buttons, language
+ * labels) drops out.
+ */
+function flattenNoticeHtml(html) {
+  const sep = '<span class="notice-sep" aria-hidden="true">·</span>';
+  const flat = html
+    .replace(/<div class="code-head">[\s\S]*?<\/div>/g, "")
+    .replace(/<button[^>]*>[\s\S]*?<\/button>/g, "")
+    .replace(/<\/(p|h[1-6]|li|blockquote|pre|div|th|td)>|<(br|hr)\s*\/?>/g, "\u0001")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\u0001+/g, sep);
+  return flat.endsWith(sep) ? flat.slice(0, -sep.length) : flat;
+}
+
 async function refreshNotices() {
   const slot = $("noticeSlot");
   if (!slot) return;
+  let items;
   try {
     const result = await getJson("/api/notices");
-    slot.innerHTML = (result?.items || []).map((notice) =>
-      '<div class="notice-banner' + (notice.kind === "ad" ? " ad" : "") + '" title="' +
-      esc(notice.body || notice.title) + '">' + esc(notice.title) + "</div>").join("");
+    items = Array.isArray(result?.items) ? result.items : [];
   } catch {
-    slot.innerHTML = "";
+    return; // keep whatever is already on screen
+  }
+  const chunks = items
+    .map((notice) => {
+      // The body is the announcement; the title never rides the ticker.
+      const source = String(notice.body || notice.title || "").trim();
+      if (!source) return "";
+      const kind = notice.kind === "ad" ? " ad" : "";
+      return '<span class="notice-chunk' + kind + '">' +
+        flattenNoticeHtml(renderMarkdown(source)) + "</span>";
+    })
+    .filter(Boolean);
+  const content = chunks.join("");
+  const html = content
+    ? '<div class="notice-banner"><div class="notice-track">' +
+      '<span class="notice-copy">' + content + "</span></div></div>"
+    : "";
+  // Unchanged payload: keep the marquee mid-stride instead of restarting it.
+  if (html === lastNoticesHtml) return;
+  lastNoticesHtml = html;
+  slot.innerHTML = html;
+  const banner = slot.firstElementChild;
+  const copy = banner?.querySelector(".notice-copy");
+  if (!banner || !copy) return;
+  // Marquee only what cannot fit: the copy is cloned once and the track
+  // slides exactly one copy width per loop, so the seam is invisible.
+  if (copy.getBoundingClientRect().width > banner.clientWidth - 26) {
+    const echo = copy.cloneNode(true);
+    echo.setAttribute("aria-hidden", "true");
+    copy.parentElement.appendChild(echo);
+    banner.classList.add("scroll");
+    // Constant reading pace (~45 px/s) regardless of content length.
+    banner.style.setProperty(
+      "--notice-duration",
+      Math.max(15, Math.round(copy.getBoundingClientRect().width / 45)) + "s",
+    );
   }
 }
 
@@ -2263,9 +2303,11 @@ async function applyWorkspace(path) {
   try {
     const result = await postJson("/api/workspace", { path });
     closeWorkspace();
-    // Workspace choice commits at session creation: this draft is replaced
-    // with a blank one inside the picked directory.
-    await createNewSession(result.cwd);
+    // The directory binds when the first message creates the session, so a
+    // cwd switch just repaints the welcome hero with the new chip — and
+    // stays unlocked for another switch.
+    setWorkspace(result.cwd, { locked: false });
+    returnToWelcome();
   } catch (error) {
     toast(String(error.message || error), "err");
   }
@@ -2399,6 +2441,12 @@ document.addEventListener("keydown", (event) => {
 bindWelcome();
 updatePrimary();
 await Promise.all([loadOptions(), loadRecentPage({ reset: true }), loadWorkspace(), refreshAuthBox(), refreshNotices()]);
+// Notices stay live: polled while the tab is visible, and refetched the
+// moment it comes back, like the TUI slot reacting to cache refreshes.
+window.setInterval(() => { if (!document.hidden) void refreshNotices(); }, NOTICE_POLL_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void refreshNotices();
+});
 // Deep link back from a trace page: /chat?session=<id> reopens that session.
 const wantedSession = new URLSearchParams(location.search).get("session");
 if (wantedSession) await resumeSession(wantedSession);

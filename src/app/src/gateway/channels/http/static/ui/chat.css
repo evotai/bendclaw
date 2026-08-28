@@ -977,11 +977,19 @@ body { background: var(--page); }
   color: var(--muted);
   font-size: 11px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: default;
 }
-.notice-banner.ad { border-left-color: var(--amber); background: #e2a13c14; }
+/* One TUI-style ticker line: full notice bodies, scrolling when they overflow. */
+.notice-track { display: inline-flex; align-items: baseline; white-space: nowrap; min-width: 100%; }
+.notice-copy { display: inline-flex; align-items: baseline; gap: 3em; padding-right: 3em; }
+.notice-chunk.ad { color: #e2a13c; }
+.notice-sep { margin: 0 .9em; color: var(--faint); }
+.notice-banner.scroll .notice-track { animation: notice-marquee var(--notice-duration, 30s) linear infinite; }
+.notice-banner.scroll:hover .notice-track { animation-play-state: paused; }
+@keyframes notice-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
 
 /* Notices ride above the composer card, TUI-banner style. */
 .composer-seat #noticeSlot {

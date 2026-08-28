@@ -116,3 +116,17 @@ export async function applyStagedOnStartup(currentVersion: string): Promise<stri
   clearStaged()
   return staged.version
 }
+
+/**
+ * Announce an applied background update.
+ *
+ * One-shot prompt runs are scripting surfaces: stdout IS the answer (text or
+ * stream-json), so a banner there leaks into captured files and breaks
+ * JSON-lines parsers. It rides stderr instead; interactive paths keep the
+ * terminal print.
+ */
+export function reportAppliedUpdate(appliedVersion: string, command: string): void {
+  const line = `  ✓ evot updated to v${appliedVersion} in the background; this session is running the new version.`
+  if (command === 'prompt') console.error(line)
+  else console.log(line)
+}

@@ -10,6 +10,9 @@ pub struct CloudUser {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthState {
+    /// Schema marker. Absent in auth.json files written before versioning
+    /// existed — default to 0 so upgrades from those versions keep loading.
+    #[serde(default)]
     pub version: u32,
     pub server_base_url: String,
     pub user: CloudUser,
@@ -88,6 +91,8 @@ pub struct CloudProviderConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelsResponse {
+    /// Absent in caches written by early versions; 0 marks those as legacy.
+    #[serde(default)]
     pub version: i64,
     /// One entry per (tier, protocol) pair in use, so a single account can mix
     /// Anthropic and OpenAI models.

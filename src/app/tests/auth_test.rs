@@ -50,6 +50,59 @@ const CACHE_JSON: &str = r#"{
   }
 }"#;
 
+// Pre-versioning shapes: no `version` in auth.json, none in the cache response.
+const LEGACY_AUTH_JSON: &str = r#"{
+  "server_base_url": "http://localhost:8787",
+  "user": {"id":"u1","name":"bo","email":"bo@test.dev"},
+  "cli_token": "tok",
+  "refresh_token": "ref",
+  "models_synced_at": 0
+}"#;
+
+const LEGACY_CACHE_JSON: &str = r#"{
+  "synced_at": 123,
+  "response": {
+    "providers": [],
+    "models": [
+      {"id":"m-one","display_name":"One","protocol":"anthropic","tier":"base"}
+    ],
+    "notices": []
+  }
+}"#;
+
+// Legacy files written before schema versioning existed lack the `version`
+// fields; loading them must not fail config initialization.
+#[test]
+fn legacy_files_without_version_fields_still_load() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home = std::env::temp_dir().join(format!("evot-auth-legacy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(LEGACY_AUTH_JSON), Some(LEGACY_CACHE_JSON));
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+
+    // Parse while HOME still points at the fixture; load_auth uses the env var.
+    let state = auth::load_auth().unwrap().expect("auth state parsed");
+    let cache = auth::load_models_cache().unwrap().expect("cache parsed");
+
+    match original_home {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let config = result.expect("legacy auth.json/models.cache.json without version must load");
+    // Empty legacy cache registers no cloud provider; the point is that
+    // config load no longer hard-fails on the missing version fields.
+    assert!(!config.providers.contains_key("evot-free"));
+
+    assert_eq!(state.version, 0);
+    assert_eq!(cache.response.version, 0);
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
 #[test]
 fn cloud_provider_registered_and_default_when_no_byok() {
     let _guard = env_lock().lock().unwrap();

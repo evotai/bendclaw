@@ -676,14 +676,14 @@ impl Server {
                 serde_json::json!({
                     "name": name,
                     "cloud": config.cloud_providers.contains(name),
-                    // Tier of the group's head model, so the composer can
-                    // label cloud optgroups like the Models page does
-                    // (Evot Free / Evot Premium) instead of exposing the
-                    // per-protocol provider names.
+                    // Tier of the group, so the composer can label cloud
+                    // optgroups like the Models page does (Evot Free / Evot
+                    // Premium) instead of exposing the per-protocol provider
+                    // names. Every model in a group shares its tier.
                     "tier": profile
                         .models
-                        .first()
-                        .and_then(|m| config.cloud_model_tiers.get(m))
+                        .iter()
+                        .find_map(|m| config.cloud_model_tiers.get(m))
                         .cloned()
                         .unwrap_or_default(),
                     "models": models,

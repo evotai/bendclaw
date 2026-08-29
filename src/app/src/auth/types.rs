@@ -85,7 +85,6 @@ pub struct CloudProviderConfig {
     pub protocol: String,
     pub base_url: String,
     pub api_key: String,
-    pub default_model: String,
     pub models: Vec<String>,
 }
 

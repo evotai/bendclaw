@@ -884,7 +884,9 @@ fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) 
 /// cache. Never overrides an explicit BYOK selection.
 ///
 /// The server names, orders, and groups its own providers (one per tier and
-/// protocol), so one account can mix Anthropic and OpenAI models.
+/// protocol), so one account can mix Anthropic and OpenAI models. Which model
+/// a fresh session lands on is decided by catalog rank in
+/// [`Config::preferred_new_session_llm`], not here.
 fn apply_cloud_provider(config: &mut Config) -> Result<()> {
     if crate::auth::load_auth()?.is_none() {
         return Ok(());
@@ -893,7 +895,6 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         return Ok(());
     };
 
-    let mut primary: Option<(String, i64, bool)> = None;
     let mut thinking_levels = std::collections::HashMap::new();
     let mut model_tiers = std::collections::HashMap::new();
     let mut model_sorts = std::collections::HashMap::new();
@@ -906,7 +907,11 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         }
         model_sorts.insert(model.id.clone(), model.sort_order);
     }
-    for group in cache.response.providers {
+    // Providers are stored in server rank order, so ties in catalog rank fall
+    // back to the order the server wants its groups shown in.
+    let mut groups = cache.response.providers;
+    groups.sort_by_key(|group| group.sort_order);
+    for group in groups {
         if group.models.is_empty() {
             continue;
         }
@@ -916,25 +921,11 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             EvotError::Conf(format!("unsupported cloud protocol: {}", group.protocol))
         })?;
 
-        // Head = server default; the rest keeps the catalog's rank order.
-        let head = if group.models.contains(&group.default_model) {
-            group.default_model.clone()
-        } else {
-            group.models[0].clone()
-        };
-        let premium = group
-            .models
-            .iter()
-            .any(|model| model_tiers.get(model).map(String::as_str) == Some("special"));
-        let ordered = std::iter::once(head.clone())
-            .chain(group.models.into_iter().filter(|m| *m != head))
-            .collect::<Vec<_>>();
-
         let profile = ProviderProfile {
             protocol,
             api_key: group.api_key,
             base_url: group.base_url,
-            models: ordered,
+            models: group.models,
             compat_caps: CompatCaps::default(),
             route_capabilities: RouteCapabilityOverrides::default(),
             thinking_level: None,
@@ -943,49 +934,26 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             supports_image: None,
         };
         config.providers.insert(name.clone(), profile);
-        config.cloud_providers.insert(name.clone());
-        // Premium group wins the landing spot; ties follow server ranking.
-        let better = match &primary {
-            None => true,
-            Some((_, rank, is_premium)) => match (premium, *is_premium) {
-                (true, false) => true,
-                (false, true) => false,
-                _ => group.sort_order < *rank,
-            },
-        };
-        if better {
-            primary = Some((name, group.sort_order, premium));
-        }
+        config.cloud_providers.insert(name);
     }
     config.cloud_thinking_levels = thinking_levels;
     config.cloud_model_tiers = model_tiers;
     config.cloud_model_sorts = model_sorts;
 
-    let Some((primary, _, landing_is_premium)) = primary else {
-        return Ok(());
-    };
-
-    // A leftover Free cloud selection yields to the Premium landing spot.
-    if landing_is_premium && config.cloud_providers.contains(&config.llm.provider) {
-        let current_tier = config
+    // The catalog owns the landing spot, so a stale cloud selection (e.g. a
+    // Free provider left in the env file) yields to it. BYOK always wins: a
+    // configured provider with its own key keeps serving.
+    let byok_active = !config.cloud_providers.contains(&config.llm.provider)
+        && config
             .providers
             .get(&config.llm.provider)
-            .and_then(|profile| profile.models.first())
-            .and_then(|model| config.cloud_model_tiers.get(model));
-        if current_tier.map(String::as_str) != Some("special") {
-            config.llm.provider = primary;
-        }
+            .is_some_and(|profile| !profile.api_key.trim().is_empty());
+    if byok_active {
         return Ok(());
     }
-
-    // Auto-activate only when nothing usable is configured; BYOK always wins.
-    let current_unconfigured = config
-        .providers
-        .get(&config.llm.provider)
-        .map(|profile| profile.api_key.trim().is_empty())
-        .unwrap_or(true);
-    if current_unconfigured || config.llm.provider.is_empty() {
-        config.llm.provider = primary;
+    if let Some((provider, _)) = config.preferred_new_session_llm() {
+        config.llm.provider = provider;
+        config.llm.model_override = None;
     }
     Ok(())
 }

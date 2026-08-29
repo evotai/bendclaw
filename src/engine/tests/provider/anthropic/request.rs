@@ -77,10 +77,10 @@ fn test_kimi_k3_thinking_uses_enabled_wire_with_effort() {
 }
 
 #[test]
-fn test_glm_5_2_thinking_uses_enabled_wire_with_effort_and_budget() {
+fn test_glm_5_3_thinking_uses_enabled_wire_with_effort_and_budget() {
     let config = StreamConfigBuilder::anthropic()
-        .model("glm-5.2")
-        .model_config(ModelConfig::anthropic("glm-5.2", "GLM 5.2"))
+        .model("glm-5.3")
+        .model_config(ModelConfig::anthropic("glm-5.3", "GLM 5.3"))
         .thinking(ThinkingLevel::High)
         .build();
 
@@ -93,11 +93,11 @@ fn test_glm_5_2_thinking_uses_enabled_wire_with_effort_and_budget() {
 }
 
 #[test]
-fn test_glm_5_2_xhigh_maps_to_max_effort() {
+fn test_glm_5_3_max_maps_to_max_effort() {
     let config = StreamConfigBuilder::anthropic()
-        .model("glm-5.2")
-        .model_config(ModelConfig::anthropic("glm-5.2", "GLM 5.2"))
-        .thinking(ThinkingLevel::Xhigh)
+        .model("glm-5.3")
+        .model_config(ModelConfig::anthropic("glm-5.3", "GLM 5.3"))
+        .thinking(ThinkingLevel::Max)
         .build();
 
     let body = build_request_body(&config, false);

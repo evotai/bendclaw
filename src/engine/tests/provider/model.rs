@@ -433,42 +433,30 @@ fn route_capability_names_are_parsed_separately_from_transport_caps() {
     assert_eq!(CompatCaps::from_name("remote_compaction"), None);
 }
 
-/// GLM 5.3 Flash is Ox Alpha under its release id: three tiers with Max as
-/// default. The cloud catalog's `max` default must land natively instead of
-/// clamping to the GLM-5.2 fallback's Xhigh.
+/// GLM 5.3 (and Flash) use the three-tier low/high/max ladder with Max as
+/// default. The cloud catalog's `max` default must land natively; unknown
+/// glm ids inherit the same ladder instead of an older two-tier mapping.
 #[test]
-fn glm_5_3_flash_uses_the_ox_alpha_ladder() {
-    let flash = ModelConfig::anthropic("glm-5.3-flash", "GLM 5.3 Flash");
-    assert_eq!(flash.supported_thinking_levels(), vec![
-        ThinkingLevel::Low,
-        ThinkingLevel::High,
-        ThinkingLevel::Max
-    ]);
-    assert_eq!(flash.default_thinking_level(), ThinkingLevel::Max);
-    // The server-owned default passes through unclamped.
-    assert_eq!(
-        flash.effective_thinking_level(ThinkingLevel::Max),
-        ThinkingLevel::Max
-    );
-
-    // The GLM-5.2 ladder is unchanged, and unknown glm ids still inherit it.
-    for id in ["glm-5.2", "glm-5.4-turbo"] {
+fn glm_5_3_uses_the_low_high_max_ladder() {
+    for id in ["glm-5.3", "glm-5.3-flash", "glm-5.4-turbo"] {
         let glm = ModelConfig::anthropic(id, id);
         assert_eq!(
             glm.supported_thinking_levels(),
-            vec![
-                ThinkingLevel::Off,
-                ThinkingLevel::High,
-                ThinkingLevel::Xhigh
-            ],
+            vec![ThinkingLevel::Low, ThinkingLevel::High, ThinkingLevel::Max],
             "{id}"
         );
+        assert_eq!(glm.default_thinking_level(), ThinkingLevel::Max, "{id}");
         assert_eq!(
             glm.effective_thinking_level(ThinkingLevel::Max),
-            ThinkingLevel::Xhigh,
-            "{id}: max clamps down to the GLM-5.2 top tier"
+            ThinkingLevel::Max,
+            "{id}"
         );
     }
+
+    let flash = ModelConfig::anthropic("glm-5.3-flash", "GLM 5.3 Flash");
+    assert!(flash.supports_image());
+    let flagship = ModelConfig::anthropic("glm-5.3", "GLM 5.3");
+    assert!(!flagship.supports_image());
 }
 
 #[test]
@@ -513,13 +501,13 @@ fn newer_uncatalogued_ids_inherit_family_windows() {
 fn glm_and_deepseek_profiles_are_explicit() {
     use evotengine::ThinkingLevel::*;
 
-    let glm = ModelConfig::openai("zai/glm-5.2", "GLM 5.2");
+    let glm = ModelConfig::openai("zai/glm-5.3", "GLM 5.3");
     assert_eq!(glm.context_window(), 917_504);
     assert_eq!(glm.advertised_context_window(), 1_000_000);
     assert_eq!(glm.max_tokens(), 131_072);
     assert_eq!(glm.input(), [InputModality::Text]);
-    assert_eq!(glm.supported_thinking_levels(), vec![Off, High, Xhigh]);
-    assert_eq!(glm.default_thinking_level(), High);
+    assert_eq!(glm.supported_thinking_levels(), vec![Low, High, Max]);
+    assert_eq!(glm.default_thinking_level(), Max);
 
     let chat = resolved(
         ApiProtocol::OpenAiCompletions,

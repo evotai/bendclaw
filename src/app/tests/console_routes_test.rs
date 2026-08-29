@@ -979,13 +979,13 @@ async fn trace_page_joins_the_console_shell() -> TestResult {
 }
 
 /// The Models page renders the Cloud section from `cloud_tiers` (never the
-/// per-protocol provider names), and picking a chip persists both halves of
-/// the default: the serving provider and the model moved to its head.
+/// per-protocol provider names). Catalog rank picks the serving model, and a
+/// chip pins one explicitly.
 // Same as above: the lock must survive every awaited request, since GET
 /// /api/models re-reads the real home directory.
 #[allow(clippy::await_holding_lock)]
 #[tokio::test]
-async fn models_api_groups_cloud_by_tier_and_chip_picks_the_default() -> TestResult {
+async fn models_api_groups_cloud_by_tier_and_chip_pins_a_model() -> TestResult {
     let _guard = crate::conf_load_test::env_lock().lock().unwrap();
     let original_home = std::env::var_os("HOME");
     let env_home =
@@ -1037,21 +1037,21 @@ async fn models_api_groups_cloud_by_tier_and_chip_picks_the_default() -> TestRes
     assert_eq!(snapshot["cloud_tiers"].as_array().map(Vec::len), Some(1));
     let group = &snapshot["cloud_tiers"][0];
     assert_eq!(group["tier"], "base");
-    // Overall rank wins inside the tier: glm's 5 shows before luna's 1, even
-    // though luna is the serving default (its `active` flag is unaffected).
+    // Rank decides both the order and the serving model: glm's 5 beats luna's
+    // 1, so it shows first and is active even though luna is `default_model`.
     assert_eq!(group["models"][0]["id"], "glm-5.3-flash");
     assert_eq!(group["models"][0]["provider"], "evot-free");
-    assert_eq!(group["models"][0]["active"], false);
+    assert_eq!(group["models"][0]["active"], true);
     assert_eq!(group["models"][1]["id"], "gpt-5.6-luna");
-    assert_eq!(group["models"][1]["active"], true);
+    assert_eq!(group["models"][1]["active"], false);
 
-    // Picking the other chip: provider stays, model becomes the head.
+    // A chip pins a lower-ranked model; the order it renders in is unchanged.
     let (status, _, body) = post(
         app,
         "/api/models",
         serde_json::json!({
             "active_provider": "evot-free",
-            "active_model": "glm-5.3-flash",
+            "active_model": "gpt-5.6-luna",
             "providers": []
         }),
     )
@@ -1060,9 +1060,9 @@ async fn models_api_groups_cloud_by_tier_and_chip_picks_the_default() -> TestRes
     let updated: serde_json::Value = serde_json::from_str(&body)?;
     let group = &updated["models"]["cloud_tiers"][0];
     assert_eq!(group["models"][0]["id"], "glm-5.3-flash");
-    assert_eq!(group["models"][0]["active"], true);
+    assert_eq!(group["models"][0]["active"], false);
     assert_eq!(group["models"][1]["id"], "gpt-5.6-luna");
-    assert_eq!(group["models"][1]["active"], false);
+    assert_eq!(group["models"][1]["active"], true);
 
     match original_home {
         Some(value) => std::env::set_var("HOME", value),

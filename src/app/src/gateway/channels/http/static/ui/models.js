@@ -36,7 +36,7 @@ function modelChips(models) {
 /**
  * Cloud directory grouped by catalog tier. The per-protocol provider names the
  * server splits tiers into never render; each chip carries the provider it is
- * served by so picking it can persist both halves of the default.
+ * served by so picking it can pin both halves of the selection.
  */
 function cloudHtml() {
   const tiers = cloudTiers();
@@ -212,8 +212,8 @@ function wire() {
   document.querySelectorAll("[data-default]").forEach((button) => {
     button.addEventListener("click", () => makeDefault(button.dataset.default));
   });
-  // A cloud chip picks both halves of the default: the tier's provider keeps
-  // serving the request, the model becomes that profile's head.
+  // A cloud chip pins both halves of the selection: the tier's provider keeps
+  // serving the request, and the model overrides the catalog's own ranking.
   document.querySelectorAll("[data-cloud-model]").forEach((chip) => {
     chip.addEventListener("click", () => {
       if (chip.classList.contains("active")) return;

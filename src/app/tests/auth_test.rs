@@ -32,6 +32,8 @@ const AUTH_JSON: &str = r#"{
   "models_synced_at": 0
 }"#;
 
+// `default_model` is deliberately not the top-ranked id: the client ranks by
+// tier + `sort_order`, so m-three is what a fresh session must land on.
 const CACHE_JSON: &str = r#"{
   "synced_at": 123,
   "response": {
@@ -42,9 +44,9 @@ const CACHE_JSON: &str = r#"{
        "default_model":"m-two","models":["m-one","m-two","m-three"]}
     ],
     "models": [
-      {"id":"m-one","display_name":"One","protocol":"anthropic","tier":"base"},
-      {"id":"m-two","display_name":"Two","protocol":"anthropic","tier":"base","thinking_level":"max"},
-      {"id":"m-three","display_name":"Three","protocol":"anthropic","tier":"base"}
+      {"id":"m-one","display_name":"One","protocol":"anthropic","tier":"base","sort_order":1},
+      {"id":"m-two","display_name":"Two","protocol":"anthropic","tier":"base","thinking_level":"max","sort_order":2},
+      {"id":"m-three","display_name":"Three","protocol":"anthropic","tier":"base","sort_order":9}
     ],
     "notices": []
   }
@@ -126,8 +128,13 @@ fn cloud_provider_registered_and_default_when_no_byok() {
         .expect("evot-free provider registered");
     assert_eq!(profile.base_url, "http://localhost:8787/v1/llm");
     assert_eq!(profile.api_key, "evot.scoped.key");
-    assert_eq!(profile.models.first().unwrap(), "m-two");
+    // The wire order is preserved; catalog rank picks the landing model.
+    assert_eq!(profile.models.first().unwrap(), "m-one");
     assert_eq!(config.llm.provider, "evot-free");
+    assert_eq!(
+        config.preferred_new_session_llm(),
+        Some(("evot-free".to_string(), "m-three".to_string()))
+    );
     assert_eq!(
         config.cloud_thinking_levels.get("m-two").copied(),
         Some(evot_engine::ThinkingLevel::Max)
@@ -244,26 +251,29 @@ fn each_cloud_protocol_becomes_its_own_provider() {
         .get("evot-free-openai")
         .expect("openai group registered");
     assert_eq!(compat.protocol.to_string(), "openai");
-    // The head is the server default; the rest preserves the catalog's own
-    // rank-descending array. Ranking at merge points re-sorts by sort_order,
-    // so the profile only has to stay faithful to the wire.
+    // Profiles stay faithful to the wire; ranking happens where it is needed,
+    // so no list is reordered on the way in.
     assert_eq!(compat.models, vec![
-        "gpt-free".to_string(),
         "gpt-free-mini".to_string(),
-        "aardvark-openai".to_string()
+        "aardvark-openai".to_string(),
+        "gpt-free".to_string()
     ]);
 
     let pro = config.providers.get("evot-pro").expect("pro registered");
     assert_eq!(pro.protocol.to_string(), "anthropic");
     assert_eq!(pro.models, vec![
-        "claude-pro".to_string(),
         "aaa-pro".to_string(),
-        "zzz-pro".to_string()
+        "zzz-pro".to_string(),
+        "claude-pro".to_string()
     ]);
 
-    // Premium (`special`) wins the landing spot when the account has it.
-    // Lowest sort_order is only the fallback when every group is Free.
+    // Premium (`special`) wins the landing spot when the account has it, and
+    // inside it the top-ranked model serves — not the server's default_model.
     assert_eq!(config.llm.provider, "evot-pro");
+    assert_eq!(
+        config.preferred_new_session_llm(),
+        Some(("evot-pro".to_string(), "aaa-pro".to_string()))
+    );
 
     let _ = std::fs::remove_dir_all(&env_home);
 }
@@ -369,8 +379,9 @@ fn cloud_group_labels_and_order_come_from_the_server() {
     let _ = std::fs::remove_dir_all(&env_home);
 }
 
+/// Catalog rank, not `default_model`, decides what a fresh session opens on.
 #[test]
-fn cloud_models_keep_the_server_default_first() {
+fn cloud_models_land_on_the_highest_ranked_id() {
     let _guard = env_lock().lock().unwrap();
     let original_home = std::env::var_os("HOME");
     let env_home = std::env::temp_dir().join(format!("evot-auth-order-{}", std::process::id()));
@@ -384,9 +395,15 @@ fn cloud_models_keep_the_server_default_first() {
 
     let profile = config.providers.get("evot-free").expect("registered");
     assert_eq!(profile.protocol.to_string(), "anthropic");
-    // default_model is m-two, so it is preselected ahead of m-one.
-    assert_eq!(profile.models.first().unwrap(), "m-two");
-    assert_eq!(profile.models.len(), 3);
+    // The profile stays faithful to the wire order.
+    assert_eq!(profile.models, vec![
+        "m-one".to_string(),
+        "m-two".to_string(),
+        "m-three".to_string()
+    ]);
+    // m-three outranks the server's `default_model` (m-two), so it serves.
+    let llm = config.active_llm().expect("active llm resolves");
+    assert_eq!(llm.model, "m-three");
 
     let _ = std::fs::remove_dir_all(&env_home);
 }
@@ -708,7 +725,9 @@ mod wiremock_tests {
         let response = auth::sync_models(&state).await.unwrap();
         assert_eq!(response.version, 7);
         assert_eq!(response.models.len(), 1);
-        assert_eq!(response.providers[0].default_model, "m1");
+        // The wire still carries `default_model`; the client ignores it and
+        // ranks by tier + sort_order instead.
+        assert_eq!(response.providers[0].models, vec!["m1".to_string()]);
         assert_eq!(response.providers[0].protocol, "anthropic");
         assert_eq!(response.notices[0].id, "n1");
 

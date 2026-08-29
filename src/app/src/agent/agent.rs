@@ -224,8 +224,6 @@ pub struct Agent {
     provider_override: RwLock<Option<Arc<dyn evot_engine::provider::StreamProvider>>>,
     /// session_id → (run_id, handle, done_flag)
     active_runs: Arc<parking_lot::Mutex<HashMap<String, ActiveRun>>>,
-    /// Premium landing model for new sessions; None without a special tier.
-    new_session_llm: Option<LlmConfig>,
 }
 
 impl Agent {
@@ -237,16 +235,6 @@ impl Agent {
 
     fn new_inner(config: &Config, cwd: String, storage: Arc<dyn Storage>) -> Result<Self> {
         let system_prompt = format!("You are a helpful assistant. Working directory: {cwd}");
-        // Premium tier wins for fresh sessions; BYOK/Free-only stay None.
-        let new_session_llm = config
-            .preferred_new_session_llm()
-            .and_then(|(provider, model)| {
-                let llm = config.build_llm(&provider, Some(model));
-                if let Err(error) = &llm {
-                    tracing::warn!(%error, "premium landing model unusable; keeping live selection");
-                }
-                llm.ok()
-            });
         Ok(Self {
             llm: RwLock::new(
                 config
@@ -268,7 +256,6 @@ impl Agent {
             sandbox: super::sandbox::SandboxPolicy::from_config(&config.sandbox),
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
-            new_session_llm,
         })
     }
 
@@ -1012,7 +999,6 @@ impl Agent {
             sandbox,
             provider_override: _,
             active_runs: _,
-            new_session_llm: _,
         } = self.as_ref();
 
         let forked = Arc::new(Self {
@@ -1032,7 +1018,6 @@ impl Agent {
             },
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
-            new_session_llm: None,
         });
         Ok(ForkedAgent {
             agent: forked,
@@ -1128,15 +1113,8 @@ impl Agent {
         let (provider, model) = match llm {
             Some(pair) => pair,
             None => {
-                // Promote the Premium landing so session and runs agree.
-                let live = self.llm.read().clone();
-                match self.new_session_llm.as_ref() {
-                    Some(p) if p.provider != live.provider || p.model != live.model => {
-                        *self.llm.write() = p.clone();
-                        (p.provider.clone(), p.model.clone())
-                    }
-                    _ => (live.provider.clone(), live.model.clone()),
-                }
+                let live = self.llm.read();
+                (live.provider.clone(), live.model.clone())
             }
         };
         let storage = self.storage.read().clone();

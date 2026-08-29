@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -251,9 +252,30 @@ impl Config {
         }
     }
 
-    /// Resolve the active provider into a runtime LlmConfig.
+    /// The (provider, model) pair an un-pinned request resolves to.
+    ///
+    /// An explicit pin (`--model`, a Models page chip) wins. Otherwise a cloud
+    /// account follows catalog rank, and a BYOK provider its head model.
+    pub fn active_selection(&self) -> Option<(String, String)> {
+        if let Some(model) = &self.llm.model_override {
+            return Some((self.llm.provider.clone(), model.clone()));
+        }
+        if self.llm.provider.is_empty() || self.cloud_providers.contains(&self.llm.provider) {
+            if let Some(pair) = self.preferred_new_session_llm() {
+                return Some(pair);
+            }
+        }
+        let profile = self.providers.get(&self.llm.provider)?;
+        Some((self.llm.provider.clone(), profile.model().to_string()))
+    }
+
+    /// Resolve the active selection into a runtime LlmConfig.
     pub fn active_llm(&self) -> Result<LlmConfig> {
-        self.build_llm(&self.llm.provider, self.llm.model_override.clone())
+        match self.active_selection() {
+            Some((provider, model)) => self.build_llm(&provider, Some(model)),
+            // Nothing to resolve; let `build_llm` report why.
+            None => self.build_llm(&self.llm.provider, self.llm.model_override.clone()),
+        }
     }
 
     /// Build an LlmConfig for a given provider name and optional model override.
@@ -303,32 +325,48 @@ impl Config {
         })
     }
 
-    /// Landing (provider, model) for a new session; Premium tier preferred.
-    pub fn preferred_new_session_llm(&self) -> Option<(String, String)> {
-        let premium = self.providers.iter().find_map(|(name, profile)| {
-            if !self.cloud_providers.contains(name) {
-                return None;
-            }
-            profile.models.iter().find_map(|model| {
-                (self.cloud_model_tiers.get(model).map(String::as_str) == Some("special"))
-                    .then(|| (name.clone(), model.clone()))
-            })
-        });
-        if let Some(pair) = premium {
-            return Some(pair);
-        }
-        if self.cloud_providers.contains(&self.llm.provider) {
-            let model = self.llm.model_override.clone().or_else(|| {
-                self.providers
-                    .get(&self.llm.provider)
-                    .and_then(|profile| profile.models.first().cloned())
-            })?;
-            return Some((self.llm.provider.clone(), model));
-        }
-        None
+    /// Sort key for one cloud model; the highest key is the default.
+    /// Premium (`special`) beats Free, then the catalog rank (`sort_order`),
+    /// then catalog order — the same order the pickers render.
+    fn cloud_rank(
+        &self,
+        provider_idx: usize,
+        model_idx: usize,
+        model: &str,
+    ) -> (bool, i64, Reverse<usize>, Reverse<usize>) {
+        (
+            self.cloud_model_tiers.get(model).map(String::as_str) == Some("special"),
+            self.cloud_model_sorts.get(model).copied().unwrap_or(0),
+            Reverse(provider_idx),
+            Reverse(model_idx),
+        )
     }
 
-    /// Parse a model spec and return (provider_name, optional_model_override).
+    /// Landing (provider, model) for a fresh cloud session: the catalog's
+    /// top-ranked model. The server owns the outcome through tier and
+    /// `sort_order`, so there is no separate default model.
+    pub fn preferred_new_session_llm(&self) -> Option<(String, String)> {
+        self.providers
+            .iter()
+            .enumerate()
+            .filter(|(_, (name, _))| self.cloud_providers.contains(*name))
+            .flat_map(|(provider_idx, (name, profile))| {
+                profile
+                    .models
+                    .iter()
+                    .enumerate()
+                    .map(move |(model_idx, model)| (provider_idx, model_idx, name, model))
+            })
+            .max_by_key(|(provider_idx, model_idx, _, model)| {
+                self.cloud_rank(*provider_idx, *model_idx, model)
+            })
+            .map(|(_, _, provider, model)| (provider.clone(), model.clone()))
+    }
+
+    /// Parse a model spec and return (provider_name, model).
+    ///
+    /// The model is always returned as an explicit pin: naming a model is a
+    /// deliberate choice, so it must survive catalog ranking.
     ///
     /// Formats:
     /// - `"deepseek-chat"` — find first provider whose model matches
@@ -339,14 +377,7 @@ impl Config {
             .providers
             .iter()
             .find(|(_, p)| p.models.iter().any(|m| m == spec))
-            .map(|(name, p)| {
-                let override_model = if p.model() == spec {
-                    None
-                } else {
-                    Some(spec.to_string())
-                };
-                (name.clone(), override_model)
-            });
+            .map(|(name, _)| (name.clone(), Some(spec.to_string())));
         if let Some(found) = found {
             return Ok(found);
         }

@@ -726,9 +726,10 @@ fn resolve_model_spec_by_model_name() -> TestResult {
             supports_image: None,
         });
 
+    // Naming a model always pins it, even when it heads its provider's list.
     let (name, override_model) = config.resolve_model_spec("deepseek-chat")?;
     assert_eq!(name, "deepseek");
-    assert_eq!(override_model, None);
+    assert_eq!(override_model, Some("deepseek-chat".to_string()));
 
     let (name, override_model) = config.resolve_model_spec("anthropic:custom-model")?;
     assert_eq!(name, "anthropic");
@@ -736,7 +737,7 @@ fn resolve_model_spec_by_model_name() -> TestResult {
 
     let (name, override_model) = config.resolve_model_spec("tencent/hy3:free")?;
     assert_eq!(name, "openrouter");
-    assert_eq!(override_model, None);
+    assert_eq!(override_model, Some("tencent/hy3:free".to_string()));
 
     let (name, override_model) = config.resolve_model_spec("openrouter:tencent/hy3:free")?;
     assert_eq!(name, "openrouter");
@@ -774,10 +775,13 @@ fn with_model_sets_override() -> TestResult {
     assert_eq!(config.llm.model_override, Some("custom-model".to_string()));
     assert_eq!(config.active_llm()?.model, "custom-model");
 
-    // plain model match clears override
+    // a plain model name pins that model too
     let config = config.with_model(Some("claude-sonnet-4-20250514".into()))?;
     assert_eq!(config.llm.provider, "anthropic");
-    assert_eq!(config.llm.model_override, None);
+    assert_eq!(
+        config.llm.model_override,
+        Some("claude-sonnet-4-20250514".to_string())
+    );
     assert_eq!(config.active_llm()?.model, "claude-sonnet-4-20250514");
     Ok(())
 }

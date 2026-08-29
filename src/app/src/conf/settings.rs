@@ -241,29 +241,25 @@ pub fn apply_model_settings(config: &mut Config, update: &ModelSettings) -> Resu
     config.llm.provider = active;
     config.llm.model_override = None;
 
-    // A cloud default model persists by reordering its profile; the head of
-    // the active profile is what every un-pinned request resolves to.
+    // An explicit chip pins the model; without one the active provider falls
+    // back to its own default (catalog rank for cloud, head model for BYOK).
     if let Some(id) = update
         .active_model
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        let owner = config.providers.iter().find_map(|(name, p)| {
-            (config.cloud_providers.contains(name) && p.models.iter().any(|m| m == id))
-                .then(|| name.clone())
-        });
-        let Some(owner) = owner else {
+        let served = config
+            .providers
+            .get(&config.llm.provider)
+            .is_some_and(|profile| profile.models.iter().any(|m| m == id));
+        if !served {
             return Err(EvotError::Conf(format!(
-                "active model '{id}' is not served by a cloud provider"
+                "active model '{id}' is not served by provider '{}'",
+                config.llm.provider
             )));
-        };
-        let profile = config.providers.get_mut(&owner);
-        if let Some(profile) = profile {
-            if let Some(pos) = profile.models.iter().position(|m| m == id) {
-                profile.models.rotate_left(pos);
-            }
         }
+        config.llm.model_override = Some(id.to_string());
     }
     Ok(())
 }
@@ -344,6 +340,7 @@ pub fn models_snapshot(config: &Config) -> serde_json::Value {
         .collect();
 
     // Cloud models grouped by tier; per-protocol names never surface.
+    let active = config.active_selection();
     let mut cloud_tiers: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
     for (name, p) in config.providers.iter() {
         if !config.cloud_providers.contains(name) {
@@ -358,7 +355,7 @@ pub fn models_snapshot(config: &Config) -> serde_json::Value {
             let entry = serde_json::json!({
                 "id": model,
                 "provider": name,
-                "active": *name == config.llm.provider && Some(model) == p.models.first(),
+                "active": active.as_ref().is_some_and(|(p, m)| p == name && m == model),
                 "sort_order": config.cloud_model_sorts.get(model).copied().unwrap_or(0),
             });
             match cloud_tiers.iter_mut().find(|(known, _)| *known == tier) {

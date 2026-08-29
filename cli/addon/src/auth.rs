@@ -46,10 +46,7 @@ async fn sync_models_inner() -> evot::error::Result<evot::auth::ModelsCache> {
     let state =
         auth::load_auth()?.ok_or_else(|| evot::error::EvotError::Conf("not logged in".into()))?;
     let response = auth::sync_models(&state).await?;
-    let cache = evot::auth::ModelsCache {
-        synced_at: now_ms(),
-        response,
-    };
+    let cache = evot::auth::ModelsCache::new(now_ms(), response);
     auth::save_models_cache(&cache)?;
     Ok(cache)
 }

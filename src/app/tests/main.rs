@@ -38,6 +38,8 @@ mod resume_search_test;
 mod run_ask_channel_test;
 #[path = "run_queue_test.rs"]
 mod run_queue_test;
+#[path = "schema_compat_test.rs"]
+mod schema_compat_test;
 #[path = "search_test.rs"]
 mod search_test;
 #[path = "server_protocol_test.rs"]

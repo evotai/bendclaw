@@ -24,3 +24,4 @@ pub use types::LoginCodeResponse;
 pub use types::ModelsCache;
 pub use types::ModelsResponse;
 pub use types::Notice;
+pub use types::MODELS_CACHE_SCHEMA_VERSION;

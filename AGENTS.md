@@ -21,6 +21,19 @@
 - Keep tests explicit and fast; focus on core logic
 - A change to one workspace crate can break another: before committing Rust changes, run the full suite once — `make test-rust` (or `make check`, which includes it)
 
+# Schema Compatibility
+
+Files under `~/.evotai`, remote API DTOs, addon JSON, and stored sessions are published contracts.
+
+- Never remove or rename a published field directly. Keep deprecated wire/cache fields serialized even after domain logic stops using them.
+- Every added field must be backward-readable via `#[serde(default)]`, `Option<T>`, or an explicit migration.
+- Do not change a published field's type or meaning in place; add a new field and migrate.
+- Persistent formats need a schema version independent of server/catalog versions. Missing versions must map to legacy v0; reject unsupported future versions clearly.
+- Keep compatibility fields out of business decisions. Wire/persistent DTOs may retain fields that domain logic ignores.
+- Treat custom provider entries in `~/.evotai/evot.env` as user data. Cloud login/reconcile and settings rewrites must preserve their selection, secrets, URLs, models, protocols, capability fields, and non-evot preamble lines.
+- Every schema change requires historical fixtures and both directions of contract testing: old data → current reader, and current writer → strict legacy reader.
+- Persistent state writes must use a same-directory temporary file, flush/sync, and atomic rename; never truncate the live JSON file in place.
+
 # Pre-commit
 
 - Before committing, run the relevant targeted tests for the files changed

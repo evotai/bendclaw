@@ -506,7 +506,7 @@ fn load_drops_cloud_providers_left_behind_after_logout() {
 }
 
 #[test]
-fn load_leaves_byok_providers_alone() {
+fn load_keeps_custom_provider_on_the_cloud_endpoint() {
     let _guard = env_lock().lock().unwrap();
     let original_home = std::env::var_os("HOME");
     let env_home = std::env::temp_dir().join(format!("evot-auth-byok-keep-{}", std::process::id()));
@@ -517,7 +517,7 @@ fn load_leaves_byok_providers_alone() {
         "\
 EVOT_LLM_PROVIDER=evot-proxy
 EVOT_LLM_EVOT_PROXY_PROTOCOL=anthropic
-EVOT_LLM_EVOT_PROXY_BASE_URL=https://llm.internal.corp/anthropic
+EVOT_LLM_EVOT_PROXY_BASE_URL=https://auto.evot.ai/v1/llm
 EVOT_LLM_EVOT_PROXY_API_KEY=sk-corp
 EVOT_LLM_EVOT_PROXY_MODEL=corp-model
 ",
@@ -539,6 +539,50 @@ EVOT_LLM_EVOT_PROXY_MODEL=corp-model
     assert!(after
         .unwrap()
         .contains("EVOT_LLM_EVOT_PROXY_API_KEY=sk-corp"));
+
+    let _ = std::fs::remove_dir_all(&env_home);
+}
+
+#[test]
+fn cloud_catalog_does_not_overwrite_a_same_named_custom_provider() {
+    let _guard = env_lock().lock().unwrap();
+    let original_home = std::env::var_os("HOME");
+    let env_home =
+        std::env::temp_dir().join(format!("evot-auth-name-collision-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&env_home);
+    write_test_home(&env_home, Some(AUTH_JSON), Some(CACHE_JSON));
+    let env_path = env_home.join(".evotai/evot.env");
+    std::fs::write(
+        &env_path,
+        "\
+EVOT_LLM_PROVIDER=evot-free
+EVOT_LLM_EVOT_FREE_PROTOCOL=openai_responses
+EVOT_LLM_EVOT_FREE_BASE_URL=https://custom.example/v1
+EVOT_LLM_EVOT_FREE_API_KEY=sk-user-owned
+EVOT_LLM_EVOT_FREE_MODEL=custom-model
+",
+    )
+    .unwrap();
+    std::env::set_var("HOME", &env_home);
+
+    let result = Config::load();
+    let after = std::fs::read_to_string(&env_path);
+    restore_env_var("HOME", original_home);
+
+    let config = result.unwrap();
+    let custom = config
+        .providers
+        .get("evot-free")
+        .expect("same-named custom provider kept");
+    assert_eq!(custom.protocol, evot::conf::Protocol::OpenAiResponses);
+    assert_eq!(custom.base_url, "https://custom.example/v1");
+    assert_eq!(custom.api_key, "sk-user-owned");
+    assert_eq!(custom.models, vec!["custom-model"]);
+    assert_eq!(config.llm.provider, "evot-free");
+    assert!(!config.cloud_providers.contains("evot-free"));
+    assert!(after
+        .unwrap()
+        .contains("EVOT_LLM_EVOT_FREE_API_KEY=sk-user-owned"));
 
     let _ = std::fs::remove_dir_all(&env_home);
 }
@@ -725,8 +769,9 @@ mod wiremock_tests {
         let response = auth::sync_models(&state).await.unwrap();
         assert_eq!(response.version, 7);
         assert_eq!(response.models.len(), 1);
-        // The wire still carries `default_model`; the client ignores it and
-        // ranks by tier + sort_order instead.
+        // Retained in the cache only for older clients; selection still ranks
+        // by tier + sort_order.
+        assert_eq!(response.providers[0].default_model, "m1");
         assert_eq!(response.providers[0].models, vec!["m1".to_string()]);
         assert_eq!(response.providers[0].protocol, "anthropic");
         assert_eq!(response.notices[0].id, "n1");

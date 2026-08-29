@@ -89,6 +89,7 @@ import {
 } from './app/stream.js'
 import { handleSlashCommand } from './app/commands.js'
 import { askStateToResponse } from './app/ask-user.js'
+import { RunOwnership } from './app/run-ownership.js'
 import {
   dispatchHostToolCall,
   HOST_TOOL_SPECS_JSON,
@@ -204,6 +205,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // they are abortable agent streams or showing stale LLM usage.
   let foregroundCommand: 'log-shot' | null = null
   let streamRef: QueryStream | null = null
+  // Native abort settles asynchronously. Ownership is revoked before aborting
+  // so an old Promise cannot report twice or clear a newer run's state.
+  const runOwnership = new RunOwnership()
+  const beginRun = (): number => runOwnership.begin()
+  const ownsRun = (generation: number): boolean => runOwnership.owns(generation)
+  const revokeRun = (): void => runOwnership.revoke()
   let compactionTask: CompactionTask | null = null
   let queuedCompactionSubmissions: QueuedCompactionSubmission[] = []
   let spinnerTimer: ReturnType<typeof setInterval> | null = null
@@ -803,6 +810,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...buildSelectorRegionLines(overlay.state, renderer.termCols),
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
+        bottomAnchor: true,
       }
     }
 
@@ -814,6 +822,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...buildAskRegionLines(overlay.state, renderer.termCols),
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
+        bottomAnchor: true,
       }
     }
 
@@ -826,6 +835,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     return {
       lines: [...contentLines, ...blocksToLines(footerBlocks)],
+      bottomAnchor: true,
       ...(modalLines.length > 0 ? { overlay: { lines: modalLines } } : {}),
     }
   }
@@ -1255,6 +1265,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   async function runQuery(text: string, contentJson?: string, prebuiltStream?: QueryStream) {
+    const generation = beginRun()
     liveContentMaxHeight = 0
     isLoading = true
     spinnerState = createSpinnerState()
@@ -1266,6 +1277,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     try {
       const stream = prebuiltStream
         ?? await agent.query(text, sessionId ?? undefined, planning ? 'planning_interactive' : 'interactive', contentJson, HOST_TOOL_SPECS_JSON)
+      if (!ownsRun(generation)) {
+        stream.abort()
+        return
+      }
       streamRef = stream
       sessionId = stream.sessionId ?? sessionId
       appState = { ...appState, sessionId: sessionId }
@@ -1273,7 +1288,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       rendererTrace.bind(stream.sessionId)
 
       for await (const event of stream) {
-        if (destroyed) break
+        if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
 
         if (event.kind === 'host_tool_call') {
@@ -1290,8 +1305,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               tool_call_id: call.tool_call_id,
               arguments: call.arguments ?? {},
             }, collectAskUserAnswers)
-            if (streamRef) {
-              await streamRef.respondHostTool(JSON.stringify(response))
+            if (ownsRun(generation)) {
+              await stream.respondHostTool(JSON.stringify(response))
             }
           }
           continue
@@ -1348,6 +1363,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (update.rerenderStatus) renderer.requestRender()
       }
 
+      if (!ownsRun(generation)) return
       if (streamMachine) {
         const final = flushStreaming(streamMachine)
         streamMachine = final.state
@@ -1360,6 +1376,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       restoreQueuedUserMessagesToEditor()
       completed = true
     } catch (err) {
+      // An interrupted run is expected to reject after its ownership has been
+      // revoked. Its interruption notice was already committed synchronously;
+      // touching shared state here could flush or clear a newer run.
+      if (!ownsRun(generation)) return
       if (streamMachine) {
         const final = flushStreaming(streamMachine)
         streamMachine = final.state
@@ -1369,19 +1389,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       reconcileQueuedUserMessages()
       restoreQueuedUserMessagesToEditor()
     } finally {
-      unfreezeTerminalTitle()
-      streamRef = null
-      isLoading = false
-      streamMachine = null
-      stopSpinner()
-      // Fresh ads/models belong in the background: awaiting the catalog here
-      // stalled the prompt for the whole HTTP round-trip after every turn.
-      void syncCloudNow(true)
-      triggerAdSlot(adSlot, Date.now())
-      renderer.requestRender()
+      if (ownsRun(generation)) {
+        unfreezeTerminalTitle()
+        streamRef = null
+        isLoading = false
+        streamMachine = null
+        stopSpinner()
+        // Fresh ads/models belong in the background: awaiting the catalog here
+        // stalled the prompt for the whole HTTP round-trip after every turn.
+        void syncCloudNow(true)
+        triggerAdSlot(adSlot, Date.now())
+        renderer.requestRender()
+      }
     }
 
-    if (!completed) return
+    if (!ownsRun(generation) || !completed) return
 
     await maybeReviewPlanAfterTurn()
   }
@@ -1535,14 +1557,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function interruptStream(id: string, text: string) {
     unfreezeTerminalTitle()
+    // Revoke ownership before aborting: native abort settles asynchronously,
+    // and its rejected Promise must not later emit a second Interrupted/error
+    // or clear a newer query that the user starts immediately afterward.
+    revokeRun()
     // If an ask/plan-review overlay is awaiting, resolve it as cancelled so the
     // suspended host-tool dispatch in runQuery unblocks instead of hanging the
     // run loop forever.
     resolvePendingAsk()
-    if (streamRef) {
-      streamRef.abort()
-      streamRef = null
-    }
+    const interruptedStream = streamRef
+    streamRef = null
+    interruptedStream?.abort()
     isLoading = false
     flushStreamContent()
     streamMachine = null
@@ -2164,9 +2189,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (result.clearContext) {
       // Abort any in-flight streaming and clear local context view without switching sessions.
       if (isLoading && streamRef) {
-        streamRef.abort(); streamRef = null; isLoading = false
+        revokeRun()
+        const interruptedStream = streamRef
+        streamRef = null
+        interruptedStream.abort()
+        isLoading = false
         flushStreamContent()
-        streamMachine = null; stopSpinner()
+        streamMachine = null
+        stopSpinner()
       }
       sessionId = null
       planModeItems = []
@@ -2182,9 +2212,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (result.newSession) {
       // Abort any in-flight streaming
       if (isLoading && streamRef) {
-        streamRef.abort(); streamRef = null; isLoading = false
+        revokeRun()
+        const interruptedStream = streamRef
+        streamRef = null
+        interruptedStream.abort()
+        isLoading = false
         flushStreamContent()
-        streamMachine = null; stopSpinner()
+        streamMachine = null
+        stopSpinner()
       }
       planModeItems = []
       lastReviewedPlanMarkdown = ''
@@ -2692,6 +2727,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   async function runLogQuery(forked: import('../native/index.js').ForkedAgent, prompt: string) {
+    const generation = beginRun()
     liveContentMaxHeight = 0
     isLoading = true
     spinnerState = createSpinnerState()
@@ -2702,6 +2738,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     try {
       const stream = await forked.query(prompt)
+      if (!ownsRun(generation)) {
+        stream.abort()
+        return
+      }
       streamRef = stream
 
       // Reuse the main streaming path so log-mode inherits pi-aligned behavior:
@@ -2710,7 +2750,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // (the old per-newline commit here split every table row into its own
       // buildAssistantLines call).
       for await (const event of stream) {
-        if (destroyed) break
+        if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
 
         const update = reduceRunEvent(streamMachine, event, { termRows: renderer.termRows })
@@ -2724,6 +2764,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (update.rerenderStatus) renderer.requestRender()
       }
 
+      if (!ownsRun(generation)) return
       if (streamMachine) {
         const final = flushStreaming(streamMachine)
         streamMachine = final.state
@@ -2733,6 +2774,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       reconcileQueuedUserMessages()
       restoreQueuedUserMessagesToEditor()
     } catch (err) {
+      if (!ownsRun(generation)) return
       if (streamMachine) {
         const final = flushStreaming(streamMachine)
         streamMachine = final.state
@@ -2742,11 +2784,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       reconcileQueuedUserMessages()
       restoreQueuedUserMessagesToEditor()
     } finally {
-      streamRef = null
-      isLoading = false
-      streamMachine = null
-      stopSpinner()
-      renderer.requestRender()
+      if (ownsRun(generation)) {
+        streamRef = null
+        isLoading = false
+        streamMachine = null
+        stopSpinner()
+        renderer.requestRender()
+      }
     }
   }
 

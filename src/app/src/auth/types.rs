@@ -54,7 +54,7 @@ pub struct FreeModelOption {
     /// servers, or when the catalog leaves the client's current effort alone.
     #[serde(default)]
     pub thinking_level: String,
-    /// Display rank within its provider group (lower shows earlier). Zero on
+    /// Display rank within its provider group (higher shows earlier). Zero on
     /// older servers, which keeps the catalog's own order.
     #[serde(default)]
     pub sort_order: i64,
@@ -85,6 +85,10 @@ pub struct CloudProviderConfig {
     pub protocol: String,
     pub base_url: String,
     pub api_key: String,
+    /// Retained only so caches written by this version remain readable by
+    /// older clients. Model selection ignores it and follows `sort_order`.
+    #[serde(default)]
+    pub default_model: String,
     pub models: Vec<String>,
 }
 
@@ -103,10 +107,26 @@ pub struct ModelsResponse {
     pub notices: Vec<Notice>,
 }
 
+/// Current on-disk schema for `models.cache.json`.
+pub const MODELS_CACHE_SCHEMA_VERSION: u32 = 1;
+
 /// What `auth.json` persists from a models sync — enough to register the
 /// provider offline on every subsequent startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelsCache {
+    /// Independent from the server catalog version. Missing means legacy v0.
+    #[serde(default)]
+    pub schema_version: u32,
     pub synced_at: i64,
     pub response: ModelsResponse,
+}
+
+impl ModelsCache {
+    pub fn new(synced_at: i64, response: ModelsResponse) -> Self {
+        Self {
+            schema_version: MODELS_CACHE_SCHEMA_VERSION,
+            synced_at,
+            response,
+        }
+    }
 }

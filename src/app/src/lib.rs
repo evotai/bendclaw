@@ -1,4 +1,5 @@
 pub mod agent;
+pub(crate) mod atomic_file;
 pub mod auth;
 pub mod command;
 pub mod compact;

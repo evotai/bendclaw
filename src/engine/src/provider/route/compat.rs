@@ -63,6 +63,14 @@ impl CompatCaps {
             .iter()
             .find_map(|(cap, candidate)| (*candidate == name).then_some(*cap))
     }
+
+    /// Stable config names for the enabled capabilities.
+    pub fn names(self) -> Vec<&'static str> {
+        Self::ALL
+            .iter()
+            .filter_map(|(cap, name)| self.contains(*cap).then_some(*name))
+            .collect()
+    }
 }
 
 impl std::ops::BitOr for CompatCaps {

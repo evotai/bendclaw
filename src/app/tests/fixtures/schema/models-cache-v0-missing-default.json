@@ -1,0 +1,27 @@
+{
+  "synced_at": 124,
+  "response": {
+    "version": 8,
+    "providers": [
+      {
+        "name": "evot-free",
+        "label": "Evot Free",
+        "sort_order": 0,
+        "protocol": "anthropic",
+        "base_url": "https://auto.evot.ai/v1/llm",
+        "api_key": "evot.fixture.key",
+        "models": ["m-two"]
+      }
+    ],
+    "models": [
+      {
+        "id": "m-two",
+        "protocol": "anthropic",
+        "tier": "base",
+        "provider": "evot-free",
+        "sort_order": 2
+      }
+    ],
+    "notices": []
+  }
+}

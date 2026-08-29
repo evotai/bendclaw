@@ -812,10 +812,10 @@ impl Server {
                     let response = crate::auth::sync_models(&user).await?;
                     // The cache file is what config loading reads to register
                     // the cloud providers; skipping it makes login a no-op.
-                    crate::auth::save_models_cache(&crate::auth::ModelsCache {
-                        synced_at: chrono::Utc::now().timestamp_millis(),
+                    crate::auth::save_models_cache(&crate::auth::ModelsCache::new(
+                        chrono::Utc::now().timestamp_millis(),
                         response,
-                    })?;
+                    ))?;
                     Ok::<(), crate::error::EvotError>(())
                 };
                 // Strictly ordered: the reload reads the cache file that the

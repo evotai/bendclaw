@@ -1,0 +1,28 @@
+{
+  "synced_at": 123,
+  "response": {
+    "version": 7,
+    "providers": [
+      {
+        "name": "evot-free",
+        "label": "Evot Free",
+        "sort_order": 0,
+        "protocol": "anthropic",
+        "base_url": "https://auto.evot.ai/v1/llm",
+        "api_key": "evot.fixture.key",
+        "default_model": "m-one",
+        "models": ["m-one"]
+      }
+    ],
+    "models": [
+      {
+        "id": "m-one",
+        "protocol": "anthropic",
+        "tier": "base",
+        "provider": "evot-free",
+        "sort_order": 1
+      }
+    ],
+    "notices": []
+  }
+}

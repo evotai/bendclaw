@@ -60,8 +60,8 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ModelSettings {
     pub active_provider: String,
-    /// Default model within `active_provider`; cloud chips select arbitrary
-    /// models, which persists by moving the id to the front of that profile.
+    /// Explicit model pin within `active_provider`; omitted means use the
+    /// provider's normal default (catalog rank for cloud, head model for BYOK).
     #[serde(default)]
     pub active_model: Option<String>,
     #[serde(default)]
@@ -101,6 +101,14 @@ pub fn config_to_env_groups(config: &Config) -> Vec<EnvGroup> {
         g.push(format!("EVOT_LLM_{seg}_MODEL"), p.models.join(","));
         if !p.api_key.is_empty() {
             g.push(format!("EVOT_LLM_{seg}_API_KEY"), p.api_key.clone());
+        }
+        let mut capabilities = p.compat_caps.names();
+        capabilities.extend(p.route_capabilities.names());
+        if !capabilities.is_empty() {
+            g.push(
+                format!("EVOT_LLM_{seg}_COMPAT_CAPS"),
+                capabilities.join(","),
+            );
         }
         if let Some(level) = p.thinking_level {
             g.push(format!("EVOT_LLM_{seg}_THINKING_LEVEL"), level.as_str());

@@ -353,12 +353,9 @@ fn ensure_env_file(path: &Path) -> Result<()> {
     if path.exists() {
         return Ok(());
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| EvotError::Conf(format!("failed to create {}: {e}", parent.display())))?;
-    }
-    std::fs::write(path, default_env_content())
-        .map_err(|e| EvotError::Conf(format!("failed to write {}: {e}", path.display())))?;
+    // Never replace a user file that appears between the existence check and
+    // creation (for example, during concurrent startup).
+    crate::atomic_file::create_private_atomic(path, default_env_content().as_bytes())?;
     Ok(())
 }
 
@@ -843,6 +840,13 @@ fn is_cloud_base_url(base_url: &str) -> bool {
         .is_some_and(|configured| host.eq_ignore_ascii_case(url_host(&configured)))
 }
 
+fn is_stale_cloud_profile(profile: &ProviderProfile) -> bool {
+    // Endpoint alone is not ownership: a user may deliberately route a custom
+    // provider through the same host. Only credentials issued by evot plus a
+    // cloud endpoint identify a provider persisted by an older client.
+    is_cloud_base_url(&profile.base_url) && profile.api_key.trim().starts_with("evot.")
+}
+
 fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) {
     let stale: Vec<String> = env_file_vars
         .iter()
@@ -852,7 +856,7 @@ fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) 
                 || config
                     .providers
                     .get(name)
-                    .is_some_and(|profile| is_cloud_base_url(&profile.base_url))
+                    .is_some_and(is_stale_cloud_profile)
         })
         .collect();
     if stale.is_empty() {
@@ -920,6 +924,18 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         let protocol = parse_protocol(&group.protocol).map_err(|_| {
             EvotError::Conf(format!("unsupported cloud protocol: {}", group.protocol))
         })?;
+
+        // A catalog routing name is not ownership. If the user already has a
+        // custom provider with that name, keep it; only replace a profile that
+        // is identifiable as cloud state persisted by an older client.
+        let custom_collision = config
+            .providers
+            .get(&name)
+            .is_some_and(|profile| !is_stale_cloud_profile(profile));
+        if custom_collision {
+            tracing::warn!(provider = %name, "cloud provider name collides with custom provider; keeping custom config");
+            continue;
+        }
 
         let profile = ProviderProfile {
             protocol,

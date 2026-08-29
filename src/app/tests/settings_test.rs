@@ -103,6 +103,36 @@ fn settings_serialize_to_expected_env_keys() {
 }
 
 #[test]
+fn custom_provider_capabilities_survive_settings_serialization() -> TestResult {
+    let mut config = Config::new(std::env::temp_dir());
+    config
+        .providers
+        .insert("corp".into(), evot::conf::ProviderProfile {
+            protocol: evot::conf::Protocol::OpenAiResponses,
+            api_key: "sk-corp".into(),
+            base_url: "https://corp.example/v1".into(),
+            models: vec!["corp-model".into()],
+            compat_caps: evot_engine::provider::CompatCaps::REASONING_EFFORT,
+            route_capabilities: evot_engine::provider::RouteCapabilityOverrides {
+                verbosity: true,
+                remote_compaction: true,
+            },
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    config.llm.provider = "corp".into();
+
+    let map = flat(&config_to_env_groups(&config));
+    assert_eq!(
+        map.get("EVOT_LLM_CORP_COMPAT_CAPS").map(String::as_str),
+        Some("reasoning_effort,verbosity,remote_compaction")
+    );
+    Ok(())
+}
+
+#[test]
 fn blank_global_thinking_level_restores_model_default() {
     let mut config = Config::new(std::env::temp_dir());
     config.llm.thinking_level = Some(evot_engine::ThinkingLevel::High);

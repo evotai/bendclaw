@@ -208,25 +208,5 @@ fn render_block(groups: &[EnvGroup]) -> String {
 }
 
 fn write_atomic(path: &Path, content: &str) -> Result<()> {
-    let tmp = path.with_extension("env.tmp");
-    std::fs::write(&tmp, content)
-        .map_err(|e| EvotError::Conf(format!("failed to write {}: {e}", tmp.display())))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        if let Err(e) = std::fs::set_permissions(&tmp, perms) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(EvotError::Conf(format!(
-                "failed to chmod {}: {e}",
-                tmp.display()
-            )));
-        }
-    }
-
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        EvotError::Conf(format!("failed to persist {}: {e}", path.display()))
-    })
+    crate::atomic_file::write_private_atomic(path, content.as_bytes())
 }

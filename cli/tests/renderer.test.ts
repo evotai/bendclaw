@@ -171,6 +171,56 @@ describe('TermRenderer', () => {
       renderer.destroy()
     })
 
+    test('bottom anchor leaves a short frame at its natural position', async () => {
+      const { renderer } = createRenderer()
+      ;(renderer as any).stdout.rows = 8
+      renderer.init()
+      renderer.setRenderCallback(() => ({
+        lines: ['history 1', 'Interrupted.', 'ad', `❯ draft${CURSOR_MARKER}`, 'footer'],
+        bottomAnchor: true,
+      }))
+
+      await renderFrame(renderer)
+
+      const reset = '\x1b[0m\x1b]8;;\x07'
+      // Content decides placement. Padding a short frame to the viewport would
+      // pin the composer to the bottom of an almost-empty session.
+      expect((renderer as any).previousLines).toEqual([
+        `history 1${reset}`,
+        `Interrupted.${reset}`,
+        `ad${reset}`,
+        `❯ draft${reset}`,
+        `footer${reset}`,
+      ])
+      expect((renderer as any).hardwareCursorRow).toBe(3)
+      renderer.destroy()
+    })
+
+    test('bottom anchor lets a short frame shrink in place without a full clear', async () => {
+      const { renderer, stdout } = createRenderer()
+      stdout.rows = 8
+      renderer.init()
+      let thinking = ['thinking 0', 'thinking 1']
+      renderer.setRenderCallback(() => ({
+        lines: ['Interrupted.', ...thinking, `❯ ${CURSOR_MARKER}`, 'footer'],
+        bottomAnchor: true,
+      }))
+      await renderFrame(renderer)
+
+      stdout.clear()
+      thinking = []
+      await renderFrame(renderer)
+
+      const lines = (renderer as any).previousLines as string[]
+      // The frame follows its content up; no viewport re-anchor is involved
+      // because the trailing edge was never on the bottom row.
+      expect(lines).toHaveLength(3)
+      expect(stripAnsi(lines.at(-2) ?? '')).toBe('❯ ')
+      expect(stripAnsi(lines.at(-1) ?? '')).toBe('footer')
+      expect(stdout.output).not.toContain('\x1b[2J')
+      renderer.destroy()
+    })
+
     test('appended lines use append fast path', async () => {
       const { renderer, stdout } = createRenderer()
       renderer.init()

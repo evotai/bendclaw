@@ -38,6 +38,17 @@ export interface RenderOverlay {
 
 export interface RenderFrame {
   lines: string[]
+  /**
+   * Let a frame that fills the viewport keep its trailing edge on the bottom
+   * row, even after the frame shrinks.
+   *
+   * This is not a bottom pin: content decides where the composer sits. A short
+   * frame is never padded, so a fresh session draws the composer just below the
+   * banner and it stays there. Once output has grown past the viewport the
+   * bottom row is the only correct place for the trailing edge, and a shrink
+   * (an interrupt discarding streamed rows) must not lift it away from there.
+   */
+  bottomAnchor?: boolean
   /** Screen-relative modal content composited over the visible viewport. */
   overlay?: RenderOverlay
 }
@@ -265,6 +276,8 @@ export class TermRenderer {
     // Get new frame from callback
     const raw = this.renderCallback()
     const rendered = Array.isArray(raw) ? { lines: raw } : raw
+    // No short-frame padding: a frame that does not fill the viewport keeps its
+    // natural position, so the composer sits wherever the content above it ends.
     let newLines = rendered.overlay
       ? this.compositeOverlay(rendered.lines, rendered.overlay, width, height)
       : rendered.lines
@@ -403,6 +416,22 @@ export class TermRenderer {
     let prevViewportTop = heightChanged ? Math.max(0, previousBufferLength - height) : this.previousViewportTop
     let viewportTop = prevViewportTop
     let hardwareCursorRow = this.hardwareCursorRow
+
+    // Re-anchor a shrunk frame. Differential shrink clears the vacated rows but
+    // leaves the viewport where the taller frame put it, so the trailing edge
+    // stops short of the bottom row by exactly the number of rows lost — an
+    // interrupt that discards N rows of thinking lifts the composer N rows.
+    // Restoring the invariant used everywhere else (trailing edge on the bottom
+    // row) needs the window moved up over the buffer, which cannot be expressed
+    // as an in-place patch; the other shrink escape hatches below repaint too.
+    if (
+      rendered.bottomAnchor
+      && newLines.length >= height
+      && newLines.length - height < prevViewportTop
+    ) {
+      fullRender(true, 'bottom_anchor_reanchor')
+      return
+    }
 
     const computeLineDiff = (targetRow: number): number => {
       const currentScreenRow = hardwareCursorRow - prevViewportTop

@@ -17,6 +17,18 @@ impl RouteCapabilityOverrides {
         }
         true
     }
+
+    /// Stable config names for the enabled endpoint overrides.
+    pub fn names(self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        if self.verbosity {
+            names.push("verbosity");
+        }
+        if self.remote_compaction {
+            names.push("remote_compaction");
+        }
+        names
+    }
 }
 
 /// Features implemented by the selected endpoint.

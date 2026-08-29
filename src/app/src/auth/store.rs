@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::auth::types::AuthState;
 use crate::auth::types::ModelsCache;
+use crate::auth::types::MODELS_CACHE_SCHEMA_VERSION;
 use crate::conf::paths;
 use crate::error::EvotError;
 use crate::error::Result;
@@ -31,7 +32,7 @@ pub fn load_auth() -> Result<Option<AuthState>> {
 
 pub fn save_auth(state: &AuthState) -> Result<()> {
     let path = auth_file_path()?;
-    write_private(&path, &serde_json::to_string_pretty(state)?)
+    crate::atomic_file::write_private_atomic(&path, serde_json::to_string_pretty(state)?.as_bytes())
 }
 
 pub fn clear_auth() -> Result<()> {
@@ -51,27 +52,23 @@ pub fn load_models_cache() -> Result<Option<ModelsCache>> {
         .map_err(|error| EvotError::Conf(format!("read {}: {error}", path.display())))?;
     let cache = serde_json::from_str::<ModelsCache>(&raw)
         .map_err(|error| EvotError::Conf(format!("parse {}: {error}", path.display())))?;
+    if cache.schema_version > MODELS_CACHE_SCHEMA_VERSION {
+        return Err(EvotError::Conf(format!(
+            "{} uses models cache schema {}, but this client supports up to {}",
+            path.display(),
+            cache.schema_version,
+            MODELS_CACHE_SCHEMA_VERSION
+        )));
+    }
     Ok(Some(cache))
 }
 
 pub fn save_models_cache(cache: &ModelsCache) -> Result<()> {
     let path = models_cache_path()?;
-    write_private(&path, &serde_json::to_string_pretty(cache)?)
-}
-
-fn write_private(path: &PathBuf, content: &str) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(content.as_bytes())?;
-    Ok(())
+    let mut current = cache.clone();
+    current.schema_version = MODELS_CACHE_SCHEMA_VERSION;
+    crate::atomic_file::write_private_atomic(
+        &path,
+        serde_json::to_string_pretty(&current)?.as_bytes(),
+    )
 }

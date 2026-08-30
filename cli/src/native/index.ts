@@ -366,9 +366,14 @@ export class Agent {
     this.raw.setProvider(provider)
   }
 
-  /** Reload the config-selected provider after login/logout state changes. */
-  reloadActiveProvider(): boolean {
-    return this.raw.reloadActiveProvider()
+  /**
+   * Re-resolve the live model selection after login, logout, or key recovery.
+   * A selection the fresh config still serves is kept, so recovering a scoped
+   * key does not move this session onto a different model. Returns false only
+   * when nothing is configured any more.
+   */
+  reloadSelection(): boolean {
+    return this.raw.reloadSelection()
   }
 
   /**

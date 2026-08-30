@@ -269,6 +269,28 @@ impl Config {
         Some((self.llm.provider.clone(), profile.model().to_string()))
     }
 
+    /// Whether this config can still serve a given (provider, model) pair.
+    ///
+    /// The single rule behind every reload: a provider must be configured with a
+    /// usable key, and a cloud model must still be in the catalog, since the
+    /// server owns that list. A BYOK provider keeps serving whatever model id
+    /// its user pinned, including ids absent from the configured list.
+    pub fn serves(&self, provider: &str, model: &str) -> bool {
+        if model.is_empty() {
+            return false;
+        }
+        let Some(profile) = self.providers.get(provider) else {
+            return false;
+        };
+        if profile.api_key.trim().is_empty() {
+            return false;
+        }
+        if self.cloud_providers.contains(provider) {
+            return profile.models.iter().any(|m| m == model);
+        }
+        true
+    }
+
     /// Resolve the active selection into a runtime LlmConfig.
     pub fn active_llm(&self) -> Result<LlmConfig> {
         match self.active_selection() {

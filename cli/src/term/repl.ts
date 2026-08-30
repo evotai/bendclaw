@@ -489,12 +489,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     commitStatusLine({ id: 'sys-cloud-session', kind: 'system', text: paint(text) })
   }
 
+  /**
+   * Re-resolve the model after an auth change and report whether one remains.
+   * The backend keeps a still-served selection, so this only announces a model
+   * the reload actually moved.
+   */
   function reloadAfterAuthChange(): boolean {
     const previousSpec = currentModelSpec(configInfo, appState.model)
-    const reloaded = agent.reloadActiveProvider()
+    const hasModel = agent.reloadSelection()
     refreshConfigInfo()
     reloadCloudContent()
-    if (!reloaded) return false
+    if (!hasModel) return false
 
     appState = { ...appState, model: agent.model }
     const next = configInfo?.availableModels.find(model => model.spec === currentModelSpec(configInfo, agent.model))

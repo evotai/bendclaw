@@ -40,6 +40,29 @@ use crate::types::TranscriptEntry;
 use crate::types::TranscriptItem;
 
 // ---------------------------------------------------------------------------
+// SelectionReload
+// ---------------------------------------------------------------------------
+
+/// Where the live model selection landed after a config reload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionReload {
+    /// The live selection is still served; it kept serving, on fresh config.
+    Kept,
+    /// The live selection is gone; the config's active selection took over.
+    Switched,
+    /// Nothing is configured any more; the agent has no model.
+    Unconfigured,
+}
+
+impl SelectionReload {
+    /// Whether a usable model remains. False only for `Unconfigured`, which is
+    /// the one state that needs `/login` or a provider on the Models page.
+    pub fn has_model(self) -> bool {
+        !matches!(self, Self::Unconfigured)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ExecutionLimits
 // ---------------------------------------------------------------------------
 
@@ -515,23 +538,47 @@ impl Agent {
         Ok(())
     }
 
-    /// Reload the config-selected provider after an authentication change.
-    /// Returns false when logout leaves no configured provider to switch to.
-    pub fn reload_active_provider(&self, config: &Config) -> Result<bool> {
+    /// Re-resolve the live selection against a reloaded config, after login,
+    /// logout, key recovery, or a settings write.
+    ///
+    /// The live (provider, model) is authoritative whenever the new config still
+    /// serves it: re-minting a scoped key must not move a running session onto
+    /// the catalog's landing model. Its thinking level rides along, clamped to
+    /// what the model supports. Otherwise the config's own active selection
+    /// takes over — a first login lands on the catalog default, and logout falls
+    /// back to whatever BYOK remains, or to no model at all.
+    ///
+    /// Total by construction: every config maps to one of the three landings, so
+    /// callers never have to invent a recovery of their own.
+    pub fn reload_selection(&self, config: &Config) -> SelectionReload {
+        let (provider, model) = {
+            let llm = self.llm.read();
+            (llm.provider.clone(), llm.model.clone())
+        };
+        if config.serves(&provider, &model) {
+            // `serves` already found the provider, so this cannot fail; falling
+            // through on the impossible error still lands somewhere valid.
+            if let Ok(llm) = config.build_llm(&provider, Some(model)) {
+                self.set_llm_preserving_thinking(llm);
+                return SelectionReload::Kept;
+            }
+        }
         match config.active_llm() {
             Ok(llm) => {
                 self.set_llm(llm);
-                Ok(true)
+                SelectionReload::Switched
             }
-            Err(_) if config.providers.is_empty() => Ok(false),
-            Err(error) => Err(error),
+            Err(_) => {
+                self.set_llm(LlmConfig::unconfigured());
+                SelectionReload::Unconfigured
+            }
         }
     }
 
-    /// Reload a session's provider/model from current config. If that saved
-    /// selection no longer exists, reapply config to the current live selection
-    /// so its thinking level still refreshes. Returns whether the saved
-    /// selection was restored; neither path mutates until resolution succeeds.
+    /// Restore a resumed session's saved provider/model. Falls back to
+    /// re-resolving the live selection when the saved one is gone (e.g. a
+    /// provider dropped from config), so its thinking level still refreshes.
+    /// Returns whether the saved selection was restored.
     pub fn reload_provider_for_resume(&self, config: &Config, spec: &str) -> Result<bool> {
         match config.resolve_model_spec(spec) {
             Ok((provider_name, model_override)) => {

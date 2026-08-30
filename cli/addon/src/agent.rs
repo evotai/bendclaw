@@ -431,14 +431,13 @@ impl NapiAgent {
             .map_err(|e| Error::from_reason(format!("invalid provider: {e}")))
     }
 
-    /// Reload the config-selected provider after login/logout state changes.
-    /// Returns false when no configured provider remains after logout.
+    /// Re-resolve the live model selection after login, logout, or key
+    /// recovery. Returns false only when nothing is configured any more, i.e.
+    /// the one case that needs `/login`.
     #[napi]
-    pub fn reload_active_provider(&self) -> Result<bool> {
+    pub fn reload_selection(&self) -> Result<bool> {
         let config = self.load_config()?;
-        self.agent
-            .reload_active_provider(&config)
-            .map_err(|e| Error::from_reason(format!("provider reload failed: {e}")))
+        Ok(self.agent.reload_selection(&config).has_model())
     }
 
     /// Reload provider/model selection from disk for session resume. Unlike an

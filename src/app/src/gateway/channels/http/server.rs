@@ -888,11 +888,9 @@ impl Server {
         Json(serde_json::json!({ "items": items })).into_response()
     }
 
-    /// Swap in a fresh config after auth.json changed. A still-valid live
-    /// selection survives; otherwise the fresh load takes over (which
-    /// activates the Premium landing on a first login).
+    /// Swap in a fresh config after auth.json changed, then re-resolve the live
+    /// model selection through the shared reload rule (`Agent::reload_selection`).
     fn reload_after_auth_change(&self) -> Result<()> {
-        let selection = self.config.read().llm.clone();
         let env_path = self.config.read().env_file_path.clone();
         // A never-saved env file is not an error: fall back to the default
         // path, which creates its own baseline.
@@ -901,20 +899,9 @@ impl Server {
         } else {
             Config::load_with_env_file(None)?
         };
-        let keep = fresh
-            .providers
-            .get(&selection.provider)
-            .is_some_and(|p| !p.api_key.trim().is_empty());
-        let llm = if keep {
-            fresh.build_llm(&selection.provider, selection.model_override.clone())?
-        } else {
-            // Logged out with no BYOK left: an unconfigured agent is honest.
-            fresh
-                .active_llm()
-                .unwrap_or_else(|_| crate::conf::LlmConfig::unconfigured())
-        };
         *self.config.write() = fresh;
-        self.agent.set_llm(llm);
+        let config = self.config.read().clone();
+        self.agent.reload_selection(&config);
         Ok(())
     }
 

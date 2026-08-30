@@ -503,6 +503,7 @@ import {
   authSyncModels as rawAuthSyncModels,
   authSyncNotices as rawAuthSyncNotices,
   authWhoami as rawAuthWhoami,
+  authRefreshSession as rawAuthRefreshSession,
   authNotices as rawAuthNotices,
 } from './binding.js'
 
@@ -556,6 +557,35 @@ export async function authWhoami(): Promise<{ id: string; name: string; email: s
   } catch {
     return null
   }
+}
+
+export interface CloudUser {
+  id: string
+  name: string
+  email: string
+}
+
+/**
+ * Outcome of repairing a cloud session the gateway rejected.
+ * - `recovered`: a fresh scoped key was cached; retry the request.
+ * - `login_required`: the CLI token was refused and has been cleared.
+ * - `unavailable`: server unreachable; nothing was cleared.
+ */
+export type AuthRefreshStatus = 'recovered' | 'login_required' | 'unavailable'
+
+export interface AuthRefreshResult {
+  status: AuthRefreshStatus
+  /** Null only when a new login is required. */
+  user: CloudUser | null
+  /** Why the server could not be reached, when status is `unavailable`. */
+  error?: string | null
+  /** Set when clearing a refused credential failed. */
+  cleanup_error?: string | null
+}
+
+/** Re-mint the scoped LLM key after the gateway reported `session_revoked`. */
+export async function authRefreshSession(): Promise<AuthRefreshResult> {
+  return parseJsonOrThrow(await rawAuthRefreshSession(), 'session refresh failed') as AuthRefreshResult
 }
 
 export interface CloudNotice {

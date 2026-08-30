@@ -1241,7 +1241,7 @@ describe('term stream machine', () => {
     expect(u2.writeLines.some(l => l.text.includes('HTTP 520'))).toBe(true)
   })
 
-  test('revoked cloud session shows one actionable login prompt across duplicate events', () => {
+  test('revoked cloud session reports a signal and keeps the raw error out of the TUI', () => {
     const raw = 'Auth error: session_revoked: this session was signed out; run evot login again'
     let state = createStreamMachineState(createInitialState('cloud-model', '/tmp'), createSpinnerState())
 
@@ -1252,8 +1252,12 @@ describe('term stream machine', () => {
     state = completed.state
     const terminal = completed.commitLines.map(line => stripAnsi(line.text)).join('\n')
     expect(completed.sessionRevoked).toBe(true)
-    expect(terminal).toContain('Your evot cloud session was signed out. Run /login to reconnect.')
+    // An expired scoped key is recoverable, so the reducer stays silent: the
+    // REPL owns the whole narrative in one collapsing status line. Emitting a
+    // card here would strand a stale "restoring" line above its own outcome.
     expect(terminal).not.toContain('session_revoked')
+    expect(terminal).not.toContain('Error:')
+    // Raw gateway detail still lands in screen.log for diagnosis.
     expect(completed.writeLines.some(line => line.text.includes('session_revoked'))).toBe(true)
 
     const duplicate = reduceRunEvent(state, {
@@ -1276,9 +1280,10 @@ describe('term stream machine', () => {
         payload: { model: 'byok-model', turn: 1, error: raw, metrics: { duration_ms: 10 } },
       }, { termRows: 24, cloudProvider: false })
       const terminal = update.commitLines.map(line => stripAnsi(line.text)).join('\n')
+      // BYOK keys are user-managed: evot has nothing to re-mint, so these stay
+      // visible errors instead of entering the cloud recovery path.
       expect(update.sessionRevoked).toBe(false)
       expect(terminal).toContain(raw.includes('session_revoked') ? 'custom gateway session ended' : 'invalid API key')
-      expect(terminal).not.toContain('Run /login')
     }
   })
 

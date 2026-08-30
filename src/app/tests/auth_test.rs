@@ -839,4 +839,105 @@ mod wiremock_tests {
         .unwrap();
         assert!(auth::sync_models(&state).await.is_err());
     }
+
+    fn state_for(server_uri: &str) -> auth::AuthState {
+        serde_json::from_str(
+            AUTH_JSON
+                .replace(
+                    "\"server_base_url\": \"http://localhost:8787\"",
+                    &format!("\"server_base_url\": \"{server_uri}\""),
+                )
+                .as_str(),
+        )
+        .unwrap()
+    }
+
+    // A live CLI token: the catalog read succeeds and carries a freshly minted
+    // scoped LLM key, which is what repairs a `session_revoked` gateway error.
+    #[tokio::test]
+    async fn fetch_catalog_returns_a_freshly_minted_catalog() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/config/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "version": 11,
+                "providers": [{
+                    "name": "evot-free", "protocol": "anthropic",
+                    "base_url": "http://x/v1/llm", "api_key": "evot.fresh.key",
+                    "models": ["m1"],
+                }],
+                "models": [{"id": "m1", "tier": "base"}],
+                "notices": [],
+            })))
+            .mount(&server)
+            .await;
+
+        match auth::fetch_catalog(&state_for(&server.uri())).await {
+            auth::CatalogOutcome::Ready(catalog) => {
+                assert_eq!(catalog.version, 11);
+                // The new scoped key is the whole point of the re-read.
+                assert_eq!(catalog.providers[0].api_key, "evot.fresh.key");
+            }
+            other => panic!("expected a catalog, got {other:?}"),
+        }
+    }
+
+    // Only a refused CLI token genuinely requires logging in again.
+    #[tokio::test]
+    async fn fetch_catalog_reports_a_refused_token() {
+        for status in [401, 403] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/v1/config/models"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+            assert!(matches!(
+                auth::fetch_catalog(&state_for(&server.uri())).await,
+                auth::CatalogOutcome::Refused
+            ));
+        }
+    }
+
+    // A server fault says nothing about the credential, so it must not be
+    // classified as refused: signing the user out here would destroy a working
+    // login over a transient outage.
+    #[tokio::test]
+    async fn fetch_catalog_keeps_credential_on_server_fault() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/config/models"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        assert!(matches!(
+            auth::fetch_catalog(&state_for(&server.uri())).await,
+            auth::CatalogOutcome::Unavailable(_)
+        ));
+    }
+
+    // Unreachable server behaves like a fault, not a revocation. `.invalid` is
+    // reserved by RFC 2606 and never resolves, so this cannot accidentally hit
+    // another test's mock server the way a freed localhost port can.
+    #[tokio::test]
+    async fn fetch_catalog_keeps_credential_when_server_is_unreachable() {
+        let outcome = auth::fetch_catalog(&state_for("http://evot-offline.invalid")).await;
+        assert!(matches!(outcome, auth::CatalogOutcome::Unavailable(_)));
+    }
+
+    // An empty token can never be accepted, so skip the round-trip.
+    #[tokio::test]
+    async fn fetch_catalog_rejects_an_empty_token_without_a_request() {
+        let server = MockServer::start().await;
+        let mut state = state_for(&server.uri());
+        state.cli_token = "   ".to_string();
+        assert!(matches!(
+            auth::fetch_catalog(&state).await,
+            auth::CatalogOutcome::Refused
+        ));
+        assert!(server
+            .received_requests()
+            .await
+            .is_some_and(|requests| requests.is_empty()));
+    }
 }

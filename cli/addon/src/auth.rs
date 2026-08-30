@@ -77,6 +77,40 @@ pub fn auth_whoami() -> Option<String> {
     serde_json::to_string(&state.user).ok()
 }
 
+/// Repair a cloud session the LLM gateway rejected by re-minting the scoped key.
+///
+/// - `recovered`: a fresh scoped key was cached; the caller can retry.
+/// - `login_required`: the CLI token itself was refused; the dead credential is
+///   cleared here.
+/// - `unavailable`: server unreachable, so nothing is cleared.
+#[napi]
+pub async fn auth_refresh_session() -> NapiResult<String> {
+    let Some(state) = auth::load_auth().map_err(to_napi)? else {
+        return to_json(&serde_json::json!({ "status": "login_required", "user": null }));
+    };
+    match auth::fetch_catalog(&state).await {
+        auth::CatalogOutcome::Ready(response) => {
+            let cache = evot::auth::ModelsCache::new(now_ms(), response);
+            auth::save_models_cache(&cache).map_err(to_napi)?;
+            to_json(&serde_json::json!({ "status": "recovered", "user": state.user }))
+        }
+        auth::CatalogOutcome::Refused => {
+            // A failed cleanup must still report `login_required`.
+            let cleanup_error = auth::logout().err().map(|error| error.to_string());
+            to_json(&serde_json::json!({
+                "status": "login_required",
+                "user": null,
+                "cleanup_error": cleanup_error,
+            }))
+        }
+        auth::CatalogOutcome::Unavailable(error) => to_json(&serde_json::json!({
+            "status": "unavailable",
+            "user": state.user,
+            "error": error,
+        })),
+    }
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

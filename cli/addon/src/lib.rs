@@ -14,6 +14,7 @@ pub use auth::auth_begin;
 pub use auth::auth_logout;
 pub use auth::auth_notices;
 pub use auth::auth_poll;
+pub use auth::auth_refresh_session;
 pub use auth::auth_sync_models;
 pub use auth::auth_sync_notices;
 pub use auth::auth_whoami;

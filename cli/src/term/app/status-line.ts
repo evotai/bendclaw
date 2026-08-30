@@ -1,24 +1,33 @@
 /**
- * Pure helpers for collapsing transient model/thinking status lines in place.
+ * Collapsing transient status lines in place.
  *
- * Model and thinking share one status slot so rapid alternating switches stay
- * single-line. Only a trailing status line is eligible for replacement; any
- * later non-status output freezes the prior status into history.
+ * A status line is current state, not history, so a newer line replaces the
+ * previous one. Lines collapse only within their own slot, and only while
+ * trailing: any later output freezes the prior status into history.
  */
 
 import type { OutputLine } from '../../render/output.js'
 
-const STATUS_IDS = new Set(['sys-model', 'sys-think'])
+const STATUS_SLOTS = new Map<string, string>([
+  ['sys-model', 'selection'],
+  ['sys-think', 'selection'],
+  ['sys-cloud-session', 'cloud-session'],
+])
 
 export function isStatusLineId(id: string): boolean {
-  return STATUS_IDS.has(id)
+  return STATUS_SLOTS.has(id)
 }
 
-/** Mutate `lines` by replacing the trailing status slot or appending.
- *  Returns true when an existing line was replaced. */
+/** Which slot an id occupies, or undefined when it is not a status line. */
+export function statusLineSlot(id: string): string | undefined {
+  return STATUS_SLOTS.get(id)
+}
+
+/** Replace the trailing status line in the same slot, or append. */
 export function replaceOrPushStatusLine(lines: OutputLine[], line: OutputLine): boolean {
   const last = lines.length > 0 ? lines[lines.length - 1] : undefined
-  if (last && isStatusLineId(last.id) && isStatusLineId(line.id)) {
+  const slot = statusLineSlot(line.id)
+  if (last && slot !== undefined && statusLineSlot(last.id) === slot) {
     lines[lines.length - 1] = line
     return true
   }

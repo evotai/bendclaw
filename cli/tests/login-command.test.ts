@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { AuthPollResult, LoginCodeResponse } from '../src/native/index.js'
+import type { AuthPollResult, AuthRefreshResult, LoginCodeResponse } from '../src/native/index.js'
+import { decideLoginGate, planAfterRevocation } from '../src/commands/login-flow.js'
 import { handleLoginCommand, handleLogoutCommand, type ReplCommandContext } from '../src/term/repl-commands.js'
 
 function createContext(): { ctx: ReplCommandContext; lines: { id: string; text: string }[] } {
@@ -27,6 +28,57 @@ function loginResponse(): LoginCodeResponse {
     interval_ms: 1,
   }
 }
+
+const user = { id: 'u', name: 'bo', email: 'b@x.dev' }
+
+function refresh(overrides: Partial<AuthRefreshResult>): AuthRefreshResult {
+  return { status: 'recovered', user, ...overrides }
+}
+
+// `session_revoked` reports a dead *scoped LLM key*, not necessarily a dead
+// login. A force sign-out bumps the account's auth epoch, invalidating keys
+// minted before it, while the CLI token in auth.json keeps working — and the
+// catalog mints a fresh scoped key on every read. So the common recovery is a
+// silent re-sync, and only a refused CLI token justifies a browser flow.
+describe('planAfterRevocation', () => {
+  test('recovers silently when a fresh scoped key was minted', () => {
+    expect(planAfterRevocation(refresh({ status: 'recovered' })))
+      .toEqual({ kind: 'recovered', user })
+  })
+
+  test('requires a login only when the server refused the CLI token', () => {
+    expect(planAfterRevocation(refresh({ status: 'login_required', user: null })))
+      .toEqual({ kind: 'login-required' })
+  })
+
+  test('keeps the credential when the server is unreachable', () => {
+    // An outage says nothing about the credential, so signing the user out here
+    // would destroy a working login over a network blip.
+    expect(planAfterRevocation(refresh({ status: 'unavailable', error: 'timed out' })))
+      .toEqual({ kind: 'unavailable', user, error: 'timed out' })
+  })
+
+  test('treats a recovery without a user as needing a login', () => {
+    expect(planAfterRevocation(refresh({ status: 'recovered', user: null })))
+      .toEqual({ kind: 'login-required' })
+  })
+})
+
+describe('decideLoginGate', () => {
+  test('keeps the already-logged-in shortcut for a live credential', () => {
+    expect(decideLoginGate(user, false)).toEqual({ kind: 'already-logged-in', user })
+  })
+
+  test('proceeds once the server has refused the stored token', () => {
+    // This is the case behind the bug report: a leftover auth.json must never
+    // answer "already logged in" after the server rejected the session.
+    expect(decideLoginGate(user, true)).toEqual({ kind: 'proceed' })
+  })
+
+  test('proceeds when there is no local identity at all', () => {
+    expect(decideLoginGate(null, false)).toEqual({ kind: 'proceed' })
+  })
+})
 
 describe('handleLoginCommand', () => {
   test('opens the login url and reports success', async () => {

@@ -1,4 +1,4 @@
-import type { AuthPollResult, LoginCodeResponse } from '../native/index.js'
+import type { AuthPollResult, AuthRefreshResult, CloudUser, LoginCodeResponse } from '../native/index.js'
 
 export interface LoginDeps {
   begin: (serverUrl: string, fingerprint: string) => Promise<LoginCodeResponse>
@@ -13,6 +13,40 @@ export type LoginOutcome =
   | { status: 'denied' }
 
 export const DEFAULT_SERVER = process.env.EVOT_SERVER_URL ?? 'https://auto.evot.ai'
+
+/** What the REPL should do after the gateway reported `session_revoked`. */
+export type RevocationPlan =
+  | { kind: 'recovered'; user: CloudUser }
+  | { kind: 'login-required' }
+  | { kind: 'unavailable'; user: CloudUser | null; error?: string | null }
+
+/**
+ * Turn a session-refresh result into the REPL's next move. A dead scoped key is
+ * re-minted silently; only a refused CLI token needs the browser flow.
+ */
+export function planAfterRevocation(result: AuthRefreshResult): RevocationPlan {
+  if (result.status === 'recovered' && result.user) {
+    return { kind: 'recovered', user: result.user }
+  }
+  if (result.status === 'unavailable') {
+    return { kind: 'unavailable', user: result.user ?? null, error: result.error ?? null }
+  }
+  return { kind: 'login-required' }
+}
+
+/** What `/login` should do about an existing local credential. */
+export type LoginGate =
+  | { kind: 'proceed' }
+  | { kind: 'already-logged-in'; user: CloudUser }
+
+/**
+ * Decide whether `/login` may start a device flow. `loginRequired` is set only
+ * after the server refused the stored CLI token.
+ */
+export function decideLoginGate(user: CloudUser | null, loginRequired: boolean): LoginGate {
+  if (loginRequired || !user) return { kind: 'proceed' }
+  return { kind: 'already-logged-in', user }
+}
 
 export const defaultDeps: LoginDeps = {
   begin: async () => {

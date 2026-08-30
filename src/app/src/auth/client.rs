@@ -19,6 +19,51 @@ pub enum PollOutcome {
     Denied,
 }
 
+/// Result of one authenticated catalog read.
+#[derive(Debug)]
+pub enum CatalogOutcome {
+    Ready(ModelsResponse),
+    /// `401`/`403`: this CLI token is dead. Only a new login can fix it.
+    Refused,
+    /// Network or server fault. Says nothing about the credential.
+    Unavailable(String),
+}
+
+/// Read the model catalog with the stored CLI token.
+///
+/// Every call mints a fresh scoped LLM key, so this is what repairs a session the
+/// gateway reported as `session_revoked`.
+pub async fn fetch_catalog(state: &AuthState) -> CatalogOutcome {
+    if state.cli_token.trim().is_empty() {
+        return CatalogOutcome::Refused;
+    }
+    let url = format!(
+        "{}/v1/config/models",
+        state.server_base_url.trim_end_matches('/')
+    );
+    let sent = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(&state.cli_token)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await;
+    let response = match sent {
+        Ok(response) => response,
+        Err(error) => return CatalogOutcome::Unavailable(format!("sync models: {error}")),
+    };
+    let status = response.status();
+    if matches!(status.as_u16(), 401 | 403) {
+        return CatalogOutcome::Refused;
+    }
+    if !status.is_success() {
+        return CatalogOutcome::Unavailable(format!("sync models: server returned {status}"));
+    }
+    match response.json::<ModelsResponse>().await {
+        Ok(catalog) => CatalogOutcome::Ready(catalog),
+        Err(error) => CatalogOutcome::Unavailable(format!("decode: {error}")),
+    }
+}
+
 pub async fn begin_login(base_url: &str, fingerprint_id: &str) -> Result<LoginCodeResponse> {
     let body = serde_json::json!({ "fingerprint_id": fingerprint_id });
     let response: LoginCodeResponse = post_json(base_url, "/v1/auth/cli/code", &body).await?;

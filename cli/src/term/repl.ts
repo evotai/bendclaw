@@ -129,6 +129,7 @@ import { findPreviousSession, shouldPreloadStartupSessions, selectResumeMessages
 import { handleSelectorControl } from './app/selector-control.js'
 import { decideReplControl, type ReplControlAction } from './app/repl-control.js'
 import { replaceOrPushStatusLine } from './app/status-line.js'
+import { AuthWatcher } from './app/auth-watch.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
 import {
   createQueueSelectorState,
@@ -474,12 +475,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let configInfo: ConfigInfo | undefined
   let cloudLoginRequired = false
   let revocationCleanup: Promise<void> | null = null
+  let authWatcher: AuthWatcher | null = null
   const refreshConfigInfo = () => {
     // Re-read backend config after a model switch so the footer reflects the
     // new provider's effective thinking level (it can differ per provider).
     try { configInfo = agent.configInfo() } catch {}
   }
   refreshConfigInfo()
+
+  /** Single cloud-session status line; updates replace it in place. */
+  function commitCloudSession(text: string, tone: 'dim' | 'ok' | 'warn'): void {
+    const paint = tone === 'ok' ? chalk.green : tone === 'warn' ? chalk.yellow : chalk.dim
+    commitStatusLine({ id: 'sys-cloud-session', kind: 'system', text: paint(text) })
+  }
 
   function reloadAfterAuthChange(): boolean {
     const previousSpec = currentModelSpec(configInfo, appState.model)
@@ -501,15 +509,32 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function handleCloudSessionRevoked(): void {
-    cloudLoginRequired = true
+    // A dead scoped key is recoverable: the catalog mints a fresh one on read,
+    // so only a refused CLI token needs /login.
     if (revocationCleanup) return
+    commitCloudSession('  ⟳ Cloud session key expired · restoring', 'dim')
     revocationCleanup = (async () => {
       try {
-        const { authLogout } = await import('../native/index.js')
-        await authLogout()
-        cloudLoginRequired = !reloadAfterAuthChange()
+        const { authRefreshSession } = await import('../native/index.js')
+        const { planAfterRevocation } = await import('../commands/login-flow.js')
+        const plan = planAfterRevocation(await authRefreshSession())
+        if (plan.kind === 'recovered') {
+          cloudLoginRequired = !reloadAfterAuthChange()
+          authWatcher?.sync()
+          commitCloudSession('  ✓ Cloud session restored · send your message again', 'ok')
+        } else if (plan.kind === 'unavailable') {
+          // An outage says nothing about the credential; keep it.
+          cloudLoginRequired = false
+          commitCloudSession(`  ⚠ Cannot reach the evot server${plan.error ? ` (${plan.error})` : ''} · try again shortly`, 'warn')
+        } else {
+          cloudLoginRequired = true
+          try { reloadAfterAuthChange() } catch { /* no provider left; /login is the fix */ }
+          authWatcher?.sync()
+          commitCloudSession('  ⚠ Cloud session signed out · run /login to reconnect', 'warn')
+        }
       } catch (err) {
-        commitSystem('sys-session-cleanup-err', chalk.red(`  Failed to clear the signed-out session: ${errorText(err)}`))
+        cloudLoginRequired = true
+        commitCloudSession(`  ⚠ Could not restore the cloud session: ${errorText(err)}`, 'warn')
       } finally {
         revocationCleanup = null
         renderer.requestRender()
@@ -518,9 +543,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function queryBlockedByCloudLogin(): boolean {
-    if (!cloudLoginRequired && !revocationCleanup) return false
-    commitSystem('sys-login-required', '  Cloud session is signed out. Run /login to reconnect.')
-    renderer.requestRender()
+    if (revocationCleanup) {
+      commitCloudSession('  ⟳ Cloud session key expired · restoring', 'dim')
+      return true
+    }
+    if (!cloudLoginRequired) return false
+    commitCloudSession('  ⚠ Cloud session signed out · run /login to reconnect', 'warn')
     return true
   }
 
@@ -2355,14 +2383,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (loginInFlight) {
         commitSystem('sys-login', '  login already in progress')
       } else {
+        // Wait for an in-flight recovery first: it decides whether this login is
+        // even needed, and a fast /login could otherwise race the auth cleanup.
         if (revocationCleanup) await revocationCleanup
         const { authWhoami } = await import('../native/index.js')
-        // A failed cleanup may leave stale auth.json behind. The server has
-        // already rejected it, so never let that local identity block a fresh
-        // device flow.
+        const { decideLoginGate } = await import('../commands/login-flow.js')
+        // `cloudLoginRequired` is set only after the server refused the stored
+        // CLI token, so a leftover auth.json can never block a fresh flow.
         const existing = cloudLoginRequired ? null : await authWhoami()
-        if (existing) {
-          commitSystem('sys-login', `  already logged in as ${existing.name} <${existing.email}>`)
+        const gate = decideLoginGate(existing, cloudLoginRequired)
+        if (gate.kind === 'already-logged-in') {
+          commitSystem('sys-login', `  already logged in as ${gate.user.name} <${gate.user.email}>`)
         } else {
           loginInFlight = true
           try {
@@ -2370,6 +2401,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             if (loggedIn) {
               try {
                 cloudLoginRequired = !reloadAfterAuthChange()
+                authWatcher?.sync()
                 if (cloudLoginRequired) {
                   commitSystem('sys-login-model-err', chalk.red('  Login succeeded, but no cloud model was loaded. Try /login again.'))
                 } else {
@@ -2394,6 +2426,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (loggedOut) {
           try {
             cloudLoginRequired = !reloadAfterAuthChange()
+            authWatcher?.sync()
           } catch (err) {
             cloudLoginRequired = true
             commitSystem('sys-logout-model-err', chalk.red(`  Failed to reload providers after logout: ${errorText(err)}`))
@@ -2519,6 +2552,25 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }, CLOUD_SYNC_MS)
   ;(syncTimer as unknown as { unref?: () => void }).unref?.()
 
+  /** Adopt a cloud auth change made by another evot process. */
+  function adoptExternalAuthChange(): void {
+    // A recovery in flight owns the auth state and syncs the stamp itself.
+    if (revocationCleanup) return
+    try {
+      const reloaded = reloadAfterAuthChange()
+      cloudLoginRequired = !reloaded && !configInfo?.hasApiKey
+      if (cloudLoginRequired) {
+        commitCloudSession('  ⚠ Cloud session signed out · run /login to reconnect', 'warn')
+      } else {
+        renderer.requestRender()
+      }
+    } catch {
+      // Half-written file from a concurrent login; the next event retries.
+    }
+  }
+
+  authWatcher = new AuthWatcher(() => adoptExternalAuthChange())
+
   async function syncCloudNow(force = false): Promise<void> {
     if (inflightSync) return inflightSync
     if (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS) return
@@ -2544,6 +2596,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       try {
         await authSyncModels()
         modelsSynced = true
+        // Absorb our own write so the watcher does not replay it.
+        authWatcher?.sync()
         reloadCloudContent()
       } catch {}
       lastSyncedAt = Date.now()
@@ -3033,6 +3087,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     stopSpinner()
     clearInterval(adSlotTimer)
     clearInterval(syncTimer)
+    authWatcher?.dispose()
+    authWatcher = null
     caretBlink.dispose()
     gitInfo.dispose()
     updateMgr.cleanup()

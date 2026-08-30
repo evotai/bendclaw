@@ -88,8 +88,6 @@ function isSessionRevokedError(message: unknown): message is string {
   return typeof message === 'string' && /(?:^|\b)session_revoked(?:\b|:)/i.test(message)
 }
 
-const SESSION_REVOKED_MESSAGE = 'Your evot cloud session was signed out. Run /login to reconnect.'
-
 export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: StreamContext): StreamUpdate {
   const p = (event.payload ?? {}) as Record<string, any>
   let state = event.kind === 'host_tool_call' ? prev : { ...prev, appState: applyEvent(prev.appState, event) }
@@ -109,9 +107,9 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   const revokedEvent = isSessionRevokedError(revokedMessage)
     && (ctx.cloudProvider === true || prev.sessionRevokedHandled)
   if (revokedEvent && !prev.sessionRevokedHandled) {
+    // Signal only: the REPL owns the recovery narrative in one status line.
     state = { ...state, sessionRevokedHandled: true }
     sessionRevoked = true
-    commitLines.push(...buildError(SESSION_REVOKED_MESSAGE))
   }
 
   function mergeFlushExpanded(flushed: { expandedLines?: OutputLine[] }) {

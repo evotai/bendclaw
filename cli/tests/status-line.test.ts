@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { OutputLine } from '../src/render/output.js'
-import { isStatusLineId, replaceOrPushStatusLine } from '../src/term/app/status-line.js'
+import { isStatusLineId, replaceOrPushStatusLine, statusLineSlot } from '../src/term/app/status-line.js'
 
 function sys(id: string, text: string): OutputLine {
   return { id, kind: 'system', text }
@@ -46,12 +46,39 @@ describe('replaceOrPushStatusLine', () => {
     expect(replaceOrPushStatusLine(lines, sys('sys-model', '  Model → a'))).toBe(false)
     expect(lines).toHaveLength(2)
   })
+
+  test('cloud session progress collapses into its own outcome', () => {
+    // "restoring" must be replaced by the result, not left above a line that
+    // says the opposite.
+    const lines = [sys('sys-cloud-session', '  Cloud session expired · restoring')]
+    expect(replaceOrPushStatusLine(lines, sys('sys-cloud-session', '  Cloud session restored'))).toBe(true)
+    expect(lines).toEqual([sys('sys-cloud-session', '  Cloud session restored')])
+  })
+
+  test('cloud session and model occupy separate slots', () => {
+    // A session update must never overwrite the model line above it.
+    const lines = [sys('sys-model', '  Model → a')]
+    expect(replaceOrPushStatusLine(lines, sys('sys-cloud-session', '  Cloud session expired · restoring'))).toBe(false)
+    expect(lines).toEqual([
+      sys('sys-model', '  Model → a'),
+      sys('sys-cloud-session', '  Cloud session expired · restoring'),
+    ])
+  })
+})
+
+describe('statusLineSlot', () => {
+  test('groups ids that collapse into each other', () => {
+    expect(statusLineSlot('sys-model')).toBe(statusLineSlot('sys-think'))
+    expect(statusLineSlot('sys-cloud-session')).not.toBe(statusLineSlot('sys-model'))
+    expect(statusLineSlot('sys-plan')).toBeUndefined()
+  })
 })
 
 describe('isStatusLineId', () => {
-  test('recognizes model and thinking only', () => {
+  test('recognizes the known status ids only', () => {
     expect(isStatusLineId('sys-model')).toBe(true)
     expect(isStatusLineId('sys-think')).toBe(true)
+    expect(isStatusLineId('sys-cloud-session')).toBe(true)
     expect(isStatusLineId('sys-m')).toBe(false)
     expect(isStatusLineId('sys-plan')).toBe(false)
   })

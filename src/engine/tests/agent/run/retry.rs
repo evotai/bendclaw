@@ -561,6 +561,102 @@ async fn test_outage_wait_is_cancellable() {
     ));
 }
 
+#[tokio::test(start_paused = true)]
+async fn test_protocol_incomplete_retries_twice_then_fails_without_outage_wait() {
+    let provider: std::sync::Arc<FailThenSucceedProvider> =
+        std::sync::Arc::new(FailThenSucceedProvider {
+            fail_count: std::sync::atomic::AtomicUsize::new(0),
+            max_failures: usize::MAX,
+            error: ProviderError::ProtocolIncomplete(
+                "Anthropic stream ended before message_stop".into(),
+            ),
+            inner: MockProvider::text("never reached"),
+        });
+
+    let config = AgentLoopConfig {
+        provider: provider.clone(),
+        model: "mock".into(),
+        api_key: "test".into(),
+        thinking_level: ThinkingLevel::Off,
+        max_tokens: None,
+        model_config: None,
+        convert_to_llm: None,
+        transform_context: None,
+        get_steering_messages: None,
+        get_follow_up_messages: None,
+        context_config: None,
+        compaction_context: None,
+        compaction_fallback_context: None,
+        initial_compaction_state: None,
+        execution_limits: None,
+        cache_config: CacheConfig::default(),
+        tool_execution: ToolExecutionStrategy::default(),
+        retry_policy: evotengine::RetryPolicy::new(10),
+        before_turn: None,
+        after_turn: None,
+        spill: None,
+    };
+
+    let mut context = AgentContext {
+        system_prompt: "test".into(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        cwd: std::path::PathBuf::new(),
+        path_guard: std::sync::Arc::new(evotengine::PathGuard::open()),
+        prompt_cache_key: None,
+    };
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    let messages = agent_loop(
+        vec![AgentMessage::Llm(Message::user("hi"))],
+        &mut context,
+        &config,
+        tx,
+        CancellationToken::new(),
+    )
+    .await;
+
+    assert_eq!(
+        provider
+            .fail_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3,
+        "one initial call plus two bounded retries"
+    );
+    assert!(matches!(
+        messages.last(),
+        Some(AgentMessage::Llm(Message::Assistant {
+            stop_reason: StopReason::Error,
+            error_message: Some(error),
+            ..
+        })) if error.starts_with("Upstream response incomplete:")
+    ));
+
+    let events = collect_events(rx);
+    let retries = events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::LlmCallRetry {
+                attempt,
+                max_retries,
+                error,
+                ..
+            } => Some((*attempt, *max_retries, error.as_str())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(retries.len(), 2);
+    assert_eq!(retries[0].0, 1);
+    assert_eq!(retries[1].0, 2);
+    assert!(retries.iter().all(|(_, max, _)| *max == 2));
+    assert!(retries
+        .iter()
+        .all(|(_, _, error)| error.starts_with("Upstream response incomplete:")));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::OutageWait { .. })));
+}
+
 #[tokio::test]
 async fn test_auth_error_not_retried() {
     let provider: std::sync::Arc<FailThenSucceedProvider> =

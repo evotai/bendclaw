@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use crate::auth::types::AuthState;
 use crate::auth::types::LoginCodeResponse;
 use crate::auth::types::ModelsResponse;
+use crate::auth::types::Notice;
 use crate::error::EvotError;
 use crate::error::Result;
 
@@ -53,6 +54,26 @@ pub async fn poll_status(base_url: &str, code: &str, expires_at: i64) -> Result<
         "denied" => Ok(PollOutcome::Denied),
         _ => Ok(PollOutcome::Pending),
     }
+}
+
+pub async fn sync_notices(base_url: &str) -> Result<Vec<Notice>> {
+    let url = [base_url.trim_end_matches('/'), "/v1/notices"].concat();
+    let response = reqwest::Client::new()
+        .get(&url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|error| EvotError::Conf(format!("sync notices: {error}")))?;
+    if !response.status().is_success() {
+        return Err(EvotError::Conf(format!(
+            "sync notices: server returned {}",
+            response.status()
+        )));
+    }
+    response
+        .json::<Vec<Notice>>()
+        .await
+        .map_err(|error| EvotError::Conf(format!("sync notices: decode: {error}")))
 }
 
 pub async fn sync_models(state: &AuthState) -> Result<ModelsResponse> {

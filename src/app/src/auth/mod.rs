@@ -6,6 +6,7 @@ pub mod types;
 pub use client::begin_login;
 pub use client::poll_status;
 pub use client::sync_models;
+pub use client::sync_notices;
 pub use client::PollOutcome;
 pub use client::DEFAULT_SERVER_URL;
 pub use logout::logout;

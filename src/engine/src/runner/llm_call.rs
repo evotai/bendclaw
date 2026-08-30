@@ -22,6 +22,12 @@ const QUOTA_PROBE_MAX: std::time::Duration = std::time::Duration::from_secs(60);
 /// not a reason to discard the run.
 const OUTAGE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// A missing protocol terminal event can be a one-off upstream generation
+/// failure, but identical replays often reproduce it (for example malformed
+/// tool arguments). Keep recovery quick and bounded instead of treating it as
+/// a sustained network outage.
+const PROTOCOL_INCOMPLETE_MAX_RETRIES: usize = 2;
+
 /// Default convert_to_llm: keep only user/assistant/toolResult messages.
 fn default_convert_to_llm(messages: &[AgentMessage]) -> Vec<Message> {
     messages
@@ -388,10 +394,17 @@ pub(super) async fn stream_assistant_response(
             }
         }
 
+        let bounded_retry_limit = match &result {
+            Err(ProviderError::ProtocolIncomplete(_)) => {
+                retry.max_retries().min(PROTOCOL_INCOMPLETE_MAX_RETRIES)
+            }
+            _ => retry.max_retries(),
+        };
+
         match &result {
             Err(e)
                 if crate::retry::should_retry(e)
-                    && attempt < retry.max_retries()
+                    && attempt < bounded_retry_limit
                     && !long_wait_started
                     && !cancel.is_cancelled() =>
             {
@@ -422,7 +435,7 @@ pub(super) async fn stream_assistant_response(
                 tx.send(AgentEvent::LlmCallRetry {
                     turn,
                     attempt,
-                    max_retries: retry.max_retries(),
+                    max_retries: bounded_retry_limit,
                     delay_ms: delay.as_millis() as u64,
                     error: e.to_string(),
                 })
@@ -435,6 +448,7 @@ pub(super) async fn stream_assistant_response(
             }
             Err(e)
                 if crate::retry::should_retry(e)
+                    && !matches!(e, ProviderError::ProtocolIncomplete(_))
                     && retry.max_retries() > 0
                     && !cancel.is_cancelled() =>
             {

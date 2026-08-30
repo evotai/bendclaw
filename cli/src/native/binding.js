@@ -60,5 +60,6 @@ export const authBegin = binding.authBegin
 export const authPoll = binding.authPoll
 export const authLogout = binding.authLogout
 export const authSyncModels = binding.authSyncModels
+export const authSyncNotices = binding.authSyncNotices
 export const authWhoami = binding.authWhoami
 export const authNotices = binding.authNotices

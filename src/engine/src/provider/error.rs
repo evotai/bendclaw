@@ -15,6 +15,12 @@ pub enum ProviderError {
     Overloaded(String),
     #[error("Network error: {0}")]
     Network(String),
+    /// The transport ended cleanly, but the provider never emitted the
+    /// protocol's required terminal event. A short retry may recover a
+    /// one-off upstream generation failure, but repeating the same request
+    /// indefinitely is unlikely to help and must not enter outage probing.
+    #[error("Upstream response incomplete: {0}")]
+    ProtocolIncomplete(String),
     #[error("Auth error: {0}")]
     Auth(String),
     #[error("{}", display_rate_limited(.message))]

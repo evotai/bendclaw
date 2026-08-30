@@ -86,6 +86,9 @@ impl StreamProvider for FailThenSucceedProvider {
                     message: message.clone(),
                 },
                 ProviderError::Network(msg) => ProviderError::Network(msg.clone()),
+                ProviderError::ProtocolIncomplete(msg) => {
+                    ProviderError::ProtocolIncomplete(msg.clone())
+                }
                 ProviderError::Transient { message } => ProviderError::Transient {
                     message: message.clone(),
                 },

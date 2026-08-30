@@ -735,6 +735,40 @@ mod wiremock_tests {
     }
 
     #[tokio::test]
+    async fn sync_notices_uses_public_endpoint_without_bearer_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/notices"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{
+                    "id": "ad-1",
+                    "kind": "ad",
+                    "priority": 30,
+                    "title": "Fresh campaign",
+                    "body_md": "new copy"
+                }])),
+            )
+            .mount(&server)
+            .await;
+
+        let result = auth::sync_notices(&server.uri()).await;
+        let notices = match result {
+            Ok(notices) => notices,
+            Err(error) => panic!("notice sync failed: {error}"),
+        };
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].id, "ad-1");
+        assert_eq!(notices[0].body_md, "new copy");
+
+        let requests = match server.received_requests().await {
+            Some(requests) => requests,
+            None => panic!("wiremock did not retain received requests"),
+        };
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].headers.get("authorization").is_none());
+    }
+
+    #[tokio::test]
     async fn sync_models_sends_bearer_token_and_parses_catalog() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

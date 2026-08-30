@@ -162,7 +162,28 @@ async fn anthropic_sse_stream_without_message_stop_errors() {
     let Err(err) = result else {
         panic!("Expected interrupted stream error");
     };
-    assert!(err.to_string().contains("message_stop"));
+    assert!(matches!(
+        err,
+        evotengine::provider::ProviderError::ProtocolIncomplete(ref message)
+            if message.contains("message_stop")
+    ));
+    assert!(evotengine::retry::should_retry(&err));
+}
+
+#[tokio::test]
+async fn anthropic_sse_heartbeat_only_is_protocol_incomplete() {
+    let config = StreamConfigBuilder::anthropic().cache_disabled().build();
+    let result = run_provider_sse(&AnthropicProvider, config, ": heartbeat\n\n", 200).await;
+    let Err(error) = result else {
+        panic!("Expected incomplete protocol error");
+    };
+
+    assert!(matches!(
+        error,
+        evotengine::provider::ProviderError::ProtocolIncomplete(ref message)
+            if message.contains("message_start/message_stop")
+    ));
+    assert!(evotengine::retry::should_retry(&error));
 }
 
 #[tokio::test]

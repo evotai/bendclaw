@@ -14,10 +14,12 @@ use crate::provider::ProviderError;
 /// Use [`RetryPolicy::disabled()`] to fail immediately on any error.
 ///
 /// When retries are enabled, exhausting the bounded budget on a still
-/// retryable error does not fail the agent loop: it switches to the
-/// cancellable long-wait path (see `OutageWait` in the loop) and keeps
-/// probing the provider until it recovers. Only [`disabled()`]
-/// (`max_retries == 0`) keeps the strict fail-fast contract.
+/// retryable transport/service error does not fail the agent loop: it switches
+/// to the cancellable long-wait path (see `OutageWait`) and keeps probing until
+/// recovery. Protocol-incomplete responses are the exception: they use a small
+/// bounded budget and then fail clearly because identical replays commonly
+/// reproduce malformed model output. Only [`disabled()`] (`max_retries == 0`)
+/// keeps the strict fail-fast contract for every error.
 ///
 /// Internal backoff parameters (2 s initial, 2× multiplier, 30 s cap,
 /// ±20 % jitter) are intentionally not exposed — callers express intent
@@ -84,6 +86,7 @@ pub fn should_retry(error: &ProviderError) -> bool {
     match error {
         ProviderError::RateLimited { .. }
         | ProviderError::Network(_)
+        | ProviderError::ProtocolIncomplete(_)
         | ProviderError::Overloaded(_)
         | ProviderError::Transient { .. } => true,
         // A bare Api error that is really a context overflow must never retry,

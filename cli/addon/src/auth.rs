@@ -42,6 +42,21 @@ pub async fn auth_sync_models() -> NapiResult<String> {
     to_json(&cache.response)
 }
 
+#[napi]
+pub async fn auth_sync_notices() -> NapiResult<String> {
+    let state = auth::load_auth()
+        .map_err(to_napi)?
+        .ok_or_else(|| napi::Error::from_reason("not logged in"))?;
+    let notices = auth::sync_notices(&state.server_base_url)
+        .await
+        .map_err(to_napi)?;
+    if let Some(mut cache) = auth::load_models_cache().map_err(to_napi)? {
+        cache.response.notices.clone_from(&notices);
+        auth::save_models_cache(&cache).map_err(to_napi)?;
+    }
+    to_json(&notices)
+}
+
 async fn sync_models_inner() -> evot::error::Result<evot::auth::ModelsCache> {
     let state =
         auth::load_auth()?.ok_or_else(|| evot::error::EvotError::Conf("not logged in".into()))?;

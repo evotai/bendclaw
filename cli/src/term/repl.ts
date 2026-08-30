@@ -2422,8 +2422,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
    * ranked list with reasons, then opens the resume selector on the ranked
    * sessions. Falls back to the literal-filter selector on failure.
    */
-  function cloudCampaigns() {
-    return authNotices().map(n => ({
+  function cloudCampaigns(notices = authNotices()) {
+    return notices.map(n => ({
       id: n.id,
       kind: n.kind,
       priority: n.priority,
@@ -2438,10 +2438,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   /** Re-read the synced catalog: refresh model config and the ad/notice slot.
    *  Called after login, by the live-sync poller, and on demand. */
-  function reloadCloudContent(): void {
+  function reloadCloudContent(fresh = cloudCampaigns()): void {
     const previous = [...adSlot.notices, ...adSlot.ads]
     const previousById = new Map(previous.map(campaign => [campaign.id, campaign]))
-    const fresh = cloudCampaigns()
     // Refresh campaigns in place — runtime slot state (whether the slot has
     // been triggered, and where rotation is) must survive a content refresh.
     const keep = {
@@ -2485,41 +2484,52 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (inflightSync) return inflightSync
     if (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS) return
     inflightSync = (async () => {
+      const { authSyncModels, authSyncNotices, authWhoami } = await import('../native/index.js')
+      if (!await authWhoami()) return
+      // Any server-pushed group counts, not just the free tier, so granted
+      // models and split protocol groups are announced too.
+      const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
+      const knownModelIds = new Set(cloudModels().map(m => m.model))
+      const knownCampaignIds = new Set([...adSlot.notices, ...adSlot.ads].map(c => c.id))
+      const knownFingerprints = new Set([...adSlot.notices, ...adSlot.ads].map(campaignFingerprint))
+
+      // Campaigns are public and refresh independently from the authenticated
+      // model catalog. An expired cloud token must not freeze the ad slot.
+      let noticesSynced = false
+      let modelsSynced = false
       try {
-        const { authSyncModels, authWhoami } = await import('../native/index.js')
-        if (!await authWhoami()) return
-        // Any server-pushed group counts, not just the free tier, so granted
-        // models and split protocol groups are announced too.
-        const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
-        const knownModelIds = new Set(cloudModels().map(m => m.model))
-        const knownCampaignIds = new Set([...adSlot.notices, ...adSlot.ads].map(c => c.id))
-        const knownFingerprints = new Set([...adSlot.notices, ...adSlot.ads].map(campaignFingerprint))
+        const notices = await authSyncNotices()
+        noticesSynced = true
+        reloadCloudContent(cloudCampaigns(notices))
+      } catch {}
+      try {
         await authSyncModels()
-        lastSyncedAt = Date.now()
+        modelsSynced = true
         reloadCloudContent()
-        const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
-        const campaigns = [...adSlot.notices, ...adSlot.ads]
-        const addedCampaigns = campaigns.filter(c => !knownCampaignIds.has(c.id))
-        const copyChanged = campaigns.some(c => !knownFingerprints.has(campaignFingerprint(c)))
-        if (addedModels.length > 0) {
-          const names = addedModels.slice(0, 3)
-            .map(m => formatModelOptionLabel(m))
-            .join(', ')
-          const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
-          commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
+      } catch {}
+      lastSyncedAt = Date.now()
+      if (!noticesSynced && !modelsSynced) return
+
+      const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
+      const campaigns = [...adSlot.notices, ...adSlot.ads]
+      const addedCampaigns = campaigns.filter(c => !knownCampaignIds.has(c.id))
+      const copyChanged = campaigns.some(c => !knownFingerprints.has(campaignFingerprint(c)))
+      if (addedModels.length > 0) {
+        const names = addedModels.slice(0, 3)
+          .map(m => formatModelOptionLabel(m))
+          .join(', ')
+        const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
+        commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
+      }
+      if (addedCampaigns.length > 0) {
+        // The slot itself announces it: erase what's showing, type the new one.
+        if (!queueAdSlotTransition(adSlot, addedCampaigns[0]!.id)) {
+          triggerAdSlot(adSlot, Date.now())
         }
-        if (addedCampaigns.length > 0) {
-          // The slot itself announces it: erase what's showing, type the new one.
-          if (!queueAdSlotTransition(adSlot, addedCampaigns[0]!.id)) {
-            triggerAdSlot(adSlot, Date.now())
-          }
-        }
-        const refreshedOpenPicker = refreshOpenModelSelector()
-        if (addedModels.length > 0 || addedCampaigns.length > 0 || copyChanged || refreshedOpenPicker) {
-          renderer.requestRender()
-        }
-      } catch {
-        // offline / not logged in / server unreachable — stay silent
+      }
+      const refreshedOpenPicker = modelsSynced && refreshOpenModelSelector()
+      if (addedModels.length > 0 || addedCampaigns.length > 0 || copyChanged || refreshedOpenPicker) {
+        renderer.requestRender()
       }
     })()
     try {

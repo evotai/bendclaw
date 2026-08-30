@@ -496,6 +496,7 @@ import {
   authPoll as rawAuthPoll,
   authLogout as rawAuthLogout,
   authSyncModels as rawAuthSyncModels,
+  authSyncNotices as rawAuthSyncNotices,
   authWhoami as rawAuthWhoami,
   authNotices as rawAuthNotices,
 } from './binding.js'
@@ -532,6 +533,10 @@ export async function authPoll(serverUrl: string, code: string, expiresAt: numbe
 
 export async function authSyncModels(): Promise<void> {
   await rawAuthSyncModels()
+}
+
+export async function authSyncNotices(): Promise<CloudNotice[]> {
+  return parseJsonOrThrow(await rawAuthSyncNotices(), 'notice sync failed') as CloudNotice[]
 }
 
 export async function authLogout(): Promise<void> {

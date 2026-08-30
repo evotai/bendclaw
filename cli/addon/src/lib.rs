@@ -15,6 +15,7 @@ pub use auth::auth_logout;
 pub use auth::auth_notices;
 pub use auth::auth_poll;
 pub use auth::auth_sync_models;
+pub use auth::auth_sync_notices;
 pub use auth::auth_whoami;
 pub use auth::cloud_model_meta;
 pub use auth::cloud_provider_groups;

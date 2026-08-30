@@ -74,14 +74,19 @@ pub(crate) async fn decode_sse_stream(
         return Err(ProviderError::Network(e));
     }
 
-    // Match pi/Anthropic semantics: once a message_start was observed, the
-    // stream is only complete after message_stop. A clean socket EOF without
-    // message_stop is still an interrupted stream; using partial content would
-    // persist half-written assistant markdown as a normal `stop` response.
-    if state.saw_message_start && !state.saw_message_stop {
-        return Err(ProviderError::Network(
-            "Anthropic stream ended before message_stop".into(),
-        ));
+    // Match pi/Anthropic semantics: an SSE response is only complete after
+    // message_stop. A clean socket EOF without it is still an interrupted
+    // protocol stream, even if the proxy emitted only heartbeat comments and
+    // never reached message_start. Using partial content would persist
+    // half-written assistant markdown as a normal `stop` response, while
+    // treating a heartbeat-only response as empty would enter outage probing.
+    if !state.saw_message_stop {
+        let reason = if state.saw_message_start {
+            "Anthropic stream ended before message_stop"
+        } else {
+            "Anthropic stream ended before message_start/message_stop"
+        };
+        return Err(ProviderError::ProtocolIncomplete(reason.into()));
     }
 
     // Usage does not make an empty completion valid. Some compatible proxies

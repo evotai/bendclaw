@@ -79,7 +79,7 @@ pub(crate) async fn decode_sse_stream(
         return Err(ProviderError::Network(error));
     }
     if !saw_terminal {
-        return Err(ProviderError::Api(
+        return Err(ProviderError::ProtocolIncomplete(
             "OpenAI Responses stream ended before a terminal response event".into(),
         ));
     }

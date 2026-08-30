@@ -310,7 +310,13 @@ async fn responses_requires_terminal_event() {
         200,
     )
     .await;
-    assert!(result
-        .err()
-        .is_some_and(|error| error.to_string().contains("terminal response event")));
+    let Err(error) = result else {
+        panic!("Expected incomplete protocol error");
+    };
+    assert!(matches!(
+        error,
+        evotengine::provider::ProviderError::ProtocolIncomplete(ref message)
+            if message.contains("terminal response event")
+    ));
+    assert!(evotengine::retry::should_retry(&error));
 }

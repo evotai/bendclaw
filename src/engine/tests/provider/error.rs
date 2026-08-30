@@ -157,6 +157,18 @@ fn empty_response_api_error_is_retryable() {
 }
 
 #[test]
+fn protocol_incomplete_is_retryable_but_distinct_from_network_errors() {
+    let err =
+        ProviderError::ProtocolIncomplete("Anthropic stream ended before message_stop".into());
+    assert_eq!(
+        err.to_string(),
+        "Upstream response incomplete: Anthropic stream ended before message_stop"
+    );
+    assert!(evotengine::retry::should_retry(&err));
+    assert!(!matches!(err, ProviderError::Network(_)));
+}
+
+#[test]
 fn overloaded_api_message_is_retryable() {
     // Even when surfaced as a bare Api error, overloaded wording retries.
     let err = ProviderError::Api(

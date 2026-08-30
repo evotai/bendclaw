@@ -515,6 +515,19 @@ impl Agent {
         Ok(())
     }
 
+    /// Reload the config-selected provider after an authentication change.
+    /// Returns false when logout leaves no configured provider to switch to.
+    pub fn reload_active_provider(&self, config: &Config) -> Result<bool> {
+        match config.active_llm() {
+            Ok(llm) => {
+                self.set_llm(llm);
+                Ok(true)
+            }
+            Err(_) if config.providers.is_empty() => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Reload a session's provider/model from current config. If that saved
     /// selection no longer exists, reapply config to the current live selection
     /// so its thinking level still refreshes. Returns whether the saved

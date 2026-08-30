@@ -1241,6 +1241,47 @@ describe('term stream machine', () => {
     expect(u2.writeLines.some(l => l.text.includes('HTTP 520'))).toBe(true)
   })
 
+  test('revoked cloud session shows one actionable login prompt across duplicate events', () => {
+    const raw = 'Auth error: session_revoked: this session was signed out; run evot login again'
+    let state = createStreamMachineState(createInitialState('cloud-model', '/tmp'), createSpinnerState())
+
+    const completed = reduceRunEvent(state, {
+      kind: 'llm_call_completed',
+      payload: { model: 'cloud-model', turn: 1, error: raw, metrics: { duration_ms: 10 } },
+    }, { termRows: 24, cloudProvider: true })
+    state = completed.state
+    const terminal = completed.commitLines.map(line => stripAnsi(line.text)).join('\n')
+    expect(completed.sessionRevoked).toBe(true)
+    expect(terminal).toContain('Your evot cloud session was signed out. Run /login to reconnect.')
+    expect(terminal).not.toContain('session_revoked')
+    expect(completed.writeLines.some(line => line.text.includes('session_revoked'))).toBe(true)
+
+    const duplicate = reduceRunEvent(state, {
+      kind: 'error',
+      payload: { message: raw },
+    }, { termRows: 24, cloudProvider: true })
+    expect(duplicate.sessionRevoked).toBe(false)
+    expect(duplicate.commitLines).toEqual([])
+    expect(duplicate.writeLines.some(line => line.text.includes('session_revoked'))).toBe(true)
+  })
+
+  test('ordinary provider auth errors keep the generic BYOK error path', () => {
+    for (const raw of [
+      'Auth error: invalid API key',
+      'Auth error: session_revoked: custom gateway session ended',
+    ]) {
+      const state = createStreamMachineState(createInitialState('byok-model', '/tmp'), createSpinnerState())
+      const update = reduceRunEvent(state, {
+        kind: 'llm_call_completed',
+        payload: { model: 'byok-model', turn: 1, error: raw, metrics: { duration_ms: 10 } },
+      }, { termRows: 24, cloudProvider: false })
+      const terminal = update.commitLines.map(line => stripAnsi(line.text)).join('\n')
+      expect(update.sessionRevoked).toBe(false)
+      expect(terminal).toContain(raw.includes('session_revoked') ? 'custom gateway session ended' : 'invalid API key')
+      expect(terminal).not.toContain('Run /login')
+    }
+  })
+
   test('run_finished preserves partial assistant content on abnormal termination', () => {
     const appState = createInitialState('model', '/tmp')
     const spinner = createSpinnerState()

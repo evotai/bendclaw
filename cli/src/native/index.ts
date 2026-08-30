@@ -366,6 +366,11 @@ export class Agent {
     this.raw.setProvider(provider)
   }
 
+  /** Reload the config-selected provider after login/logout state changes. */
+  reloadActiveProvider(): boolean {
+    return this.raw.reloadActiveProvider()
+  }
+
   /**
    * Reload provider/model from disk, including its configured thinking level.
    * Returns false when the saved selection is unavailable and the current live

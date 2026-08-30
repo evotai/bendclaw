@@ -408,7 +408,10 @@ impl NapiAgent {
                 .iter()
                 .any(|model| model.trim() == llm.model.trim())
         });
-        if !llm.model.trim().is_empty() && !current_is_listed {
+        if !llm.model.trim().is_empty()
+            && !current_is_listed
+            && config.providers.contains_key(&llm.provider)
+        {
             models.push(serde_json::json!({
                 "provider": llm.provider,
                 "protocol": llm.protocol.to_string(),
@@ -426,6 +429,16 @@ impl NapiAgent {
         self.agent
             .set_provider_by_spec(&config, &provider)
             .map_err(|e| Error::from_reason(format!("invalid provider: {e}")))
+    }
+
+    /// Reload the config-selected provider after login/logout state changes.
+    /// Returns false when no configured provider remains after logout.
+    #[napi]
+    pub fn reload_active_provider(&self) -> Result<bool> {
+        let config = self.load_config()?;
+        self.agent
+            .reload_active_provider(&config)
+            .map_err(|e| Error::from_reason(format!("provider reload failed: {e}")))
     }
 
     /// Reload provider/model selection from disk for session resume. Unlike an

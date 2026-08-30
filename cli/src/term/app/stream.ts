@@ -18,10 +18,15 @@ export interface StreamMachineState {
   /** Last error message surfaced via an LLM error card, so a following
    *  `error` event carrying the same text doesn't render it twice. */
   lastLlmErrorMessage: string | null
+  /** Prevent duplicate sign-in prompts when the provider error is emitted as
+   *  both an LLM completion and a terminal error event. */
+  sessionRevokedHandled: boolean
 }
 
 export interface StreamContext {
   termRows: number
+  /** True only for a server-pushed evot cloud provider. */
+  cloudProvider?: boolean
 }
 
 export interface StreamUpdate {
@@ -30,6 +35,8 @@ export interface StreamUpdate {
   expandedCommitLines?: OutputLine[]
   writeLines: OutputLine[]
   rerenderStatus: boolean
+  /** The evot cloud gateway rejected this session after an admin sign-out. */
+  sessionRevoked: boolean
 }
 
 function parseSpillProgress(text: string): Record<string, unknown> | undefined {
@@ -73,19 +80,39 @@ export function createStreamMachineState(appState: AppState, spinnerState: Spinn
     activeLlmCall: false,
     quotaWaitShown: false,
     lastLlmErrorMessage: null,
+    sessionRevokedHandled: false,
   }
 }
 
-export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, _ctx: StreamContext): StreamUpdate {
+function isSessionRevokedError(message: unknown): message is string {
+  return typeof message === 'string' && /(?:^|\b)session_revoked(?:\b|:)/i.test(message)
+}
+
+const SESSION_REVOKED_MESSAGE = 'Your evot cloud session was signed out. Run /login to reconnect.'
+
+export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: StreamContext): StreamUpdate {
   const p = (event.payload ?? {}) as Record<string, any>
   let state = event.kind === 'host_tool_call' ? prev : { ...prev, appState: applyEvent(prev.appState, event) }
   const commitLines: OutputLine[] = []
   const writeLines: OutputLine[] = []
   let expandedCommitLines: OutputLine[] | undefined
   let rerenderStatus = false
+  let sessionRevoked = false
   // Tracks an LLM error message surfaced as a card this tick (or carried from a
   // prior tick via state), so a following `error` event won't duplicate it.
   let capturedLlmError: string | null = prev.lastLlmErrorMessage
+  const revokedMessage = event.kind === 'llm_call_completed'
+    ? p.error
+    : event.kind === 'error'
+      ? p.message
+      : undefined
+  const revokedEvent = isSessionRevokedError(revokedMessage)
+    && (ctx.cloudProvider === true || prev.sessionRevokedHandled)
+  if (revokedEvent && !prev.sessionRevokedHandled) {
+    state = { ...state, sessionRevokedHandled: true }
+    sessionRevoked = true
+    commitLines.push(...buildError(SESSION_REVOKED_MESSAGE))
+  }
 
   function mergeFlushExpanded(flushed: { expandedLines?: OutputLine[] }) {
     if (flushed.expandedLines) {
@@ -296,7 +323,8 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, _ctx: 
     state = { ...state, activeLlmCall: false }
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
     for (const evt of newEvents) {
-      routeVerbose(evt.text, { commit: commitLines, write: writeLines })
+      if (revokedEvent) writeLines.push(...buildVerboseEvent(evt.text))
+      else routeVerbose(evt.text, { commit: commitLines, write: writeLines })
     }
   }
 
@@ -364,12 +392,18 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, _ctx: 
     mergeFlushExpanded(flushed)
     writeLines.push(...flushed.lines)
     const message = (p.message as string) ?? 'Unknown error'
-    // Skip the standalone `Error:` line if an LLM error card already showed
-    // this same message (the provider error surfaces via both events).
-    const alreadyShown = capturedLlmError != null &&
-      (message.trim() === capturedLlmError || message.includes(capturedLlmError) || capturedLlmError.includes(message.trim()))
-    if (alreadyShown) writeLines.push(...buildError(message))
-    else commitLines.push(...buildError(message))
+    if (revokedEvent) {
+      // Keep raw gateway detail in screen.log; the TUI already has the single
+      // actionable cloud-session prompt above.
+      writeLines.push(...buildError(message))
+    } else {
+      // Skip the standalone `Error:` line if an LLM error card already showed
+      // this same message (the provider error surfaces via both events).
+      const alreadyShown = capturedLlmError != null &&
+        (message.trim() === capturedLlmError || message.includes(capturedLlmError) || capturedLlmError.includes(message.trim()))
+      if (alreadyShown) writeLines.push(...buildError(message))
+      else commitLines.push(...buildError(message))
+    }
   }
 
   if (event.kind === 'run_finished') {
@@ -387,6 +421,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, _ctx: 
     expandedCommitLines,
     writeLines,
     rerenderStatus,
+    sessionRevoked,
   }
 }
 

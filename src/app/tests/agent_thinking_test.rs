@@ -328,6 +328,41 @@ fn resume_reload_reapplies_current_configured_thinking_level() -> TestResult {
 }
 
 #[test]
+fn auth_change_reload_switches_to_configured_provider_or_preserves_when_empty() -> TestResult {
+    let dir = TempDir::new()?;
+    let initial = anthropic_config(&dir);
+    let agent = Agent::new(&initial, "/work")?;
+
+    let mut replacement = Config::new(dir.path().to_path_buf());
+    replacement
+        .providers
+        .insert("deepseek".into(), ProviderProfile {
+            protocol: Protocol::OpenAi,
+            api_key: "replacement-key".into(),
+            base_url: "https://api.deepseek.com".into(),
+            models: vec!["deepseek-chat".into()],
+            compat_caps: Default::default(),
+            route_capabilities: Default::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    replacement.llm.provider = "deepseek".into();
+
+    assert!(agent.reload_active_provider(&replacement)?);
+    assert_eq!(agent.llm().provider, "deepseek");
+    assert_eq!(agent.llm().model, "deepseek-chat");
+
+    let empty = Config::new(dir.path().to_path_buf());
+    let before = agent.llm();
+    assert!(!agent.reload_active_provider(&empty)?);
+    assert_eq!(agent.llm().provider, before.provider);
+    assert_eq!(agent.llm().model, before.model);
+    Ok(())
+}
+
+#[test]
 fn explicit_thinking_restore_api_remains_supported() -> TestResult {
     let dir = TempDir::new()?;
     let agent = Agent::new(&anthropic_config(&dir), "/work")?;

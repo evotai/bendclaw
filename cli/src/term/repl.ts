@@ -472,12 +472,66 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   historyState = createHistoryState(entries)
 
   let configInfo: ConfigInfo | undefined
+  let cloudLoginRequired = false
+  let revocationCleanup: Promise<void> | null = null
   const refreshConfigInfo = () => {
     // Re-read backend config after a model switch so the footer reflects the
     // new provider's effective thinking level (it can differ per provider).
     try { configInfo = agent.configInfo() } catch {}
   }
   refreshConfigInfo()
+
+  function reloadAfterAuthChange(): boolean {
+    const previousSpec = currentModelSpec(configInfo, appState.model)
+    const reloaded = agent.reloadActiveProvider()
+    refreshConfigInfo()
+    reloadCloudContent()
+    if (!reloaded) return false
+
+    appState = { ...appState, model: agent.model }
+    const next = configInfo?.availableModels.find(model => model.spec === currentModelSpec(configInfo, agent.model))
+    if (next && next.spec !== previousSpec) {
+      commitStatusLine({
+        id: 'sys-model',
+        kind: 'system',
+        text: `  Model → ${formatModelLabel(agent.model, next.provider, next.group_label)}`,
+      })
+    }
+    return true
+  }
+
+  function handleCloudSessionRevoked(): void {
+    cloudLoginRequired = true
+    if (revocationCleanup) return
+    revocationCleanup = (async () => {
+      try {
+        const { authLogout } = await import('../native/index.js')
+        await authLogout()
+        cloudLoginRequired = !reloadAfterAuthChange()
+      } catch (err) {
+        commitSystem('sys-session-cleanup-err', chalk.red(`  Failed to clear the signed-out session: ${errorText(err)}`))
+      } finally {
+        revocationCleanup = null
+        renderer.requestRender()
+      }
+    })()
+  }
+
+  function queryBlockedByCloudLogin(): boolean {
+    if (!cloudLoginRequired && !revocationCleanup) return false
+    commitSystem('sys-login-required', '  Cloud session is signed out. Run /login to reconnect.')
+    renderer.requestRender()
+    return true
+  }
+
+  function activeProviderIsCloud(): boolean {
+    const provider = configInfo?.provider
+    if (!provider) return false
+    const active = configInfo?.availableModels.find(
+      option => option.provider === provider && option.model === appState.model,
+    )
+    return active !== undefined && isCloudModel(active)
+  }
 
   let preloadedSessions: SessionMeta[] = []
   if (shouldPreloadStartupSessions(opts)) {
@@ -1265,6 +1319,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   async function runQuery(text: string, contentJson?: string, prebuiltStream?: QueryStream) {
+    if (queryBlockedByCloudLogin()) return
     const generation = beginRun()
     liveContentMaxHeight = 0
     isLoading = true
@@ -1312,11 +1367,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           continue
         }
 
-        const update = reduceRunEvent(streamMachine!, event, { termRows: renderer.termRows })
+        const update = reduceRunEvent(streamMachine!, event, {
+          termRows: renderer.termRows,
+          cloudProvider: activeProviderIsCloud(),
+        })
 
         streamMachine = update.state
         appState = update.state.appState
         spinnerState = update.state.spinnerState
+        if (update.sessionRevoked) handleCloudSessionRevoked()
 
         // Git commands run inside tool subprocesses. Refresh synchronously when
         // any tool settles instead of waiting for the debounced HEAD watcher;
@@ -2291,40 +2350,35 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       await handleVersionCommand(replCommands)
     } else if (name === '/login') {
       // Device-code flow in place so free models appear without restarting.
-      // If no provider was configured, the cloud provider becomes active.
+      // Wait for an admin-sign-out cleanup before checking local identity;
+      // otherwise a fast /login can race the auth-file removal.
       if (loginInFlight) {
         commitSystem('sys-login', '  login already in progress')
       } else {
+        if (revocationCleanup) await revocationCleanup
         const { authWhoami } = await import('../native/index.js')
-        const existing = await authWhoami()
+        // A failed cleanup may leave stale auth.json behind. The server has
+        // already rejected it, so never let that local identity block a fresh
+        // device flow.
+        const existing = cloudLoginRequired ? null : await authWhoami()
         if (existing) {
           commitSystem('sys-login', `  already logged in as ${existing.name} <${existing.email}>`)
         } else {
           loginInFlight = true
           try {
-            const hadKey = Boolean(configInfo?.hasApiKey)
             const loggedIn = await handleLoginCommand(replCommands)
             if (loggedIn) {
-              refreshConfigInfo()
-              reloadCloudContent()
-              if (!hadKey) {
-                const cloud = (configInfo?.availableModels ?? []).find(isCloudModel)
-                if (cloud) {
-                  try {
-                    agent.setProvider(cloud.spec)
-                    refreshConfigInfo()
-                    appState = { ...appState, model: agent.model }
-                    commitStatusLine({
-                      id: 'sys-model',
-                      kind: 'system',
-                      text: `  Model → ${formatModelLabel(agent.model, cloud.provider, cloud.group_label)}`,
-                    })
-                  } catch (err) {
-                    commitSystem('sys-login-model-err', chalk.red(`  Failed to switch to cloud model: ${errorText(err)}`))
-                  }
+              try {
+                cloudLoginRequired = !reloadAfterAuthChange()
+                if (cloudLoginRequired) {
+                  commitSystem('sys-login-model-err', chalk.red('  Login succeeded, but no cloud model was loaded. Try /login again.'))
+                } else {
+                  void syncCloudNow(true)
                 }
+              } catch (err) {
+                cloudLoginRequired = true
+                commitSystem('sys-login-model-err', chalk.red(`  Failed to load the signed-in cloud model: ${errorText(err)}`))
               }
-              void syncCloudNow(true)
             }
           } finally {
             loginInFlight = false
@@ -2335,29 +2389,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (loginInFlight) {
         commitSystem('sys-logout', '  login in progress — wait or restart to log out')
       } else {
-        const previousSpec = currentModelSpec(configInfo, agent.model)
+        if (revocationCleanup) await revocationCleanup
         const loggedOut = await handleLogoutCommand(replCommands)
         if (loggedOut) {
-          refreshConfigInfo()
-          reloadCloudContent()
-          const remaining = configInfo?.availableModels ?? []
-          const stillThere = remaining.some(m => m.spec === previousSpec)
-          if (!stillThere) {
-            const next = remaining[0]
-            if (next) {
-              try {
-                agent.setProvider(next.spec)
-                refreshConfigInfo()
-                appState = { ...appState, model: agent.model }
-                commitStatusLine({
-                  id: 'sys-model',
-                  kind: 'system',
-                  text: `  Model → ${formatModelLabel(agent.model, next.provider, next.group_label)}`,
-                })
-              } catch (err) {
-                commitSystem('sys-logout-model-err', chalk.red(`  Failed to leave cloud model: ${errorText(err)}`))
-              }
-            }
+          try {
+            cloudLoginRequired = !reloadAfterAuthChange()
+          } catch (err) {
+            cloudLoginRequired = true
+            commitSystem('sys-logout-model-err', chalk.red(`  Failed to reload providers after logout: ${errorText(err)}`))
           }
         }
       }
@@ -2737,6 +2776,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   async function runLogQuery(forked: import('../native/index.js').ForkedAgent, prompt: string) {
+    if (queryBlockedByCloudLogin()) return
     const generation = beginRun()
     liveContentMaxHeight = 0
     isLoading = true
@@ -2763,10 +2803,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
 
-        const update = reduceRunEvent(streamMachine, event, { termRows: renderer.termRows })
+        const update = reduceRunEvent(streamMachine, event, {
+          termRows: renderer.termRows,
+          cloudProvider: activeProviderIsCloud(),
+        })
         streamMachine = update.state
         appState = update.state.appState
         spinnerState = update.state.spinnerState
+        if (update.sessionRevoked) handleCloudSessionRevoked()
 
         if (event.kind === 'assistant_delta') renderer.requestRender()
         if (update.commitLines.length > 0) commitLines(update.commitLines)

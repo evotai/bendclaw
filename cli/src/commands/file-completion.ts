@@ -79,6 +79,70 @@ export function extractAtPrefix(textBeforeCursor: string): { prefix: string; sta
 }
 
 /**
+ * An `@` query naming an absolute or `~` path anchors completion outside the
+ * project. Browsing the named directory is the only correct reading: joining
+ * such a query onto `cwd` produces a path that cannot exist, which is why these
+ * queries used to return nothing at all.
+ */
+export interface AnchoredAtQuery {
+  /** Directory listed for candidates. */
+  dir: string
+  /** Entry-name filter within `dir`; '' lists every entry. */
+  filter: string
+  /** Text before the entry name, used to rebuild the inserted value. */
+  displayPrefix: string
+}
+
+/** Split an absolute or `~` query into a directory to list and a name filter. */
+export function anchoredAtQuery(query: string, home = homedir()): AnchoredAtQuery | null {
+  let expanded: string
+  if (query === '~') expanded = `${home}/`
+  else if (query.startsWith('~/')) expanded = home + query.slice(1)
+  else if (query.startsWith('/')) expanded = query
+  else return null
+
+  const cut = expanded.lastIndexOf('/')
+  return {
+    // The root directory keeps its slash; every other parent drops it.
+    dir: cut === 0 ? '/' : expanded.slice(0, cut),
+    filter: expanded.slice(cut + 1),
+    displayPrefix: expanded.slice(0, cut + 1),
+  }
+}
+
+/**
+ * List an anchored directory and rank its entries against the name filter.
+ * Only one level is listed: an absolute anchor can point at a huge tree (`~`,
+ * `/`), so recursing would stall completion for no gain.
+ */
+function browseAnchored(anchor: AnchoredAtQuery): FileCompletionItem[] {
+  let entries: string[]
+  try {
+    entries = readdirSync(anchor.dir)
+  } catch {
+    return []
+  }
+
+  const scored: { name: string; score: number }[] = []
+  for (const entry of entries) {
+    // Dotfiles stay out of the way until the filter opts into them.
+    if (entry.startsWith('.') && !anchor.filter.startsWith('.')) continue
+    const score = anchor.filter === '' ? 0 : fuzzyScore(entry, anchor.filter)
+    if (score === null) continue
+    scored.push({ name: entry, score })
+  }
+  scored.sort((a, b) =>
+    a.score - b.score || a.name.length - b.name.length || a.name.localeCompare(b.name))
+
+  return scored.slice(0, MAX_ITEMS).map(({ name }) => {
+    let isDirectory = false
+    try { isDirectory = statSync(join(anchor.dir, name)).isDirectory() } catch { /* ignore */ }
+    const label = anchor.displayPrefix + name + (isDirectory ? '/' : '')
+    return { label, value: `@${label}`, isDirectory }
+  })
+}
+
+/**
  * Score a relative path against a fuzzy query. Lower is better; null means no
  * match. Tiers: basename prefix (0), basename substring (1), path substring
  * (2), path subsequence (3).
@@ -166,6 +230,15 @@ export async function completeAtFile(
   const { prefix, start } = extracted
   const query = prefix.slice(1) // strip leading @
   const browse = query === '' || query.endsWith('/')
+
+  // Absolute and `~` queries name their own search root, so they bypass the
+  // cwd-relative browse and fuzzy paths entirely.
+  const anchor = anchoredAtQuery(query)
+  if (anchor) {
+    const anchoredItems = browseAnchored(anchor)
+    if (anchoredItems.length === 0) return null
+    return { items: anchoredItems, prefix, prefixStart: start }
+  }
 
   const fd = getFdPath()
   const homeRoot = resolve(cwd) === resolve(homedir())

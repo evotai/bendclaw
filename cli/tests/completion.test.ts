@@ -137,4 +137,20 @@ describe('ghost hints', () => {
     expect(hint).toContain('list')
     expect(hint).toContain('remove')
   })
+
+  test('hints the /sessions alias like the canonical command', () => {
+    // Typing an alias must feel like typing the real name: same description on
+    // the name, same argument hints after the space.
+    expect(getGhostHint('/sessions', 9)).toContain('<id>')
+    expect(getGhostHint('/sessions ', 10)).toContain('<query>')
+  })
+})
+
+describe('alias completion', () => {
+  test('tab-completes /sessions', () => {
+    const result = complete('/sess', 5)
+    expect(result).not.toBeNull()
+    expect(result!.replacement).toBe('/sessions ')
+    expect(result!.candidates).toEqual(['/sessions'])
+  })
 })

@@ -154,6 +154,10 @@ function buildModelSearchLine(query: string, width: number): StyledLine {
 }
 
 function buildHelpBlocks(columns: number): ViewBlock[] {
+  const TITLE = 'Keyboard Shortcuts & Commands'
+  const DISMISS_HINT = 'Press Esc to dismiss'
+  const INDENT = 2
+  const KEY_GAP = 2
   const entries = [
     ['Enter', 'Submit message'],
     ['Alt+Enter', 'Insert newline'],
@@ -172,7 +176,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['Shift+Tab', 'Cycle thinking level'],
     ['/help', 'Show this help'],
     ['/model <name>', 'Switch model'],
-    ['/resume [id|query]', 'Resume session'],
+    ['/resume, /sessions', 'Resume session'],
     ['/new', 'Start new session'],
     ['/plan', 'Toggle planning mode'],
     ['/env', 'Manage variables'],
@@ -189,15 +193,30 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['/exit', 'Exit'],
   ]
 
+  // Rows are left-aligned as a block and descriptions share one column, so the
+  // two columns read as a table. The renderer centres the block as a whole;
+  // only the title and footer are centred against the block's own width.
   const maxKeyLen = Math.max(...entries.map(e => e[0]!.length))
+  const descColumn = INDENT + maxKeyLen + KEY_GAP
+  const blockWidth = Math.max(
+    ...entries.map(e => descColumn + e[1]!.length),
+    INDENT + TITLE.length,
+  )
+
+  const centred = (text: string): string =>
+    ' '.repeat(Math.max(0, Math.floor((blockWidth - text.length) / 2)))
+
   const lines = [
-    line(bold('  Keyboard Shortcuts & Commands')),
+    line(bold(`${centred(TITLE)}${TITLE}`)),
     line(plain('')),
     ...entries.map(([key, desc]) =>
-      line(colored(`  ${key!.padEnd(maxKeyLen + 2)}`, 'cyan'), dim(desc!))
+      line(
+        colored(`${' '.repeat(INDENT)}${key!.padEnd(maxKeyLen + KEY_GAP)}`, 'cyan'),
+        dim(desc!),
+      )
     ),
     line(plain('')),
-    line(dim('  Press Esc to dismiss')),
+    line(dim(`${centred(DISMISS_HINT)}${DISMISS_HINT}`)),
   ]
 
   return [block(lines, 1)]

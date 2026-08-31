@@ -611,6 +611,40 @@ describe('TermRenderer', () => {
       expect((renderer as any).previousLines).toHaveLength(stdout.rows)
       renderer.destroy()
     })
+
+    test('centres the overlay as a block so its columns stay aligned', async () => {
+      const { renderer, stdout } = createRenderer()
+      stdout.rows = 12
+      stdout.columns = 40
+      renderer.init()
+      // Rows of differing width that share a left edge: per-line centring would
+      // give each row its own indent and shear the column apart.
+      const overlayLines = [
+        'title',
+        'a    short',
+        'bb   a much longer description',
+        'ccc  mid',
+      ]
+      renderer.setRenderCallback(() => ({
+        lines: ['history', 'prompt'],
+        overlay: { lines: overlayLines },
+      }))
+      await renderFrame(renderer)
+
+      const rendered: string[] = (renderer as any).previousLines
+      const indentOf = (needle: string): number => {
+        const row = rendered.find(line => stripAnsi(line).includes(needle))
+        expect(row).toBeDefined()
+        const bare = stripAnsi(row!)
+        return bare.length - bare.trimStart().length
+      }
+
+      const indents = overlayLines.map(line => indentOf(line.split(/\s\s+/)[0]!))
+      expect(new Set(indents).size).toBe(1)
+      // The block is still centred: widest row is 30 of 40 columns → indent 5.
+      expect(indents[0]).toBe(5)
+      renderer.destroy()
+    })
   })
 
   describe('clearScreen', () => {

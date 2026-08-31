@@ -5,7 +5,7 @@
 
 import { readdirSync, statSync } from 'fs'
 import { join, dirname, basename } from 'path'
-import { ALL_COMMANDS, COMMANDS } from './index.js'
+import { ALL_COMMANDS, COMMANDS, type SlashCommand } from './index.js'
 
 /**
  * Returns true when text looks like a hand-typed slash command prefix:
@@ -84,31 +84,47 @@ export function getGhostHint(line: string, cursorCol: number): string {
 
   // Ghost hints match all commands (hidden ones stay completable);
   // only the bare-`/` list above is limited to visible commands.
-  const matches = ALL_COMMANDS.filter(c => c.name.startsWith(cmd))
+  const matches = commandCandidates().filter(c => c.label.startsWith(cmd))
 
   if (matches.length === 0) return ''
 
   // Single match — show completion suffix + sub-commands or description
   if (matches.length === 1) {
     const m = matches[0]!
-    const suffix = m.name.slice(cmd.length)
-    const subcmds = SUB_COMMANDS[m.name]
-    if (subcmds && subcmds.length > 0 && (suffix === '' || m.name === cmd + suffix)) {
+    const suffix = m.label.slice(cmd.length)
+    const subcmds = SUB_COMMANDS[m.command.name]
+    if (subcmds && subcmds.length > 0 && (suffix === '' || m.label === cmd + suffix)) {
       return `${suffix}  [${subcmds.join('  ')}]`
     }
-    return `${suffix}  ${m.description}`
+    return `${suffix}  ${m.command.description}`
   }
 
   // Multiple matches — show common suffix + candidate names
-  const common = commonPrefix(matches.map(m => m.name))
+  const common = commonPrefix(matches.map(m => m.label))
   const suffix = common.slice(cmd.length)
-  const names = matches.map(m => m.name).join('  ')
+  const names = matches.map(m => m.label).join('  ')
   return suffix ? `${suffix}  [${names}]` : `  [${names}]`
 }
 
+/**
+ * Every typeable command spelling paired with its command. Aliases are first
+ * class here: a user who types an alias gets the same hints as the canonical
+ * name, and sub-command hints resolve through to the canonical entry.
+ */
+function commandCandidates(): { label: string; command: SlashCommand }[] {
+  const candidates: { label: string; command: SlashCommand }[] = []
+  for (const command of ALL_COMMANDS) {
+    candidates.push({ label: command.name, command })
+    for (const alias of command.aliases ?? []) candidates.push({ label: alias, command })
+  }
+  return candidates
+}
+
 function getSubCommandHint(cmd: string, partial: string): string {
-  // Resolve the command first
-  const resolved = ALL_COMMANDS.find(c => c.name === cmd || c.name.startsWith(cmd))
+  // Resolve through aliases so `/sessions <tab>` hints like `/resume`.
+  const candidates = commandCandidates()
+  const resolved = (candidates.find(c => c.label === cmd)
+    ?? candidates.find(c => c.label.startsWith(cmd)))?.command
   if (!resolved) return ''
 
   const subcmds = SUB_COMMANDS[resolved.name] ?? []
@@ -136,6 +152,7 @@ const SUB_COMMANDS: Record<string, string[]> = {
   '/env': ['set', 'del', 'load'],
   '/log': ['shot', 'query'],
   '/resume': ['<id>', '<query>'],
+  '/sessions': ['<id>', '<query>'],
   '/model': ['<name>'],
   '/harden': ['plan', 'changes', 'arch', '<subject>'],
 }

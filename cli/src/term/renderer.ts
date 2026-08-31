@@ -614,11 +614,16 @@ export class TermRenderer {
     const viewportStart = Math.max(0, workingHeight - height)
     const row = Math.max(0, Math.floor((height - visibleOverlay.length) / 2))
 
+    // Centre the block, not each row. Per-line centring gives every row its own
+    // left edge, which shifts rows against each other and destroys any column
+    // alignment the overlay content built with padding.
+    const blockWidth = visibleOverlay.reduce(
+      (max, line) => Math.max(max, stringWidth(stripAnsi(line))),
+      0,
+    )
+    const col = Math.max(0, Math.floor((width - Math.min(blockWidth, width)) / 2))
     for (let index = 0; index < visibleOverlay.length; index++) {
-      const line = visibleOverlay[index]!
-      const lineWidth = stringWidth(stripAnsi(line))
-      const col = Math.max(0, Math.floor((width - Math.min(lineWidth, width)) / 2))
-      result[viewportStart + row + index] = `${' '.repeat(col)}${line}`
+      result[viewportStart + row + index] = `${' '.repeat(col)}${visibleOverlay[index]!}`
     }
     return result
   }

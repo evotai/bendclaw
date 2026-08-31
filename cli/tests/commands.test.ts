@@ -55,6 +55,21 @@ describe('resolveCommand', () => {
     expect(result).toEqual({ kind: 'resolved', name: '/exit', args: '' })
   })
 
+  test('resolves /sessions to /resume, with and without args', () => {
+    expect(resolveCommand('/sessions')).toEqual({ kind: 'resolved', name: '/resume', args: '' })
+    expect(resolveCommand('/sessions auth bug')).toEqual({
+      kind: 'resolved',
+      name: '/resume',
+      args: 'auth bug',
+    })
+    expect(isSlashCommand('/sessions')).toBe(true)
+  })
+
+  test('resolves the /sessions alias by prefix', () => {
+    // `/se` is unique to the alias, so it must resolve rather than dead-end.
+    expect(resolveCommand('/se')).toEqual({ kind: 'resolved', name: '/resume', args: '' })
+  })
+
   test('resolves by prefix when unambiguous', () => {
     const result = resolveCommand('/he')
     expect(result).toEqual({ kind: 'resolved', name: '/help', args: '' })

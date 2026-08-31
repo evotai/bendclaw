@@ -102,6 +102,22 @@ describe('checkForUpdate', () => {
     expect(calls).toHaveLength(2)
   })
 
+  test('refreshes a cache older than ten minutes', async () => {
+    stubLatest('v2026.4.20')
+    await checkForUpdate('2026.4.13')
+
+    const cached = JSON.parse(readFileSync(cachePath(), 'utf8')) as Record<string, unknown>
+    cached.checked_at = Date.now() - 11 * 60 * 1000
+    writeFileSync(cachePath(), JSON.stringify(cached))
+    const calls = stubLatest('v2026.4.21')
+
+    const result = await checkForUpdate('2026.4.13')
+
+    expect(calls).toHaveLength(1)
+    expect(result.kind).toBe('available')
+    if (result.kind === 'available') expect(result.latest.version).toBe('2026.4.21')
+  })
+
   test('falls back to a stale cache when the network fails', async () => {
     stubLatest('v2026.4.20')
     await checkForUpdate('2026.4.13')

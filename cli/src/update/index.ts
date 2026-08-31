@@ -22,17 +22,24 @@ export {
 export type { ProxyCandidate, ProxyEnv, ProxySelection } from './proxy.js'
 export { UpdateManager, type UpdateStatus } from './manager.js'
 export { parseReleaseNotes } from './notes.js'
-export { checkInstallHealth, readInstallState } from './state.js'
+export { checkInstallHealth, installedVersionForThisProcess, isManagedInstall, readInstallState } from './state.js'
 export type { InstallHealth } from './state.js'
 export { readStaged, clearStaged } from './stage.js'
 export type { StagedUpdate } from './stage.js'
 
 import type { RunResult } from './types.js'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import { checkForUpdate, lastCheckError } from './check.js'
 import { executeInstall } from './install.js'
 import { parseReleaseNotes } from './notes.js'
+import { installBinDir, runningInstallDir } from './paths.js'
+import { installedVersionForThisProcess, isManagedInstall } from './state.js'
 import { clearStaged, readStaged } from './stage.js'
 import { resolveUpdateProxy } from './proxy.js'
+import { compareVersions } from './version.js'
+
+const APPLIED_UPDATE_ENV = 'EVOT_APPLIED_UPDATE'
 
 /**
  * How the update reached the network, for attaching to an outcome.
@@ -93,21 +100,38 @@ function stagedEnvFor(tag: string): Record<string, string> | undefined {
 /**
  * Apply a background-staged download at startup, before the REPL comes up.
  *
- * Returns the version now running when an apply happened, or null when there
+ * Returns the version now on disk when an apply happened, or null when there
  * was nothing to do. Deliberately quiet on failure: install.sh falls back to
  * downloading on its own, and a failed auto-apply must never block launch —
  * the next `/update` surfaces whatever went wrong with full context.
+ *
+ * `currentVersion` is what this process is actually running. The swap replaces
+ * files on disk, so the running image keeps the old code until the caller
+ * re-executes — see `execIntoInstalledUpdate`.
  */
 export async function applyStagedOnStartup(currentVersion: string): Promise<string | null> {
+  // A source checkout or test runner must never rewrite the user's installed
+  // release: it did not come from that install, and the swap would replace a
+  // working release with whatever a local build staged.
+  if (!isManagedInstall()) return null
+
   const staged = readStaged()
   if (!staged) return null
 
   // Stale against what is already running (a concurrent process applied it,
   // or the user updated manually): the download served its purpose or lost.
-  const { compareVersions } = await import('./version.js')
   if (compareVersions(currentVersion, staged.version) >= 0) {
     clearStaged()
     return null
+  }
+
+  // Another evot already applied this exact version to disk. Re-running the
+  // installer would redo a 37 MB swap for nothing; the caller still needs to
+  // re-exec, because this process is the one holding the old image.
+  const installed = installedVersionForThisProcess()
+  if (installed && compareVersions(installed, staged.version) >= 0) {
+    clearStaged()
+    return installed
   }
 
   // Fast path: apply what is staged; background checks re-stage newer releases.
@@ -115,6 +139,53 @@ export async function applyStagedOnStartup(currentVersion: string): Promise<stri
   if (!result.success) return null
   clearStaged()
   return staged.version
+}
+
+/**
+ * Hand the process over to the freshly installed executable.
+ *
+ * Replacing files on disk does not change the running image: the compiled
+ * bundle and its native binding are already mapped, so continuing would run
+ * the old version against new install bookkeeping — exactly the
+ * "install recorded v…, running v…" mismatch users saw. execve keeps the pid,
+ * tty and fds, so the user just sees the new version come up.
+ *
+ * Returns only when handing over was impossible; the caller then keeps running
+ * the old image rather than failing the launch.
+ */
+export function execIntoInstalledUpdate(appliedVersion: string): void {
+  const execve = process.execve
+  // Not available on Windows/IBM i, where the old image simply keeps running.
+  if (typeof execve !== 'function') return
+  // At most one handover per process chain. The marker is still set when this
+  // runs in the re-exec'd process, so a swap that somehow does not change the
+  // reported version cannot bounce the session between images forever.
+  if (process.env[APPLIED_UPDATE_ENV]) return
+  // Only a running installed evot may hand over to an installed evot. A source
+  // checkout (`bun run src/index.ts`) or a test process would otherwise be
+  // replaced by the released binary, discarding the code under development.
+  if (!runningInstallDir()) return
+  const binary = join(installBinDir(), 'evot')
+  if (!existsSync(binary)) return
+  try {
+    execve(
+      binary,
+      [binary, ...process.argv.slice(2)],
+      { ...process.env, [APPLIED_UPDATE_ENV]: appliedVersion },
+    )
+  } catch {
+    // execve only returns on failure (a missing exec bit, ENOMEM). Staying on
+    // the old image is safe: install bookkeeping is already correct on disk.
+  }
+}
+
+/** Version handed over by a startup re-exec, consumed once. */
+export function takeAppliedUpdate(): string | null {
+  const applied = process.env[APPLIED_UPDATE_ENV]
+  if (!applied) return null
+  // Consume it so child processes and a later re-exec never re-announce.
+  delete process.env[APPLIED_UPDATE_ENV]
+  return applied
 }
 
 /**

@@ -3,9 +3,7 @@
  * evot CLI — TypeScript entry point.
  */
 
-import { startServer } from './native/index.js'
 import { createAgent, parseArgs } from './cli.js'
-import { runPrompt } from './prompt.js'
 
 async function main() {
   const rawArgs = process.argv.slice(2)
@@ -16,23 +14,40 @@ async function main() {
   // the whole point of staging was to keep it off the network. Interactive
   // commands only: `/update` manages its own lifecycle, and one-shot paths
   // (whoami, logout) must not pay for it.
+  //
+  // The swap only changes files. This process already mapped the old compiled
+  // bundle and its native binding, so it hands over to the new executable via
+  // execve instead of continuing — otherwise install bookkeeping says v(new)
+  // while the session runs v(old).
   if (opts.command === 'repl' || opts.command === 'login' || opts.command === 'prompt') {
     try {
-      const { applyStagedOnStartup, reportAppliedUpdate } = await import('./update/index.js')
+      const { applyStagedOnStartup, execIntoInstalledUpdate } = await import('./update/index.js')
       const { version } = await import('./native/index.js')
       const applied = await applyStagedOnStartup(version())
-      if (applied) reportAppliedUpdate(applied, opts.command)
+      if (applied) execIntoInstalledUpdate(applied)
     } catch { /* never block launch on update bookkeeping */ }
   }
 
+  // Present when a re-exec just handed this process the new version. Reported
+  // here, by the process that is genuinely running it.
+  try {
+    const { takeAppliedUpdate, reportAppliedUpdate } = await import('./update/index.js')
+    const applied = takeAppliedUpdate()
+    if (applied) reportAppliedUpdate(applied, opts.command)
+  } catch { /* never block launch on update bookkeeping */ }
+
   switch (opts.command) {
-    case 'serve':
+    case 'serve': {
+      const { startServer } = await import('./native/index.js')
       await startServer(opts.port, opts.model, opts.envFile)
       break
+    }
 
-    case 'prompt':
+    case 'prompt': {
+      const { runPrompt } = await import('./prompt.js')
       await runPrompt(opts)
       break
+    }
 
     case 'login': {
       const { runLogin } = await import('./commands/login.js')

@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { reportAppliedUpdate } from '../src/update/index.js'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { reportAppliedUpdate, takeAppliedUpdate } from '../src/update/index.js'
 
 /**
  * One-shot prompt runs are scripting surfaces: whatever lands on stdout gets
@@ -38,5 +38,41 @@ describe('applied-update notice routing', () => {
       expect(out).toEqual([line])
       expect(err).toEqual([])
     }
+  })
+})
+
+/**
+ * The handover marker is passed through the environment across an execve, so it
+ * has to be consumed exactly once: a lingering value would re-announce the
+ * update in every child process the session spawns.
+ */
+describe('applied-update handover marker', () => {
+  afterEach(() => {
+    delete process.env.EVOT_APPLIED_UPDATE
+  })
+
+  test('reports nothing when no handover happened', () => {
+    expect(takeAppliedUpdate()).toBeNull()
+  })
+
+  test('yields the version once, then clears it', () => {
+    process.env.EVOT_APPLIED_UPDATE = '2026.8.31'
+
+    expect(takeAppliedUpdate()).toBe('2026.8.31')
+    expect(takeAppliedUpdate()).toBeNull()
+    expect(process.env.EVOT_APPLIED_UPDATE).toBeUndefined()
+  })
+
+  test('a process that already took over never hands over again', async () => {
+    // The marker is still present while the re-exec'd process runs its startup
+    // apply block. Without this guard, a swap that somehow did not change the
+    // reported version would bounce the session between images forever.
+    const { execIntoInstalledUpdate } = await import('../src/update/index.js')
+    process.env.EVOT_APPLIED_UPDATE = '2026.8.31'
+
+    // Returning at all proves no handover happened: execve never returns.
+    expect(execIntoInstalledUpdate('2026.8.31')).toBeUndefined()
+    // The marker survives for the notice that runs immediately after.
+    expect(process.env.EVOT_APPLIED_UPDATE).toBe('2026.8.31')
   })
 })

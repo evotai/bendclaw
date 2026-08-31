@@ -13,6 +13,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import { UpdateManager, type UpdateStatus } from '../src/update/manager.js'
+import { bindingFilenameForTarget, currentTarget } from '../src/update/paths.js'
 import { clearStaged, readStaged } from '../src/update/stage.js'
 
 const originalFetch = globalThis.fetch
@@ -76,9 +77,23 @@ function startFixtureServer(archive: Buffer, opts: { omitSha?: boolean } = {}) {
 
 let requestCount = 0
 
+/** Install bookkeeping as install.sh writes it, for the shared-state cases. */
+function writeInstalledVersion(version: string): void {
+  require('fs').writeFileSync(join(home, 'install-state.json'), JSON.stringify({
+    version,
+    target: currentTarget(),
+    lib: [bindingFilenameForTarget(currentTarget() ?? '')],
+    installed_at: Date.now(),
+  }))
+}
+
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'evot-stage-test-'))
   process.env.EVOT_HOME = home
+  // The manager consults install bookkeeping, which resolves through the
+  // install root rather than EVOT_HOME. Without this the suite would read the
+  // developer's real ~/.evotai and see whatever version is installed there.
+  process.env.EVOT_INSTALL_DIR = join(home, 'bin')
   delete process.env.EVOT_AUTO_DOWNLOAD
   requestCount = 0
 })
@@ -86,6 +101,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = originalFetch
   delete process.env.EVOT_HOME
+  delete process.env.EVOT_INSTALL_DIR
   rmSync(home, { recursive: true, force: true })
 })
 
@@ -173,6 +189,125 @@ describe('staging', () => {
       expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.5.1' })
       expect(statuses.some(s => s.kind === 'downloading')).toBe(true)
       expect(readStaged()?.version).toBe('2026.5.1')
+      mgr.cleanup()
+    } finally {
+      void server.stop(true)
+    }
+  })
+
+  test('an open manager notices staging completed by another process', async () => {
+    const archive = await makeArchive('2026.5.1')
+    const server = startFixtureServer(archive)
+    try {
+      require('fs').writeFileSync(join(home, 'update-check.json'), JSON.stringify({
+        checked_at: Date.now(),
+        releases: [{ tag: 'v2026.4.13', version: '2026.4.13', prerelease: false }],
+      }))
+      const mgr = new UpdateManager('2026.4.13')
+      const statuses: UpdateStatus[] = []
+      mgr.on('update-status', (status: UpdateStatus) => statuses.push(status))
+
+      const { stageUpdate } = await import('../src/update/stage.js')
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal)
+      await mgr.check()
+
+      expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.5.1' })
+      expect(statuses).toContainEqual({ kind: 'staged', version: '2026.5.1' })
+      mgr.cleanup()
+    } finally {
+      void server.stop(true)
+    }
+  })
+
+  test('an install completed by another process needs no download, only a restart', async () => {
+    // The reported bug: one evot applied the update to disk, so staged.json is
+    // gone. A session still running the old image must not re-fetch 37 MB to
+    // rediscover a version the disk already has.
+    const archive = await makeArchive('2026.5.1')
+    const server = startFixtureServer(archive)
+    try {
+      require('fs').writeFileSync(join(home, 'update-check.json'), JSON.stringify({
+        checked_at: Date.now(),
+        releases: [{ tag: 'v2026.5.1', version: '2026.5.1', prerelease: false }],
+      }))
+      writeInstalledVersion('2026.5.1')
+      const before = requestCount
+
+      const mgr = new UpdateManager('2026.4.13')
+      await mgr.check()
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.5.1' })
+      expect(requestCount).toBe(before)
+      expect(readStaged()).toBeNull()
+      mgr.cleanup()
+    } finally {
+      void server.stop(true)
+    }
+  })
+
+  test('startup skips reinstalling a version another process already applied', async () => {
+    // Same disk state as the bug report: staging still holds v2026.5.1 while
+    // install-state.json already records it. Re-running install.sh would redo
+    // the whole swap; the caller only needs the version to hand over to.
+    const archive = await makeArchive('2026.5.1')
+    const server = startFixtureServer(archive)
+    try {
+      const { stageUpdate } = await import('../src/update/stage.js')
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal)
+      writeInstalledVersion('2026.5.1')
+
+      // No install.sh is served, so any install attempt would fail outright.
+      const { applyStagedOnStartup } = await import('../src/update/index.js')
+      const applied = await applyStagedOnStartup('2026.4.13')
+
+      expect(applied).toBe('2026.5.1')
+      // The download did its job and must not be applied a second time.
+      expect(readStaged()).toBeNull()
+    } finally {
+      void server.stop(true)
+    }
+  })
+
+  test('a source checkout is never replaced by the installed release binary', async () => {
+    // execve would discard the code under development. Guarded by
+    // runningInstallDir(), which is null unless the running executable is a
+    // compiled evot — as it is for `bun test`.
+    const { execIntoInstalledUpdate } = await import('../src/update/index.js')
+    writeInstalledVersion('2026.5.1')
+
+    // Returning at all proves no handover happened: execve never returns.
+    expect(execIntoInstalledUpdate('2026.5.1')).toBeUndefined()
+    expect(process.env.EVOT_APPLIED_UPDATE).toBeUndefined()
+  })
+
+  test('a source checkout never applies a staged release or offers a restart', async () => {
+    // A dev build reports its Cargo version (0.1.0) and did not come from the
+    // install it can see. Applying would overwrite the user's real release with
+    // whatever a local build staged, and advertising a restart would promise
+    // something this process will never do.
+    const archive = await makeArchive('2026.5.1')
+    const server = startFixtureServer(archive)
+    try {
+      const { stageUpdate } = await import('../src/update/stage.js')
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal)
+      // Drop the managed-install marker: this is now indistinguishable from
+      // `bun run src/index.ts` against a real ~/.evotai.
+      delete process.env.EVOT_INSTALL_DIR
+      // A dev build must not even reach the network on a background check.
+      const before = requestCount
+
+      const { applyStagedOnStartup } = await import('../src/update/index.js')
+      expect(await applyStagedOnStartup('0.1.0')).toBeNull()
+      // The download belongs to the installed evot, so it must survive intact.
+      expect(readStaged()?.version).toBe('2026.5.1')
+
+      const mgr = new UpdateManager('0.1.0')
+      expect(mgr.getStatus()).toEqual({ kind: 'idle' })
+      await mgr.check()
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(mgr.getStatus()).toEqual({ kind: 'idle' })
+      expect(requestCount).toBe(before)
       mgr.cleanup()
     } finally {
       void server.stop(true)

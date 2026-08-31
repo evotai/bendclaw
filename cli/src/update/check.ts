@@ -14,10 +14,10 @@ import { stateDir } from './paths.js'
 
 const LATEST_URL = 'https://auto.evot.ai/install/latest'
 /**
- * A one-hour TTL keeps a long-running session to roughly one request per hour
- * while still noticing a release the same day it ships.
+ * A ten-minute TTL keeps checks responsive while coalescing requests from
+ * multiple sessions through the shared on-disk cache.
  */
-const CACHE_TTL = 60 * 60 * 1000
+const CACHE_TTL = 10 * 60 * 1000
 const REQUEST_TIMEOUT = 10_000
 
 function cachePath(): string {

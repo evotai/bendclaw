@@ -476,6 +476,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const { checkInstallHealth } = await import('../update/state.js')
     const health = checkInstallHealth(appVersion)
     if (health.kind === 'drift') installDrift = health.reason
+    // A newer version is already installed on disk while this session keeps the
+    // image it started with. That is the staged-update state as far as the user
+    // is concerned — reuse the restart notice instead of warning about a
+    // mismatch and sending them to /update, which would reinstall for nothing.
+    if (health.kind === 'restart_required') {
+      updateStatus = 'staged'
+      updateVersion = health.installedVersion
+    }
   } catch { /* best effort */ }
 
   const historyMgr = new HistoryManager(agent.cwd)

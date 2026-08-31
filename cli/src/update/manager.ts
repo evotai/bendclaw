@@ -17,9 +17,11 @@ import type { ReleaseInfo } from './types.js'
 import { checkForUpdate } from './check.js'
 import { compareVersions } from './version.js'
 import { readStaged, stageUpdate, pruneStaleStaging } from './stage.js'
+import { installedVersionForThisProcess, isManagedInstall } from './state.js'
 
-const INITIAL_DELAY = 10_000          // 10s after start
-const PERIODIC_CHECK = 30 * 60_000    // 30 min interval
+const INITIAL_DELAY = 3_000           // 3s after start
+const PERIODIC_CHECK = 5 * 60_000     // poll cache every 5 min; network TTL is 10 min
+const STAGED_STATUS_POLL = 60_000      // notice downloads completed by another evot process
 const BACKOFF_RETRY = 60 * 60_000     // probe once an hour after backing off
 /**
  * Consecutive failures before the scheduler pauses routine checks. GitHub
@@ -40,6 +42,7 @@ export class UpdateManager extends EventEmitter {
   private now: () => number
   private initialTimer: ReturnType<typeof setTimeout> | null = null
   private periodicTimer: ReturnType<typeof setInterval> | null = null
+  private stagedStatusTimer: ReturnType<typeof setInterval> | null = null
   private lastNotifiedVersion: string | null = null
   private consecutiveFailures = 0
   private retryAfter = 0
@@ -54,7 +57,9 @@ export class UpdateManager extends EventEmitter {
     this.now = now
     // A previous session may have left a verified download behind. Surface it
     // immediately instead of waiting for the first check to re-discover it.
-    const staged = readStaged()
+    // Only for a managed install: a source checkout will never apply it, so
+    // offering a restart there would be a notice that can never resolve.
+    const staged = isManagedInstall() ? readStaged() : null
     if (staged) {
       this.status = { kind: 'staged', version: staged.version }
       pruneStaleStaging()
@@ -70,6 +75,12 @@ export class UpdateManager extends EventEmitter {
     this.periodicTimer = setInterval(() => {
       void this.check()
     }, PERIODIC_CHECK)
+
+    // Staging is shared by every evot process. Polling this small local manifest
+    // lets an already-open session notice a download completed by another one.
+    this.stagedStatusTimer = setInterval(() => {
+      this.syncStagedStatus()
+    }, STAGED_STATUS_POLL)
   }
 
   /** Current background-download status, for persistent UI surfaces. */
@@ -82,7 +93,9 @@ export class UpdateManager extends EventEmitter {
    * timer costs a file read rather than a network round trip most of the time.
    */
   async check(opts?: { force?: boolean }): Promise<void> {
-    if (this.stopped || this.inFlight) return
+    if (this.stopped) return
+    this.syncStagedStatus()
+    if (this.inFlight) return
 
     const force = opts?.force ?? false
     const reachedFailureLimit = this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
@@ -132,8 +145,20 @@ export class UpdateManager extends EventEmitter {
   private maybeStage(release: ReleaseInfo): void {
     if (process.env.EVOT_AUTO_DOWNLOAD === '0') return
     if (this.stopped || this.stagingAbort) return
+    // A source checkout cannot apply what it downloads, so fetching 37 MB into
+    // the user's shared staging directory would be pure waste. `/update` stays
+    // available there because it is user-initiated.
+    if (!isManagedInstall()) return
     // CalVer compare: string order sorts 2026.9.30 after 2026.10.1.
     if (this.status.kind === 'staged' && compareVersions(this.status.version, release.version) >= 0) return
+    // Another evot already installed this release. Downloading it again would
+    // re-fetch 37 MB to reach a state the disk is already in; this session only
+    // needs a restart to pick it up.
+    const installed = installedVersionForThisProcess()
+    if (installed && compareVersions(installed, release.version) >= 0) {
+      this.setStatus({ kind: 'staged', version: installed })
+      return
+    }
 
     this.setStatus({ kind: 'downloading', version: release.version })
     const controller = new AbortController()
@@ -146,14 +171,51 @@ export class UpdateManager extends EventEmitter {
       .catch(() => {
         // Silent by contract: the manual `/update` path reports failures with
         // full context, and a transient outage self-heals on the next check.
-        if (!controller.signal.aborted) this.setStatus({ kind: 'idle' })
+        // Fall back to shared state rather than plain idle: a newer version may
+        // already be installed on disk, and dropping that notice would hide a
+        // restart the user still needs.
+        if (!controller.signal.aborted) {
+          this.setStatus({ kind: 'idle' })
+          this.syncStagedStatus()
+        }
       })
       .finally(() => {
         if (this.stagingAbort === controller) this.stagingAbort = null
       })
   }
 
+  /**
+   * Refresh state produced by another evot process.
+   *
+   * Two shared sources, in order of finality: a completed install on disk, and
+   * a verified download waiting in staging. Either means this session is behind
+   * and a restart is what resolves it.
+   */
+  private syncStagedStatus(): void {
+    // A source checkout never applies an update, so it must not advertise a
+    // restart it cannot honour.
+    if (!isManagedInstall()) return
+    const installed = installedVersionForThisProcess()
+    if (installed && compareVersions(this.currentVersion, installed) < 0) {
+      this.adoptSharedVersion(installed)
+      return
+    }
+    const staged = readStaged()
+    if (!staged || compareVersions(this.currentVersion, staged.version) >= 0) return
+    this.adoptSharedVersion(staged.version)
+  }
+
+  /** Surface a shared newer version without downgrading a further-ahead state. */
+  private adoptSharedVersion(version: string): void {
+    const activeVersion = this.status.kind === 'idle' ? null : this.status.version
+    if (activeVersion && compareVersions(activeVersion, version) >= 0) return
+    this.setStatus({ kind: 'staged', version })
+  }
+
   private setStatus(status: UpdateStatus): void {
+    const currentVersion = this.status.kind === 'idle' ? null : this.status.version
+    const nextVersion = status.kind === 'idle' ? null : status.version
+    if (this.status.kind === status.kind && currentVersion === nextVersion) return
     this.status = status
     this.emit('update-status', status)
   }
@@ -185,6 +247,10 @@ export class UpdateManager extends EventEmitter {
     if (this.periodicTimer) {
       clearInterval(this.periodicTimer)
       this.periodicTimer = null
+    }
+    if (this.stagedStatusTimer) {
+      clearInterval(this.stagedStatusTimer)
+      this.stagedStatusTimer = null
     }
     this.stagingAbort?.abort()
     this.stagingAbort = null

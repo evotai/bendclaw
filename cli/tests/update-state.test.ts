@@ -167,16 +167,52 @@ describe('checkInstallHealth', () => {
     expect(checkInstallHealth('2026.4.20', env)).toEqual({ kind: 'unknown' })
   })
 
-  test('detects a binary that does not match the recorded install', () => {
+  test('a newer install than the running image asks for a restart, not a repair', () => {
+    // Exactly the multi-process case: one evot applied v2026.4.20 to disk while
+    // this session keeps running the image it started with. Nothing is broken,
+    // so telling the user to reinstall would be wrong.
+    writeFileSync(join(root, 'lib', localBinding()), 'x')
     writeInstallerState()
 
     const health = checkInstallHealth('2026.4.13', env)
 
+    expect(health).toEqual({ kind: 'restart_required', installedVersion: '2026.4.20' })
+  })
+
+  test('detects a binary newer than the recorded install', () => {
+    // The other direction is real drift: bookkeeping describes an install the
+    // running binary is ahead of, so the record and the files disagree. The
+    // binding is present so the version mismatch is what surfaces.
+    writeFileSync(join(root, 'lib', localBinding()), 'x')
+    writeInstallerState({ version: '2026.4.13' })
+
+    const health = checkInstallHealth('2026.4.20', env)
+
     expect(health.kind).toBe('drift')
     if (health.kind === 'drift') {
-      expect(health.reason).toContain('recorded v2026.4.20')
-      expect(health.reason).toContain('running v2026.4.13')
+      expect(health.reason).toContain('recorded v2026.4.13')
+      expect(health.reason).toContain('running v2026.4.20')
     }
+  })
+
+  test('a newer record with a broken binding needs a reinstall, not a restart', () => {
+    // Integrity outranks version: restarting would reload the same broken pair,
+    // so this must stay drift even though the record names a newer release.
+    writeInstallerState({ version: '2026.9.9' })
+
+    const health = checkInstallHealth('2026.4.20', env)
+
+    expect(health.kind).toBe('drift')
+    if (health.kind === 'drift') expect(health.reason).toContain(`lib/${localBinding()}`)
+  })
+
+  test('a source checkout is never compared against an installed release', () => {
+    // `bun run src/index.ts` reports 0.1.0 while the record describes a real
+    // install. That is not this process, so there is nothing to restart into.
+    writeFileSync(join(root, 'lib', localBinding()), 'x')
+    writeInstallerState()
+
+    expect(checkInstallHealth('0.1.0', { EVOT_HOME: root })).toEqual({ kind: 'unknown' })
   })
 
   test('detects a record from a different platform target', () => {

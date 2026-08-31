@@ -267,6 +267,34 @@ fn grok_provider_uses_cli_model_metadata_without_env_overrides() {
 }
 
 #[test]
+fn cloud_openai_grok_exposes_selectable_thinking_levels() {
+    use evot_engine::ThinkingLevel::*;
+
+    // Server-named OpenAI groups (`evot-pro-openai`) do not inherit the
+    // first-party `openai` / `grok` transport profiles. Reasoning models on
+    // those routes still honor `reasoning_effort` once the cloud loader
+    // stamps CompatCaps::REASONING_EFFORT onto the profile.
+    let mc = build_model_config(
+        Protocol::OpenAi,
+        "evot-pro-openai",
+        "grok-4.6",
+        Some("https://auto.evot.ai/v1/llm"),
+        CompatCaps::REASONING_EFFORT,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(mc.protocol(), ApiProtocol::OpenAiCompletions);
+    assert!(mc.reasoning());
+    assert!(mc.honors_reasoning_effort());
+    assert_eq!(mc.supported_thinking_levels(), vec![
+        Low, Medium, High, Xhigh
+    ]);
+    assert_eq!(mc.default_thinking_level(), High);
+    assert!(!mc.can_disable_thinking());
+}
+
+#[test]
 fn same_named_openai_proxy_keeps_catalog_and_openai_transport_metadata() {
     // Model metadata is keyed by model id and provider identity selects the
     // OpenAI wire profile. Endpoint-native capabilities remain route-gated.

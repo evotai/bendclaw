@@ -825,3 +825,25 @@ fn test_tool_call_assistant_omits_empty_reasoning_content_without_cap() {
     assert!(asst.get("reasoning_content").is_none());
     assert!(asst["tool_calls"].is_array());
 }
+
+#[test]
+fn cloud_openai_grok_sends_reasoning_effort() {
+    let mut compat = OpenAiCompat::default();
+    compat.caps |= evotengine::provider::CompatCaps::REASONING_EFFORT;
+    let model = resolved_model_config(
+        ApiProtocol::OpenAiCompletions,
+        "evot-pro-openai",
+        "grok-4.6",
+        "https://auto.evot.ai/v1/llm",
+        Some(compat.clone()),
+        Default::default(),
+        Default::default(),
+    );
+    let config = StreamConfigBuilder::openai()
+        .model("grok-4.6")
+        .model_config(model)
+        .thinking(ThinkingLevel::Xhigh)
+        .build();
+    let body = build_request_body(&config, &compat);
+    assert_eq!(body["reasoning_effort"], "xhigh");
+}

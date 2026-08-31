@@ -14,6 +14,7 @@ use crate::conf::paths;
 use crate::conf::thinking_level_from_str;
 use crate::conf::ChannelsConfig;
 use crate::conf::Config;
+use crate::conf::Protocol;
 use crate::conf::ProviderProfile;
 use crate::conf::StorageBackend;
 use crate::error::EvotError;
@@ -924,6 +925,17 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
         let protocol = parse_protocol(&group.protocol).map_err(|_| {
             EvotError::Conf(format!("unsupported cloud protocol: {}", group.protocol))
         })?;
+        // Cloud OpenAI groups (`evot-pro-openai`, …) are named by the server,
+        // so they never match the first-party `openai` / `grok` transport
+        // profiles. The catalog still lists reasoning models on those routes
+        // and the proxy forwards `reasoning_effort`; without this cap the
+        // footer and Shift+Tab both treat the model as having no selectable
+        // effort.
+        let compat_caps = if protocol == Protocol::OpenAi {
+            CompatCaps::REASONING_EFFORT
+        } else {
+            CompatCaps::default()
+        };
 
         // A catalog routing name is not ownership. If the user already has a
         // custom provider with that name, keep it; only replace a profile that
@@ -942,7 +954,7 @@ fn apply_cloud_provider(config: &mut Config) -> Result<()> {
             api_key: group.api_key,
             base_url: group.base_url,
             models: group.models,
-            compat_caps: CompatCaps::default(),
+            compat_caps,
             route_capabilities: RouteCapabilityOverrides::default(),
             thinking_level: None,
             context_window: None,

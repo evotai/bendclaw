@@ -266,6 +266,11 @@ fn each_cloud_protocol_becomes_its_own_provider() {
         "zzz-pro".to_string(),
         "claude-pro".to_string()
     ]);
+    assert_eq!(pro.compat_caps, evot_engine::provider::CompatCaps::NONE);
+    assert_eq!(
+        compat.compat_caps,
+        evot_engine::provider::CompatCaps::REASONING_EFFORT
+    );
 
     // Premium (`special`) wins the landing spot when the account has it, and
     // inside it the top-ranked model serves — not the server's default_model.

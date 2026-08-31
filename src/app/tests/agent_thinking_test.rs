@@ -284,6 +284,42 @@ fn cloud_catalog_thinking_level_wins_on_model_switch() -> TestResult {
 }
 
 #[test]
+fn cloud_openai_grok_cycles_thinking_levels() -> TestResult {
+    let dir = TempDir::new()?;
+    let mut config = Config::new(dir.path().to_path_buf());
+    config
+        .providers
+        .insert("evot-pro-openai".into(), ProviderProfile {
+            protocol: Protocol::OpenAi,
+            api_key: "evot.scoped.key".into(),
+            base_url: "https://auto.evot.ai/v1/llm".into(),
+            models: vec!["grok-4.6".into()],
+            compat_caps: CompatCaps::REASONING_EFFORT,
+            route_capabilities: Default::default(),
+            thinking_level: None,
+            context_window: None,
+            max_tokens: None,
+            supports_image: None,
+        });
+    config.cloud_providers.insert("evot-pro-openai".into());
+    config
+        .cloud_thinking_levels
+        .insert("grok-4.6".into(), ThinkingLevel::Max);
+    config.llm.provider = "evot-pro-openai".into();
+
+    let agent = Agent::new(&config, "/work")?;
+    assert_eq!(agent.llm().thinking_level, ThinkingLevel::Xhigh);
+    assert_eq!(agent.supported_thinking_levels(), vec![
+        ThinkingLevel::Low,
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+        ThinkingLevel::Xhigh,
+    ]);
+    assert_eq!(agent.cycle_thinking_level(), Some(ThinkingLevel::Low));
+    Ok(())
+}
+
+#[test]
 fn resume_reload_reapplies_current_configured_thinking_level() -> TestResult {
     let dir = TempDir::new()?;
     let mut initial = anthropic_config(&dir);

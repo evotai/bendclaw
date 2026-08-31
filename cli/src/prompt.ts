@@ -3,6 +3,8 @@ import type { CliOptions } from './cli.js'
 import { createAgent } from './cli.js'
 import { loadFileBlocks } from './file-loader.js'
 import { findPreviousSession } from './term/app/session-view.js'
+import { SessionHook } from './session/hook.js'
+import { errorText } from './render/format.js'
 
 export async function runPrompt(opts: CliOptions) {
   if (!opts.prompt) {
@@ -26,18 +28,41 @@ export async function runPrompt(opts: CliOptions) {
 
   const resumeSessionId = await resolveResumeSessionId(agent, opts)
 
-  const stream = await agent.query(
-    contentJson ? '' : opts.prompt,
-    resumeSessionId,
-    undefined,
-    contentJson,
-  )
-  for await (const event of stream) {
-    if (opts.outputFormat === 'stream-json') {
-      console.log(JSON.stringify(event))
-    } else {
-      printEventText(event)
+  const sessionHook = new SessionHook({ cwd: agent.cwd })
+  sessionHook.startProcess(agent.cwd)
+  let closeReason = 'completed'
+  try {
+    const stream = await agent.query(
+      contentJson ? '' : opts.prompt,
+      resumeSessionId,
+      undefined,
+      contentJson,
+    )
+    sessionHook.startSession(stream.sessionId, agent.cwd)
+
+    for await (const event of stream) {
+      if (event.kind === 'run_started') {
+        sessionHook.runStarted(event.run_id)
+      } else if (event.kind === 'run_finished') {
+        sessionHook.runFinished(event.run_id)
+      } else if (event.kind === 'error') {
+        closeReason = 'failed'
+        sessionHook.runFailed(event.run_id, String(event.payload?.message ?? ''))
+      }
+
+      if (opts.outputFormat === 'stream-json') {
+        console.log(JSON.stringify(event))
+      } else {
+        printEventText(event)
+      }
     }
+  } catch (err) {
+    closeReason = 'failed'
+    // No-op when an `error` event already settled the run.
+    sessionHook.runFailed(undefined, errorText(err))
+    throw err
+  } finally {
+    await sessionHook.close(closeReason)
   }
   process.exit(0)
 }

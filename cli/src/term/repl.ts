@@ -22,6 +22,7 @@ import type { UIAssistantBlock } from './app/types.js'
 import { assistantMessageToOutputLines } from '../render/assistant.js'
 import { HistoryManager } from '../session/history.js'
 import { ScreenLog } from '../session/screen-log.js'
+import { SessionHook } from '../session/hook.js'
 import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
@@ -175,6 +176,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const { version } = await import('../native/index.js')
   const appVersion = version()
   const rendererTrace = new RendererTrace()
+  const sessionHook = new SessionHook({ cwd: agent.cwd })
+  sessionHook.startProcess(agent.cwd)
   const renderer = new TermRenderer({
     trace: rendererTrace.isEnabled ? entry => rendererTrace.log(entry) : undefined,
   })
@@ -270,15 +273,22 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   }
 
-  function presentAskQuestions(questions: AskQuestion[]): Promise<AskUserAnswer[] | null> {
+  function presentAskQuestions(
+    questions: AskQuestion[],
+    resumeState: 'working' | 'idle' = 'working',
+  ): Promise<AskUserAnswer[] | null> {
     // Only one ask overlay can be active at a time; resolve any prior one as
     // cancelled before opening the next.
     resolvePendingAsk()
+    sessionHook.state('blocked')
     overlay = { kind: 'ask-user', state: createAskState(questions) }
     freezeTerminalTitle('?')
     renderer.requestRender()
     return new Promise(resolve => {
-      pendingAsk = resolve
+      pendingAsk = answers => {
+        sessionHook.state(resumeState)
+        resolve(answers)
+      }
     })
   }
 
@@ -325,7 +335,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           { label: 'Refine the plan', description: 'Return to the prompt to enter refinement feedback.' },
         ],
       },
-    ])
+    ], 'idle')
     if (!answers || answers.length === 0) return
 
     const choice = answers[0]!.answer
@@ -585,6 +595,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     } else {
       commitSystem('sys-continue-err', chalk.red('No conversation found to continue'))
       cleanup()
+      await sessionHook.close()
       fastExit(1)
     }
   } else if (opts.resumeSessionId) {
@@ -1083,6 +1094,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // recovery hint.
       const modelRestoreNote = reloadResumeModel(agent, model, provider, thinkingLevel)
       sessionId = session.session_id
+      sessionHook.startSession(session.session_id, agent.cwd)
+      sessionHook.state('idle')
       rendererTrace.bind(session.session_id)
       refreshConfigInfo()
       appState = { ...appState, sessionId: session.session_id, model: agent.model }
@@ -1371,6 +1384,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       streamRef = stream
       sessionId = stream.sessionId ?? sessionId
+      if (sessionId) sessionHook.startSession(sessionId, agent.cwd)
       appState = { ...appState, sessionId: sessionId }
       screenLog.bind(stream.sessionId)
       rendererTrace.bind(stream.sessionId)
@@ -1378,6 +1392,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       for await (const event of stream) {
         if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
+
+        if (event.kind === 'run_started') {
+          sessionHook.startSession(event.session_id, agent.cwd)
+          sessionHook.runStarted(event.run_id)
+        } else if (event.kind === 'run_finished') {
+          sessionHook.runFinished(event.run_id)
+        } else if (event.kind === 'error') {
+          sessionHook.runFailed(event.run_id, String(event.payload?.message ?? ''))
+        }
 
         if (event.kind === 'host_tool_call') {
           // The engine delegated a host-owned tool (ask_user). Dispatch it and
@@ -1477,11 +1500,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         streamMachine = final.state
         commitFlushResult(final)
       }
-      commitSystem('sys-err', errorText(err), 'error')
+      const message = errorText(err)
+      commitSystem('sys-err', message, 'error')
+      sessionHook.runFailed(undefined, message)
       reconcileQueuedUserMessages()
       restoreQueuedUserMessagesToEditor()
     } finally {
       if (ownsRun(generation)) {
+        // Safety net for a run that ended without run_finished/error (e.g. the
+        // stream just stopped). No-op when the run already settled above.
+        sessionHook.settleRun()
         unfreezeTerminalTitle()
         streamRef = null
         isLoading = false
@@ -1565,7 +1593,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           process.stdout.write(`\n\x1b[90m${'─'.repeat(80)}\x1b[0m\n`)
           process.stdout.write(`\x1b[90mResume: evot --resume ${sessionId}\x1b[0m\n\n`)
         }
-        fastExit(0)
+        exitAfterCleanup(0)
+        return true
       case 'show-exit-hint':
         exitHint = true
         renderer.requestRender()
@@ -1669,6 +1698,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // history under the Interrupted notice.
     restoreQueuedUserMessagesToEditor()
     commitLines([{ id, kind: 'system', text }])
+    // Ownership was revoked above, so the aborted run's own finally block will
+    // not settle the hook. Settle here or an external adapter would stay stuck
+    // on working/blocked after every interrupt.
+    sessionHook.settleRun()
   }
 
   function queueEntryText(entry: QueuedPrompt): string {
@@ -2004,8 +2037,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           return
         case 'd':
           if (isEditorEmpty(editor)) {
-            cleanup()
-            fastExit(0)
+            exitAfterCleanup(0)
+            return
           }
           deleteAtCursor()
           return
@@ -2290,6 +2323,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         streamMachine = null
         stopSpinner()
       }
+      sessionHook.endSession('context_cleared')
       sessionId = null
       planModeItems = []
       lastReviewedPlanMarkdown = ''
@@ -2318,6 +2352,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // Start and bind a fresh empty session so /resume can see it immediately.
       const newSession = await agent.createSession()
       sessionId = newSession.session_id
+      sessionHook.startSession(newSession.session_id, agent.cwd)
+      sessionHook.state('idle')
       rendererTrace.bind(newSession.session_id)
       appState = { ...createInitialState(newSession.model || appState.model, agent.cwd), sessionId }
       gitInfo.setCwd(agent.cwd)
@@ -2328,7 +2364,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       try { preloadedSessions = await agent.listSessions(20) } catch { preloadedSessions = [newSession] }
       commitSystem('sys-new-session', chalk.dim(`  new session ${sessionId.slice(0, 8)}`))
     }
-    if (result.exit) { cleanup(); fastExit(0) }
+    if (result.exit) { exitAfterCleanup(0); return }
     if (result.resumeSession) await resumeSession(result.resumeSession)
     if (result.systemLines.length > 0) commitSystemLines(result.systemLines)
 
@@ -3119,8 +3155,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     rendererTrace.close()
   }
 
-  process.on('SIGINT', () => { cleanup(); fastExit(130) })
-  process.on('SIGTERM', () => { cleanup(); fastExit(143) })
+  // Declared as a function so the earlier exit paths (Ctrl-D, /exit, the exit
+  // control action) can call it without hitting a `const` TDZ error: they run
+  // from callbacks defined above this point in `startRepl`.
+  function exitAfterCleanup(code: number): void {
+    cleanup()
+    void sessionHook.close().then(() => fastExit(code))
+  }
+
+  process.on('SIGINT', () => { exitAfterCleanup(130) })
+  process.on('SIGTERM', () => { exitAfterCleanup(143) })
 
   await new Promise<void>(() => {})
 }

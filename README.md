@@ -57,6 +57,18 @@ evot -c        # continue the latest session in this directory
 
 > In the TUI: `/help` lists all commands.
 
+## External session hooks
+
+Evot can emit generic session lifecycle events to an external executable without embedding integration-specific code:
+
+```bash
+EVOT_SESSION_HOOK=/path/to/session-adapter evot
+```
+
+The adapter receives one versioned NDJSON object per line on stdin. Events include `session_started`, `run_started`, `run_finished`, `run_failed`, `state_changed`, and `session_ended`; `state_changed.state` is `working`, `blocked`, or `idle`. Session identity is available as `session_id`, and run identity as `run_id`.
+
+The hook is best-effort: a missing or failing adapter never changes evot's main execution path. The same protocol is used by the interactive TUI and one-shot `evot -p` mode, so adapters can remain independent of the UI.
+
 <details>
 <summary>Custom configuration (bring your own models via <code>~/.evotai/evot.env</code>)</summary>
 

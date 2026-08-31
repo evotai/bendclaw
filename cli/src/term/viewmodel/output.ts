@@ -12,10 +12,10 @@ export interface OutputContext {
   columns?: number
 }
 
-// A committed user message is marked by a brand-hued left bar rather than a
-// prompt glyph: it spans every wrapped row, so a multi-line message reads as
-// one block instead of a first line plus loose continuations.
-const USER_BAR = '\u2503'
+// A committed user message is marked by a solid left bar rather than a prompt
+// glyph: it spans every rendered row, so a wrapped or multi-line message reads
+// as one block instead of a first line plus loose continuations.
+const USER_BAR = '\u258c'
 
 /**
  * Wall-clock header shown above a user message, e.g. `[06:11 PM]`.
@@ -76,19 +76,29 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         // 2-column prefix every other kind uses so wrapped text stays aligned.
         const availWidth = cols ? Math.max(1, cols - 2) : 0
         const barHex = getTheme().brandHex
-        const bar = (): StyledSpan => ({ text: USER_BAR, hex: barHex, bold: true })
+        const bar = (): StyledSpan => ({ text: USER_BAR, hex: barHex })
         const userLines: StyledLine[] = []
         if (ol.timestamp !== undefined) {
           userLines.push(line(bar(), plain(' '), dim(formatClock(ol.timestamp))))
         }
-        if (availWidth > 0 && ol.text.length > 0) {
-          const chunks = wrapTextByWidth(ol.text, availWidth)
-          for (const c of chunks) {
-            userLines.push(line(bar(), plain(' '), bold(ol.text.slice(c.start, c.end))))
+        // Shift+Enter and pasted input carry hard newlines. Each logical line is
+        // wrapped on its own so every rendered row keeps the bar: letting a raw
+        // newline reach the renderer splits the row *after* the prefix, which is
+        // what dropped the bar on continuation lines.
+        for (const segment of ol.text.split('\n')) {
+          if (!segment) {
+            userLines.push(line(bar()))
+            continue
           }
-        } else {
-          userLines.push(line(bar(), plain(' '), bold(ol.text)))
+          if (availWidth > 0) {
+            for (const c of wrapTextByWidth(segment, availWidth)) {
+              userLines.push(line(bar(), plain(' '), bold(segment.slice(c.start, c.end))))
+            }
+          } else {
+            userLines.push(line(bar(), plain(' '), bold(segment)))
+          }
         }
+        if (userLines.length === 0) userLines.push(line(bar()))
         blocks.push(block(userLines, 1))
         break
       }
@@ -96,15 +106,19 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
       case 'assistant': {
         // Empty-text assistant lines are block-spacing separators inserted by
         // the stream machine. Continuation spacers keep the next rendered
-        // assistant line in the same message, so headings in later streamed
-        // chunks don't get another leading dot.
+        // assistant line in the same message, so a later streamed chunk does
+        // not start a fresh block (and a fresh top margin).
         if (!ol.text) {
           blocks.push(block([line(plain(''))]))
           nextPrevKind = ol.isContinuationSpacer ? 'assistant' : prevKind
           break   // intentionally skip normal prevKind update
         }
         const isBlockStart = prevKind !== 'assistant'
-        const dot = isBlockStart ? colored('⏺ ', 'cyan') : plain('  ')
+        // No leading glyph: the dot doubled up with the user bar as a second
+        // "who is speaking" marker and reappeared at every streamed chunk
+        // boundary. A plain 2-column indent keeps assistant text aligned with
+        // the rest of the transcript.
+        const prefix = plain('  ')
         // Wrap at render-time width (prefix is 2 cols) so committed assistant
         // text reflows on resize instead of being truncated by the renderer.
         const cols = initialContext.columns
@@ -117,12 +131,10 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         const isBoxArt = BOX_DRAWING_RE.test(stripAnsi(ol.text))
         if (avail > 0 && !isBoxArt && stringWidth(ol.text) > avail) {
           const wrapped = wrapTextWithAnsi(ol.text, avail)
-          const asstLines = wrapped.map((w, k) =>
-            k === 0 ? line(dot, plain(w)) : line(plain('  '), plain(w)),
-          )
+          const asstLines = wrapped.map(w => line(prefix, plain(w)))
           blocks.push(block(asstLines, isBlockStart ? 1 : 0))
         } else {
-          blocks.push(block([line(dot, plain(ol.text))], isBlockStart ? 1 : 0))
+          blocks.push(block([line(prefix, plain(ol.text))], isBlockStart ? 1 : 0))
         }
         break
       }

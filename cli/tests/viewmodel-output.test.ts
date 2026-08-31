@@ -32,10 +32,12 @@ function renderPlainWithColumns(lines: OutputLine[], columns: number): string {
 }
 
 describe('buildOutputBlocks', () => {
-  test('user message has marginTop=1 and a brand left bar', () => {
+  test('user message has marginTop=1 and a brand left rail', () => {
     const result = renderPlain([{ id: 'u1', kind: 'user', text: 'hello' }])
-    expect(result).toContain('▌ hello')
+    expect(result).toContain('▍ hello')
     expect(result.startsWith('\n')).toBe(true)
+    // Painted in the brand hue, matching the frame rather than the text.
+    expect(render([{ id: 'u1', kind: 'user', text: 'hello' }])).toContain('\x1b[38;2;181;188;249m')
   })
 
   test('a timestamped user message shows the clock above the text', () => {
@@ -43,18 +45,26 @@ describe('buildOutputBlocks', () => {
     const lines = renderPlain([{ id: 'u1', kind: 'user', text: 'hello', timestamp: at }])
       .split('\n')
       .filter(l => l.trim() !== '')
-    expect(lines[0]).toBe('▌ [06:11 PM]')
-    expect(lines[1]).toBe('▌ hello')
+    expect(lines[0]).toBe('▍ [06:11 PM]')
+    expect(lines[1]).toBe('▍ hello')
   })
 
-  test('every wrapped row of a user message carries the bar', () => {
+  test('every rendered row of a user message carries the rail', () => {
     const at = new Date(2026, 7, 31, 6, 5).getTime()
-    const lines = renderPlainWithColumns(
+    const rows = renderPlainWithColumns(
       [{ id: 'u1', kind: 'user', text: 'a'.repeat(40), timestamp: at }],
       20,
     ).split('\n').filter(l => l.trim() !== '')
-    expect(lines[0]).toBe('▌ [06:05 AM]')
-    for (const l of lines.slice(1)) expect(l.startsWith('▌ ')).toBe(true)
+    expect(rows[0]).toBe('▍ [06:05 AM]')
+    for (const row of rows) expect(row.startsWith('▍')).toBe(true)
+  })
+
+  test('hard newlines keep the rail instead of splitting the row after the prefix', () => {
+    const rows = renderPlainWithColumns(
+      [{ id: 'u1', kind: 'user', text: 'first\nsecond\nthird' }],
+      40,
+    ).split('\n').filter(l => l.trim() !== '')
+    expect(rows).toEqual(['▍ first', '▍ second', '▍ third'])
   })
 
   test('assistant block starts with marginTop=1', () => {
@@ -131,7 +141,7 @@ describe('buildOutputBlocks', () => {
     ])
     const plain = stripAnsi(blocksToLines(buildOutputBlocks(output)).join('\n'))
 
-    expect(plain).toContain('✻ Investigating config\n\n  Visible answer')
+    expect(plain).toContain('✻ Investigating config\n\n⏺ Visible answer')
   })
 
   test('ordered renderer preserves thinking tool text positions', () => {
@@ -147,7 +157,7 @@ describe('buildOutputBlocks', () => {
     const plain = stripAnsi(blocksToLines(buildOutputBlocks(output)).join('\n'))
 
     expect(plain.indexOf('✻ plan')).toBeLessThan(plain.indexOf('read'))
-    expect(plain.indexOf('read')).toBeLessThan(plain.indexOf('  answer'))
+    expect(plain.indexOf('read')).toBeLessThan(plain.indexOf('⏺ answer'))
   })
 
   test('tool card has marginTop=1', () => {
@@ -270,7 +280,8 @@ describe('buildOutputBlocks', () => {
       { id: 'a2', kind: 'assistant', text: 'Long paragraph' },
     ])
 
-    expect(result).toContain('  Intro\n\n  Long paragraph')
+    expect(result).toContain('⏺ Intro\n\n  Long paragraph')
+    expect(result).not.toContain('⏺ Long paragraph')
   })
 
   test('long assistant line reflows on resize instead of truncating', () => {
@@ -313,7 +324,7 @@ describe('buildOutputBlocks', () => {
     // Every rendered box row still begins with a corner/edge glyph.
     const rendered = result.split('\n').filter(l => /[┌│├└]/.test(l))
     expect(rendered.length).toBe(boxRows.length)
-    for (const l of rendered) expect(/^ {2}[┌│├└]/.test(l)).toBe(true)
+    for (const l of rendered) expect(/^(⏺ |  )[┌│├└]/.test(l)).toBe(true)
   })
 
   test('long system and verbose lines wrap within terminal width', () => {
@@ -356,9 +367,9 @@ describe('buildOutputBlocks', () => {
     const lines = result.split('\n').filter(l => l.trim() !== '')
     // Should wrap into 3 lines: 18 + 18 + 4
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('▌ ' + 'a'.repeat(18))
-    expect(lines[1]).toContain('▌ ' + 'a'.repeat(18))
-    expect(lines[2]).toContain('▌ ' + 'a'.repeat(4))
+    expect(lines[0]).toContain('▍ ' + 'a'.repeat(18))
+    expect(lines[1]).toContain('▍ ' + 'a'.repeat(18))
+    expect(lines[2]).toContain('▍ ' + 'a'.repeat(4))
   })
 
   test('user message wraps CJK characters correctly', () => {
@@ -369,9 +380,9 @@ describe('buildOutputBlocks', () => {
     const lines = result.split('\n').filter(l => l.trim() !== '')
     // 25 chars at 2-width each = 50 cols, avail = 20, so 10 chars/line => 3 lines
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('▌ ' + '你'.repeat(10))
-    expect(lines[1]).toContain('▌ ' + '你'.repeat(10))
-    expect(lines[2]).toContain('▌ ' + '你'.repeat(5))
+    expect(lines[0]).toContain('▍ ' + '你'.repeat(10))
+    expect(lines[1]).toContain('▍ ' + '你'.repeat(10))
+    expect(lines[2]).toContain('▍ ' + '你'.repeat(5))
   })
 })
 
@@ -383,8 +394,8 @@ describe('OSC 133 semantic zone markers', () => {
     // Exactly one zone (one start, one end) for a single message.
     expect(raw.split(OSC133_ZONE_START).length - 1).toBe(1)
     expect(raw.split(OSC133_ZONE_END).length - 1).toBe(1)
-    // The start marker precedes the visible left bar.
-    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('▌'))
+    // The start marker precedes the visible left rail.
+    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('▍'))
   })
 
   test('a multi-line assistant message has exactly one zone spanning all lines', () => {
@@ -400,7 +411,7 @@ describe('OSC 133 semantic zone markers', () => {
     const withMarkers = render(buildUserMessage('hello'))
     const plain = stripAnsi(withMarkers)
     expect(plain).not.toContain('133')
-    expect(plain).toContain('▌ hello')
+    expect(plain).toContain('▍ hello')
   })
 
   test('non-message kinds (tool, system) get no zone markers', () => {

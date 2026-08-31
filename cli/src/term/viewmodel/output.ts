@@ -12,10 +12,15 @@ export interface OutputContext {
   columns?: number
 }
 
-// A committed user message is marked by a solid left bar rather than a prompt
-// glyph: it spans every rendered row, so a wrapped or multi-line message reads
-// as one block instead of a first line plus loose continuations.
-const USER_BAR = '\u258c'
+// A committed user message is marked by a left rail rather than a prompt glyph:
+// it spans every rendered row, so a wrapped or multi-line message reads as one
+// block instead of a first line plus loose continuations.
+//
+// U+258D (left five-eighths block) matches freebuff's rail. It paints most of
+// the cell, so the rail still reads as continuous down the message, while a
+// fully background-filled cell was wide enough to look like a selection
+// highlight rather than a margin marker.
+const USER_BAR = '\u258d'
 
 /**
  * Wall-clock header shown above a user message, e.g. `[06:11 PM]`.
@@ -106,19 +111,15 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
       case 'assistant': {
         // Empty-text assistant lines are block-spacing separators inserted by
         // the stream machine. Continuation spacers keep the next rendered
-        // assistant line in the same message, so a later streamed chunk does
-        // not start a fresh block (and a fresh top margin).
+        // assistant line in the same message, so headings in later streamed
+        // chunks don't get another leading dot.
         if (!ol.text) {
           blocks.push(block([line(plain(''))]))
           nextPrevKind = ol.isContinuationSpacer ? 'assistant' : prevKind
           break   // intentionally skip normal prevKind update
         }
         const isBlockStart = prevKind !== 'assistant'
-        // No leading glyph: the dot doubled up with the user bar as a second
-        // "who is speaking" marker and reappeared at every streamed chunk
-        // boundary. A plain 2-column indent keeps assistant text aligned with
-        // the rest of the transcript.
-        const prefix = plain('  ')
+        const dot = isBlockStart ? colored('⏺ ', 'cyan') : plain('  ')
         // Wrap at render-time width (prefix is 2 cols) so committed assistant
         // text reflows on resize instead of being truncated by the renderer.
         const cols = initialContext.columns
@@ -131,10 +132,12 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         const isBoxArt = BOX_DRAWING_RE.test(stripAnsi(ol.text))
         if (avail > 0 && !isBoxArt && stringWidth(ol.text) > avail) {
           const wrapped = wrapTextWithAnsi(ol.text, avail)
-          const asstLines = wrapped.map(w => line(prefix, plain(w)))
+          const asstLines = wrapped.map((w, k) =>
+            k === 0 ? line(dot, plain(w)) : line(plain('  '), plain(w)),
+          )
           blocks.push(block(asstLines, isBlockStart ? 1 : 0))
         } else {
-          blocks.push(block([line(prefix, plain(ol.text))], isBlockStart ? 1 : 0))
+          blocks.push(block([line(dot, plain(ol.text))], isBlockStart ? 1 : 0))
         }
         break
       }

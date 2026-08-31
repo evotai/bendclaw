@@ -109,9 +109,7 @@ describe('log-shot ansi + render', () => {
 
   test('renderAssistantAnsi uses TUI prefix and theme colors', () => {
     const ansi = renderAssistantAnsi('## Title\n\n**bold** and `code`\n\n```\nfoo\n```')
-    // Assistant rows carry a plain 2-column indent, not a leading glyph.
-    expect(ansi).toContain('  ')
-    expect(ansi).not.toContain('⏺')
+    expect(ansi).toContain('⏺')
     expect(ansi).toContain('\x1b[38;2;')
     expect(ansi).toContain('240;198;116')
     expect(ansi).toContain('177;185;249')
@@ -147,7 +145,7 @@ describe('log-shot ansi + render', () => {
     expect(source?.paintedLines?.length).toBe(1)
   })
 
-  test('buildShotHtml matches TUI: brand dot, gold heading, slate canvas, full turn content', () => {
+  test('buildShotHtml matches TUI: ⏺, gold heading, slate canvas, full turn content', () => {
     const source = resolveShotSource({
       historyLines: [
         { kind: 'user', id: 'u' },
@@ -231,7 +229,7 @@ describe('log-shot ansi + render', () => {
     // Soft-wrap may split display, but the original long token sequence remains
     // (no markdown re-lex into headings/tables).
     expect(ansi).toContain('Incremental MV')
-    expect(ansi).not.toContain('⏺')
+    expect(ansi).toContain('⏺')
     expect(source!.paintedLines?.[0]?.text).toBe(painted)
   })
 

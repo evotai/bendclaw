@@ -99,7 +99,7 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
     try {
       session.write('echo smoke test\x0d')
       await new Promise(resolve => setTimeout(resolve, 1500))
-      expect(stripAnsi(session.outputSince())).toContain('▌ echo smoke test')
+      expect(stripAnsi(session.outputSince())).toContain('▍ echo smoke test')
     } finally {
       await session.kill()
     }

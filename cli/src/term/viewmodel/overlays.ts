@@ -182,6 +182,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['/share [id|url]', 'Share or import a session'],
     ['/compact', 'Compact session context'],
     ['/version', 'Show current version'],
+    ['/restart', 'Restart in place'],
     ['/login', 'Log in to evot cloud'],
     ['/logout', 'Log out of evot cloud'],
     ['/clear', 'Clear session context'],

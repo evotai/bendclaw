@@ -35,6 +35,13 @@ describe('slash command completion', () => {
     expect(result).toBeNull()
   })
 
+  test('completes /rest to /restart', () => {
+    const result = complete('/rest', 5)
+    expect(result).not.toBeNull()
+    expect(result!.replacement).toBe('/restart ')
+    expect(result!.candidates).toEqual(['/restart'])
+  })
+
   test('completes /q to /quit alias', () => {
     const result = complete('/qu', 3)
     expect(result).not.toBeNull()

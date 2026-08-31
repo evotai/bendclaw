@@ -21,6 +21,7 @@ export interface CommandResult {
   clearContext?: boolean
   newSession?: boolean
   exit?: boolean
+  restart?: boolean
   resumeSession?: SessionMeta
   systemLines: OutputLine[]
 }
@@ -59,6 +60,9 @@ export function handleSlashCommand(text: string, ctx: CommandContext): CommandRe
 
     case '/exit':
       return { ...baseResult(ctx), exit: true }
+
+    case '/restart':
+      return { ...baseResult(ctx), restart: true }
 
     case '/plan': {
       const planning = !ctx.planning

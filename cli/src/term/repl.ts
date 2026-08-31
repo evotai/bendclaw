@@ -867,7 +867,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         updateNotice = [
           { text: '✔ ', hex: getTheme().brandHex },
           { text: `Update installed v${updateVersion}`, hex: getTheme().brandHex },
-          { text: ' · Restart to update', dim: true },
+          { text: ' · /restart to apply', dim: true },
         ]
       } else if (updateStatus === 'downloading' && updateVersion) {
         updateNotice = [{ text: `⬇ Auto-updating to v${updateVersion}…`, dim: true }]
@@ -2373,6 +2373,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       commitSystem('sys-new-session', chalk.dim(`  new session ${sessionId.slice(0, 8)}`))
     }
     if (result.exit) { exitAfterCleanup(0); return }
+    if (result.restart) { restartAfterCleanup(); return }
     if (result.resumeSession) await resumeSession(result.resumeSession)
     if (result.systemLines.length > 0) commitSystemLines(result.systemLines)
 
@@ -3161,6 +3162,18 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     disableRaw = null
     renderer.destroy()
     rendererTrace.close()
+  }
+
+  function restartAfterCleanup(): void {
+    cleanup()
+    void sessionHook.close().then(async () => {
+      const { execIntoInstalledRestart } = await import('../update/index.js')
+      execIntoInstalledRestart(sessionId)
+      // Handover only returns when execve was impossible (source checkout,
+      // Windows, missing binary). Fall back to a normal exit so the user can
+      // relaunch from the shell instead of sitting in a dead TUI.
+      fastExit(0)
+    })
   }
 
   // Declared as a function so the earlier exit paths (Ctrl-D, /exit, the exit

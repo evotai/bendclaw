@@ -287,7 +287,7 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
         )
         break
       case 'updated': {
-        const lines: string[] = [`  ✓ updated ${result.from} → ${result.to}. restart evot to apply.`]
+        const lines: string[] = [`  ✓ updated ${result.from} → ${result.to}. /restart to apply.`]
         if (result.notes && result.notes.length > 0) {
           lines.push('')
           lines.push(`  What's new in ${result.to}:`)

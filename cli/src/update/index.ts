@@ -37,6 +37,7 @@ import { installBinDir, runningInstallDir } from './paths.js'
 import { installedVersionForThisProcess, isManagedInstall } from './state.js'
 import { clearStaged, readStaged } from './stage.js'
 import { resolveUpdateProxy } from './proxy.js'
+import { argvForRestart } from '../restart-argv.js'
 import { compareVersions } from './version.js'
 
 const APPLIED_UPDATE_ENV = 'EVOT_APPLIED_UPDATE'
@@ -142,6 +143,34 @@ export async function applyStagedOnStartup(currentVersion: string): Promise<stri
 }
 
 /**
+ * Replace this process with the currently installed binary, keeping argv,
+ * pid, and the terminal. `execve` never returns on success.
+ *
+ * Returns only when handing over was impossible; the caller then keeps
+ * running the current image rather than failing.
+ */
+function execIntoInstalledBinary(
+  argv: string[] = process.argv.slice(2),
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const execve = process.execve
+  // Not available on Windows/IBM i, where the current image simply keeps running.
+  if (typeof execve !== 'function') return
+  // Only a running installed evot may hand over to an installed evot. A source
+  // checkout (`bun run src/index.ts`) or a test process would otherwise be
+  // replaced by the released binary, discarding the code under development.
+  if (!runningInstallDir()) return
+  const binary = join(installBinDir(), 'evot')
+  if (!existsSync(binary)) return
+  try {
+    execve(binary, [binary, ...argv], env)
+  } catch {
+    // execve only returns on failure (a missing exec bit, ENOMEM). Staying on
+    // the current image is the safe fallback.
+  }
+}
+
+/**
  * Hand the process over to the freshly installed executable.
  *
  * Replacing files on disk does not change the running image: the compiled
@@ -154,29 +183,29 @@ export async function applyStagedOnStartup(currentVersion: string): Promise<stri
  * the old image rather than failing the launch.
  */
 export function execIntoInstalledUpdate(appliedVersion: string): void {
-  const execve = process.execve
-  // Not available on Windows/IBM i, where the old image simply keeps running.
-  if (typeof execve !== 'function') return
   // At most one handover per process chain. The marker is still set when this
   // runs in the re-exec'd process, so a swap that somehow does not change the
   // reported version cannot bounce the session between images forever.
   if (process.env[APPLIED_UPDATE_ENV]) return
-  // Only a running installed evot may hand over to an installed evot. A source
-  // checkout (`bun run src/index.ts`) or a test process would otherwise be
-  // replaced by the released binary, discarding the code under development.
-  if (!runningInstallDir()) return
-  const binary = join(installBinDir(), 'evot')
-  if (!existsSync(binary)) return
-  try {
-    execve(
-      binary,
-      [binary, ...process.argv.slice(2)],
-      { ...process.env, [APPLIED_UPDATE_ENV]: appliedVersion },
-    )
-  } catch {
-    // execve only returns on failure (a missing exec bit, ENOMEM). Staying on
-    // the old image is safe: install bookkeeping is already correct on disk.
-  }
+  execIntoInstalledBinary(
+    process.argv.slice(2),
+    { ...process.env, [APPLIED_UPDATE_ENV]: appliedVersion },
+  )
+}
+
+/**
+ * Replace this process with the currently installed binary, keeping argv,
+ * pid, and the terminal. Used by `/restart` so an already-applied update
+ * (or a hung session) comes up again without leaving the TTY.
+ *
+ * Unlike {@link execIntoInstalledUpdate}, this always re-execs even when the
+ * version on disk matches what is already running: that is the point of an
+ * in-place restart.
+ */
+export function execIntoInstalledRestart(sessionId?: string | null): void {
+  const env = { ...process.env }
+  delete env[APPLIED_UPDATE_ENV]
+  execIntoInstalledBinary(argvForRestart(process.argv.slice(2), sessionId ?? null), env)
 }
 
 /** Version handed over by a startup re-exec, consumed once. */

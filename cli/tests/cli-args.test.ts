@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { parseArgs, applyCliOpts } from '../src/cli.js'
+import { parseArgs, applyCliOpts, argvForRestart } from '../src/cli.js'
 
 describe('parseArgs', () => {
   test('-f / --file collects files', async () => {
@@ -67,5 +67,24 @@ describe('parseArgs', () => {
     expect(opts.prompt).toBe('review')
     expect(opts.files).toEqual(['src/cli.ts', 'src/prompt.ts'])
     expect(opts.resume).toBe('task-1')
+  })
+})
+
+describe('argvForRestart', () => {
+  test('pins the live session and drops continue/resume flags', () => {
+    expect(argvForRestart([], 'sess-1')).toEqual(['--resume', 'sess-1'])
+    expect(argvForRestart(['-c'], 'sess-1')).toEqual(['--resume', 'sess-1'])
+    expect(argvForRestart(['--continue', '--model', 'grok-4.6'], 'sess-1'))
+      .toEqual(['--model', 'grok-4.6', '--resume', 'sess-1'])
+    expect(argvForRestart(['-r', 'old', '--port', '8082'], 'sess-1'))
+      .toEqual(['--port', '8082', '--resume', 'sess-1'])
+    expect(argvForRestart(['--resume', 'old'], 'sess-1')).toEqual(['--resume', 'sess-1'])
+  })
+
+  test('keeps unrelated flags and omits resume when there is no session', () => {
+    expect(argvForRestart(['--env-file', 'evot.env', '--model', 'grok-4.6'], null))
+      .toEqual(['--env-file', 'evot.env', '--model', 'grok-4.6'])
+    expect(argvForRestart(['-c', '--env-file', 'evot.env'], null))
+      .toEqual(['--env-file', 'evot.env'])
   })
 })

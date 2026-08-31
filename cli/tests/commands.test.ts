@@ -45,6 +45,11 @@ describe('resolveCommand', () => {
     expect(isSlashCommand('/harden')).toBe(true)
   })
 
+  test('resolves /restart', () => {
+    expect(resolveCommand('/restart')).toEqual({ kind: 'resolved', name: '/restart', args: '' })
+    expect(isSlashCommand('/restart')).toBe(true)
+  })
+
   test('resolves aliases', () => {
     const result = resolveCommand('/q')
     expect(result).toEqual({ kind: 'resolved', name: '/exit', args: '' })

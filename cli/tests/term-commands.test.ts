@@ -77,6 +77,18 @@ describe('term commands', () => {
     expect(result.newSession).toBeUndefined()
   })
 
+  test('/exit exits the REPL', () => {
+    const result = handleSlashCommand('/exit', mkCtx())
+    expect(result.exit).toBe(true)
+    expect(result.restart).toBeUndefined()
+  })
+
+  test('/restart restarts in place', () => {
+    const result = handleSlashCommand('/restart', mkCtx())
+    expect(result.restart).toBe(true)
+    expect(result.exit).toBeUndefined()
+  })
+
   test('/compact defers to the async app command path', () => {
     const result = handleSlashCommand('/compact preserve decisions', mkCtx())
     expect(result.systemLines.length).toBe(0)

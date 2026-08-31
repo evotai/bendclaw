@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { reportAppliedUpdate, takeAppliedUpdate } from '../src/update/index.js'
 
 /**
@@ -47,6 +47,10 @@ describe('applied-update notice routing', () => {
  * update in every child process the session spawns.
  */
 describe('applied-update handover marker', () => {
+  beforeEach(() => {
+    delete process.env.EVOT_APPLIED_UPDATE
+  })
+
   afterEach(() => {
     delete process.env.EVOT_APPLIED_UPDATE
   })
@@ -73,6 +77,16 @@ describe('applied-update handover marker', () => {
     // Returning at all proves no handover happened: execve never returns.
     expect(execIntoInstalledUpdate('2026.8.31')).toBeUndefined()
     // The marker survives for the notice that runs immediately after.
+    expect(process.env.EVOT_APPLIED_UPDATE).toBe('2026.8.31')
+  })
+
+  test('an in-place restart still hands over after an applied-update marker', async () => {
+    const { execIntoInstalledRestart } = await import('../src/update/index.js')
+    process.env.EVOT_APPLIED_UPDATE = '2026.8.31'
+
+    // Source/test processes are not a compiled evot, so execve is never reached.
+    // Returning proves the restart path does not share the update-once guard.
+    expect(execIntoInstalledRestart()).toBeUndefined()
     expect(process.env.EVOT_APPLIED_UPDATE).toBe('2026.8.31')
   })
 })

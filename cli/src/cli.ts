@@ -89,6 +89,8 @@ export async function parseArgs(argv: string[]): Promise<CliOptions> {
   return opts
 }
 
+export { argvForRestart } from './restart-argv.js'
+
 export function parseIntArg(value: string, flag: string): number {
   const n = parseInt(value, 10)
   if (isNaN(n) || n <= 0) {

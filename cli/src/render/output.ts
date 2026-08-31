@@ -369,6 +369,10 @@ export interface OutputLine {
   /** Last line of a committed user/assistant message: gets the OSC 133 zone
    *  end marker. */
   zoneEnd?: boolean
+  /** Wall-clock time the message was committed, in epoch millis. Captured at
+   *  build time (not render time) so a re-render — and the incremental history
+   *  cache — reproduces the same header a full rebuild would. */
+  timestamp?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -390,9 +394,9 @@ export function resetIdCounter(): void {
 // Builders — pure functions that create OutputLines from events
 // ---------------------------------------------------------------------------
 
-export function buildUserMessage(text: string): OutputLine[] {
+export function buildUserMessage(text: string, timestamp: number = Date.now()): OutputLine[] {
   if (!text) return []
-  return [{ id: genId('user'), kind: 'user', text, zoneStart: true, zoneEnd: true }]
+  return [{ id: genId('user'), kind: 'user', text, zoneStart: true, zoneEnd: true, timestamp }]
 }
 
 export function buildAssistantLines(
@@ -787,7 +791,7 @@ export function messagesToOutputLines(messages: UIMessage[], expanded: boolean =
       continue
     }
     if (msg.role === 'user') {
-      lines.push(...buildUserMessage(msg.text))
+      lines.push(...buildUserMessage(msg.text, msg.timestamp))
       continue
     }
 

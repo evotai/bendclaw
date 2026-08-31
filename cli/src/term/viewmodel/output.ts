@@ -1,14 +1,37 @@
 import type { OutputLine } from '../../render/output.js'
 import stringWidth from 'string-width'
-import { line, block, plain, dim, bold, colored, type ViewBlock, type StyledLine } from './types.js'
+import { line, block, plain, dim, bold, colored, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
 import { wrapTextByWidth } from './width.js'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
+import { getTheme } from '../../render/theme.js'
 import stripAnsi from 'strip-ansi'
 
 export interface OutputContext {
   prevKind?: string
   columns?: number
+}
+
+// A committed user message is marked by a brand-hued left bar rather than a
+// prompt glyph: it spans every wrapped row, so a multi-line message reads as
+// one block instead of a first line plus loose continuations.
+const USER_BAR = '\u2503'
+
+/**
+ * Wall-clock header shown above a user message, e.g. `[06:11 PM]`.
+ *
+ * Formatted from the timestamp captured when the message was built, so a
+ * re-render (or the incremental history cache) reproduces the original time
+ * instead of drifting to "now".
+ */
+export function formatClock(timestamp: number): string {
+  const at = new Date(timestamp)
+  const hours = at.getHours()
+  const suffix = hours < 12 ? 'AM' : 'PM'
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12
+  const hh = String(hour12).padStart(2, '0')
+  const mm = String(at.getMinutes()).padStart(2, '0')
+  return `[${hh}:${mm} ${suffix}]`
 }
 
 // OSC 133 semantic zone markers (the shell-integration protocol). Wrapping each
@@ -49,19 +72,24 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
     switch (ol.kind) {
       case 'user': {
         const cols = initialContext.columns
+        // The bar occupies one cell plus a separating space, matching the
+        // 2-column prefix every other kind uses so wrapped text stays aligned.
         const availWidth = cols ? Math.max(1, cols - 2) : 0
+        const barHex = getTheme().brandHex
+        const bar = (): StyledSpan => ({ text: USER_BAR, hex: barHex, bold: true })
+        const userLines: StyledLine[] = []
+        if (ol.timestamp !== undefined) {
+          userLines.push(line(bar(), plain(' '), dim(formatClock(ol.timestamp))))
+        }
         if (availWidth > 0 && ol.text.length > 0) {
           const chunks = wrapTextByWidth(ol.text, availWidth)
-          const userLines = chunks.map((c, k) => {
-            const prefix = k === 0 ? bold('❯ ', 'yellow') : plain('  ')
-            return line(prefix, bold(ol.text.slice(c.start, c.end)))
-          })
-          blocks.push(block(userLines, 1))
+          for (const c of chunks) {
+            userLines.push(line(bar(), plain(' '), bold(ol.text.slice(c.start, c.end))))
+          }
         } else {
-          blocks.push(block([
-            line(bold('❯ ', 'yellow'), bold(ol.text)),
-          ], 1))
+          userLines.push(line(bar(), plain(' '), bold(ol.text)))
         }
+        blocks.push(block(userLines, 1))
         break
       }
 

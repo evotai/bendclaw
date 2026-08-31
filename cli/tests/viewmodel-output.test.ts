@@ -32,10 +32,29 @@ function renderPlainWithColumns(lines: OutputLine[], columns: number): string {
 }
 
 describe('buildOutputBlocks', () => {
-  test('user message has marginTop=1 and bold prefix', () => {
+  test('user message has marginTop=1 and a brand left bar', () => {
     const result = renderPlain([{ id: 'u1', kind: 'user', text: 'hello' }])
-    expect(result).toContain('❯ hello')
+    expect(result).toContain('┃ hello')
     expect(result.startsWith('\n')).toBe(true)
+  })
+
+  test('a timestamped user message shows the clock above the text', () => {
+    const at = new Date(2026, 7, 31, 18, 11).getTime()
+    const lines = renderPlain([{ id: 'u1', kind: 'user', text: 'hello', timestamp: at }])
+      .split('\n')
+      .filter(l => l.trim() !== '')
+    expect(lines[0]).toBe('┃ [06:11 PM]')
+    expect(lines[1]).toBe('┃ hello')
+  })
+
+  test('every wrapped row of a user message carries the bar', () => {
+    const at = new Date(2026, 7, 31, 6, 5).getTime()
+    const lines = renderPlainWithColumns(
+      [{ id: 'u1', kind: 'user', text: 'a'.repeat(40), timestamp: at }],
+      20,
+    ).split('\n').filter(l => l.trim() !== '')
+    expect(lines[0]).toBe('┃ [06:05 AM]')
+    for (const l of lines.slice(1)) expect(l.startsWith('┃ ')).toBe(true)
   })
 
   test('assistant block starts with marginTop=1', () => {
@@ -338,9 +357,9 @@ describe('buildOutputBlocks', () => {
     const lines = result.split('\n').filter(l => l.trim() !== '')
     // Should wrap into 3 lines: 18 + 18 + 4
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('❯ ' + 'a'.repeat(18))
-    expect(lines[1]).toContain('  ' + 'a'.repeat(18))
-    expect(lines[2]).toContain('  ' + 'a'.repeat(4))
+    expect(lines[0]).toContain('┃ ' + 'a'.repeat(18))
+    expect(lines[1]).toContain('┃ ' + 'a'.repeat(18))
+    expect(lines[2]).toContain('┃ ' + 'a'.repeat(4))
   })
 
   test('user message wraps CJK characters correctly', () => {
@@ -351,9 +370,9 @@ describe('buildOutputBlocks', () => {
     const lines = result.split('\n').filter(l => l.trim() !== '')
     // 25 chars at 2-width each = 50 cols, avail = 20, so 10 chars/line => 3 lines
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('❯ ' + '你'.repeat(10))
-    expect(lines[1]).toContain('  ' + '你'.repeat(10))
-    expect(lines[2]).toContain('  ' + '你'.repeat(5))
+    expect(lines[0]).toContain('┃ ' + '你'.repeat(10))
+    expect(lines[1]).toContain('┃ ' + '你'.repeat(10))
+    expect(lines[2]).toContain('┃ ' + '你'.repeat(5))
   })
 })
 
@@ -365,8 +384,8 @@ describe('OSC 133 semantic zone markers', () => {
     // Exactly one zone (one start, one end) for a single message.
     expect(raw.split(OSC133_ZONE_START).length - 1).toBe(1)
     expect(raw.split(OSC133_ZONE_END).length - 1).toBe(1)
-    // The start marker precedes the visible prompt glyph.
-    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('❯'))
+    // The start marker precedes the visible left bar.
+    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('┃'))
   })
 
   test('a multi-line assistant message has exactly one zone spanning all lines', () => {
@@ -382,7 +401,7 @@ describe('OSC 133 semantic zone markers', () => {
     const withMarkers = render(buildUserMessage('hello'))
     const plain = stripAnsi(withMarkers)
     expect(plain).not.toContain('133')
-    expect(plain).toContain('❯ hello')
+    expect(plain).toContain('┃ hello')
   })
 
   test('non-message kinds (tool, system) get no zone markers', () => {

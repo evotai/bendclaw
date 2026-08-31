@@ -50,6 +50,13 @@ describe('buildUserMessage', () => {
     const lines = buildUserMessage('')
     expect(lines).toHaveLength(0)
   })
+
+  test('captures a build-time timestamp so re-renders keep the original clock', () => {
+    const at = new Date(2026, 7, 31, 18, 11).getTime()
+    expect(buildUserMessage('hello', at)[0]!.timestamp).toBe(at)
+    // Defaulted rather than left undefined: every committed message shows a time.
+    expect(typeof buildUserMessage('hello')[0]!.timestamp).toBe('number')
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -10,18 +10,40 @@ REPO="evotai/evot"
 BINARY="evot"
 INSTALL_DIR="${EVOT_INSTALL_DIR:-$HOME/.evotai/bin}"
 
-# --- Colors & helpers ---
+# --- Output style ---
+#
+# herdr-style installer output: a brand logo header for humans, then green '>'
+# step lines, yellow '!' warnings and red '✗' errors. Color stays unconditional
+# (the TUI renders ANSI), but the logo is gated on stdout being a terminal:
+# `curl | sh` keeps stdout on the tty, while the in-app updater (`/update`)
+# captures stdout through a pipe and should get plain step lines only.
 
-RED='\033[0;31m'
+BRAND='\033[38;5;147m'  # periwinkle, sampled from the CLI wordmark (#b5bcf9)
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 YELLOW='\033[0;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-info()  { printf "${BLUE}%s${NC}\n" "$*"; }
-ok()    { printf "${GREEN}%s${NC}\n" "$*"; }
-warn()  { printf "${YELLOW}%s${NC}\n" "$*"; }
-error() { printf "${RED}%s${NC}\n" "$*" >&2; exit 1; }
+log()   { printf "  ${GREEN}>${NC} %s\n" "$*"; }
+warn()  { printf "  ${YELLOW}!${NC} %s\n" "$*"; }
+error() { printf "  ${RED}✗${NC} %s\n" "$*" >&2; exit 1; }
+
+# Same block wordmark as the CLI banner (cli/src/term/banner.ts), so the
+# install and the first launch read as the same product.
+show_banner() {
+  [ -t 1 ] || return 0
+  printf "${BRAND}%s${NC}\n" \
+    ' ███████╗██╗   ██╗ ██████╗ ████████╗' \
+    ' ██╔════╝██║   ██║██╔═══██╗╚══██╔══╝' \
+    ' █████╗  ██║   ██║██║   ██║   ██║' \
+    ' ██╔══╝  ╚██╗ ██╔╝██║   ██║   ██║' \
+    ' ███████╗ ╚████╔╝ ╚██████╔╝   ██║' \
+    ' ╚══════╝  ╚═══╝   ╚═════╝    ╚═╝'
+  printf '  %s\n' 'evot installer · evot.ai · github.com/evotai/evot'
+  echo ""
+}
+
+show_banner
 
 # --- Download abstraction (curl with wget fallback) ---
 
@@ -166,7 +188,7 @@ download_verified() {
     if [ "$_attempt" -ge "$DOWNLOAD_ATTEMPTS" ]; then
       return 1
     fi
-    warn "  Download failed, retrying ($((_attempt + 1))/${DOWNLOAD_ATTEMPTS})..."
+    warn "download failed, retrying ($((_attempt + 1))/${DOWNLOAD_ATTEMPTS})..."
     sleep "$(awk "BEGIN{print $_attempt * $DOWNLOAD_RETRY_BASE_DELAY}")"
     _attempt=$((_attempt + 1))
   done
@@ -204,6 +226,8 @@ case "$ARCH" in
   *)              error "Unsupported architecture: $ARCH" ;;
 esac
 
+log "detected ${os}/${arch}"
+
 case "${os}-${arch}" in
   linux-x86_64)
     TARGET="x86_64-unknown-linux-gnu"
@@ -231,6 +255,7 @@ esac
 if [ -n "${EVOT_INSTALL_VERSION:-}" ]; then
   TAG="$EVOT_INSTALL_VERSION"
 else
+  log "fetching latest version..."
   TAG="$(fetch "https://auto.evot.ai/install/latest" 2>/dev/null || true)"
   case "$TAG" in
     v[0-9]*) ;;
@@ -255,8 +280,6 @@ SHA_URL="${URL}.sha256"
 STAGED_ASSET="${EVOT_INSTALL_ASSET:-}"
 
 # --- Download & verify ---
-
-info "Installing ${BINARY} v${VERSION} for ${TARGET}..."
 
 TMP="$(mktemp -d)"
 PACKAGE_DIR="$TMP/package"
@@ -332,10 +355,10 @@ verify_checksum() {
   fi
 
   if [ "$_actual" != "$_expected" ]; then
-    warn "  Checksum mismatch (expected $_expected, got $_actual)"
+    warn "checksum mismatch (expected $_expected, got $_actual)"
     return 1
   fi
-  info "Checksum verified"
+  log "checksum verified"
 }
 
 # Checksum verification against a local sidecar instead of a fetched one.
@@ -356,10 +379,10 @@ verify_checksum_from_file() {
   fi
 
   if [ "$_actual" != "$_expected" ]; then
-    warn "  Checksum mismatch for staged archive (expected $_expected, got $_actual)"
+    warn "checksum mismatch for staged archive (expected $_expected, got $_actual)"
     return 1
   fi
-  info "Checksum verified"
+  log "checksum verified"
 }
 
 # Install from a staged archive when one was provided, otherwise download.
@@ -375,9 +398,9 @@ if [ -n "$STAGED_ASSET" ] && [ -f "$STAGED_ASSET" ]; then
     && rm -rf "$PACKAGE_DIR" \
     && mkdir -p "$PACKAGE_DIR" \
     && tar -xzf "$TMP/$ASSET" -C "$PACKAGE_DIR"; then
-    info "Using pre-downloaded ${ASSET}"
+    log "using pre-downloaded ${ASSET}"
   else
-    warn "  Staged archive failed verification; downloading instead"
+    warn "staged archive failed verification; downloading instead"
     rm -rf "$PACKAGE_DIR"
     rm -f "$TMP/$ASSET"
     STAGED_ASSET=""
@@ -385,6 +408,7 @@ if [ -n "$STAGED_ASSET" ] && [ -f "$STAGED_ASSET" ]; then
 fi
 
 if [ -z "$STAGED_ASSET" ]; then
+  log "downloading v${VERSION}..."
   download_verified "$URL" "$TMP/$ASSET" "$SHA_URL" "$PACKAGE_DIR" \
     || error "Failed to download and verify ${ASSET} after ${DOWNLOAD_ATTEMPTS} attempts"
 fi
@@ -516,12 +540,19 @@ BINARY_BACKUP=""
 BINDING_BACKUP=""
 STATE_BACKUP=""
 
-ok "  ✓ Installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
+log "installed ${BINARY} to ${INSTALL_DIR}/${BINARY}"
 
 # --- PATH guidance ---
 
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
+  *":$INSTALL_DIR:"*)
+    # Ready only when the shell will actually run the binary just written.
+    # `command -v` could otherwise find an older evot elsewhere on PATH and
+    # promise a 'ready' that starts the previous install.
+    echo ""
+    log "ready. run 'evot' to get started."
+    echo ""
+    ;;
   *)
     SHELL_NAME="$(basename "${SHELL:-/bin/sh}")"
     case "$SHELL_NAME" in
@@ -531,13 +562,14 @@ case ":$PATH:" in
       *)    RC="$HOME/.profile" ;;
     esac
 
-    warn "$INSTALL_DIR is not in your PATH. Run:"
+    warn "${INSTALL_DIR} is not in your PATH"
+    echo "  add it to your shell config:"
     echo ""
     if [ "$SHELL_NAME" = "fish" ]; then
-      echo "  set -Ux fish_user_paths $INSTALL_DIR \$fish_user_paths"
+      echo "    set -Ux fish_user_paths $INSTALL_DIR \$fish_user_paths"
     else
-      echo "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> $RC"
-      echo "  source $RC"
+      echo "    echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> $RC"
+      echo "    source $RC"
     fi
     echo ""
     ;;

@@ -227,7 +227,7 @@ cp "$TEST_ARCHIVE" "$output"
 
     expect(exitCode).toBe(0)
     expect(readFileSync(counter, 'utf8')).toBe('3')
-    expect(stdout).toContain('Installed evot')
+    expect(stdout).toContain('installed evot to')
   })
 
   test('gives up after the attempt budget without touching the old binary', async () => {
@@ -605,5 +605,32 @@ printf 'evot v2026.7.19\\n'
 
     // --show-progress predates neither wget nor every distro's build of it.
     expect(script).toContain("wget --help 2>&1 | grep -q -- '--show-progress'")
+  })
+
+  /**
+   * The logo header is for humans at a terminal. `curl | sh` keeps stdout on
+   * the tty, so they see it; the in-app updater captures stdout through a
+   * pipe, where six lines of block letters would only be TUI log noise.
+   */
+  test('shows the logo banner only on a terminal', () => {
+    const script = readFileSync(installShPath, 'utf8')
+    expect(script).toContain('[ -t 1 ] || return 0')
+  })
+
+  test("prints a ready line when the installed binary is on PATH", async () => {
+    const installDir = join(root, 'ready', 'bin')
+    const archive = packArchive('2026.7.19')
+
+    // FAKE_BIN is prepended to PATH wholesale, so a colon-separated value can
+    // put the not-yet-existing install dir on PATH before install.sh runs.
+    const { stdout, exitCode } = await runInstallSh({
+      FAKE_BIN: `${fakeBin(CURL_SERVES_ARCHIVE)}:${installDir}`,
+      TEST_ARCHIVE: archive,
+      EVOT_INSTALL_DIR: installDir,
+      EVOT_INSTALL_VERSION: 'v2026.7.19',
+    })
+
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain("ready. run 'evot' to get started")
   })
 })

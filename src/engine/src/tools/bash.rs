@@ -166,8 +166,15 @@ impl AgentTool for BashTool {
 
     fn prompt_guidelines(&self) -> Vec<&str> {
         if self.background_enabled {
+            // `{{task_output}}` rather than the literal name: Claude models see
+            // this tool as `TaskOutput`, so a hardcoded `task_output` names a
+            // tool that does not exist for them.
+            //
+            // Ordering matches the per-result guidance and the tool's own
+            // schema — read the output path first, block only when a later step
+            // cannot proceed. Offering them as equals here contradicted both.
             vec![
-                "For long-running commands that can continue independently, use `run_in_background: true` and inspect the returned output path or use `task_output`.",
+                "For long-running commands that can continue independently, use `run_in_background: true` and inspect the returned output path; call {{task_output}} only when a later step cannot proceed without the result.",
             ]
         } else {
             Vec::new()

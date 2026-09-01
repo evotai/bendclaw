@@ -1,4 +1,5 @@
 import { TermRenderer, type RenderFrame } from './renderer.js'
+import { readOutputTail } from './app/output-tail.js'
 import {
   enableRawMode,
   enableEnhancedKeyboard,
@@ -132,6 +133,8 @@ import { decideReplControl, type ReplControlAction } from './app/repl-control.js
 import { replaceOrPushStatusLine } from './app/status-line.js'
 import { AuthWatcher } from './app/auth-watch.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
+import { BackgroundTerminals } from './app/background-terminals.js'
+import { isBackgroundPanelShortcut, isBackgroundPanelTitle } from './app/background-panel.js'
 import {
   createQueueSelectorState,
   isQueueManageShortcut,
@@ -238,6 +241,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let escapeFlushTimer: ReturnType<typeof setTimeout> | undefined
   let onInputData: ((data: Buffer | string) => void) | null = null
   let sessionId: string | null = null
+  let nextBackgroundLineId = 1
   let planning = false
   let logMode: import('../native/index.js').ForkedAgent | null = null
   let exitHint = false
@@ -648,6 +652,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // token usage renders on the spinner; session totals belong to logs.
       contextTokens: appState.sessionTokens.contextTokens,
       contextWindow: appState.sessionTokens.contextWindow,
+      backgroundProcessCount: backgroundTerminals.runningCount(),
+      backgroundPanelDownAvailable: backgroundTerminals.hintVisible(isEditorEmpty(editor)),
       thinkingLevel: configInfo?.thinkingLevel ?? '',
     }
   }
@@ -1294,6 +1300,43 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     pastedImages.clear()
   }
 
+  /** Unique id per emission: these lines are history, not collapsible status. */
+  function commitBackgroundLine(slot: string, text: string): void {
+    commitSystem(`sys-bg-${slot}-${nextBackgroundLineId++}`, text)
+  }
+
+  const backgroundTerminals = new BackgroundTerminals({
+    client: agent,
+    sessionId: () => sessionId,
+    commit: commitBackgroundLine,
+    requestRender: () => renderer.requestRender(),
+    errorText,
+    paintError: text => chalk.red(text),
+    readOutput: path => readOutputTail(path),
+    openPanel: state => {
+      overlay = { kind: 'selector', state }
+      renderer.requestRender()
+    },
+    updatePanel: state => {
+      // Only ever touch the overlay while the panel owns it: an async stop
+      // landing after the user moved on must not close a different overlay.
+      if (overlay.kind !== 'selector' || !isBackgroundPanelTitle(overlay.state.title)) return
+      overlay = state ? { kind: 'selector', state } : { kind: 'none' }
+      renderer.requestRender()
+    },
+    panelOpen: () => overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title),
+    panelState: () =>
+      overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title) ? overlay.state : null,
+  })
+
+  function refreshBackgroundProcesses(): void {
+    backgroundTerminals.refresh()
+  }
+
+  async function handleBackgroundProcessCommand(name: '/ps' | '/stop', args: string): Promise<void> {
+    await backgroundTerminals.handleCommand(name, args)
+  }
+
   /** Insert pasted text, collapsing large pastes into refs. */
   function insertPaste(raw: string) {
     const cleaned = cleanPastedText(raw)
@@ -1564,6 +1607,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         openQueueSelector()
       }
       return
+    }
+
+    if (isBackgroundPanelShortcut(event)) {
+      backgroundTerminals.togglePanel()
+      return
+    }
+    // The panel claims its own gestures (enter / x / X / esc) before the
+    // generic selector handling, which would otherwise treat them as filter
+    // input or a plain selection.
+    if (overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title)) {
+      if (backgroundTerminals.handlePanelKey(event)) return
     }
 
     const actions = decideReplControl({
@@ -1848,6 +1902,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // A slash command may be typed with images attached; probe the visible
     // draft too so "/compact" plus an image ref is still treated as a command.
     const commandProbe = trimmed || displayText.trim()
+    const directCommand = commandProbe ? resolveCommand(commandProbe) : null
+    if (
+      directCommand?.kind === 'resolved'
+      && (directCommand.name === '/ps' || directCommand.name === '/stop')
+    ) {
+      if (historyText) {
+        historyMgr.append(historyText)
+        historyState = pushHistory(historyState, historyText)
+      }
+      clearAll()
+      void handleSlashInput(commandProbe)
+      renderer.requestRender()
+      return
+    }
     if (compactionTask) {
       if (commandProbe && isSlashCommand(commandProbe)) {
         // Not silently swallowed: commands cannot run mid-compaction and are
@@ -2269,7 +2337,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           historyState = result.history
           editor = result.editor
           renderer.requestRender()
+          break
         }
+        // Nothing left for ↓ to do here, so it opens the background panel the
+        // prompt hint is advertising. Cursor movement and history both had
+        // their chance first, so no existing gesture is taken away.
+        backgroundTerminals.handlePromptDown(isEditorEmpty(editor))
         break
       }
       case 'page-up':
@@ -2282,6 +2355,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   async function handleSlashInput(text: string) {
     const pendingCommand = resolveCommand(text)
+    if (pendingCommand.kind === 'resolved' && backgroundTerminals.guardSessionSwitch(pendingCommand.name)) {
+      return
+    }
     // `/model` used to await a cloud catalog fetch here, which froze the TUI
     // for the whole HTTP round-trip. Open on the cached list instead; a
     // background sync below refreshes the overlay when the catalog lands.
@@ -2396,7 +2472,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       renderer.requestRender()
     }
 
-    if (name === '/compact') {
+    if (name === '/ps' || name === '/stop') {
+      await handleBackgroundProcessCommand(name, args)
+    } else if (name === '/compact') {
       await runManualCompaction(args)
     } else if (name === '/env') {
       handleEnvCommand(replCommands, args)
@@ -2601,6 +2679,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     void syncCloudNow()
   }, CLOUD_SYNC_MS)
   ;(syncTimer as unknown as { unref?: () => void }).unref?.()
+  const backgroundProcessTimer = setInterval(refreshBackgroundProcesses, 500)
+  ;(backgroundProcessTimer as unknown as { unref?: () => void }).unref?.()
 
   /** Adopt a cloud auth change made by another evot process. */
   function adoptExternalAuthChange(): void {
@@ -3137,6 +3217,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     stopSpinner()
     clearInterval(adSlotTimer)
     clearInterval(syncTimer)
+    clearInterval(backgroundProcessTimer)
     authWatcher?.dispose()
     authWatcher = null
     caretBlink.dispose()
@@ -3162,6 +3243,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     disableRaw = null
     renderer.destroy()
     rendererTrace.close()
+    // Every exit path ends in fastExit, which skips Rust Drop impls and async
+    // teardown. Background children live in their own process groups, so they
+    // would survive as orphans unless signalled synchronously right here.
+    // The controller absorbs its own failures: cleanup must never throw.
+    backgroundTerminals.killAllNow()
   }
 
   function restartAfterCleanup(): void {

@@ -12,6 +12,7 @@
 
 ## 📢 News
 
+- **2026-09-01** `GPT-5.6 Luna` is free through Sep 3 🎉.
 - **2026-08-31** [herdr](https://herdr.dev) works with evot 🐑 — point `EVOT_SESSION_HOOK` at an adapter and your panes show `working` / `blocked` / `idle` live.
 - **2026-08-27** `GPT-5.6 Luna` is free through Aug 31 🎉 — just `evot login`.
 - **2026-08-24** Free model of the week: [`stealth/ox-alpha`](https://openrouter.ai/stealth/ox-alpha) — free on OpenRouter for a week.

@@ -39,8 +39,12 @@ impl HostTools {
 fn build_bash_tool(
     envs: Vec<(String, String)>,
     sandbox_dirs: Option<Vec<PathBuf>>,
+    process_manager: Option<std::sync::Arc<ProcessManager>>,
 ) -> Box<dyn evot_engine::AgentTool> {
     let mut bash = BashTool::default().with_envs(envs);
+    if let Some(process_manager) = process_manager {
+        bash = bash.with_process_manager(process_manager);
+    }
     if let Some(dirs) = sandbox_dirs {
         bash = bash.with_sandbox_dirs(dirs);
     }
@@ -56,6 +60,7 @@ pub(crate) fn build_tools(
     envs: Vec<(String, String)>,
     allow_bash: bool,
     sandbox_dirs: Option<Vec<PathBuf>>,
+    process_manager: Option<std::sync::Arc<ProcessManager>>,
     host_tools: Option<HostTools>,
 ) -> Vec<Box<dyn evot_engine::AgentTool>> {
     if matches!(mode, ToolMode::Readonly) {
@@ -77,7 +82,16 @@ pub(crate) fn build_tools(
     t.push(Box::new(ReadFileTool::default()));
 
     if allow_bash {
-        t.push(build_bash_tool(envs, sandbox_dirs));
+        let background_enabled = mode.allows_background_processes() && process_manager.is_some();
+        t.push(build_bash_tool(
+            envs,
+            sandbox_dirs,
+            process_manager.clone().filter(|_| background_enabled),
+        ));
+        if let Some(process_manager) = process_manager.filter(|_| background_enabled) {
+            t.push(Box::new(TaskOutputTool::new(process_manager.clone())));
+            t.push(Box::new(TaskStopTool::new(process_manager)));
+        }
     }
 
     if matches!(mode, ToolMode::Planning) {

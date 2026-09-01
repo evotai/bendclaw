@@ -251,7 +251,13 @@ export class SessionHook {
       return null
     }
 
-    this.tail = this.tail ? this.tail.then(push) : push()
+    if (this.tail) {
+      this.tail = this.tail.then(async () => {
+        await push()
+      })
+    } else {
+      this.tail = push()
+    }
   }
 
   /** Forget a broken adapter so later events do not keep retrying a dead pipe. */

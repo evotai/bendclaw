@@ -11,7 +11,7 @@
 import { renderMarkdown, renderThinkingMarkdown } from './markdown.js'
 import { colorizeUnifiedDiff } from './diff.js'
 import { highlightCode, highlightCodeLine } from '../markdown/render/ansi.js'
-import { truncate, formatDuration, toolResultLines, formatBashCommandDisplay, expandLinesHint, COLLAPSE_HINT, summarizeInline } from './format.js'
+import { truncate, formatDuration, formatElapsed, toolResultLines, formatBashCommandDisplay, expandLinesHint, COLLAPSE_HINT, summarizeInline } from './format.js'
 import { formatCompactionCompleted } from './verbose.js'
 import type { UICompaction, UIMessage, UIToolCall } from '../term/app/types.js'
 
@@ -31,8 +31,18 @@ function toolGlyph(name: string): ToolGlyph {
     case 'grep': case 'glob': case 'find': case 'search': return { icon: '⌕' }
     case 'web_fetch': case 'webfetch': return { icon: '⊕' }
     case 'edit': case 'file_edit': case 'write': case 'file_write': return { icon: '✎' }
+    // Background task tools act on a shell, so they share the bash glyph
+    // family rather than falling through to the anonymous `·`.
+    case 'task_output': case 'taskoutput': return { icon: '◷' }
+    case 'task_stop': case 'taskstop': return { icon: '⊘' }
     default: return { icon: '·' }
   }
+}
+
+/** True for the tools that act on an existing background task by id. */
+function isTaskTool(name: string): boolean {
+  const n = name.toLowerCase()
+  return n === 'task_output' || n === 'taskoutput' || n === 'task_stop' || n === 'taskstop'
 }
 
 /** Resolve a path-like tool argument, preserving empty/invalid values so failed
@@ -86,6 +96,14 @@ function toolPrimaryArg(
   const n = name.toLowerCase()
   if (n === 'bash') {
     const command = previewCommand ?? (args?.command as string) ?? ''
+    return formatBashCommandDisplay(command, expanded).headline
+  }
+  if (isTaskTool(name)) {
+    // The engine resolves the task id to its command via preview_command, so
+    // concurrent cards name different shells instead of all reading
+    // `task_output`. Falls back to the raw id when the task is already gone.
+    const command = previewCommand ?? (args?.task_id as string) ?? ''
+    if (!command) return ''
     return formatBashCommandDisplay(command, expanded).headline
   }
 
@@ -554,7 +572,7 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     return lines
   }
 
-  insertToolStatus(lines, toolStatusLine('●', ['running']))
+  insertToolStatus(lines, toolStatusLine('●', runningStatusParts(call.name, args)))
   if (diff) {
     lines.push({ id: genId('tool-diff'), kind: 'tool', text: colorizeUnifiedDiff(diff) })
   } else {
@@ -575,6 +593,24 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
 /** Failed tool bodies auto-preview at most this many tail lines. */
 const ERROR_PREVIEW_LINES = 20
 
+/**
+ * Status parts for a card that is still executing.
+ *
+ * Most tools just say `running`. A `task_output` says what it is doing to the
+ * task instead, because several such cards can be in flight at once and
+ * `running` on each one says nothing about which is which or why it is waiting.
+ */
+function runningStatusParts(name: string, args: Record<string, unknown>): string[] {
+  const n = name.toLowerCase()
+  if (n === 'task_output' || n === 'taskoutput') {
+    // `block` defaults to true, matching the engine's `is_none_or`.
+    const blocking = args?.block !== false
+    return [blocking ? 'waiting for task' : 'checking task']
+  }
+  if (n === 'task_stop' || n === 'taskstop') return ['stopping task']
+  return ['running']
+}
+
 export function buildToolResult(
   name: string,
   args: Record<string, unknown>,
@@ -590,10 +626,24 @@ export function buildToolResult(
   const duration = durationMs !== undefined ? formatDuration(durationMs) : ''
   // Failed status: lead with "failed" so the line reads as an outcome, not a
   // size/duration metric ("74 B · 0ms" is meaningless for a missing path).
+  const backgrounded = details.backgrounded === true
+  // A task tool reports the *task's* outcome, not the poll's: `completed · exit
+  // 0 · 1m 47s` rather than a byte count of the response body.
+  const taskParts = !isError && isTaskTool(name) ? taskToolStatusParts(details) : []
+  const taskOutcome = taskParts.length > 0 ? taskParts[0]! : ''
+  // The poll succeeded but the task did not. Marking that `✓` would report a
+  // broken build as a success, so the glyph follows the task, not the call.
+  const taskFailed = taskOutcome.startsWith('failed') || taskOutcome.startsWith('timed out')
+  // A poll that found the task still running is in-flight work, not a
+  // completed step, so it keeps the `●` running glyph.
+  const stillRunning = taskOutcome.startsWith('still running')
   const statusParts = isError
     ? ['failed', summary, duration].filter(Boolean)
-    : [summary, duration].filter(Boolean)
-  const lines: OutputLine[] = [toolStatusLine(isError ? '✗' : '✓', statusParts)]
+    : taskParts.length > 0
+      ? taskParts
+      : [summary, duration].filter(Boolean)
+  const mark = isError || taskFailed ? '✗' : backgrounded || stillRunning ? '●' : '✓'
+  const lines: OutputLine[] = [toolStatusLine(mark, statusParts)]
 
   // Diff (for write/edit tools) — skip on failure; the attempt is already
   // summarized on the headline and the error body is what matters.
@@ -960,6 +1010,57 @@ function detailNumber(details: Record<string, unknown>, key: string): number | u
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+function detailString(details: Record<string, unknown>, key: string): string | undefined {
+  const value = details[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/**
+ * Status parts for a settled `task_output` / `task_stop` card.
+ *
+ * `● · running` alone was unreadable with several tasks in flight: it named
+ * neither the task, its runtime, nor whether the poll actually returned
+ * anything. The outcome leads, because that is what the next step depends on.
+ */
+function taskToolStatusParts(details: Record<string, unknown>): string[] {
+  const status = detailString(details, 'status')
+  const retrieval = detailString(details, 'retrieval_status')
+  const exitCode = detailNumber(details, 'exit_code')
+  const elapsedMs = detailNumber(details, 'elapsed_ms')
+  const lines = detailNumber(details, 'total_lines')
+  const parts: string[] = []
+
+  // Outcome first. A still-running task says so plainly rather than reporting
+  // the poll as a success.
+  switch (status) {
+    case 'completed':
+      parts.push(exitCode !== undefined ? `completed · exit ${exitCode}` : 'completed')
+      break
+    case 'failed':
+      parts.push(exitCode !== undefined ? `failed · exit ${exitCode}` : 'failed')
+      break
+    case 'timed_out':
+      parts.push('timed out')
+      break
+    case 'killed':
+      // "cancelled" rather than "stopped" when it was the user's decision: the
+      // work is void, not merely halted.
+      parts.push(details.stopped_by_user === true ? 'cancelled by user' : 'stopped')
+      break
+    case 'running':
+    case 'running_foreground':
+      // `retrieval_status` distinguishes "waited and gave up" from "just looked".
+      parts.push(retrieval === 'timeout' ? 'still running · wait timed out' : 'still running')
+      break
+    default:
+      if (status) parts.push(status)
+  }
+
+  if (elapsedMs !== undefined) parts.push(formatElapsed(elapsedMs))
+  if (lines !== undefined && lines > 0) parts.push(plural(lines, 'line'))
+  return parts
+}
+
 function resultLineCount(content: string): number {
   const normalized = content.replace(/\r\n|\r/g, '\n').replace(/\n+$/, '')
   return normalized ? normalized.split('\n').length : 0
@@ -1045,6 +1146,7 @@ function toolResultSummary(
   const lines = result ? resultLineCount(result) : 0
 
   if (normalizedName === 'bash') {
+    if (details.backgrounded === true) return 'started · running in background'
     const exitCode = detailNumber(details, 'exit_code')
     if (exitCode !== undefined) return `exit ${exitCode}`
   }

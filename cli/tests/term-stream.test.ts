@@ -946,6 +946,56 @@ describe('term stream machine', () => {
     expect(heartbeatBlock?.type === 'tool_call' ? heartbeatBlock.toolCall.progress : undefined).toBe('line 1\nline 2')
   })
 
+  test('a task_output heartbeat also preserves the card output', () => {
+    // `task_output` says "Waiting" rather than "Running"; if that spelling were
+    // not recognized as a heartbeat it would overwrite streamed partial output.
+    const appState = createInitialState('model', '/tmp')
+    appState.currentAssistantContent = [{
+      type: 'tool_call',
+      contentIndex: 0,
+      toolCall: {
+        id: 'call-task',
+        name: 'task_output',
+        args: {},
+        status: 'running',
+        progress: 'line-1\nline-2',
+      },
+    }]
+    const state = createStreamMachineState(appState, createSpinnerState())
+    const update = reduceRunEvent(state, {
+      kind: 'tool_progress',
+      payload: { tool_call_id: 'call-task', tool_name: 'task_output', text: 'Waiting... 6s' },
+    }, { termRows: 24 })
+
+    const block = update.state.appState.currentAssistantContent[0]
+    expect(block?.type === 'tool_call' ? block.toolCall.progress : undefined).toBe('line-1\nline-2')
+  })
+
+  test('real streamed output still replaces the progress body', () => {
+    // The filter must be narrow: anything that is not a bare heartbeat is real
+    // output and has to land.
+    const appState = createInitialState('model', '/tmp')
+    appState.currentAssistantContent = [{
+      type: 'tool_call',
+      contentIndex: 0,
+      toolCall: {
+        id: 'call-task',
+        name: 'task_output',
+        args: {},
+        status: 'running',
+        progress: 'old',
+      },
+    }]
+    const state = createStreamMachineState(appState, createSpinnerState())
+    const update = reduceRunEvent(state, {
+      kind: 'tool_progress',
+      payload: { tool_call_id: 'call-task', tool_name: 'task_output', text: 'Waiting for peer... 6s left' },
+    }, { termRows: 24 })
+
+    const block = update.state.appState.currentAssistantContent[0]
+    expect(block?.type === 'tool_call' ? block.toolCall.progress : undefined).toBe('Waiting for peer... 6s left')
+  })
+
   test('tool lifecycle keeps a stable headline and second-line status', () => {
     const queued = buildToolCard({ id: 'call-1', name: 'read', args: { path: 'src/a.rs' }, status: 'queued' })
     expect(queued.map(line => line.text)).toEqual([

@@ -65,6 +65,9 @@ pub struct Agent {
     // Spill: large tool results written to disk
     pub(super) spill: Option<Arc<FsSpill>>,
 
+    // Session-scoped background process notifications.
+    pub(super) process_manager: Option<Arc<crate::tools::ProcessManager>>,
+
     // Control
     pub(super) cancel: Option<CancellationToken>,
     pub(super) is_streaming: bool,
@@ -114,6 +117,7 @@ impl Agent {
             before_turn: None,
             after_turn: None,
             spill: None,
+            process_manager: None,
             cancel: None,
             is_streaming: false,
             last_run_handle: None,
@@ -225,6 +229,14 @@ impl Agent {
     /// Set spill from an optional value.
     pub fn with_spill_opt(mut self, spill: Option<Arc<FsSpill>>) -> Self {
         self.spill = spill;
+        self
+    }
+
+    pub fn with_process_manager(
+        mut self,
+        process_manager: Arc<crate::tools::ProcessManager>,
+    ) -> Self {
+        self.process_manager = Some(process_manager);
         self
     }
 

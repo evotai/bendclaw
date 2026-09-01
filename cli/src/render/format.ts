@@ -59,6 +59,24 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/**
+ * Wall-clock runtime as `2s` / `1m 34s` / `1h 30m`.
+ *
+ * Distinct from `formatDuration`, which is for sub-second tool latency. This is
+ * for long-lived work, and one definition is shared by the background panel and
+ * the task tool cards so a task reads the same in both places.
+ */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  if (total < 60) return `${total}s`
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  if (minutes < 60) return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`
+  const hours = Math.floor(minutes / 60)
+  const restMinutes = minutes % 60
+  return restMinutes === 0 ? `${hours}h` : `${hours}h ${restMinutes}m`
+}
+
 export function renderBar(value: number, max: number, width: number): string {
   width = repeatCount(width)
   if (width === 0) return ''

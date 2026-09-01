@@ -1,61 +1,83 @@
-//! Bash tool — execute shell commands with timeout, streaming output, and process cleanup.
+//! Bash tool — execute shell commands in the foreground or as resumable background tasks.
 
-use crate::types::*;
-
-/// Type alias for command confirmation callback.
-pub type ConfirmFn = Box<dyn Fn(&str) -> bool + Send + Sync>;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use command_group::AsyncCommandGroup;
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-/// Execute shell commands. Captures stdout + stderr with streaming progress.
+use super::process::BackgroundReason;
+use super::process::ProcessManager;
+use super::process::ProcessSnapshot;
+use super::process::ProcessStatus;
+use super::process::StartProcess;
+use super::process::PROGRESS_INTERVAL;
+use super::process::UPDATE_INTERVAL;
+use crate::types::*;
+
+/// Type alias for command confirmation callback.
+pub type ConfirmFn = Box<dyn Fn(&str) -> bool + Send + Sync>;
+
+/// Max lines to include in the final tool result.
+const MAX_DISPLAY_LINES: usize = 2000;
+/// Max bytes to include in the final tool result.
+const MAX_DISPLAY_BYTES: usize = 50 * 1024;
+/// Max bytes per single output line before truncation.
+const MAX_LINE_BYTES: usize = 4096;
+/// Default foreground wait before a still-running command is yielded.
+///
+/// Deliberately generous: a build or test suite routinely runs for a minute,
+/// and a command that gets yielded mid-dependency-chain (`cargo test` before
+/// `git commit`) is the expensive failure — the model has to notice the task ID
+/// and wait, where staying in the foreground would just have worked.
+const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(120);
+/// Longest model-requested foreground wait.
+const MAX_YIELD_TIME: Duration = Duration::from_secs(600);
+
+/// Execute shell commands. Short commands return normally; long commands can
+/// yield into a session-scoped [`ProcessManager`] and be queried later.
 pub struct BashTool {
-    /// Working directory for commands
+    /// Working directory for commands.
     pub cwd: Option<String>,
-    /// Default execution time per command when none is requested.
+    /// Default hard execution limit per command when none is requested.
     pub timeout: Duration,
-    /// Hard ceiling on the per-command timeout. A model-requested `timeout`
-    /// is clamped to this; no command may exceed it.
+    /// Hard ceiling on a model-requested timeout.
     pub max_timeout: Duration,
-    /// Cap on the in-memory rolling tail. The spill file holds the complete
-    /// output once it exceeds the display limits, so this only bounds memory.
+    /// Cap on the in-memory rolling tail. The output file remains complete.
     pub max_output_bytes: usize,
-    /// Commands/patterns that are always blocked (e.g., "rm -rf /")
+    /// Commands/patterns that are always blocked.
     pub deny_patterns: Vec<String>,
-    /// Optional callback for confirming dangerous commands
+    /// Optional callback for confirming dangerous commands.
     pub confirm_fn: Option<ConfirmFn>,
     /// Environment variables injected into every bash subprocess.
     pub envs: Vec<(String, String)>,
     /// Directories the OS sandbox allows the child process to access.
-    /// When set, OS-level sandbox (Seatbelt/Landlock) is applied before exec.
-    /// Separate from PathGuard — may include toolchain dirs that file tools should not access.
     pub sandbox_dirs: Option<Vec<PathBuf>>,
+    process_manager: Arc<ProcessManager>,
+    background_enabled: bool,
 }
 
 impl Default for BashTool {
     fn default() -> Self {
         Self {
             cwd: None,
-            timeout: Duration::from_secs(600),      // 10 minutes
-            max_timeout: Duration::from_secs(1800), // 30 minutes hard cap
-            max_output_bytes: 256 * 1024,           // 256KB
+            timeout: Duration::from_secs(600),
+            max_timeout: Duration::from_secs(1800),
+            max_output_bytes: 256 * 1024,
             deny_patterns: vec![
                 "rm -rf /".into(),
                 "rm -rf /*".into(),
                 "mkfs".into(),
                 "dd if=".into(),
-                ":(){:|:&};:".into(), // fork bomb
+                ":(){:|:&};:".into(),
             ],
             confirm_fn: None,
             envs: Vec::new(),
             sandbox_dirs: None,
+            process_manager: Arc::new(ProcessManager::new()),
+            background_enabled: false,
         }
     }
 }
@@ -75,8 +97,6 @@ impl BashTool {
         self
     }
 
-    /// Set the hard ceiling on per-command timeout. Clamped so it is never
-    /// below the default timeout.
     pub fn with_max_timeout(mut self, max_timeout: Duration) -> Self {
         self.max_timeout = max_timeout;
         self
@@ -101,201 +121,13 @@ impl BashTool {
         self.sandbox_dirs = Some(dirs);
         self
     }
-}
 
-/// Max lines to include in the final tool result.
-const MAX_DISPLAY_LINES: usize = 2000;
-/// Max bytes to include in the final tool result.
-const MAX_DISPLAY_BYTES: usize = 50 * 1024; // 50KB
-
-/// Streaming capture of a command's merged stdout+stderr, mirroring pi's
-/// `OutputAccumulator`. Under the display limits everything stays in memory;
-/// once crossed, the spill file is opened (buffered bytes replayed into it)
-/// and every byte is written through, so the file always holds the complete
-/// output while memory keeps only a bounded rolling tail.
-struct OutputCapture {
-    /// Full output until the spill file opens, then the last `tail_cap` bytes.
-    buf: Vec<u8>,
-    total_bytes: usize,
-    newlines: usize,
-    open_line: bool,
-    file: Option<std::fs::File>,
-    path: Option<PathBuf>,
-    spill: Option<Arc<crate::spill::FsSpill>>,
-    key: String,
-    tail_cap: usize,
-}
-
-impl OutputCapture {
-    fn new(spill: Option<Arc<crate::spill::FsSpill>>, key: String, tail_cap: usize) -> Self {
-        Self {
-            buf: Vec::with_capacity(4096),
-            total_bytes: 0,
-            newlines: 0,
-            open_line: false,
-            file: None,
-            path: None,
-            spill,
-            key,
-            tail_cap,
-        }
-    }
-
-    fn append(&mut self, chunk: &[u8]) {
-        if chunk.is_empty() {
-            return;
-        }
-        self.total_bytes += chunk.len();
-        self.newlines += chunk.iter().filter(|&&b| b == b'\n').count();
-        self.open_line = chunk.last() != Some(&b'\n');
-
-        if self.file.is_none() && self.over_threshold() {
-            self.open_spill_file();
-        }
-
-        if let Some(file) = self.file.as_mut() {
-            let _ = file.write_all(chunk);
-        }
-        self.buf.extend_from_slice(chunk);
-        self.trim_tail();
-    }
-
-    /// Flush and close the spill file, if open.
-    fn finish(&mut self) {
-        if let Some(mut file) = self.file.take() {
-            let _ = file.flush();
-        }
-    }
-
-    /// Lossy-UTF-8 rolling tail, for display and progress snapshots.
-    fn tail_text(&self) -> String {
-        String::from_utf8_lossy(&self.buf).to_string()
-    }
-
-    fn total_lines(&self) -> usize {
-        self.newlines + usize::from(self.open_line)
-    }
-
-    fn path(&self) -> Option<&PathBuf> {
-        self.path.as_ref()
-    }
-
-    fn over_threshold(&self) -> bool {
-        self.total_bytes > MAX_DISPLAY_BYTES || self.total_lines() > MAX_DISPLAY_LINES
-    }
-
-    fn open_spill_file(&mut self) {
-        let Some(spill) = self.spill.clone() else {
-            return;
-        };
-        let path = spill.path_for_key(&self.key);
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        match std::fs::File::create(&path) {
-            Ok(mut file) => {
-                let _ = file.write_all(&self.buf);
-                self.file = Some(file);
-                self.path = Some(path);
-            }
-            Err(e) => {
-                tracing::warn!("bash full-output spill open failed: {e}");
-            }
-        }
-    }
-
-    /// Drain the front at a newline boundary. Not allowed before the spill
-    /// file opens (or before crossing the threshold without a spill store):
-    /// the buffer must stay complete for a lossless replay.
-    fn trim_tail(&mut self) {
-        if self.file.is_none() && !self.over_threshold() {
-            return;
-        }
-        if self.buf.len() > self.tail_cap * 2 {
-            let target = self.buf.len() - self.tail_cap;
-            let drain_to = self.buf[target..]
-                .iter()
-                .position(|&b| b == b'\n')
-                .map_or(target, |p| target + p + 1);
-            self.buf.drain(..drain_to);
-        }
+    pub fn with_process_manager(mut self, manager: Arc<ProcessManager>) -> Self {
+        self.process_manager = manager;
+        self.background_enabled = true;
+        self
     }
 }
-
-/// Read a pipe to EOF into the shared capture.
-async fn read_into<R: tokio::io::AsyncRead + Unpin>(
-    mut pipe: R,
-    capture: Arc<parking_lot::Mutex<OutputCapture>>,
-) {
-    let mut tmp = [0u8; 4096];
-    loop {
-        match pipe.read(&mut tmp).await {
-            Ok(0) => break,
-            Ok(n) => capture.lock().append(&tmp[..n]),
-            Err(_) => break,
-        }
-    }
-}
-
-/// Tail-truncate output: keep last `MAX_DISPLAY_LINES` / `MAX_DISPLAY_BYTES`.
-/// Returns (truncated_text, was_truncated, total_lines).
-fn tail_truncate(text: &str) -> (String, bool, usize) {
-    let lines: Vec<&str> = text.lines().collect();
-    let total_lines = lines.len();
-
-    if text.len() <= MAX_DISPLAY_BYTES && total_lines <= MAX_DISPLAY_LINES {
-        return (text.to_string(), false, total_lines);
-    }
-
-    // Work backwards: collect lines that fit within both limits
-    let mut collected: Vec<&str> = Vec::new();
-    let mut byte_count = 0usize;
-
-    for &line in lines.iter().rev() {
-        let line_bytes = line.len() + 1; // +1 for newline
-        if byte_count + line_bytes > MAX_DISPLAY_BYTES || collected.len() >= MAX_DISPLAY_LINES {
-            break;
-        }
-        collected.push(line);
-        byte_count += line_bytes;
-    }
-
-    collected.reverse();
-    (collected.join("\n"), true, total_lines)
-}
-
-/// Max bytes per single output line before truncation.
-const MAX_LINE_BYTES: usize = 4096;
-
-/// Truncate lines that exceed `MAX_LINE_BYTES`, keeping a head+tail preview.
-fn truncate_long_lines(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    for (i, line) in text.split('\n').enumerate() {
-        if i > 0 {
-            result.push('\n');
-        }
-        if line.len() <= MAX_LINE_BYTES {
-            result.push_str(line);
-        } else {
-            let half = MAX_LINE_BYTES / 2;
-            // Find safe char boundaries
-            let head_end = line.floor_char_boundary(half);
-            let tail_start = line.ceil_char_boundary(line.len().saturating_sub(half));
-            let omitted = line.len() - head_end - (line.len() - tail_start);
-            result.push_str(&line[..head_end]);
-            result.push_str(&format!(" ... ({omitted} bytes truncated) ... "));
-            result.push_str(&line[tail_start..]);
-        }
-    }
-    result
-}
-
-/// Interval between progress updates.
-const PROGRESS_INTERVAL: Duration = Duration::from_secs(3);
-/// Interval between partial output updates.
-const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
-/// Time to wait for IO drain after killing a child.
-const IO_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[async_trait]
 impl AgentTool for BashTool {
@@ -312,35 +144,69 @@ impl AgentTool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a bash command in the current working directory. Returns stdout and stderr. \
-         Output is truncated to last 2000 lines or 50KB (whichever is hit first). \
-         If truncated, full output is saved to a temp file. Optionally provide a timeout in \
-         seconds."
+        if self.background_enabled {
+            "Execute a bash command. Short commands return normally. Set run_in_background to return immediately, or use yield_time_ms to control how long to wait before returning a background task ID. The timeout parameter remains the command's hard runtime limit."
+        } else {
+            "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). The timeout parameter is the command's hard runtime limit."
+        }
     }
 
     fn prompt_snippet(&self) -> Option<&str> {
-        Some("Execute bash commands (ls, grep, find, etc.)")
+        if self.background_enabled {
+            Some("Execute bash commands (ls, grep, find, etc.), including background tasks")
+        } else {
+            Some("Execute bash commands (ls, grep, find, etc.)")
+        }
+    }
+
+    fn prompt_guidelines(&self) -> Vec<&str> {
+        if self.background_enabled {
+            vec![
+                "For long-running commands that can continue independently, use `run_in_background: true` and inspect the returned output path or use `task_output`.",
+            ]
+        } else {
+            Vec::new()
+        }
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
+        let mut properties = serde_json::json!({
+            "command": {
+                "type": "string",
+                "description": "Bash command to execute"
+            },
+            "timeout": {
+                "type": "number",
+                "description": "Hard command runtime limit in seconds. Defaults to 600, max 1800."
+            }
+        });
+        if self.background_enabled {
+            if let Some(properties) = properties.as_object_mut() {
+                properties.insert(
+                    "yield_time_ms".into(),
+                    serde_json::json!({
+                        "type": "number",
+                        "description": "Wait before yielding a still-running command as a background task. Defaults to 120000ms, max 600000ms."
+                    }),
+                );
+                properties.insert(
+                    "run_in_background".into(),
+                    serde_json::json!({
+                        "type": "boolean",
+                        "description": "Start the command and return a background task ID immediately."
+                    }),
+                );
+            }
+        }
         serde_json::json!({
             "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Bash command to execute"
-                },
-                "timeout": {
-                    "type": "number",
-                    "description": "Optional timeout in seconds."
-                }
-            },
+            "properties": properties,
             "required": ["command"]
         })
     }
 
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
-        params["command"].as_str().map(|s| s.to_string())
+        params["command"].as_str().map(str::to_string)
     }
 
     async fn execute(
@@ -348,259 +214,370 @@ impl AgentTool for BashTool {
         params: serde_json::Value,
         ctx: ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        let cancel = ctx.cancel;
-        let command = params["command"]
+        let command_text = params["command"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'command' parameter".into()))?;
-        // A model-requested timeout overrides the default, clamped to
-        // [default, max_timeout]. Absent/zero/negative falls back to default.
-        let timeout = match params["timeout"].as_f64() {
-            Some(secs) if secs > 0.0 => {
-                // Clamp to [default, max] without risking a clamp() panic if a
-                // caller ever configured default > max.
-                Duration::from_secs_f64(secs)
-                    .min(self.max_timeout)
-                    .max(self.timeout)
-            }
-            _ => self.timeout,
-        };
+        let timeout = requested_timeout(&params, self.timeout, self.max_timeout);
+        let run_in_background =
+            self.background_enabled && params["run_in_background"].as_bool().unwrap_or(false);
+        let yield_time = self
+            .background_enabled
+            .then(|| requested_yield_time(&params));
 
-        // Check deny patterns
         for pattern in &self.deny_patterns {
-            if command.contains(pattern.as_str()) {
+            if command_text.contains(pattern.as_str()) {
                 return Err(ToolError::Failed(format!(
-                    "Command blocked by safety policy: contains '{}'. \
-                     This pattern is denied for safety.",
-                    pattern
+                    "Command blocked by safety policy: contains '{pattern}'. This pattern is denied for safety."
                 )));
             }
         }
-
-        // Check confirmation callback
-        if let Some(ref confirm) = self.confirm_fn {
-            if !confirm(command) {
+        if let Some(confirm) = &self.confirm_fn {
+            if !confirm(command_text) {
                 return Err(ToolError::Failed(
                     "Command was not confirmed by the user.".into(),
                 ));
             }
         }
-
-        // Early cancel check
-        if cancel.is_cancelled() {
+        if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
 
-        let mut cmd = Command::new("bash");
-        cmd.arg("-c").arg(command);
-
-        if let Some(ref cwd) = self.cwd {
-            cmd.current_dir(cwd);
-        }
-
+        let cwd = match self.cwd.as_ref() {
+            Some(cwd) => PathBuf::from(cwd),
+            None if !ctx.cwd.as_os_str().is_empty() => ctx.cwd.clone(),
+            None => std::env::current_dir().map_err(|error| {
+                ToolError::Failed(format!("Failed to resolve current directory: {error}"))
+            })?,
+        };
+        let output_dir = process_output_dir(&ctx);
+        let mut command = Command::new("bash");
+        command.arg("-c").arg(command_text).current_dir(&cwd);
         if !self.envs.is_empty() {
-            cmd.envs(self.envs.iter().map(|(k, v)| (k, v)));
+            command.envs(self.envs.iter().map(|(key, value)| (key, value)));
+        }
+        if let Some(dirs) = &self.sandbox_dirs {
+            super::sandbox::wrap_command(&mut command, dirs)
+                .map_err(|error| ToolError::Failed(format!("Sandbox setup failed: {error}")))?;
         }
 
-        cmd.stdin(std::process::Stdio::null());
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
+        let task_id = self
+            .process_manager
+            .start(StartProcess {
+                command,
+                command_text: command_text.to_string(),
+                tool_call_id: ctx.tool_call_id.clone(),
+                cwd,
+                timeout,
+                output_dir,
+                tail_bytes: self.max_output_bytes,
+                background_reason: run_in_background.then_some(BackgroundReason::Explicit),
+            })
+            .await?;
 
-        // Apply OS-level sandbox if sandbox_dirs is set
-        if let Some(ref dirs) = self.sandbox_dirs {
-            super::sandbox::wrap_command(&mut cmd, dirs)
-                .map_err(|e| ToolError::Failed(format!("Sandbox setup failed: {e}")))?;
+        if run_in_background {
+            return background_result(&self.process_manager, &task_id, BackgroundReason::Explicit);
         }
 
-        // Spawn as a process group so we can kill the entire tree on timeout/cancel.
-        // On Unix this creates a real process group; on Windows it uses a job object.
-        let mut child = cmd
-            .group_spawn()
-            .map_err(|e| ToolError::Failed(format!("Failed to execute: {e}")))?;
-
-        // Take ownership of stdout/stderr pipes
-        let child_stdout = child.inner().stdout.take();
-        let child_stderr = child.inner().stderr.take();
-
-        // Merged stdout+stderr capture; spills the complete output to a file
-        // once the display limits are crossed.
-        let capture = Arc::new(parking_lot::Mutex::new(OutputCapture::new(
-            ctx.spill.clone(),
-            format!("{}-bash-output", ctx.tool_call_id),
-            self.max_output_bytes,
-        )));
-
-        let stdout_task = child_stdout.map(|pipe| {
-            let capture = capture.clone();
-            tokio::spawn(read_into(pipe, capture))
-        });
-        let stderr_task = child_stderr.map(|pipe| {
-            let capture = capture.clone();
-            tokio::spawn(read_into(pipe, capture))
-        });
-
-        let start = Instant::now();
+        let started = Instant::now();
         let mut last_progress = Instant::now();
         let mut last_update = Instant::now();
-
-        // Helper: kill the process group and drain IO tasks
-        async fn kill_and_drain(
-            child: &mut command_group::AsyncGroupChild,
-            stdout_task: Option<tokio::task::JoinHandle<()>>,
-            stderr_task: Option<tokio::task::JoinHandle<()>>,
-        ) {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let _ = tokio::time::timeout(IO_DRAIN_TIMEOUT, async {
-                if let Some(task) = stdout_task {
-                    let _ = task.await;
+        loop {
+            if ctx.cancel.is_cancelled() {
+                if let Some(snapshot) = self.process_manager.stop(&task_id).await {
+                    remove_output_file(&snapshot.output_path);
                 }
-                if let Some(task) = stderr_task {
-                    let _ = task.await;
+                self.process_manager.forget(&task_id);
+                return Err(ToolError::Cancelled);
+            }
+
+            let snapshot = self
+                .process_manager
+                .snapshot(&task_id)
+                .ok_or_else(|| ToolError::Failed(format!("Process task disappeared: {task_id}")))?;
+            if snapshot.status.is_terminal() {
+                let result = format_terminal_result(snapshot, self.sandbox_dirs.is_some());
+                self.process_manager.forget(&task_id);
+                return result;
+            }
+
+            let elapsed = started.elapsed();
+            if yield_time.is_some_and(|limit| elapsed >= limit) {
+                if self
+                    .process_manager
+                    .background(&task_id, BackgroundReason::YieldElapsed)
+                {
+                    return background_result(
+                        &self.process_manager,
+                        &task_id,
+                        BackgroundReason::YieldElapsed,
+                    );
                 }
-            })
-            .await;
-        }
+                return completed_result(
+                    &self.process_manager,
+                    &task_id,
+                    self.sandbox_dirs.is_some(),
+                );
+            }
 
-        // Main loop: wait for child exit, cancel, or timeout.
-        // Periodically send progress/update callbacks.
-        let exit_status = loop {
-            let next_tick = Duration::from_millis(500);
-
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    kill_and_drain(&mut child, stdout_task, stderr_task).await;
-                    return Err(ToolError::Cancelled);
+            if elapsed >= PROGRESS_INTERVAL && last_progress.elapsed() >= PROGRESS_INTERVAL {
+                if let Some(on_progress) = &ctx.on_progress {
+                    on_progress(format!("Running... {}s", elapsed.as_secs()));
                 }
-                _ = tokio::time::sleep(next_tick) => {
-                    let elapsed = start.elapsed();
-
-                    // Check timeout
-                    if elapsed >= timeout {
-                        kill_and_drain(&mut child, stdout_task, stderr_task).await;
-
-                        let (display, spill_path) = {
-                            let mut capture = capture.lock();
-                            let tail = capture.tail_text();
-                            capture.finish();
-                            let (display, _, _) = tail_truncate(&truncate_long_lines(&tail));
-                            (display, capture.path().cloned())
-                        };
-                        let mut msg = format!(
-                            "Command timed out after {}s",
-                            timeout.as_secs()
-                        );
-                        if !display.is_empty() {
-                            msg.push_str("\nLast output:\n");
-                            msg.push_str(&display);
-                        }
-                        if let Some(path) = spill_path {
-                            msg.push_str(&format!("\n\n[Full output saved to: {}]", path.display()));
-                        }
-                        return Err(ToolError::Failed(msg));
-                    }
-
-                    // Send progress update
-                    if elapsed > PROGRESS_INTERVAL
-                        && last_progress.elapsed() >= PROGRESS_INTERVAL
-                    {
-                        if let Some(ref on_progress) = ctx.on_progress {
-                            on_progress(format!("Running... {}s", elapsed.as_secs()));
-                        }
-                        last_progress = Instant::now();
-                    }
-
-                    // Send partial output update
-                    if elapsed > UPDATE_INTERVAL && last_update.elapsed() >= UPDATE_INTERVAL {
-                        if let Some(ref on_update) = ctx.on_update {
-                            let snippet = capture.lock().tail_text();
-                            if !snippet.is_empty() {
-                                on_update(ToolResult {
-                                    content: vec![Content::Text { text: snippet }],
-                                    details: serde_json::Value::Null,
-                                    retention: Retention::Normal,
-                                });
-                            }
-                        }
-                        last_update = Instant::now();
+                last_progress = Instant::now();
+            }
+            if elapsed >= UPDATE_INTERVAL && last_update.elapsed() >= UPDATE_INTERVAL {
+                if let Some(on_update) = &ctx.on_update {
+                    if !snapshot.output.is_empty() {
+                        on_update(ToolResult {
+                            content: vec![Content::Text {
+                                text: snapshot.output,
+                            }],
+                            details: serde_json::Value::Null,
+                            retention: Retention::Normal,
+                        });
                     }
                 }
-                status = child.wait() => {
-                    break status;
-                }
+                last_update = Instant::now();
             }
-        };
-
-        // Child exited — wait for IO tasks to finish (bounded)
-        let _ = tokio::time::timeout(IO_DRAIN_TIMEOUT, async {
-            if let Some(task) = stdout_task {
-                let _ = task.await;
-            }
-            if let Some(task) = stderr_task {
-                let _ = task.await;
-            }
-        })
-        .await;
-
-        let exit_code = match exit_status {
-            Ok(status) => status.code().unwrap_or(-1),
-            Err(e) => {
-                return Err(ToolError::Failed(format!(
-                    "Failed to wait for process: {e}"
-                )));
-            }
-        };
-
-        // Readers are drained: finalize the capture and build the display view.
-        let (display, raw_tail, total_lines, spill_path) = {
-            let mut capture = capture.lock();
-            let tail = capture.tail_text();
-            capture.finish();
-            let total_lines = capture.total_lines();
-            let path = capture.path().cloned();
-            let (display, _, _) = tail_truncate(&truncate_long_lines(&tail));
-            (display, tail, total_lines, path)
-        };
-
-        let mut output = display;
-        if let Some(path) = &spill_path {
-            let shown_lines = output.lines().count();
-            let start_line = total_lines.saturating_sub(shown_lines) + 1;
-            output.push_str(&format!(
-                "\n\n[Showing lines {start_line}-{total_lines} of {total_lines}. Full output: {}]",
-                path.display()
-            ));
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
-
-        if exit_code != 0 {
-            output = format!("Exit code: {exit_code}\n{output}");
-        }
-
-        // Append sandbox hint on sandbox permission failures
-        let output = if self.sandbox_dirs.is_some()
-            && exit_code != 0
-            && (raw_tail.contains("Operation not permitted")
-                || raw_tail.contains("Permission denied"))
-        {
-            format!(
-                "{output}\n\n[Sandbox] This command failed due to OS-level sandbox restrictions. \
-                 File access is limited to the allowed directories. \
-                 Do not retry — the restriction is enforced by the kernel."
-            )
-        } else {
-            output
-        };
-
-        // Return output even on failure — LLMs need error output to self-correct
-        Ok(ToolResult {
-            content: vec![Content::Text { text: output }],
-            details: serde_json::json!({
-                "exit_code": exit_code,
-                "success": exit_code == 0,
-                "full_output_path": spill_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string()),
-            }),
-            retention: Retention::Normal,
-        })
     }
+}
+
+fn requested_timeout(
+    params: &serde_json::Value,
+    default_timeout: Duration,
+    max_timeout: Duration,
+) -> Duration {
+    match params["timeout"].as_f64() {
+        Some(seconds) if seconds.is_finite() && seconds > 0.0 => {
+            let upper_bound = max_timeout.max(default_timeout);
+            Duration::try_from_secs_f64(seconds)
+                .unwrap_or(upper_bound)
+                .min(upper_bound)
+        }
+        _ => default_timeout,
+    }
+}
+
+fn requested_yield_time(params: &serde_json::Value) -> Duration {
+    match params["yield_time_ms"].as_u64() {
+        Some(milliseconds) => Duration::from_millis(milliseconds).min(MAX_YIELD_TIME),
+        None => DEFAULT_YIELD_TIME,
+    }
+}
+
+fn process_output_dir(ctx: &ToolContext) -> PathBuf {
+    if let Some(spill) = &ctx.spill {
+        let candidate = spill.path_for_key("process-output");
+        if let Some(parent) = candidate.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    std::env::temp_dir().join("evot").join("process-output")
+}
+
+fn background_result(
+    manager: &ProcessManager,
+    task_id: &str,
+    reason: BackgroundReason,
+) -> Result<ToolResult, ToolError> {
+    let snapshot = manager
+        .snapshot(task_id)
+        .ok_or_else(|| ToolError::Failed(format!("Process task disappeared: {task_id}")))?;
+    let text = format!(
+        "{}\nTask ID: {}\nOutput: {}\n{}",
+        background_lede(reason),
+        snapshot.task_id,
+        snapshot.output_path.display(),
+        BACKGROUND_GUIDANCE,
+    );
+    Ok(ToolResult {
+        content: vec![Content::Text { text }],
+        details: serde_json::json!({
+            "task_id": snapshot.task_id,
+            "status": "running",
+            "backgrounded": true,
+            "background_reason": reason,
+            "output_path": snapshot.output_path,
+        }),
+        retention: Retention::Normal,
+    })
+}
+
+/// Opening line naming *why* the command is no longer in the foreground.
+///
+/// An explicit `run_in_background` needs no explanation, but a command the
+/// harness moved on its own does: without the reason the model cannot tell an
+/// intentional detach from one it should wait out.
+fn background_lede(reason: BackgroundReason) -> String {
+    match reason {
+        BackgroundReason::YieldElapsed => format!(
+            "Command did not finish within its {}s foreground wait and was moved to the background; it was not interrupted.",
+            DEFAULT_YIELD_TIME.as_secs()
+        ),
+        _ => "Command is running in the background.".to_string(),
+    }
+}
+
+/// What the model must do next.
+///
+/// The dependency sentence is the load-bearing one. A yielded `cargo test` that
+/// a later `git commit` depends on used to leave the model with three tool
+/// options and no statement that waiting was required, so it could commit
+/// against a suite that had not finished.
+const BACKGROUND_GUIDANCE: &str = concat!(
+    "You will be notified when it completes. ",
+    "If a later step depends on this command's result, call task_output to wait for it ",
+    "before that step — do not end your turn to wait, and do not treat a started task as a passed one. ",
+    "Use Read on the output path for interim output, or task_stop to terminate it.",
+);
+
+fn completed_result(
+    manager: &ProcessManager,
+    task_id: &str,
+    sandboxed: bool,
+) -> Result<ToolResult, ToolError> {
+    let snapshot = manager
+        .snapshot(task_id)
+        .ok_or_else(|| ToolError::Failed(format!("Process task disappeared: {task_id}")))?;
+    let result = format_terminal_result(snapshot, sandboxed);
+    manager.forget(task_id);
+    result
+}
+
+fn format_terminal_result(
+    snapshot: ProcessSnapshot,
+    sandboxed: bool,
+) -> Result<ToolResult, ToolError> {
+    let exit_code = snapshot.exit_code.unwrap_or(-1);
+    let display = tail_truncate(&truncate_long_lines(&snapshot.output)).0;
+
+    if matches!(snapshot.status, ProcessStatus::TimedOut) {
+        let mut message = format!("Command timed out after {}s", snapshot.elapsed.as_secs());
+        if !display.is_empty() {
+            message.push_str("\nLast output:\n");
+            message.push_str(&display);
+        }
+        let was_truncated = snapshot.output_file_truncated
+            || snapshot.output.len() > MAX_DISPLAY_BYTES
+            || snapshot.total_lines > MAX_DISPLAY_LINES;
+        if was_truncated {
+            let label = if snapshot.output_file_truncated {
+                "Output file capped at 10 MiB"
+            } else {
+                "Full output saved to"
+            };
+            message.push_str(&format!(
+                "\n\n[{label}: {}]",
+                snapshot.output_path.display()
+            ));
+        } else {
+            remove_output_file(&snapshot.output_path);
+        }
+        return Err(ToolError::Failed(message));
+    }
+    if matches!(snapshot.status, ProcessStatus::Killed) {
+        remove_output_file(&snapshot.output_path);
+        return Err(ToolError::Cancelled);
+    }
+
+    let was_truncated = snapshot.output_file_truncated
+        || snapshot.output.len() > MAX_DISPLAY_BYTES
+        || snapshot.total_lines > MAX_DISPLAY_LINES;
+    let mut output = display;
+    if was_truncated {
+        let shown_lines = output.lines().count();
+        let start_line = snapshot.total_lines.saturating_sub(shown_lines) + 1;
+        let file_label = if snapshot.output_file_truncated {
+            "Output file capped at 10 MiB"
+        } else {
+            "Full output"
+        };
+        output.push_str(&format!(
+            "\n\n[Showing lines {start_line}-{} of {}. {file_label}: {}]",
+            snapshot.total_lines,
+            snapshot.total_lines,
+            snapshot.output_path.display()
+        ));
+    }
+    if exit_code != 0 {
+        output = format!("Exit code: {}\n{}", exit_code, output);
+    }
+    if sandboxed
+        && exit_code != 0
+        && (snapshot.output.contains("Operation not permitted")
+            || snapshot.output.contains("Permission denied"))
+    {
+        output.push_str(
+            "\n\n[Sandbox] This command failed due to OS-level sandbox restrictions. File access is limited to the allowed directories. Do not retry — the restriction is enforced by the kernel.",
+        );
+    }
+
+    let full_output_path = if was_truncated {
+        Some(snapshot.output_path.to_string_lossy().to_string())
+    } else {
+        remove_output_file(&snapshot.output_path);
+        None
+    };
+    Ok(ToolResult {
+        content: vec![Content::Text { text: output }],
+        details: serde_json::json!({
+            "exit_code": exit_code,
+            "success": exit_code == 0,
+            "full_output_path": full_output_path,
+        }),
+        retention: Retention::Normal,
+    })
+}
+
+fn remove_output_file(path: &std::path::Path) {
+    if let Err(error) = std::fs::remove_file(path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(%error, path = %path.display(), "bash output cleanup failed");
+        }
+    }
+}
+
+/// Tail-truncate output: keep the last display-sized section.
+fn tail_truncate(text: &str) -> (String, bool, usize) {
+    let lines: Vec<&str> = text.lines().collect();
+    let total_lines = lines.len();
+    if text.len() <= MAX_DISPLAY_BYTES && total_lines <= MAX_DISPLAY_LINES {
+        return (text.to_string(), false, total_lines);
+    }
+
+    let mut collected = Vec::new();
+    let mut byte_count = 0_usize;
+    for line in lines.iter().rev() {
+        let line_bytes = line.len() + 1;
+        if byte_count + line_bytes > MAX_DISPLAY_BYTES || collected.len() >= MAX_DISPLAY_LINES {
+            break;
+        }
+        collected.push(*line);
+        byte_count += line_bytes;
+    }
+    collected.reverse();
+    (collected.join("\n"), true, total_lines)
+}
+
+fn truncate_long_lines(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    for (index, line) in text.split('\n').enumerate() {
+        if index > 0 {
+            result.push('\n');
+        }
+        if line.len() <= MAX_LINE_BYTES {
+            result.push_str(line);
+            continue;
+        }
+        let half = MAX_LINE_BYTES / 2;
+        let head_end = line.floor_char_boundary(half);
+        let tail_start = line.ceil_char_boundary(line.len().saturating_sub(half));
+        let omitted = line.len() - head_end - (line.len() - tail_start);
+        result.push_str(&line[..head_end]);
+        result.push_str(&format!(" ... ({omitted} bytes truncated) ... "));
+        result.push_str(&line[tail_start..]);
+    }
+    result
 }

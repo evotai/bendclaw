@@ -1,3 +1,5 @@
+#[path = "tools/background_process.rs"]
+mod background_process;
 #[path = "tools/bash.rs"]
 mod bash;
 #[path = "tools/explore.rs"]

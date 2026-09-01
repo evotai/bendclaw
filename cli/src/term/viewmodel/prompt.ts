@@ -112,14 +112,15 @@ export function buildPromptBlocks(input: PromptVMInput, options: PromptLayoutOpt
   const end = Math.min(visual.lines.length, start + maxInputRows)
   const inputRows = visual.lines.slice(start, end)
 
-  const completionBudget = Math.max(1, rows
+  const completionBudget = Math.max(0, rows
     - (options.reservedAboveRows ?? 0)
     - (options.attachedAbove ? 0 : 1)
     - (frame.ruled ? 2 : 0)
     - inputRows.length
     - (frame.framed ? 1 : 0)
     - (input.exitHint ? 1 : 0)
-    - 2) // footer + trailing blank
+    - (input.backgroundProcessCount > 0 ? 1 : 0)
+    - 2) // repository footer + trailing blank; background status is budgeted above
   const completionLines = buildCompletionLines(
     input.completion,
     frame.contentWidth,
@@ -262,7 +263,7 @@ function buildCompletionLines(
   rows: number,
   lineBudget: number,
 ): StyledLine[] {
-  if (!menu) return []
+  if (!menu || lineBudget <= 0) return []
   if (menu.items.length === 0) {
     return menu.note
       ? [line(dim(truncateToWidth(`  ${menu.note}`, contentWidth)))]

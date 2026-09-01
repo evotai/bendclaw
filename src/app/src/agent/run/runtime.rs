@@ -65,6 +65,7 @@ pub struct EngineOptions {
     pub cwd: std::path::PathBuf,
     pub path_guard: std::sync::Arc<evot_engine::PathGuard>,
     pub spill_dir: Option<std::path::PathBuf>,
+    pub process_manager: Option<Arc<evot_engine::tools::ProcessManager>>,
     pub prompt_cache_key: Option<String>,
     pub provider_override: Option<Arc<dyn evot_engine::provider::StreamProvider>>,
     /// Cross-compaction state restored from the session's latest `Compact`
@@ -1191,7 +1192,7 @@ pub(crate) fn build_agent(
             max_duration: std::time::Duration::from_secs(l.max_duration_secs),
         });
 
-    provider_agent
+    let agent = provider_agent
         .with_model(&options.model)
         .with_api_key(&options.api_key)
         .with_model_config(model_config)
@@ -1209,5 +1210,9 @@ pub(crate) fn build_agent(
             options
                 .spill_dir
                 .map(|dir| Arc::new(evot_engine::spill::FsSpill::new(dir))),
-        )
+        );
+    match options.process_manager {
+        Some(process_manager) => agent.with_process_manager(process_manager),
+        None => agent,
+    }
 }

@@ -1,3 +1,5 @@
+import type { Hint } from './app/hint.js'
+
 export interface SelectorItem {
   label: string
   detail?: string
@@ -19,6 +21,13 @@ export interface SelectorItem {
   /** Lines shown in the side pane while this row is focused. First line is the
    *  heading. Rows without a preview render the list at full width. */
   preview?: string[]
+  /** Footer hints shown while this row is focused, overriding the selector's.
+   *  Rows advertise their own gestures so a key that would do nothing on this
+   *  row is never offered. */
+  hints?: Hint[]
+  /** Row count for a `header` item. Present headers render as a bold label with
+   *  a dim count (`Shells (2)`); absent, they render as a `── label ──` rule. */
+  headerCount?: number
 }
 
 export interface SelectorState {
@@ -40,6 +49,17 @@ export interface SelectorState {
    *  Keyed by id rather than index so an async list refresh or reorder cannot
    *  redirect the confirmation onto a different session. */
   pendingDeleteId?: string
+  /** Footer hints for this selector. When set, they replace the generic
+   *  move/select/filter/close line; a focused row's own `hints` win over these. */
+  hints?: Hint[]
+  /** Suppresses the filter line and type-to-search. Lists that reserve bare
+   *  letters for actions opt out, so typing can never build a hidden query
+   *  against a list with no visible filter. */
+  noFilter?: boolean
+  /** Body text shown in place of the list when there are no rows. Replaces the
+   *  generic "No matching items", which would describe a filter some lists
+   *  do not have. */
+  emptyMessage?: string
   query: string
 }
 

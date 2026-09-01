@@ -5,7 +5,7 @@
  */
 
 // @ts-ignore — binding.js is generated
-import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer, startServerBackground as rawStartServerBackground, fastExit as rawFastExit } from './binding.js'
+import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer, startServerBackground as rawStartServerBackground, fastExit as rawFastExit, authBegin as rawAuthBegin, authPoll as rawAuthPoll, authLogout as rawAuthLogout, authSyncModels as rawAuthSyncModels, authSyncNotices as rawAuthSyncNotices, authWhoami as rawAuthWhoami, authRefreshSession as rawAuthRefreshSession, authNotices as rawAuthNotices } from './binding.js'
 
 type RawAgentType = any
 type RawRunType = any
@@ -52,6 +52,19 @@ export interface SessionWithText extends SessionMeta {
 export interface VariableInfo {
   key: string
   value: string
+}
+
+export interface BackgroundProcess {
+  task_id: string
+  command: string
+  cwd: string
+  output_path: string
+  status: 'running_foreground' | 'running' | 'completed' | 'failed' | 'timed_out' | 'killed'
+  exit_code: number | null
+  elapsed_ms: number
+  output_file_truncated: boolean
+  /** Optional: absent on payloads written before stop attribution existed. */
+  stopped_by_user?: boolean
 }
 
 export type SubmitOutcome =
@@ -312,6 +325,26 @@ export class Agent {
     return this.raw.deleteSession(sessionId)
   }
 
+  backgroundProcesses(sessionId: string): BackgroundProcess[] {
+    return JSON.parse(this.raw.backgroundProcesses(sessionId)) as BackgroundProcess[]
+  }
+
+  async stopBackgroundProcess(sessionId: string, taskId: string): Promise<BackgroundProcess | null> {
+    const json = await this.raw.stopBackgroundProcess(sessionId, taskId)
+    return json ? JSON.parse(json) as BackgroundProcess : null
+  }
+
+  async stopAllBackgroundProcesses(sessionId: string): Promise<BackgroundProcess[]> {
+    const json = await this.raw.stopAllBackgroundProcesses(sessionId)
+    return JSON.parse(json) as BackgroundProcess[]
+  }
+
+  /** Kill every background process synchronously. Safe to call before fastExit,
+   *  which skips the async teardown that would otherwise stop them. */
+  killAllBackgroundProcessesNow(): number {
+    return this.raw.killAllBackgroundProcessesNow()
+  }
+
   async listSessionsWithText(limit?: number): Promise<SessionWithText[]> {
     const json = await this.raw.listSessionsWithText(limit ?? null)
     return JSON.parse(json) as SessionWithText[]
@@ -500,17 +533,6 @@ export function fastExit(code = 0): never {
 // ---------------------------------------------------------------------------
 // Cloud auth (evot login)
 // ---------------------------------------------------------------------------
-
-import {
-  authBegin as rawAuthBegin,
-  authPoll as rawAuthPoll,
-  authLogout as rawAuthLogout,
-  authSyncModels as rawAuthSyncModels,
-  authSyncNotices as rawAuthSyncNotices,
-  authWhoami as rawAuthWhoami,
-  authRefreshSession as rawAuthRefreshSession,
-  authNotices as rawAuthNotices,
-} from './binding.js'
 
 export interface LoginCodeResponse {
   code: string

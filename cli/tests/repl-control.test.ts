@@ -106,6 +106,13 @@ describe('repl control', () => {
     expect(kinds({ ...base, event: { type: 'down' }, overlay: selector })).toEqual(['selector-key'])
   })
 
+  test('down reaches the editor while loading, so ↓ can open the task panel', () => {
+    // Shells usually run mid-turn. If loading swallowed ↓ the way it swallows
+    // typed characters, the gesture the prompt advertises would never fire.
+    expect(kinds({ ...base, event: { type: 'down' }, isLoading: true, hasStream: true }))
+      .toEqual(['normal-key'])
+  })
+
   test('ask overlay delegates key', () => {
     expect(kinds({ ...base, event: { type: 'char', char: 'y' }, overlay: askUser })).toEqual(['ask-key'])
   })

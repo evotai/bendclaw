@@ -20,6 +20,14 @@ fn autonomous_modes_keep_limits() {
     assert!(!ToolMode::Readonly.is_interactive());
 }
 
+#[test]
+fn background_processes_are_tui_only() {
+    assert!(ToolMode::Interactive.allows_background_processes());
+    assert!(ToolMode::Planning.allows_background_processes());
+    assert!(!ToolMode::Headless.allows_background_processes());
+    assert!(!ToolMode::Readonly.allows_background_processes());
+}
+
 /// Host-owned tools attach in every mode except Readonly forks, which run
 /// without a host.
 #[test]

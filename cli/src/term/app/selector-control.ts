@@ -9,6 +9,7 @@ import {
   type SelectorState,
 } from '../selector.js'
 import { decideQueueSelectorAction, isQueueSelectorTitle, type ManagedQueuedPrompt } from './queue-manage.js'
+import { isBackgroundPanelTitle } from './background-panel.js'
 import { isResumeSelectorTitle } from './resume.js'
 
 export type SelectorControlAction =
@@ -39,9 +40,13 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
     case 'tab':
       return { kind: 'update', state: selectorDown(disarmDelete(state)) }
     case 'char':
-      if (isQueueSelectorTitle(state.title)) return { kind: 'none' }
+      // Lists that reserve bare letters for their own gestures never build a
+      // filter query: doing so would silently drop rows with no filter line on
+      // screen to explain why.
+      if (state.noFilter || isQueueSelectorTitle(state.title)) return { kind: 'none' }
       return { kind: 'update', state: selectorType(disarmDelete(state), event.char) }
     case 'backspace':
+      if (state.noFilter) return { kind: 'none' }
       return { kind: 'update', state: selectorBackspace(disarmDelete(state)) }
     case 'enter':
       return selectAction(disarmDelete(state))
@@ -61,6 +66,11 @@ function selectAction(state: SelectorState): SelectorControlAction {
   if (!selected) return { kind: 'close' }
 
   if (isResumeSelectorTitle(state.title)) return { kind: 'resume', sessionId: selected.id ?? selected.label }
+
+  // The panel owns `enter` (view output) in its own handler. Reaching here means
+  // there was nothing to act on, so fall through to nothing rather than letting
+  // the default branch read the row as a model spec.
+  if (isBackgroundPanelTitle(state.title)) return { kind: 'none' }
 
   if (isQueueSelectorTitle(state.title)) {
     const action = decideQueueSelectorAction(selected, 'enter')

@@ -34,4 +34,10 @@ impl ToolMode {
     pub fn is_interactive(self) -> bool {
         matches!(self, ToolMode::Interactive | ToolMode::Planning)
     }
+
+    /// Background shell tasks are a TUI-only capability. Gateway/headless
+    /// runs keep Bash synchronous even if a caller supplies background fields.
+    pub fn allows_background_processes(self) -> bool {
+        matches!(self, ToolMode::Interactive | ToolMode::Planning)
+    }
 }

@@ -137,7 +137,10 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         ...state,
         currentAssistantContent: updateAssistantToolCall(state.currentAssistantContent, id, current => ({
           ...current,
-          progress: text && !/^Running\.\.\. \d+s$/.test(text.trim()) ? text : current.progress,
+          // Heartbeats carry no information the UI lacks — the spinner already
+          // renders an elapsed clock — so they must not displace streamed
+          // partial output. `bash` says "Running", `task_output` says "Waiting".
+          progress: text && !/^(Running|Waiting)\.\.\. \d+s$/.test(text.trim()) ? text : current.progress,
           details: mergeToolDetails(current.details, p.details),
         })),
       }

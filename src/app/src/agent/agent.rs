@@ -1,4 +1,7 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -225,6 +228,9 @@ enum AbortRunOutcome {
 }
 
 const RUN_ABORT_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const PROCESS_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const SESSION_LIFECYCLE_SHARDS: usize = 64;
+const MAX_SESSION_PROCESS_MANAGERS: usize = 256;
 const COMPACTION_SUMMARY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Agent {
@@ -247,6 +253,20 @@ pub struct Agent {
     provider_override: RwLock<Option<Arc<dyn evot_engine::provider::StreamProvider>>>,
     /// session_id → (run_id, handle, done_flag)
     active_runs: Arc<parking_lot::Mutex<HashMap<String, ActiveRun>>>,
+    /// Fixed sharded gates linearize start/clear/delete per session without
+    /// retaining one lock per historical session.
+    session_lifecycle_gates: Vec<tokio::sync::Mutex<()>>,
+    /// Session-scoped process registries survive per-turn tool reconstruction.
+    process_managers:
+        Arc<parking_lot::Mutex<HashMap<String, Arc<evot_engine::tools::ProcessManager>>>>,
+}
+
+impl Drop for Agent {
+    fn drop(&mut self) {
+        for manager in self.process_managers.lock().values() {
+            manager.terminate_all();
+        }
+    }
 }
 
 impl Agent {
@@ -279,6 +299,10 @@ impl Agent {
             sandbox: super::sandbox::SandboxPolicy::from_config(&config.sandbox),
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            session_lifecycle_gates: (0..SESSION_LIFECYCLE_SHARDS)
+                .map(|_| tokio::sync::Mutex::new(()))
+                .collect(),
+            process_managers: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         })
     }
 
@@ -609,6 +633,13 @@ impl Agent {
         self.storage.read().clone()
     }
 
+    fn session_lifecycle_gate(&self, session_id: &str) -> &tokio::sync::Mutex<()> {
+        let mut hasher = DefaultHasher::new();
+        session_id.hash(&mut hasher);
+        let index = (hasher.finish() as usize) % self.session_lifecycle_gates.len();
+        &self.session_lifecycle_gates[index]
+    }
+
     // -- run control ---------------------------------------------------------
 
     /// Send a steering message to the active run for a session.
@@ -816,7 +847,14 @@ impl Agent {
             Command::UsageError(msg) => Ok(Some(SubmitOutcome::Command(msg))),
             Command::Clear => {
                 let session_id = session.session_id().await;
-                self.abort_run(&session_id);
+                let _lifecycle = self.session_lifecycle_gate(&session_id).lock().await;
+                self.abort_run_and_wait_for_completion(&session_id).await?;
+                let process_manager = self.process_managers.lock().remove(&session_id);
+                if let Some(manager) = process_manager {
+                    manager
+                        .terminate_all_and_wait(PROCESS_SHUTDOWN_TIMEOUT)
+                        .await;
+                }
                 session.write_clear_marker().await?;
                 session.save().await?;
                 Ok(Some(SubmitOutcome::Command("Session cleared.".into())))
@@ -959,6 +997,8 @@ impl Agent {
         session: Arc<Session>,
     ) -> Result<Run> {
         let session_id = session.meta().await.session_id.clone();
+        let _lifecycle = self.session_lifecycle_gate(&session_id).lock().await;
+        self.abort_run_and_wait_for_completion(&session_id).await?;
         let run_id = crate::types::new_id();
         // `submit_to_session` is also public and may bypass `submit`, so keep a
         // fallback snapshot here for channel callers that did not pin one.
@@ -969,14 +1009,6 @@ impl Agent {
         session
             .set_thinking_level(Self::persisted_thinking_level_for(&llm))
             .await;
-
-        // Session-level safety net: abort any existing active run for this session.
-        // This ensures no two runs overlap on the same session, regardless of caller
-        // (RunManager, HTTP, NAPI). Long-term this could be consolidated into a
-        // single coordination layer if all entry points go through RunManager.
-        if let Some(ar) = self.active_runs.lock().remove(&session_id) {
-            ar.handle.abort();
-        }
 
         tracing::info!(
             stage = "run",
@@ -1059,6 +1091,8 @@ impl Agent {
             sandbox,
             provider_override: _,
             active_runs: _,
+            session_lifecycle_gates: _,
+            process_managers: _,
         } = self.as_ref();
 
         let forked = Arc::new(Self {
@@ -1078,6 +1112,10 @@ impl Agent {
             },
             provider_override: RwLock::new(None),
             active_runs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            session_lifecycle_gates: (0..SESSION_LIFECYCLE_SHARDS)
+                .map(|_| tokio::sync::Mutex::new(()))
+                .collect(),
+            process_managers: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         });
         Ok(ForkedAgent {
             agent: forked,
@@ -1108,8 +1146,92 @@ impl Agent {
     }
 
     pub async fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let _lifecycle = self.session_lifecycle_gate(session_id).lock().await;
+        self.abort_run_and_wait_for_completion(session_id).await?;
+        let process_manager = self.process_managers.lock().remove(session_id);
+        if let Some(manager) = process_manager {
+            manager
+                .terminate_all_and_wait(PROCESS_SHUTDOWN_TIMEOUT)
+                .await;
+        }
         let storage = self.storage.read().clone();
         storage.delete_session(session_id).await
+    }
+
+    /// Listing view of a session's background tasks. Uses the summary form so a
+    /// polling caller never copies captured output.
+    pub fn background_processes(
+        &self,
+        session_id: &str,
+    ) -> Vec<evot_engine::tools::ProcessSummary> {
+        self.process_managers
+            .lock()
+            .get(session_id)
+            .map(|manager| manager.summaries())
+            .unwrap_or_default()
+    }
+
+    pub async fn stop_background_process(
+        &self,
+        session_id: &str,
+        task_id: &str,
+    ) -> Result<Option<evot_engine::tools::ProcessSummary>> {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        let Some(manager) = manager else {
+            return Ok(None);
+        };
+        let summaries = manager.summaries();
+        let matches = summaries
+            .iter()
+            .filter(|summary| {
+                matches!(
+                    &summary.status,
+                    evot_engine::tools::ProcessStatus::RunningBackground(_)
+                ) && (summary.task_id == task_id || summary.task_id.starts_with(task_id))
+            })
+            .collect::<Vec<_>>();
+        let resolved = match matches.as_slice() {
+            [] => return Ok(None),
+            [summary] => summary.task_id.clone(),
+            _ => {
+                return Err(EvotError::Run(format!(
+                    "background task ID prefix is ambiguous: {task_id}"
+                )))
+            }
+        };
+        // The pending notification is deliberately left in place: the model has
+        // to learn the user stopped this task, and `summaries()` below reports
+        // the outcome to the caller.
+        manager.stop_by_user(&resolved).await;
+        Ok(manager
+            .summaries()
+            .into_iter()
+            .find(|summary| summary.task_id == resolved))
+    }
+
+    pub async fn stop_all_background_processes(
+        &self,
+        session_id: &str,
+    ) -> Vec<evot_engine::tools::ProcessSummary> {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        match manager {
+            Some(manager) => manager.stop_all_background(PROCESS_SHUTDOWN_TIMEOUT).await,
+            None => Vec::new(),
+        }
+    }
+
+    /// Kill every background process across all sessions, synchronously.
+    ///
+    /// Used on process-exit paths that bypass async teardown, where waiting is
+    /// not possible and orphaned children are the failure mode.
+    pub fn kill_all_background_processes_now(&self) -> usize {
+        let managers = self
+            .process_managers
+            .lock()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        managers.iter().map(|manager| manager.kill_all_now()).sum()
     }
 
     pub async fn list_favorites(&self) -> Result<Vec<String>> {
@@ -1298,8 +1420,11 @@ impl Agent {
                 mode,
                 Arc::clone(session),
                 &session_id,
-                Vec::new(),
-                None,
+                TurnBuildRequest {
+                    input: Vec::new(),
+                    host_tools: None,
+                    consume_process_notifications: false,
+                },
             )
             .await?;
 
@@ -1408,9 +1533,13 @@ impl Agent {
         mode: ToolMode,
         session: Arc<Session>,
         session_id: &str,
-        input: Vec<evot_engine::Content>,
-        host_tools: Option<HostTools>,
+        request: TurnBuildRequest,
     ) -> Result<runtime::TurnInput> {
+        let TurnBuildRequest {
+            mut input,
+            host_tools,
+            consume_process_notifications,
+        } = request;
         let llm = llm.clone();
         if llm.provider.is_empty() {
             return Err(EvotError::Conf(
@@ -1447,13 +1576,57 @@ impl Agent {
         for skill in &skills {
             system_dirs.push(skill.base_dir.clone());
         }
+        let spill_dir = self
+            .spill_root
+            .as_ref()
+            .map(|root| root.join("sessions").join(session_id).join("tool-results"));
+        if let Some(spill_dir) = &spill_dir {
+            std::fs::create_dir_all(spill_dir)?;
+            system_dirs.push(spill_dir.clone());
+        }
         let sandbox_rt = self.sandbox.build_runtime(cwd_path, &system_dirs)?;
+        let process_manager = if mode.allows_background_processes() {
+            let mut managers = self.process_managers.lock();
+            managers.retain(|_, manager| !manager.is_idle() || Arc::strong_count(manager) > 1);
+            if let Some(manager) = managers.get(session_id) {
+                Some(manager.clone())
+            } else {
+                if managers.len() >= MAX_SESSION_PROCESS_MANAGERS {
+                    let reclaimable = managers
+                        .iter()
+                        .filter(|(_, manager)| {
+                            Arc::strong_count(manager) == 1 && manager.is_reclaimable()
+                        })
+                        .map(|(session_id, _)| session_id.clone())
+                        .collect::<Vec<_>>();
+                    for reclaimable_id in reclaimable {
+                        if managers.len() < MAX_SESSION_PROCESS_MANAGERS {
+                            break;
+                        }
+                        if let Some(manager) = managers.remove(&reclaimable_id) {
+                            manager.cleanup_reclaimable_outputs();
+                        }
+                    }
+                }
+                if managers.len() >= MAX_SESSION_PROCESS_MANAGERS {
+                    return Err(EvotError::Run(format!(
+                        "too many sessions with retained background tasks (limit: {MAX_SESSION_PROCESS_MANAGERS}); inspect or clear completed tasks before starting another interactive session"
+                    )));
+                }
+                let manager = Arc::new(evot_engine::tools::ProcessManager::new());
+                managers.insert(session_id.to_string(), manager.clone());
+                Some(manager)
+            }
+        } else {
+            None
+        };
 
         let tools = build_tools(
             mode,
             envs,
             sandbox_rt.allow_bash,
             sandbox_rt.bash_sandbox_dirs,
+            process_manager.clone(),
             host_tools,
         );
 
@@ -1473,6 +1646,16 @@ impl Agent {
 
         let (prior_messages, compaction_state, transcript_seq) = session.context_snapshot().await;
         let prior_messages = evot_engine::sanitize_tool_pairs(prior_messages);
+        if consume_process_notifications {
+            if let Some(process_manager) = &process_manager {
+                input.extend(
+                    process_manager
+                        .take_notifications()
+                        .into_iter()
+                        .map(|text| evot_engine::Content::Text { text }),
+                );
+            }
+        }
 
         Ok(runtime::TurnInput {
             options: runtime::EngineOptions {
@@ -1492,10 +1675,8 @@ impl Agent {
                 thinking_level: llm.thinking_level,
                 cwd: cwd_path.to_path_buf(),
                 path_guard: sandbox_rt.path_guard,
-                spill_dir: self
-                    .spill_root
-                    .as_ref()
-                    .map(|root| root.join("sessions").join(session_id).join("tool-results")),
+                spill_dir,
+                process_manager,
                 prompt_cache_key: Some(session_id.to_string()),
                 provider_override: self.provider_override.read().clone(),
                 compaction_state,
@@ -1511,6 +1692,12 @@ impl Agent {
 // ---------------------------------------------------------------------------
 // AgentTurnFactory — bridges Agent's per-turn build to the runtime
 // ---------------------------------------------------------------------------
+
+struct TurnBuildRequest {
+    input: Vec<evot_engine::Content>,
+    host_tools: Option<HostTools>,
+    consume_process_notifications: bool,
+}
 
 struct AgentTurnFactory {
     agent: Arc<Agent>,
@@ -1530,8 +1717,11 @@ impl TurnFactory for AgentTurnFactory {
                 self.mode,
                 Arc::clone(&self.session),
                 &self.session_id,
-                input,
-                self.host_tools.clone(),
+                TurnBuildRequest {
+                    input,
+                    host_tools: self.host_tools.clone(),
+                    consume_process_notifications: true,
+                },
             )
             .await
     }

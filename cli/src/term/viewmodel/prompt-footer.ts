@@ -10,6 +10,7 @@
 import stringWidth from 'string-width'
 import { line, block, plain, dim, colored, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
 import { finiteSize, spansWidth, truncateTailToWidth } from './width.js'
+import { BACKGROUND_PANEL_HINT_CHORD, BACKGROUND_PANEL_SHORTCUT_HINT } from '../app/background-panel.js'
 
 /** The subset of prompt state the footer reads. */
 export interface PromptFooterVM {
@@ -24,6 +25,14 @@ export interface PromptFooterVM {
   gitBranch: string | null
   contextTokens: number
   contextWindow: number
+  backgroundProcessCount: number
+  /**
+   * True when ↓ at the prompt opens the background panel.
+   *
+   * The chip names the gesture that works at this moment: ↓ is only wired up on
+   * an empty composer, so advertising it mid-sentence would be a lie.
+   */
+  backgroundPanelDownAvailable: boolean
 }
 
 export interface PromptFooterOptions {
@@ -41,10 +50,45 @@ export function buildPromptFooterBlocks(
   input: PromptFooterVM,
   options: PromptFooterOptions = {},
 ): ViewBlock[] {
-  return [
+  const blocks: ViewBlock[] = []
+  const chip = buildBackgroundChip(
+    input.backgroundProcessCount,
+    input.backgroundPanelDownAvailable,
+    finiteSize(input.columns, 80),
+  )
+  if (chip) blocks.push(block([chip]))
+  blocks.push(
     buildFooter(input, finiteSize(input.columns, 80), options.modeShownAbove ?? false),
     block([line(plain(''))]),
-  ]
+  )
+  return blocks
+}
+
+/**
+ * The background-work chip above the footer.
+ *
+ * The count is the actionable part, so it carries the colour while the gesture
+ * stays dim: the line is a pointer to the panel, not a status report.
+ *
+ * ↓ is advertised whenever it is live, because it sits one key away from the
+ * cursor. With text in the composer ↓ still moves the caret, so the chip falls
+ * back to naming Ctrl+T rather than a key that would do something else. The
+ * whole line is dropped on terminals too narrow to hold it.
+ */
+function buildBackgroundChip(
+  count: number,
+  downAvailable: boolean,
+  columns: number,
+): StyledLine | null {
+  if (count <= 0) return null
+  const label = `${count} ${count === 1 ? 'shell' : 'shells'} running`
+  const chord = downAvailable ? BACKGROUND_PANEL_HINT_CHORD : BACKGROUND_PANEL_SHORTCUT_HINT
+  const hint = `${chord} to manage`
+  if (stringWidth(`${label} · ${hint}`) <= columns) {
+    return line(colored(label, 'cyan'), dim(' · '), dim(hint))
+  }
+  if (stringWidth(label) <= columns) return line(colored(label, 'cyan'))
+  return line(colored(truncateTailToWidth(label, columns), 'cyan'))
 }
 
 function buildFooter(input: PromptFooterVM, columns: number, modeShownAbove: boolean): ViewBlock {

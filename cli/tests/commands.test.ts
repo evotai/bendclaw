@@ -50,6 +50,11 @@ describe('resolveCommand', () => {
     expect(isSlashCommand('/restart')).toBe(true)
   })
 
+  test('resolves background terminal commands', () => {
+    expect(resolveCommand('/ps')).toEqual({ kind: 'resolved', name: '/ps', args: '' })
+    expect(resolveCommand('/stop abc123')).toEqual({ kind: 'resolved', name: '/stop', args: 'abc123' })
+  })
+
   test('resolves aliases', () => {
     const result = resolveCommand('/q')
     expect(result).toEqual({ kind: 'resolved', name: '/exit', args: '' })
@@ -76,9 +81,9 @@ describe('resolveCommand', () => {
   })
 
   test('returns ambiguous for multiple prefix matches', () => {
-    // /plan and /act both exist, but /p could match /plan only
+    // /plan and /ps intentionally require another character to disambiguate.
     const result = resolveCommand('/p')
-    expect(result.kind).toBe('resolved')
+    expect(result.kind).toBe('ambiguous')
   })
 
   test('routes removed /history command to the unknown-command handler', () => {

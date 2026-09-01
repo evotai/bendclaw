@@ -4,6 +4,7 @@ import { CURSOR_MARKER } from '../renderer.js'
 import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'
 import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
+import { HINT_SEPARATOR, formatChord, type Hint } from '../app/hint.js'
 import type { AskState } from '../ask.js'
 import { getTheme } from '../../render/theme.js'
 
@@ -164,6 +165,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['Ctrl+C', 'Clear / Exit (×2)'],
     ['Esc', 'Clear input / Dismiss / Interrupt'],
     ['Ctrl+B', 'Focus queued prompts when non-empty'],
+    ['↓ / Ctrl+T', 'Background task panel when shells are running'],
     ['↑ / ↓', 'History navigation / multi-line'],
     ['Tab', 'Complete command / path'],
     ['Ctrl+U', 'Clear line before cursor'],
@@ -257,9 +259,15 @@ function highlightSpans(text: string, query: string, base: Partial<StyledSpan>):
 
 function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[] {
   const selectable = (items: SelectorItem[]) => items.filter(i => !i.header).length
+  // A selector that supplies its own hints also owns its header: its counts live
+  // in the subtitle and group headings, so the generic row tally beside the
+  // title would only restate them.
+  const ownsHeader = state.hints !== undefined
   const countLabel = `${selectable(state.items)}${state.query ? ` of ${selectable(state.allItems)}` : ''}`
   const lines: StyledLine[] = [
-    line(bold(state.title), dim(`  ${countLabel}`)),
+    ownsHeader
+      ? line(colored(state.title, 'cyan', { bold: true }))
+      : line(bold(state.title), dim(`  ${countLabel}`)),
   ]
 
   if (state.subtitle) {
@@ -267,14 +275,18 @@ function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[]
   }
 
   lines.push(line(plain('')))
-  if (state.query) {
-    lines.push(line(colored('Filter  ', 'cyan'), plain(state.query), colored('▌', 'cyan')))
-  } else {
-    // Nothing typed yet: the filter line doubles as the discoverability hint,
-    // otherwise there is no on-screen signal that typing filters at all.
-    lines.push(line(colored('Filter  ', 'cyan'), dim(PLACEHOLDER_HINT)))
+  // A no-filter list reserves bare letters for actions, so it shows no filter
+  // line: offering one would invite typing that goes nowhere.
+  if (!state.noFilter) {
+    if (state.query) {
+      lines.push(line(colored('Filter  ', 'cyan'), plain(state.query), colored('▌', 'cyan')))
+    } else {
+      // Nothing typed yet: the filter line doubles as the discoverability hint,
+      // otherwise there is no on-screen signal that typing filters at all.
+      lines.push(line(colored('Filter  ', 'cyan'), dim(PLACEHOLDER_HINT)))
+    }
+    lines.push(line(plain('')))
   }
-  lines.push(line(plain('')))
 
   // The focused row's preview sits beside the list, so rows and pane share the
   // width budget. Without a preview the list keeps the whole line. One column
@@ -295,7 +307,13 @@ function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[]
   }
 
   lines.push(line(plain('')))
-  if (state.title === 'Prompt queue') {
+  // A focused row's own hints win over the selector's, so a gesture is only ever
+  // offered where it would actually do something. Selectors that predate the
+  // hint list keep their hand-written lines below.
+  const hints = state.items[state.focusIndex]?.hints ?? state.hints
+  if (hints) {
+    lines.push(buildHintLine(hints))
+  } else if (state.title === 'Prompt queue') {
     lines.push(line(
       colored('enter', 'cyan'), dim(' edit   '),
       colored('Ctrl+D', 'cyan'), dim(' remove   '),
@@ -312,9 +330,30 @@ function buildSelectorBlocks(state: SelectorState, columns: number): ViewBlock[]
   return [block(lines, 1)]
 }
 
+/**
+ * Render hints as `↑/↓ to select · Enter to view output · Esc to close`.
+ *
+ * The key is coloured and the rest dimmed, so the line scans as a row of keys
+ * rather than a sentence.
+ */
+function buildHintLine(hints: Hint[]): StyledLine {
+  const spans: StyledSpan[] = []
+  for (const hint of hints) {
+    if (spans.length > 0) spans.push(dim(HINT_SEPARATOR))
+    spans.push(colored(formatChord(hint.keys), 'cyan'), dim(` to ${hint.action}`))
+  }
+  return line(...spans)
+}
+
 /** The list rows themselves — everything between the filter line and the hints. */
 function buildSelectorListLines(state: SelectorState): StyledLine[] {
-  if (state.items.length === 0) return [line(dim('  No matching items'))]
+  if (state.items.length === 0) {
+    if (state.emptyMessage) return [line(dim(`  ${state.emptyMessage}`))]
+    // A no-filter list has no query to explain an empty result, so the generic
+    // "no matching items" would misdescribe it.
+    if (state.noFilter) return []
+    return [line(dim('  No matching items'))]
+  }
 
   const lines: StyledLine[] = []
   const maxVisible = SELECTOR_VIEWPORT
@@ -328,12 +367,26 @@ function buildSelectorListLines(state: SelectorState): StyledLine[] {
   if (start > 0) {
     lines.push(line(dim(`  ↑ ${start} above`)))
   }
+  let seenRow = false
   for (let i = start; i < end; i++) {
     const item = state.items[i]!
     if (item.header) {
-      lines.push(item.label ? line(dim(`── ${item.label} ──`)) : line(plain('')))
+      if (!item.label) {
+        lines.push(line(plain('')))
+      } else if (item.headerCount !== undefined) {
+        // A counted group reads as a heading over its rows, so the label is bold
+        // and the tally dim rather than wrapped in a divider rule. Groups after
+        // the first are separated by a blank line; the viewport can start
+        // mid-list, so this keys off what is actually on screen.
+        if (seenRow) lines.push(line(plain('')))
+        lines.push(line(bold(`  ${item.label}`), dim(` (${item.headerCount})`)))
+        seenRow = true
+      } else {
+        lines.push(line(dim(`── ${item.label} ──`)))
+      }
       continue
     }
+    seenRow = true
     const focused = i === state.focusIndex
     const prefix: StyledSpan = focused ? colored('❯ ', 'cyan', { bold: true }) : plain('  ')
     const labelSpans = state.query

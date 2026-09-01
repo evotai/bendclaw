@@ -329,6 +329,10 @@ describe('buildToolResult', () => {
         status: '  ✓ · exit 0 · 25ms',
       },
       {
+        call: { id: 'bash-bg', name: 'bash', args: { command: 'bun run dev' }, status: 'done' as const, result: 'Command is running in the background.', details: { backgrounded: true, status: 'running' }, durationMs: 25 },
+        status: '  ● · started · running in background · 25ms',
+      },
+      {
         call: { id: 'read', name: 'read', args: { path: 'a.ts' }, status: 'done' as const, result: 'body', details: { bytes: 2048 } },
         status: '  ✓ · 2.0 KB',
       },

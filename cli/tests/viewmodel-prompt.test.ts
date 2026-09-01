@@ -35,6 +35,8 @@ function defaultInput(overrides: Partial<PromptVMInput> = {}): PromptVMInput {
     gitBranch: 'main',
     contextTokens: 0,
     contextWindow: 0,
+    backgroundProcessCount: 0,
+    backgroundPanelDownAvailable: false,
     ...overrides,
   }
 }
@@ -728,14 +730,17 @@ describe('prompt completion menu', () => {
   test('shrinks candidates so the prompt never exceeds a short terminal', () => {
     const note = 'files up to 6 levels deep — install fd to search deeper'
     for (const rows of [5, 6, 9, 10, 12, 14]) {
-      const rendered = renderLines(defaultInput({
-        rows,
-        lines: ['@src'],
-        cursorCol: 4,
-        placeholder: false,
-        completion: { ...menuOf(20, 0), note },
-      }))
-      expect(rendered.length).toBeLessThanOrEqual(rows)
+      for (const backgroundProcessCount of [0, 1]) {
+        const rendered = renderLines(defaultInput({
+          rows,
+          lines: ['@src'],
+          cursorCol: 4,
+          placeholder: false,
+          backgroundProcessCount,
+          completion: { ...menuOf(20, 0), note },
+        }))
+        expect(rendered.length).toBeLessThanOrEqual(rows)
+      }
     }
   })
 
@@ -958,6 +963,55 @@ describe('prompt footer', () => {
     }))).map(stripAnsi)[0]!
     expect(stringWidth(footer)).toBeLessThanOrEqual(columns)
     expect(footer).toStartWith('…')
+  })
+
+  test('footer chip advertises ↓ while the composer is empty', () => {
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 100,
+      backgroundProcessCount: 2,
+      backgroundPanelDownAvailable: true,
+    }))).map(stripAnsi)
+    expect(lines[0]).toBe('2 shells running · ↓ to manage')
+    expect(lines[1]).toContain('/Users/test/project')
+    expect(lines[2]).toBe('')
+  })
+
+  test('with text in the composer the chip names Ctrl+T instead', () => {
+    // ↓ still moves the caret there, so advertising it would be a lie.
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 100,
+      backgroundProcessCount: 2,
+      backgroundPanelDownAvailable: false,
+    }))).map(stripAnsi)
+    expect(lines[0]).toBe('2 shells running · ctrl+t to manage')
+  })
+
+  test('a single shell reads in the singular', () => {
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 100,
+      backgroundProcessCount: 1,
+      backgroundPanelDownAvailable: true,
+    }))).map(stripAnsi)
+    expect(lines[0]).toBe('1 shell running · ↓ to manage')
+  })
+
+  test('no chip is rendered when nothing runs in the background', () => {
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 100,
+      backgroundProcessCount: 0,
+    }))).map(stripAnsi)
+    expect(lines[0]).toContain('/Users/test/project')
+  })
+
+  test('a narrow terminal drops the hint before the count', () => {
+    // The count is the actionable part, so the gesture is what gives way.
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 20,
+      backgroundProcessCount: 3,
+      backgroundPanelDownAvailable: true,
+    }))).map(stripAnsi)
+    expect(lines[0]).toBe('3 shells running')
+    expect(stringWidth(lines[0]!)).toBeLessThanOrEqual(20)
   })
 
   test('footer remains available without the editor', () => {

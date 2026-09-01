@@ -762,6 +762,7 @@ dependencies = [
  "image",
  "jsonrepair",
  "landlock",
+ "libc",
  "lru",
  "parking_lot",
  "proptest",

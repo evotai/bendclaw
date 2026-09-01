@@ -114,7 +114,12 @@ impl AgentTool for TaskOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Get status and recent output from a background command. Reading the task's output file is usually better: it costs nothing and leaves you free to keep working."
+        // States what each path costs and stops there. An earlier version ranked
+        // them ("reading is usually better"), which is not this tool's call to
+        // make: waiting on a task whose result the next step needs is what this
+        // tool is for, and framing it as the inferior option told a model its
+        // legitimate use was a mistake.
+        "Get status and recent output from a background command. Waits for the task to finish by default; pass block: false for an immediate snapshot. The task's output file is also readable directly at the path the command returned."
     }
 
     fn prompt_snippet(&self) -> Option<&str> {
@@ -126,7 +131,11 @@ impl AgentTool for TaskOutputTool {
             "type": "object",
             "properties": {
                 "task_id": { "type": "string", "description": "Background task ID" },
-                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). Blocking occupies your whole turn, which throws away the point of running the command in the background, and the user cannot be answered until it ends. Pass false to check on a task; only block when a later step genuinely cannot proceed without the result." },
+                // Prices blocking without disparaging it. The cost is real and a
+                // model should know it holds the turn; calling it "throwing away
+                // the point" of backgrounding went further and framed the tool's
+                // primary use as a misuse.
+                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). A blocking call holds the turn until the task ends or the timeout elapses, so the user cannot be answered in the meantime. Pass false for an immediate status snapshot when you have other work to do first." },
                 "timeout": { "type": "number", "description": "Maximum wait time in milliseconds. Defaults to 30000, max 600000." }
             },
             "required": ["task_id"]
@@ -202,6 +211,11 @@ impl AgentTool for TaskOutputTool {
             // Without this the model sees a non-terminal status and reasonably
             // calls task_output again, walking straight back into the wait the
             // user just ended.
+            //
+            // "Stop polling" is warranted here, unlike in the tool's description:
+            // this is not an opinion about which collection path is better, it
+            // enforces a decision the user just made with a keypress. Re-waiting
+            // would undo it.
             text.push_str(
                 "\nThe user ended this wait to get the turn back; the task was not interrupted and is still running. Do not wait on it again unless they ask — stop polling and respond to them now.",
             );

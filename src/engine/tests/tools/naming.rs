@@ -86,10 +86,10 @@ fn the_bash_background_guideline_resolves_task_output_per_model() {
 }
 
 #[test]
-fn the_bash_background_guideline_ranks_reading_over_blocking() {
-    // Must agree with BACKGROUND_GUIDANCE and task_output's own schema, both of
-    // which treat blocking as a last resort. Offering them as equals here was
-    // the contradiction that let a model reach for the blocking call first.
+fn the_bash_background_guideline_names_both_collection_paths() {
+    // Reading and waiting are both legitimate, and the guideline has to say what
+    // each is for rather than rank them. The earlier "only when" phrasing carried
+    // over Claude Code's stance that blocking is a misuse.
     use std::sync::Arc;
 
     use evotengine::tools::BashTool;
@@ -99,10 +99,12 @@ fn the_bash_background_guideline_ranks_reading_over_blocking() {
     let guidelines = bash.prompt_guidelines();
     let guideline = guidelines.first().copied().unwrap_or_default();
 
+    // Both paths present, each with the situation it serves.
     assert!(guideline.contains("output path"), "got: {guideline}");
-    assert!(guideline.contains("only when"), "got: {guideline}");
-    // The old wording made them interchangeable.
-    assert!(!guideline.contains("or use"), "got: {guideline}");
+    assert!(guideline.contains("check progress"), "got: {guideline}");
+    assert!(guideline.contains("wait when"), "got: {guideline}");
+    // No language that makes waiting conditional on the reading path failing.
+    assert!(!guideline.contains("only when"), "got: {guideline}");
 }
 
 #[test]

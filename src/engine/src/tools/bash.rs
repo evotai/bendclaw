@@ -174,11 +174,12 @@ impl AgentTool for BashTool {
             // this tool as `TaskOutput`, so a hardcoded `task_output` names a
             // tool that does not exist for them.
             //
-            // Ordering matches the per-result guidance and the tool's own
-            // schema — read the output path first, block only when a later step
-            // cannot proceed. Offering them as equals here contradicted both.
+            // Both collection paths are named with what they are for. I wrote the
+            // "only when" phrasing earlier in this same work, carrying over Claude
+            // Code's stance that blocking is a misuse; it is not, it is what the
+            // tool exists for.
             vec![
-                "For long-running commands that can continue independently, use `run_in_background: true` and inspect the returned output path; call {{task_output}} only when a later step cannot proceed without the result.",
+                "For long-running commands that can continue independently, use `run_in_background: true`; read the returned output path to check progress, or call {{task_output}} to wait when a later step needs the result.",
             ]
         } else {
             Vec::new()
@@ -504,10 +505,11 @@ fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String
 /// options and no statement that waiting was required, so it could commit
 /// against a suite that had not finished.
 ///
-/// Reading the output file is offered first because it costs nothing: a
-/// blocking `task_output` occupies the whole turn, which throws away the point
-/// of backgrounding. Blocking is named last and only for the case that
-/// genuinely needs it.
+/// Both ways of collecting the result are stated with their costs, and neither
+/// is disparaged. An earlier version ranked them — reading "costs nothing",
+/// blocking "throws away the point of backgrounding" — which told a model that
+/// waiting on a result it genuinely needs was a mistake. It is not; it is what
+/// `task_output` is for.
 ///
 /// Tool names stay literal here. This is a tool-result body, which never passes
 /// through `resolve_tool_refs`, so a `{{task_output}}` placeholder would reach
@@ -516,10 +518,10 @@ fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String
 /// model that reads `task_output` here and calls it still dispatches, even
 /// though its own schema spells the tool `TaskOutput`.
 const BACKGROUND_GUIDANCE: &str = concat!(
-    "You will be notified when it completes, so you do not need to poll for it. ",
-    "To see progress now, use Read on the output path — it costs nothing and leaves you free to keep working. ",
-    "Only if a later step cannot proceed without this command's result, call task_output to wait for it ",
-    "before that step: that blocks your whole turn, so do not use it merely to check on a task. ",
+    "You will be notified when it completes. ",
+    "To check progress without waiting, use Read on the output path. ",
+    "When a later step cannot proceed without this command's result, call task_output to wait for it ",
+    "before that step: it holds the turn until the task ends, so the user cannot be answered meanwhile. ",
     "Never end your turn to wait, and never treat a started task as a passed one. ",
     "Use task_stop to terminate it.",
 );

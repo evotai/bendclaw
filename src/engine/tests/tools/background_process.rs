@@ -667,41 +667,48 @@ fn the_two_timeout_descriptions_do_not_agree() {
 
 #[test]
 fn block_schema_names_the_cost_of_waiting() {
-    // `block` defaults to true, so the heaviest behaviour is what a model gets
-    // by saying nothing. The description has to price it: a blocking call holds
-    // the whole turn, which undoes the backgrounding it was called about.
+    // `block` defaults to true, so the heaviest behaviour is what a model gets by
+    // saying nothing. The description has to price it — but pricing is all it
+    // should do. Calling a blocking wait "throwing away the point" of
+    // backgrounding told a model its legitimate use was a mistake.
     let output = TaskOutputTool::new(Arc::new(ProcessManager::new()));
     let schema = output.parameters_schema();
     let description = schema["properties"]["block"]["description"]
         .as_str()
         .unwrap_or_default();
     assert!(description.contains("default true"), "got: {description}");
-    assert!(
-        description.contains("occupies your whole turn"),
-        "got: {description}"
-    );
+    // The cost, stated plainly.
+    assert!(description.contains("holds the turn"), "got: {description}");
     // Says why that matters, rather than leaving it as an abstract cost.
     assert!(
         description.contains("cannot be answered"),
         "got: {description}"
     );
-    // Offers the cheap alternative and confines blocking to the case that needs it.
+    // The other mode is offered, with the situation it suits.
     assert!(description.contains("false"), "got: {description}");
-    assert!(
-        description.contains("cannot proceed without"),
-        "got: {description}"
-    );
+    // No language that frames waiting as a misuse of the tool.
+    assert!(!description.contains("throws away"), "got: {description}");
 }
 
 #[test]
-fn task_output_description_prefers_reading_the_file() {
-    // The tool summary is what a model reads before it ever looks at `block`.
-    // Leading with "can optionally wait" presented the expensive path as the
-    // headline feature.
+fn task_output_description_states_both_modes() {
+    // The tool summary is what a model reads before it ever looks at `block`. It
+    // should say what the tool does; ranking the two paths here ("reading is
+    // usually better") editorialised against the tool's own purpose.
     let output = TaskOutputTool::new(Arc::new(ProcessManager::new()));
     let description = output.description();
+    // Both modes named, so `block` is not a surprise discovered later.
+    assert!(
+        description.contains("Waits for the task"),
+        "got: {description}"
+    );
+    assert!(description.contains("block: false"), "got: {description}");
+    // The file is mentioned as available, not as the better choice.
     assert!(description.contains("output file"), "got: {description}");
-    assert!(description.contains("costs nothing"), "got: {description}");
+    assert!(
+        !description.contains("usually better"),
+        "got: {description}"
+    );
 }
 
 #[tokio::test]
@@ -755,15 +762,14 @@ async fn a_yielded_command_tells_the_model_to_wait_before_dependent_steps(
         body.contains("never treat a started task as a passed one"),
         "got: {body}"
     );
-    // Blocking is the last resort, not the default: reading the file is free,
-    // while `task_output` occupies the turn and undoes the backgrounding.
-    let read_at = body.find("Read on the output path");
-    let block_at = body.find("task_output");
-    assert!(
-        read_at.is_some() && block_at.is_some() && read_at < block_at,
-        "reading should be offered before blocking; got: {body}"
-    );
-    assert!(body.contains("blocks your whole turn"), "got: {body}");
+    // Both ways of collecting the result are present, each with what it is for.
+    // Order is not asserted: ranking them is what carried Claude Code's stance
+    // that a blocking wait wastes the backgrounding, and waiting on a result the
+    // next step needs is exactly what task_output is for.
+    assert!(body.contains("Read on the output path"), "got: {body}");
+    // The cost of waiting is still stated, just not as a reprimand.
+    assert!(body.contains("holds the turn"), "got: {body}");
+    assert!(!body.contains("do not use it merely"), "got: {body}");
     Ok(())
 }
 

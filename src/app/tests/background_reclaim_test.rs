@@ -1,9 +1,14 @@
 //! Session-scoped reclaim accessors.
 //!
 //! These resolve a session id to its process manager. A wrong or missing lookup
-//! returns zero rather than failing, which in the TUI means esc finds "nothing
-//! waiting" and falls straight through to killing the run — the exact outcome
-//! the reclaim gesture exists to avoid. So the lookup itself is worth pinning.
+//! returns zero rather than failing, which in the TUI means ctrl+b finds
+//! "nothing waiting" and reports that it moved nothing — so a user watching a
+//! live command would be told there is none. So the lookup itself is worth
+//! pinning.
+//!
+//! Also covers the mode seam these accessors sit behind: whether a session owns
+//! a process manager at all decides whether a `timeout` backgrounds a command or
+//! kills it.
 
 use std::sync::Arc;
 
@@ -55,12 +60,25 @@ fn test_agent(tmp: &tempfile::TempDir) -> Result<Arc<Agent>, Box<dyn std::error:
 fn agent_that_starts_a_background_shell(
     tmp: &tempfile::TempDir,
 ) -> Result<Arc<Agent>, Box<dyn std::error::Error>> {
+    agent_that_backgrounds_command(tmp, "sleep 30")
+}
+
+/// Same, with the command spelled out.
+///
+/// The duration matters per test rather than globally: a run that must still own
+/// live work when the assertions run needs a long command, while one asserting
+/// the task was never registered does not — and there it runs inline to
+/// completion, so a long sleep would just stall the suite for its full length.
+fn agent_that_backgrounds_command(
+    tmp: &tempfile::TempDir,
+    command: &str,
+) -> Result<Arc<Agent>, Box<dyn std::error::Error>> {
     let config = provider_config(tmp);
     let provider = MockProvider::new(vec![
         MockResponse::ToolCalls(vec![MockToolCall {
             name: "bash".into(),
             arguments: serde_json::json!({
-                "command": "sleep 30",
+                "command": command,
                 "run_in_background": true,
             }),
         }]),
@@ -192,5 +210,68 @@ async fn a_session_that_never_ran_has_no_manager() -> TestResult {
         0
     );
     assert!(agent.background_processes(&meta.session_id).is_empty());
+    Ok(())
+}
+
+/// Runs one turn in a caller-chosen mode, so a test can pick the side of the
+/// background seam it wants to exercise.
+async fn session_with_manager_in_mode(
+    agent: &Arc<Agent>,
+    mode: ToolMode,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let meta = agent.create_session("test").await?;
+    let session = agent
+        .load_session(&meta.session_id)
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing session"))?;
+    let outcome = agent
+        .submit_to_session(QueryRequest::text("hello").mode(mode), session)
+        .await?;
+    if let SubmitOutcome::Run(mut run) = outcome {
+        while run.next().await.is_some() {}
+    }
+    Ok(meta.session_id)
+}
+
+#[tokio::test]
+async fn a_headless_run_registers_no_background_task() -> TestResult {
+    // The seam that decides whether a `timeout` kills or backgrounds. Headless
+    // gets no process manager, so its bash has no background support and its
+    // deadline stays a kill -- the only bound such a run has, since it has no
+    // yield, no task_output and no notifications.
+    //
+    // Worth testing across crates: the engine half is covered by its own tests,
+    // but nothing checked that app-level mode policy actually selects it. A
+    // future mode gaining a manager would silently make every headless timeout
+    // non-terminating.
+    let tmp = tempfile::TempDir::new()?;
+    // Short: headless refuses the capability, so this runs inline to completion
+    // and a long sleep would stall the suite for its full length. The assertion
+    // is that no task was registered, which the duration says nothing about.
+    let agent = agent_that_backgrounds_command(&tmp, "true")?;
+    let session_id = session_with_manager_in_mode(&agent, ToolMode::Headless).await?;
+
+    // The model asked for run_in_background and was refused the capability, so
+    // the command ran to completion inline instead of becoming a task.
+    assert!(
+        agent.background_processes(&session_id).is_empty(),
+        "headless must not own background tasks, got: {:?}",
+        agent.background_processes(&session_id)
+    );
+    assert_eq!(agent.blocking_task_waits(&session_id), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_interactive_run_does_register_one() -> TestResult {
+    // The contrast that gives the test above its meaning: identical request and
+    // identical mock, opposite outcome, decided only by mode.
+    let tmp = tempfile::TempDir::new()?;
+    let agent = agent_that_starts_a_background_shell(&tmp)?;
+    let session_id = session_with_manager_in_mode(&agent, ToolMode::Interactive).await?;
+
+    assert_eq!(agent.background_processes(&session_id).len(), 1);
+
+    agent.stop_all_background_processes(&session_id).await;
     Ok(())
 }

@@ -258,7 +258,8 @@ impl ProcessManager {
             .count();
         if running >= MAX_RUNNING_TASKS {
             return Err(ToolError::Failed(format!(
-                "Too many running background processes (limit: {MAX_RUNNING_TASKS})"
+                "Too many running background processes (limit: {MAX_RUNNING_TASKS}). \
+                 Use task_stop on tasks you no longer need before starting more."
             )));
         }
         if tasks.len() >= MAX_TRACKED_TASKS {
@@ -268,12 +269,17 @@ impl ProcessManager {
         }
         drop(tasks);
 
+        // Both running limits name a remedy now. A timeout used to reclaim slots
+        // on its own by killing the process; it backgrounds instead, so nothing
+        // frees a slot except an explicit stop or session teardown. A bare
+        // "limit reached" would leave the model with no move to make.
         let global_permit = GLOBAL_PROCESS_PERMITS
             .clone()
             .try_acquire_owned()
             .map_err(|_| {
                 ToolError::Failed(format!(
-                    "Too many running processes across sessions (limit: {MAX_GLOBAL_RUNNING_TASKS})"
+                    "Too many running processes across sessions (limit: {MAX_GLOBAL_RUNNING_TASKS}). \
+                     Other sessions hold some of these; use task_stop on tasks this session no longer needs."
                 ))
             })?;
         let task_id = Uuid::new_v4().to_string();

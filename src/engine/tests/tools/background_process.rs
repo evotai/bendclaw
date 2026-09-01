@@ -2598,3 +2598,44 @@ async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn 
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())
 }
+
+#[tokio::test]
+async fn the_running_limit_tells_the_model_how_to_free_a_slot() -> Result<(), Box<dyn Error>> {
+    // Reachable in a way it was not before: a timeout used to reclaim slots by
+    // killing the process, and now it backgrounds instead, so nothing frees one
+    // except an explicit stop. A bare "limit reached" would leave the model with
+    // no move to make -- and re-running is the move it would guess.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new()
+        .with_timeout(Duration::from_secs(30))
+        .with_process_manager(manager.clone());
+
+    let mut refused = None;
+    // Climb until the per-session cap answers; the exact number is the
+    // manager's business, not this test's.
+    for _ in 0..64 {
+        match bash
+            .execute(
+                serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+                context("bash", dir.path()),
+            )
+            .await
+        {
+            Ok(_) => continue,
+            Err(error) => {
+                refused = Some(error.to_string());
+                break;
+            }
+        }
+    }
+
+    let message = refused.ok_or("the running limit never engaged")?;
+    assert!(message.contains("Too many running"), "got: {message}");
+    assert!(message.contains("task_stop"), "got: {message}");
+
+    manager
+        .terminate_all_and_wait(Duration::from_secs(10))
+        .await;
+    Ok(())
+}

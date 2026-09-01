@@ -1143,6 +1143,32 @@ function globResultSummary(args: Record<string, unknown>, result: string): strin
   return `${summary}${incomplete ? ' shown' : ''}`
 }
 
+/**
+ * Headline for a command that is in the background, naming *why*.
+ *
+ * "started" only fits the case where backgrounding was the plan. A command that
+ * ran for its whole deadline, or that was moved aside so the user could talk,
+ * did not merely start -- reading it that way hides both the wait that already
+ * happened and the fact that the user's own keypress caused it.
+ *
+ * Unknown reasons fall back to the neutral wording: this string is written by
+ * the engine, so an older or newer one must not render as an empty status.
+ */
+function backgroundedSummary(details: Record<string, unknown>): string {
+  switch (detailString(details, 'background_reason')) {
+    case 'timeout_elapsed':
+      return 'still running · moved to background at its deadline'
+    case 'yield_elapsed':
+      return 'still running · moved to background'
+    case 'user_requested':
+      return 'still running · backgrounded by you'
+    case 'message_delivery':
+      return 'still running · backgrounded to read your message'
+    default:
+      return 'started · running in background'
+  }
+}
+
 function toolResultSummary(
   name: string,
   args: Record<string, unknown>,
@@ -1155,7 +1181,7 @@ function toolResultSummary(
   const lines = result ? resultLineCount(result) : 0
 
   if (normalizedName === 'bash') {
-    if (details.backgrounded === true) return 'started · running in background'
+    if (details.backgrounded === true) return backgroundedSummary(details)
     const exitCode = detailNumber(details, 'exit_code')
     if (exitCode !== undefined) return `exit ${exitCode}`
   }

@@ -332,6 +332,35 @@ describe('buildToolResult', () => {
         call: { id: 'bash-bg', name: 'bash', args: { command: 'bun run dev' }, status: 'done' as const, result: 'Command is running in the background.', details: { backgrounded: true, status: 'running' }, durationMs: 25 },
         status: '  ● · started · running in background · 25ms',
       },
+      // An explicit background was the plan, so "started" fits. The rest were
+      // not: naming the reason keeps a deadline or a keypress from reading as a
+      // command that simply began.
+      {
+        call: { id: 'bash-bg-explicit', name: 'bash', args: { command: 'bun run dev' }, status: 'done' as const, result: 'started', details: { backgrounded: true, background_reason: 'explicit', status: 'running' }, durationMs: 25 },
+        status: '  ● · started · running in background · 25ms',
+      },
+      {
+        call: { id: 'bash-bg-timeout', name: 'bash', args: { command: 'cargo build' }, status: 'done' as const, result: 'still going', details: { backgrounded: true, background_reason: 'timeout_elapsed', status: 'running' }, durationMs: 600_000 },
+        status: '  ● · still running · moved to background at its deadline · 600.0s',
+      },
+      {
+        call: { id: 'bash-bg-yield', name: 'bash', args: { command: 'cargo build' }, status: 'done' as const, result: 'still going', details: { backgrounded: true, background_reason: 'yield_elapsed', status: 'running' }, durationMs: 120_000 },
+        status: '  ● · still running · moved to background · 120.0s',
+      },
+      {
+        call: { id: 'bash-bg-user', name: 'bash', args: { command: 'cargo build' }, status: 'done' as const, result: 'still going', details: { backgrounded: true, background_reason: 'user_requested', status: 'running' }, durationMs: 25 },
+        status: '  ● · still running · backgrounded by you · 25ms',
+      },
+      {
+        call: { id: 'bash-bg-message', name: 'bash', args: { command: 'cargo build' }, status: 'done' as const, result: 'still going', details: { backgrounded: true, background_reason: 'message_delivery', status: 'running' }, durationMs: 25 },
+        status: '  ● · still running · backgrounded to read your message · 25ms',
+      },
+      // Written by the engine, so an unrecognized reason must still render a
+      // status rather than an empty one.
+      {
+        call: { id: 'bash-bg-unknown', name: 'bash', args: { command: 'cargo build' }, status: 'done' as const, result: 'still going', details: { backgrounded: true, background_reason: 'something_new', status: 'running' }, durationMs: 25 },
+        status: '  ● · started · running in background · 25ms',
+      },
       {
         call: { id: 'read', name: 'read', args: { path: 'a.ts' }, status: 'done' as const, result: 'body', details: { bytes: 2048 } },
         status: '  ✓ · 2.0 KB',

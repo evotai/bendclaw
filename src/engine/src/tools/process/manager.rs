@@ -1002,6 +1002,10 @@ fn notification_summary(snapshot: &ProcessSnapshot) -> String {
     match snapshot.status {
         ProcessStatus::Completed => format!("Command \"{}\" completed", command),
         ProcessStatus::Failed => format!("Command \"{}\" failed", command),
+        // Retired: a timeout backgrounds rather than kills, and the one runtime
+        // where it still kills never notifies (`notify_on_completion` is only
+        // armed for a background reason). Kept so a legacy snapshot read back
+        // from a stored session still describes itself.
         ProcessStatus::TimedOut => format!("Command \"{}\" timed out", command),
         // Cancelled, not merely stopped: the work is void. Mirrors Claude
         // Code's phrasing for a user-stopped agent — "won't be resumed" plus a

@@ -573,8 +573,34 @@ fn yield_schema_advertises_the_generous_foreground_wait() {
     let description = schema["properties"]["yield_time_ms"]["description"]
         .as_str()
         .unwrap_or_default();
-    assert!(description.contains("120000ms"), "got: {description}");
-    assert!(description.contains("600000ms"), "got: {description}");
+    assert!(description.contains("120000"), "got: {description}");
+    assert!(description.contains("600000"), "got: {description}");
+    // Yielding must read as handing back a live command, not as stopping one.
+    assert!(
+        description.contains("never interrupts"),
+        "got: {description}"
+    );
+}
+
+#[test]
+fn timeout_schema_says_it_kills_rather_than_waits() {
+    // The parameter name matches other agents where `timeout` means "watch this
+    // long, then background it". Here it is a SIGKILL deadline, so a model
+    // carrying that prior would sentence its own build to death — which is
+    // exactly what happened to a `pytest` run at `timeout: 180`.
+    let bash = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
+    let schema = bash.parameters_schema();
+    let description = schema["properties"]["timeout"]["description"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(description.contains("SIGKILL"), "got: {description}");
+    // Says the kill still lands after the command has been backgrounded.
+    assert!(
+        description.contains("already moved to the background"),
+        "got: {description}"
+    );
+    // Points at the parameter that actually controls watching.
+    assert!(description.contains("yield_time_ms"), "got: {description}");
 }
 
 #[tokio::test]
@@ -620,12 +646,21 @@ async fn a_yielded_command_tells_the_model_to_wait_before_dependent_steps(
     assert!(body.contains("was not interrupted"), "got: {body}");
     // The load-bearing instruction: without it the model could commit against a
     // suite that had not finished.
-    assert!(body.contains("a later step depends"), "got: {body}");
+    assert!(body.contains("cannot proceed without"), "got: {body}");
     assert!(body.contains("task_output"), "got: {body}");
     assert!(
-        body.contains("do not treat a started task as a passed one"),
+        body.contains("never treat a started task as a passed one"),
         "got: {body}"
     );
+    // Blocking is the last resort, not the default: reading the file is free,
+    // while `task_output` occupies the turn and undoes the backgrounding.
+    let read_at = body.find("Read on the output path");
+    let block_at = body.find("task_output");
+    assert!(
+        read_at.is_some() && block_at.is_some() && read_at < block_at,
+        "reading should be offered before blocking; got: {body}"
+    );
+    assert!(body.contains("blocks your whole turn"), "got: {body}");
     Ok(())
 }
 

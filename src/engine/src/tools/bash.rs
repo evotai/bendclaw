@@ -177,7 +177,7 @@ impl AgentTool for BashTool {
             },
             "timeout": {
                 "type": "number",
-                "description": "Hard command runtime limit in seconds. Defaults to 600, max 1800."
+                "description": "Hard kill deadline in seconds (default 600, max 1800). The command is SIGKILLed when it elapses, even if it has already moved to the background — this is a death sentence, not a wait. Leave it unset unless you want the command dead by a specific time; to control how long to watch a command, use yield_time_ms instead."
             }
         });
         if self.background_enabled {
@@ -186,7 +186,7 @@ impl AgentTool for BashTool {
                     "yield_time_ms".into(),
                     serde_json::json!({
                         "type": "number",
-                        "description": "Wait before yielding a still-running command as a background task. Defaults to 120000ms, max 600000ms."
+                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 120000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Raise this to watch longer, not to keep a command alive."
                     }),
                 );
                 properties.insert(
@@ -426,11 +426,18 @@ fn background_lede(reason: BackgroundReason) -> String {
 /// a later `git commit` depends on used to leave the model with three tool
 /// options and no statement that waiting was required, so it could commit
 /// against a suite that had not finished.
+///
+/// Reading the output file is offered first because it costs nothing: a
+/// blocking `task_output` occupies the whole turn, which throws away the point
+/// of backgrounding. Blocking is named last and only for the case that
+/// genuinely needs it.
 const BACKGROUND_GUIDANCE: &str = concat!(
-    "You will be notified when it completes. ",
-    "If a later step depends on this command's result, call task_output to wait for it ",
-    "before that step — do not end your turn to wait, and do not treat a started task as a passed one. ",
-    "Use Read on the output path for interim output, or task_stop to terminate it.",
+    "You will be notified when it completes, so you do not need to poll for it. ",
+    "To see progress now, use Read on the output path — it costs nothing and leaves you free to keep working. ",
+    "Only if a later step cannot proceed without this command's result, call task_output to wait for it ",
+    "before that step: that blocks your whole turn, so do not use it merely to check on a task. ",
+    "Never end your turn to wait, and never treat a started task as a passed one. ",
+    "Use task_stop to terminate it.",
 );
 
 fn completed_result(

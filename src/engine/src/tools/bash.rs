@@ -28,18 +28,16 @@ const MAX_DISPLAY_BYTES: usize = 50 * 1024;
 const MAX_LINE_BYTES: usize = 4096;
 /// Default foreground wait before a still-running command is yielded.
 ///
-/// Deliberately short, matching Claude Code's 2s. The point is that "a command
-/// is holding the turn" becomes a state that barely exists: anything not
-/// effectively instant leaves the foreground immediately, so the user is never
-/// stuck watching a build they cannot talk over, and the model is never blocked
-/// on one either.
+/// Generous on purpose. Claude Code's equivalent is its command timeout
+/// (10 minutes), not the 2s mark: at 2s it only arms ctrl+b and shows the
+/// background hint, leaving the command in the foreground. Yielding early
+/// instead would make the model pay a second round trip to collect a result it
+/// was already waiting for, on every command slower than a couple of seconds.
 ///
-/// A long wait looks safer and is not. With a 120s window every mitigation had
-/// to be built inside it — an escape gesture, message delivery past a live
-/// shell, releasing a blocking wait — all to make a state survivable that is
-/// better avoided. Yielding early costs the model one extra step to collect a
-/// result it was going to wait for anyway.
-const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(2);
+/// The equivalent hint here lives in the TUI, which shows `ctrl+b to
+/// background` for as long as a command is being watched. That is a rendering
+/// concern, so no threshold belongs on this side.
+const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(120);
 /// Longest model-requested foreground wait.
 const MAX_YIELD_TIME: Duration = Duration::from_secs(600);
 
@@ -193,7 +191,7 @@ impl AgentTool for BashTool {
                     "yield_time_ms".into(),
                     serde_json::json!({
                         "type": "number",
-                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 2000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Raise this only to keep a short command's result inline, never to keep a long one alive."
+                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 120000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Lower it when you do not need the result inline; raise it to keep waiting."
                     }),
                 );
                 properties.insert(

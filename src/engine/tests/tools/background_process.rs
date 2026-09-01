@@ -567,27 +567,25 @@ async fn completion_notification_is_claimed_once() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn yield_schema_advertises_the_short_foreground_wait() {
-    // 2s, matching Claude Code. The number is load-bearing: it is what makes
-    // "a command is holding the turn" a state that barely occurs, so the model
-    // should read yielding as the normal outcome rather than an exception.
+fn yield_schema_advertises_the_generous_foreground_wait() {
+    // 120s, not the 2s I briefly set here. Claude Code's 2s mark only arms its
+    // ctrl+b hint; the command stays in the foreground until its timeout. Yielding
+    // at 2s would charge the model an extra round trip, on every command slower
+    // than a couple of seconds, to collect a result it was already waiting for.
     let bash = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
     let schema = bash.parameters_schema();
     let description = schema["properties"]["yield_time_ms"]["description"]
         .as_str()
         .unwrap_or_default();
-    assert!(description.contains("2000"), "got: {description}");
+    assert!(description.contains("120000"), "got: {description}");
     assert!(description.contains("600000"), "got: {description}");
     // Yielding must read as handing back a live command, not as stopping one.
     assert!(
         description.contains("never interrupts"),
         "got: {description}"
     );
-    // Raising it must not read as a way to keep a long command in the foreground.
-    assert!(
-        description.contains("never to keep a long one alive"),
-        "got: {description}"
-    );
+    // Both directions are legitimate, so neither is discouraged.
+    assert!(description.contains("Lower it"), "got: {description}");
 }
 
 #[test]

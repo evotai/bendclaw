@@ -630,13 +630,19 @@ export function buildToolResult(
   // A task tool reports the *task's* outcome, not the poll's: `completed · exit
   // 0 · 1m 47s` rather than a byte count of the response body.
   const taskParts = !isError && isTaskTool(name) ? taskToolStatusParts(details) : []
-  const taskOutcome = taskParts.length > 0 ? taskParts[0]! : ''
+  // Glyph decisions read the status field, not the rendered label. They used to
+  // string-match the label ("still running", "failed"), which meant rewording a
+  // card silently changed its icon: renaming the backgrounded label to "running
+  // in background" flipped a live task from `●` to `✓`, reporting unfinished work
+  // as done.
+  const taskStatus = !isError && isTaskTool(name) ? detailString(details, 'status') : undefined
   // The poll succeeded but the task did not. Marking that `✓` would report a
   // broken build as a success, so the glyph follows the task, not the call.
-  const taskFailed = taskOutcome.startsWith('failed') || taskOutcome.startsWith('timed out')
-  // A poll that found the task still running is in-flight work, not a
-  // completed step, so it keeps the `●` running glyph.
-  const stillRunning = taskOutcome.startsWith('still running')
+  const taskFailed = taskStatus === 'failed' || taskStatus === 'timed_out'
+  // A poll that found the task still running is in-flight work, not a completed
+  // step, so it keeps the `●` running glyph — whether the task is detached or
+  // still being waited on in the foreground.
+  const stillRunning = taskStatus === 'running' || taskStatus === 'running_foreground'
   const statusParts = isError
     ? ['failed', summary, duration].filter(Boolean)
     : taskParts.length > 0
@@ -1048,18 +1054,17 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
       // work is void, not merely halted.
       parts.push(details.stopped_by_user === true ? 'cancelled by user' : 'stopped')
       break
+    // `running` is `RunningBackground`; `running_foreground` is a shell still
+    // being waited on. Both used to render as a bare "still running", which hid
+    // the distinction that matters most to a user reading the card: whether the
+    // work is now detached and safe to leave, or still holding a wait. The bash
+    // card has always named the background; this one now agrees with it.
     case 'running':
+      parts.push(runningInBackgroundLabel(retrieval))
+      break
     case 'running_foreground':
-      // `retrieval_status` distinguishes "waited and gave up" from "just looked"
-      // and from a wait the user ended. `released` must not read as a timeout:
-      // nothing went wrong and no deadline was hit.
-      parts.push(
-        retrieval === 'timeout'
-          ? 'still running · wait timed out'
-          : retrieval === 'released'
-            ? 'still running · stopped waiting'
-            : 'still running',
-      )
+      // No "in background" here: this task really is still in the foreground.
+      parts.push(retrieval === 'timeout' ? 'still running · wait timed out' : 'still running')
       break
     default:
       if (status) parts.push(status)
@@ -1068,6 +1073,28 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
   if (elapsedMs !== undefined) parts.push(formatElapsed(elapsedMs))
   if (lines !== undefined && lines > 0) parts.push(plural(lines, 'line'))
   return parts
+}
+
+/**
+ * How a backgrounded task reads on a `task_output` card.
+ *
+ * "running in background" rather than a bare "still running", matching the bash
+ * card and Claude Code: the useful fact is that the work is detached and the
+ * turn is free, not merely that it has not finished.
+ *
+ * `retrieval_status` then says what this particular poll did. `released` must
+ * not read as a timeout — nothing went wrong and no deadline was hit, the user
+ * reclaimed the turn.
+ */
+function runningInBackgroundLabel(retrieval: string | undefined): string {
+  switch (retrieval) {
+    case 'timeout':
+      return 'running in background · wait timed out'
+    case 'released':
+      return 'running in background · stopped waiting'
+    default:
+      return 'running in background'
+  }
 }
 
 function resultLineCount(content: string): number {

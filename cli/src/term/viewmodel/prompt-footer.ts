@@ -70,10 +70,19 @@ export function buildPromptFooterBlocks(
  * The count is the actionable part, so it carries the colour while the gesture
  * stays dim: the line is a pointer to the panel, not a status report.
  *
+ * The label names the background because that is what the count means: it comes
+ * from `runningCount()`, which counts only `RunningBackground` shells. A bare
+ * "1 shell running" left the user to guess whether it referred to the command
+ * they were watching in the foreground.
+ *
  * ↓ is advertised whenever it is live, because it sits one key away from the
  * cursor. With text in the composer ↓ still moves the caret, so the chip falls
- * back to naming Ctrl+T rather than a key that would do something else. The
- * whole line is dropped on terminals too narrow to hold it.
+ * back to naming Ctrl+T rather than a key that would do something else.
+ *
+ * Narrowing sheds words in order of expendability: the gesture first, then the
+ * word "background", and only then characters. Truncating the long label
+ * directly produced "…ound shells running", which drops the count — the one
+ * part of the line that is actionable.
  */
 function buildBackgroundChip(
   count: number,
@@ -81,14 +90,17 @@ function buildBackgroundChip(
   columns: number,
 ): StyledLine | null {
   if (count <= 0) return null
-  const label = `${count} ${count === 1 ? 'shell' : 'shells'} running`
+  const noun = count === 1 ? 'shell' : 'shells'
+  const label = `${count} background ${noun} running`
+  const shortLabel = `${count} ${noun} running`
   const chord = downAvailable ? BACKGROUND_PANEL_HINT_CHORD : BACKGROUND_PANEL_SHORTCUT_HINT
   const hint = `${chord} to manage`
   if (stringWidth(`${label} · ${hint}`) <= columns) {
     return line(colored(label, 'cyan'), dim(' · '), dim(hint))
   }
   if (stringWidth(label) <= columns) return line(colored(label, 'cyan'))
-  return line(colored(truncateTailToWidth(label, columns), 'cyan'))
+  if (stringWidth(shortLabel) <= columns) return line(colored(shortLabel, 'cyan'))
+  return line(colored(truncateTailToWidth(shortLabel, columns), 'cyan'))
 }
 
 function buildFooter(input: PromptFooterVM, columns: number, modeShownAbove: boolean): ViewBlock {

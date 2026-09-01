@@ -971,7 +971,7 @@ describe('prompt footer', () => {
       backgroundProcessCount: 2,
       backgroundPanelDownAvailable: true,
     }))).map(stripAnsi)
-    expect(lines[0]).toBe('2 shells running · ↓ to manage')
+    expect(lines[0]).toBe('2 background shells running · ↓ to manage')
     expect(lines[1]).toContain('/Users/test/project')
     expect(lines[2]).toBe('')
   })
@@ -983,7 +983,7 @@ describe('prompt footer', () => {
       backgroundProcessCount: 2,
       backgroundPanelDownAvailable: false,
     }))).map(stripAnsi)
-    expect(lines[0]).toBe('2 shells running · ctrl+t to manage')
+    expect(lines[0]).toBe('2 background shells running · ctrl+t to manage')
   })
 
   test('a single shell reads in the singular', () => {
@@ -992,7 +992,7 @@ describe('prompt footer', () => {
       backgroundProcessCount: 1,
       backgroundPanelDownAvailable: true,
     }))).map(stripAnsi)
-    expect(lines[0]).toBe('1 shell running · ↓ to manage')
+    expect(lines[0]).toBe('1 background shell running · ↓ to manage')
   })
 
   test('no chip is rendered when nothing runs in the background', () => {
@@ -1004,7 +1004,10 @@ describe('prompt footer', () => {
   })
 
   test('a narrow terminal drops the hint before the count', () => {
-    // The count is the actionable part, so the gesture is what gives way.
+    // The count is the actionable part, so the gesture is what gives way. Next to
+    // go is the word "background", which is context rather than information: the
+    // full label is 27 wide and character-truncating it produced
+    // "…ound shells running", losing the count itself.
     const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
       columns: 20,
       backgroundProcessCount: 3,
@@ -1012,6 +1015,18 @@ describe('prompt footer', () => {
     }))).map(stripAnsi)
     expect(lines[0]).toBe('3 shells running')
     expect(stringWidth(lines[0]!)).toBeLessThanOrEqual(20)
+  })
+
+  test('a terminal wide enough for the label but not the gesture keeps the full wording', () => {
+    // The rung between the two cases above: "background" only gives way once the
+    // label alone no longer fits, not as soon as the hint is dropped.
+    const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+      columns: 30,
+      backgroundProcessCount: 3,
+      backgroundPanelDownAvailable: true,
+    }))).map(stripAnsi)
+    expect(lines[0]).toBe('3 background shells running')
+    expect(stringWidth(lines[0]!)).toBeLessThanOrEqual(30)
   })
 
   test('footer remains available without the editor', () => {

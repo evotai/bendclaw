@@ -4,6 +4,7 @@
  */
 
 import { formatCacheHitPercent } from '../render/cache.js'
+import { backgroundChord } from './app/hint.js'
 
 function getSpinnerChars(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {
@@ -245,7 +246,7 @@ export function formatSpinnerLine(
   const interruptHint = options.interruptible === false
     ? ''
     : options.backgroundable
-      ? ' · esc to interrupt · ctrl+b to background'
+      ? ` · esc to interrupt · ${backgroundChord()} to background`
       : ' · esc to interrupt'
 
   if (slow) {

@@ -37,3 +37,36 @@ export interface Hint {
   /** Verb phrase completing "<key> to …". */
   action: string
 }
+
+/**
+ * How to spell the background chord for the terminal we are running in.
+ *
+ * Ctrl+B is tmux's own default prefix, so inside tmux a single press is
+ * swallowed by tmux and never reaches us. Pressing it twice is what tmux's
+ * `send-prefix` forwards as a literal 0x02, so the binding does work there --
+ * only the advertised spelling was wrong, which is worse than no hint at all: a
+ * user who presses once sees nothing happen and concludes the feature is broken.
+ *
+ * Assumes tmux's default prefix, the same assumption Claude Code makes. A user
+ * who rebound the prefix has already made ctrl+b arrive directly, so the plain
+ * spelling would be the correct one and this hint overstates it. Harmless in
+ * that direction: pressing twice still backgrounds, once.
+ */
+export function backgroundChord(env: NodeJS.ProcessEnv = process.env): string {
+  return insideTmux(env) ? 'ctrl+b ctrl+b (twice)' : 'ctrl+b'
+}
+
+/**
+ * The same chord in the help overlay's title case.
+ *
+ * Separate spelling, one source for the condition: the overlay lists keys as
+ * `Ctrl+B` alongside `Ctrl+G` and `Esc`, so lowercasing one row to share a
+ * string would read as a typo.
+ */
+export function backgroundChordLabel(env: NodeJS.ProcessEnv = process.env): string {
+  return insideTmux(env) ? 'Ctrl+B Ctrl+B (twice)' : 'Ctrl+B'
+}
+
+function insideTmux(env: NodeJS.ProcessEnv): boolean {
+  return env.TMUX !== undefined && env.TMUX !== ''
+}

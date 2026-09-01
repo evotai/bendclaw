@@ -4,7 +4,7 @@ import { CURSOR_MARKER } from '../renderer.js'
 import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'
 import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
-import { HINT_SEPARATOR, formatChord, type Hint } from '../app/hint.js'
+import { HINT_SEPARATOR, backgroundChordLabel, formatChord, type Hint } from '../app/hint.js'
 import type { AskState } from '../ask.js'
 import { getTheme } from '../../render/theme.js'
 
@@ -164,7 +164,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['Alt+Enter', 'Insert newline'],
     ['Ctrl+C', 'Clear / Exit (×2)'],
     ['Esc', 'Clear input / Dismiss / Interrupt'],
-    ['Ctrl+B', 'Run in background, keeping the work alive'],
+    [backgroundChordLabel(), 'Run in background, keeping the work alive'],
     ['Ctrl+G', 'Focus queued prompts when non-empty'],
     ['↓ / Ctrl+T', 'Background task panel when shells are running'],
     ['↑ / ↓', 'History navigation / multi-line'],

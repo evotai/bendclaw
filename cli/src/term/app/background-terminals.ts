@@ -71,8 +71,8 @@ export class BackgroundTerminals {
    * Blocking waits as of the last poll.
    *
    * Cached rather than read live because the spinner asks every frame (~100ms)
-   * to decide whether esc detaches or interrupts, and each read crosses the
-   * native boundary. Polled alongside the process list so both halves of
+   * to decide whether to advertise ctrl+b, and each read crosses the native
+   * boundary. Polled alongside the process list so both halves of
    * `canReclaimTurn()` come from one moment rather than two.
    */
   private blockingWaits = 0
@@ -111,16 +111,19 @@ export class BackgroundTerminals {
    *
    * Such a wait holds the turn while the task it watches is already
    * backgrounded, so `foregroundCount()` is zero and there is no shell to
-   * detach. Counted separately so esc still has something softer to do than
-   * kill the run.
+   * detach. Counted separately so ctrl+b still has something to release when no
+   * foreground shell exists.
    */
   blockingWaitCount(): number {
     return this.blockingWaits
   }
 
   /**
-   * True while esc should detach rather than interrupt: either a shell is being
+   * True while ctrl+b has something to move aside: either a shell is being
    * watched, or a blocking wait is holding the turn.
+   *
+   * Also gates the spinner hint, so the key is only advertised when it would do
+   * something.
    */
   canReclaimTurn(): boolean {
     return this.foregroundCount() > 0 || this.blockingWaitCount() > 0
@@ -130,8 +133,8 @@ export class BackgroundTerminals {
    * End the waiting without touching the work.
    *
    * Detaches any foreground shell and releases any blocking `task_output` wait.
-   * Both keep their processes alive, so this is safe to bind to a key that used
-   * to kill. Returns how many things stopped waiting.
+   * Both keep their processes alive, which is what lets ctrl+b promise never to
+   * kill. Returns how many things stopped waiting.
    */
   reclaimTurn(): number {
     return this.backgroundForeground() + this.releaseBlockingWaits()
@@ -155,8 +158,9 @@ export class BackgroundTerminals {
       const released = this.deps.client.releaseBlockingTaskWaits(sessionId)
       if (released > 0) {
         // Clear the cache now rather than waiting up to 500ms for the next poll:
-        // otherwise a second esc within that window reads a stale non-zero count,
-        // decides there is still something to release, and does nothing visible.
+        // otherwise a second ctrl+b within that window reads a stale non-zero
+        // count, decides there is still something to release, and does nothing
+        // visible.
         this.blockingWaits = 0
         this.deps.requestRender()
       }
@@ -171,8 +175,9 @@ export class BackgroundTerminals {
    * Hand every foreground shell back as a background task.
    *
    * The processes keep running and their output files stay put; only the waiting
-   * ends. This is what makes esc non-destructive while a long command is being
-   * watched — previously the only way to reclaim the turn was to kill the work.
+   * ends. This is what lets ctrl+b reclaim the turn non-destructively while a
+   * long command is being watched — previously the only way out was to kill the
+   * work.
    *
    * Returns how many moved, so the caller can tell whether the gesture applied.
    */
@@ -233,7 +238,7 @@ export class BackgroundTerminals {
       //
       // Guarded separately: a failing probe must not abandon the rest of the
       // poll, or the panel and footer would freeze over a number that only
-      // decides which of two esc gestures is offered.
+      // decides whether the ctrl+b hint is offered.
       try {
         this.blockingWaits = this.deps.client.blockingTaskWaits(sessionId)
       } catch {
@@ -247,7 +252,7 @@ export class BackgroundTerminals {
       }
       if (
         backgroundProcessFingerprint(previous) !== backgroundProcessFingerprint(next)
-        // The esc hint is derived from this, so a change has to repaint even
+        // The ctrl+b hint is derived from this, so a change has to repaint even
         // when the task list itself is unmoved.
         || previousWaits !== this.blockingWaits
       ) {

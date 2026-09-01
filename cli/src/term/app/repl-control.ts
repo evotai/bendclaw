@@ -14,7 +14,7 @@ export type ReplControlInput = {
   hasQueuedPrompt: boolean
   isCompacting?: boolean
   /**
-   * Something is waiting on a background task that esc can release without
+   * Something is waiting on a background task that ctrl+b can release without
    * killing it: a shell watched in the foreground, or a blocking `task_output`
    * call holding the turn.
    */

@@ -1229,7 +1229,7 @@ impl Agent {
     ///
     /// Such a wait holds the whole turn while the task it watches is already
     /// backgrounded, so there is no foreground shell to detach — the UI needs
-    /// this count to know esc has something softer to do than kill the run.
+    /// this count to know ctrl+b has something to release.
     pub fn blocking_task_waits(&self, session_id: &str) -> usize {
         let manager = self.process_managers.lock().get(session_id).cloned();
         match manager {

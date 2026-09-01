@@ -831,8 +831,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         {
           interruptible: foregroundCommand === null,
           model: appState.model,
-          // Esc detaches rather than kills while work is being waited on, so
-          // the hint must name that outcome instead of promising an interrupt.
+          // Ctrl+B can move this work aside without killing it, so the hint
+          // advertises that key alongside esc. Esc itself always interrupts.
           backgroundable: backgroundTerminals.canReclaimTurn(),
         },
       )

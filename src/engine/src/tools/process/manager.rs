@@ -55,7 +55,8 @@ struct ProcessManagerInner {
     /// A blocking wait occupies the whole turn while the task it watches is
     /// already backgrounded, so no foreground shell exists for the user to
     /// detach. Without this count the UI cannot tell that state apart from an
-    /// ordinary model call, and esc has nothing softer to offer than a kill.
+    /// ordinary model call, and ctrl+b would look inert exactly when it is the
+    /// key that helps.
     blocking_waiters: AtomicUsize,
     /// Bumped to tell in-flight blocking waits to give up the turn.
     ///

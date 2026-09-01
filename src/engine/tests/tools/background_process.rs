@@ -589,7 +589,7 @@ fn yield_schema_advertises_the_generous_foreground_wait() {
 }
 
 #[test]
-fn timeout_schema_says_it_backgrounds_rather_than_kills() {
+fn timeout_schema_says_it_bounds_the_wait_rather_than_killing() {
     // The parameter name carries a strong prior from other tools, where a
     // timeout kills. It no longer does, so the description has to say so
     // outright: a model that believes this is a SIGKILL deadline will avoid
@@ -600,10 +600,16 @@ fn timeout_schema_says_it_backgrounds_rather_than_kills() {
         .as_str()
         .unwrap_or_default();
     assert!(
-        description.contains("moved to the background"),
+        description.contains("handed back still running"),
         "got: {description}"
     );
     assert!(description.contains("never killed"), "got: {description}");
+    // The one case where it does nothing at all. Without this a model would set
+    // a timeout on a run_in_background call and believe it bounded something.
+    assert!(
+        description.contains("No effect with run_in_background"),
+        "got: {description}"
+    );
     // Points at the parameter that shortens the wait, and the one that stops it.
     assert!(description.contains("yield_time_ms"), "got: {description}");
     assert!(description.contains("task_stop"), "got: {description}");
@@ -942,8 +948,14 @@ async fn a_timed_out_command_still_notifies_on_completion() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn a_model_requested_timeout_shorter_than_the_default_is_honored(
-) -> Result<(), Box<dyn Error>> {
+async fn a_timeout_does_nothing_to_an_explicitly_backgrounded_task() -> Result<(), Box<dyn Error>> {
+    // `timeout` bounds the foreground wait. `run_in_background: true` has no
+    // wait, so there is nothing for the deadline to end -- it cannot background
+    // a task that is already there, and killing is what this stopped doing.
+    //
+    // Asserted on the exact status rather than `!is_terminal()`: that weaker
+    // check passes whether the deadline was inapplicable or silently mishandled,
+    // which is the difference this test exists to pin.
     let dir = tempfile::tempdir()?;
     let manager = Arc::new(ProcessManager::new());
     let bash = BashTool::new()
@@ -962,11 +974,14 @@ async fn a_model_requested_timeout_shorter_than_the_default_is_honored(
         .await?;
     let id = task_id(&started)?.to_string();
 
-    // The shorter deadline is honored, and honoring it means backgrounding
-    // rather than killing: an explicitly-background task simply stays running.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Well past the deadline.
+    tokio::time::sleep(Duration::from_millis(600)).await;
     let snapshot = manager.snapshot(&id).ok_or("task disappeared")?;
-    assert!(!snapshot.status.is_terminal(), "got {:?}", snapshot.status);
+    assert_eq!(
+        snapshot.status,
+        ProcessStatus::RunningBackground(BackgroundReason::Explicit),
+        "the deadline must neither kill it nor re-attribute why it is backgrounded",
+    );
 
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())

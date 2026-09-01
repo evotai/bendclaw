@@ -188,7 +188,7 @@ impl AgentTool for BashTool {
                 // sentence would be a lie in whichever half it did not describe,
                 // and "it is never killed" is the more dangerous lie to tell.
                 "description": if self.background_enabled {
-                    "Deadline in seconds for watching this command (default 600, max 1800). When it elapses the command is moved to the background and keeps running — it is never killed. Use yield_time_ms to hand a command back sooner; use task_stop to actually stop one."
+                    "Deadline in seconds for bounding your wait (default 600, max 1800). When it elapses the command is handed back still running — it is never killed. No effect with run_in_background, which has no wait to bound. Use yield_time_ms to be handed a command back sooner; use task_stop to actually stop one."
                 } else {
                     "Hard runtime limit in seconds (default 600, max 1800). The command is killed when it elapses, so set it above the time the command legitimately needs."
                 }

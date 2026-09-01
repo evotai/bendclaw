@@ -2530,3 +2530,71 @@ async fn with_background_support_the_same_deadline_spares_the_command() -> Resul
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())
 }
+
+#[tokio::test]
+async fn the_yield_lede_reports_the_wait_that_actually_elapsed() -> Result<(), Box<dyn Error>> {
+    // The lede used to interpolate DEFAULT_YIELD_TIME regardless of what was
+    // asked for, so a model requesting a 1s yield was told its command "did not
+    // finish within its 120s foreground wait". False, and it overstates how long
+    // the command has been running -- which is exactly the input a model uses to
+    // decide whether to keep waiting or move on.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new()
+        .with_timeout(Duration::from_secs(30))
+        .with_process_manager(manager.clone());
+
+    let result = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "yield_time_ms": 1_000}),
+            context("bash", dir.path()),
+        )
+        .await?;
+
+    assert_eq!(result.details["background_reason"], "yield_elapsed");
+    let body = text(&result);
+    assert!(body.contains("its 1s foreground wait"), "got: {body}");
+    // The default must not appear when it is not the wait that happened.
+    assert!(!body.contains("120s"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn Error>> {
+    // The other direction: with no yield_time_ms the number quoted must be the
+    // default that actually governed the wait.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new()
+        .with_timeout(Duration::from_secs(30))
+        .with_process_manager(manager.clone());
+
+    // Detach externally, which reports the configured yield rather than a
+    // deadline -- waiting out the real 120s default would stall the suite.
+    let tool = Arc::new(bash);
+    let watcher = tool.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        watcher
+            .execute(
+                serde_json::json!({"command": "sleep 30"}),
+                context("bash", &dir_path),
+            )
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        manager
+            .background_all_foreground(BackgroundReason::YieldElapsed)
+            .len(),
+        1
+    );
+
+    let body = text(&handle.await??);
+    assert!(body.contains("its 120s foreground wait"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}

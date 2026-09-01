@@ -294,7 +294,13 @@ impl AgentTool for BashTool {
             .await?;
 
         if run_in_background {
-            return background_result(&self.process_manager, &task_id, BackgroundReason::Explicit);
+            // No wait elapsed: backgrounding was the request, not an outcome.
+            return background_result(
+                &self.process_manager,
+                &task_id,
+                BackgroundReason::Explicit,
+                None,
+            );
         }
 
         let started = Instant::now();
@@ -323,7 +329,7 @@ impl AgentTool for BashTool {
             // Hand it back as a background result: the command keeps running, so
             // the only thing that ends here is the waiting.
             if let ProcessStatus::RunningBackground(reason) = snapshot.status {
-                return background_result(&self.process_manager, &task_id, reason);
+                return background_result(&self.process_manager, &task_id, reason, yield_time);
             }
 
             let elapsed = started.elapsed();
@@ -336,6 +342,7 @@ impl AgentTool for BashTool {
                         &self.process_manager,
                         &task_id,
                         BackgroundReason::YieldElapsed,
+                        yield_time,
                     );
                 }
                 return completed_result(
@@ -407,13 +414,14 @@ fn background_result(
     manager: &ProcessManager,
     task_id: &str,
     reason: BackgroundReason,
+    waited: Option<Duration>,
 ) -> Result<ToolResult, ToolError> {
     let snapshot = manager
         .snapshot(task_id)
         .ok_or_else(|| ToolError::Failed(format!("Process task disappeared: {task_id}")))?;
     let text = format!(
         "{}\nTask ID: {}\nOutput: {}\n{}",
-        background_lede(reason),
+        background_lede(reason, waited),
         snapshot.task_id,
         snapshot.output_path.display(),
         BACKGROUND_GUIDANCE,
@@ -436,12 +444,21 @@ fn background_result(
 /// An explicit `run_in_background` needs no explanation, but a command the
 /// harness moved on its own does: without the reason the model cannot tell an
 /// intentional detach from one it should wait out.
-fn background_lede(reason: BackgroundReason) -> String {
+///
+/// `waited` is the wait that actually elapsed. It has to be passed in rather
+/// than read from [`DEFAULT_YIELD_TIME`]: a model that asked for
+/// `yield_time_ms: 5000` was being told its command "did not finish within its
+/// 120s foreground wait", which is false and, worse, overstates how long the
+/// command has already been running.
+fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String {
     match reason {
-        BackgroundReason::YieldElapsed => format!(
-            "Command did not finish within its {}s foreground wait and was moved to the background; it was not interrupted.",
-            DEFAULT_YIELD_TIME.as_secs()
-        ),
+        BackgroundReason::YieldElapsed => match waited {
+            Some(waited) => format!(
+                "Command did not finish within its {}s foreground wait and was moved to the background; it was not interrupted.",
+                waited.as_secs()
+            ),
+            None => "Command did not finish within its foreground wait and was moved to the background; it was not interrupted.".to_string(),
+        },
         // A timeout no longer kills, so the lede must not imply the work is over.
         // A model that reads "timed out" as "dead" would re-run a build that is
         // still going, which is the failure the old kill behaviour caused.

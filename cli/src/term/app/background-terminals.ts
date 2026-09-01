@@ -67,6 +67,15 @@ export interface BackgroundTerminalsDeps {
 
 export class BackgroundTerminals {
   private processes: BackgroundProcess[] = []
+  /**
+   * Blocking waits as of the last poll.
+   *
+   * Cached rather than read live because the spinner asks every frame (~100ms)
+   * to decide whether esc detaches or interrupts, and each read crosses the
+   * native boundary. Polled alongside the process list so both halves of
+   * `canReclaimTurn()` come from one moment rather than two.
+   */
+  private blockingWaits = 0
   private warnedFor: string | null = null
   private readonly deps: BackgroundTerminalsDeps
   /**
@@ -98,7 +107,7 @@ export class BackgroundTerminals {
   }
 
   /**
-   * Blocking `task_output` waits in flight.
+   * Blocking `task_output` waits as of the last poll.
    *
    * Such a wait holds the turn while the task it watches is already
    * backgrounded, so `foregroundCount()` is zero and there is no shell to
@@ -106,13 +115,7 @@ export class BackgroundTerminals {
    * kill the run.
    */
   blockingWaitCount(): number {
-    const sessionId = this.deps.sessionId()
-    if (!sessionId) return 0
-    try {
-      return this.deps.client.blockingTaskWaits(sessionId)
-    } catch {
-      return 0
-    }
+    return this.blockingWaits
   }
 
   /**
@@ -149,7 +152,15 @@ export class BackgroundTerminals {
     const sessionId = this.deps.sessionId()
     if (!sessionId) return 0
     try {
-      return this.deps.client.releaseBlockingTaskWaits(sessionId)
+      const released = this.deps.client.releaseBlockingTaskWaits(sessionId)
+      if (released > 0) {
+        // Clear the cache now rather than waiting up to 500ms for the next poll:
+        // otherwise a second esc within that window reads a stale non-zero count,
+        // decides there is still something to release, and does nothing visible.
+        this.blockingWaits = 0
+        this.deps.requestRender()
+      }
+      return released
     } catch {
       // A session can disappear mid-gesture; any detach still counts.
       return 0
@@ -205,22 +216,41 @@ export class BackgroundTerminals {
    */
   refresh(): void {
     const previous = this.processes
+    const previousWaits = this.blockingWaits
     const sessionId = this.deps.sessionId()
     if (!sessionId) {
       this.processes = []
-      if (previous.length > 0) this.deps.requestRender()
+      this.blockingWaits = 0
+      if (previous.length > 0 || previousWaits > 0) this.deps.requestRender()
       return
     }
     try {
       const next = this.deps.client.backgroundProcesses(sessionId)
       this.processes = next
+      // Read in the same poll as the list so both halves of `canReclaimTurn()`
+      // describe one moment. A live read per frame would cross the native
+      // boundary at spinner rate for a value that changes rarely.
+      //
+      // Guarded separately: a failing probe must not abandon the rest of the
+      // poll, or the panel and footer would freeze over a number that only
+      // decides which of two esc gestures is offered.
+      try {
+        this.blockingWaits = this.deps.client.blockingTaskWaits(sessionId)
+      } catch {
+        this.blockingWaits = 0
+      }
       // An open panel is a live view of this list: refresh it in place so a task
       // finishing is reflected without the user reopening the panel.
       if (this.deps.panelOpen()) {
         const state = this.deps.panelState()
         if (state) this.deps.updatePanel(refreshBackgroundPanelState(state, next))
       }
-      if (backgroundProcessFingerprint(previous) !== backgroundProcessFingerprint(next)) {
+      if (
+        backgroundProcessFingerprint(previous) !== backgroundProcessFingerprint(next)
+        // The esc hint is derived from this, so a change has to repaint even
+        // when the task list itself is unmoved.
+        || previousWaits !== this.blockingWaits
+      ) {
         this.deps.requestRender()
       }
     } catch {

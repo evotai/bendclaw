@@ -538,6 +538,44 @@ describe('BackgroundTerminals.reclaimTurn', () => {
     expect(h.controller.blockingWaitCount()).toBe(0)
     expect(h.controller.canReclaimTurn()).toBe(false)
   })
+
+  test('a failing wait probe still lets the rest of the poll land', () => {
+    // The probe only decides which of two esc gestures is offered. Letting it
+    // abandon the poll would freeze the footer and panel over that.
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      blockingWaits: () => { throw new Error('session vanished') },
+    })
+    h.controller.refresh()
+    expect(h.controller.runningCount()).toBe(1)
+  })
+
+  test('the wait count comes from the poll, not a live read per frame', () => {
+    // The spinner asks every frame to pick the esc hint; reading across the
+    // native boundary that often would be wasteful, so the value is cached.
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      startingBlockingWaits: 1,
+    })
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    h.controller.refresh()
+    expect(h.controller.blockingWaitCount()).toBe(1)
+  })
+
+  test('a release clears the cached count without waiting for the next poll', () => {
+    // Otherwise a second esc inside the 500ms window reads a stale count, thinks
+    // there is still something to release, and does nothing visible.
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      startingBlockingWaits: 1,
+    })
+    h.controller.refresh()
+    expect(h.controller.reclaimTurn()).toBe(1)
+
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    // So the next esc escalates to interrupting instead of silently repeating.
+    expect(h.controller.canReclaimTurn()).toBe(false)
+  })
 })
 
 describe('BackgroundTerminals.guardSessionSwitch', () => {

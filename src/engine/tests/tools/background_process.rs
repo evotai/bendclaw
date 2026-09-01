@@ -1954,6 +1954,56 @@ async fn detaching_leaves_explicitly_background_tasks_alone() -> Result<(), Box<
 }
 
 #[tokio::test]
+async fn the_kill_deadline_still_lands_after_a_user_detach() -> Result<(), Box<dyn Error>> {
+    // The `timeout` schema description promises exactly this: the SIGKILL is not
+    // cancelled by moving the task aside. If detaching quietly reprieved a task,
+    // that description would be a lie and a model relying on the deadline would
+    // be misled.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_timeout(Duration::from_secs(30))
+            .with_process_manager(manager.clone()),
+    );
+
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({
+                "command": "sleep 30",
+                "timeout": 1.0,
+                "yield_time_ms": 600_000,
+            }),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Detach well before the deadline.
+    assert_eq!(
+        manager
+            .background_all_foreground(BackgroundReason::UserRequested)
+            .len(),
+        1
+    );
+    let id = task_id(&handle.await??)?.to_string();
+
+    let snapshot = manager
+        .wait(&id, Duration::from_secs(5))
+        .await
+        .ok_or("task disappeared")?;
+    assert_eq!(
+        snapshot.status.as_str(),
+        "timed_out",
+        "the deadline must survive the detach"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_detached_command_still_notifies_on_completion() -> Result<(), Box<dyn Error>> {
     // The whole point is that the result survives: a detach that dropped the
     // completion notification would silently lose it.

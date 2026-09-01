@@ -604,6 +604,45 @@ fn timeout_schema_says_it_kills_rather_than_waits() {
     assert!(description.contains("yield_time_ms"), "got: {description}");
 }
 
+#[test]
+fn block_schema_names_the_cost_of_waiting() {
+    // `block` defaults to true, so the heaviest behaviour is what a model gets
+    // by saying nothing. The description has to price it: a blocking call holds
+    // the whole turn, which undoes the backgrounding it was called about.
+    let output = TaskOutputTool::new(Arc::new(ProcessManager::new()));
+    let schema = output.parameters_schema();
+    let description = schema["properties"]["block"]["description"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(description.contains("default true"), "got: {description}");
+    assert!(
+        description.contains("occupies your whole turn"),
+        "got: {description}"
+    );
+    // Says why that matters, rather than leaving it as an abstract cost.
+    assert!(
+        description.contains("cannot be answered"),
+        "got: {description}"
+    );
+    // Offers the cheap alternative and confines blocking to the case that needs it.
+    assert!(description.contains("false"), "got: {description}");
+    assert!(
+        description.contains("cannot proceed without"),
+        "got: {description}"
+    );
+}
+
+#[test]
+fn task_output_description_prefers_reading_the_file() {
+    // The tool summary is what a model reads before it ever looks at `block`.
+    // Leading with "can optionally wait" presented the expensive path as the
+    // headline feature.
+    let output = TaskOutputTool::new(Arc::new(ProcessManager::new()));
+    let description = output.description();
+    assert!(description.contains("output file"), "got: {description}");
+    assert!(description.contains("costs nothing"), "got: {description}");
+}
+
 #[tokio::test]
 async fn a_command_finishing_inside_the_default_wait_stays_in_the_foreground(
 ) -> Result<(), Box<dyn Error>> {

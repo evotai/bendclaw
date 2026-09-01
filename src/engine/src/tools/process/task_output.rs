@@ -114,7 +114,7 @@ impl AgentTool for TaskOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Get status and recent output from a background command. Can optionally wait for completion."
+        "Get status and recent output from a background command. Reading the task's output file is usually better: it costs nothing and leaves you free to keep working."
     }
 
     fn prompt_snippet(&self) -> Option<&str> {
@@ -126,7 +126,7 @@ impl AgentTool for TaskOutputTool {
             "type": "object",
             "properties": {
                 "task_id": { "type": "string", "description": "Background task ID" },
-                "block": { "type": "boolean", "description": "Wait for task completion. Defaults to true." },
+                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). Blocking occupies your whole turn, which throws away the point of running the command in the background, and the user cannot be answered until it ends. Pass false to check on a task; only block when a later step genuinely cannot proceed without the result." },
                 "timeout": { "type": "number", "description": "Maximum wait time in milliseconds. Defaults to 30000, max 600000." }
             },
             "required": ["task_id"]

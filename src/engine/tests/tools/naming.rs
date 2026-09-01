@@ -157,3 +157,30 @@ fn text_that_bypasses_the_resolver_keeps_literal_names() {
     assert!(!schema.contains("{{"), "got: {schema}");
     assert!(schema.contains("task_stop"), "got: {schema}");
 }
+
+#[test]
+fn the_literal_names_in_tool_result_text_still_dispatch() {
+    // BACKGROUND_GUIDANCE keeps canonical names because tool-result bodies never
+    // pass through the resolver. That is only safe because dispatch accepts any
+    // alias regardless of model: a Claude model reads `task_output` there while
+    // its own schema says `TaskOutput`, and calling either has to work.
+    //
+    // If dispatch ever became model-aware, those literal names would turn into
+    // dead advice rather than a cosmetic mismatch.
+    use std::sync::Arc;
+
+    use evotengine::tools::ProcessManager;
+    use evotengine::tools::TaskOutputTool;
+    use evotengine::tools::TaskStopTool;
+
+    let manager = Arc::new(ProcessManager::new());
+    let output = TaskOutputTool::new(manager.clone());
+    let stop = TaskStopTool::new(manager);
+
+    // The name the guidance text uses.
+    assert!(output.matches_call_name("task_output"));
+    assert!(stop.matches_call_name("task_stop"));
+    // The name that model's schema advertises.
+    assert!(output.matches_call_name("TaskOutput"));
+    assert!(stop.matches_call_name("TaskStop"));
+}

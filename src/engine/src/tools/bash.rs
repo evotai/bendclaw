@@ -508,6 +508,13 @@ fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String
 /// blocking `task_output` occupies the whole turn, which throws away the point
 /// of backgrounding. Blocking is named last and only for the case that
 /// genuinely needs it.
+///
+/// Tool names stay literal here. This is a tool-result body, which never passes
+/// through `resolve_tool_refs`, so a `{{task_output}}` placeholder would reach
+/// the model raw. The names being canonical rather than per-model is harmless:
+/// `matches_call_name` is case-insensitive and accepts every alias, so a Claude
+/// model that reads `task_output` here and calls it still dispatches, even
+/// though its own schema spells the tool `TaskOutput`.
 const BACKGROUND_GUIDANCE: &str = concat!(
     "You will be notified when it completes, so you do not need to poll for it. ",
     "To see progress now, use Read on the output path — it costs nothing and leaves you free to keep working. ",

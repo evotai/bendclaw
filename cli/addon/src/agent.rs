@@ -244,6 +244,18 @@ impl NapiAgent {
             as u32
     }
 
+    /// Same detach, attributed to a queued message needing delivery.
+    ///
+    /// Steering is only inspected between tool calls, so a foreground shell
+    /// holds a typed message until it finishes. Detaching lets the message land
+    /// while the command keeps running.
+    #[napi]
+    pub fn background_foreground_processes_for_message(&self, session_id: String) -> u32 {
+        self.agent
+            .background_foreground_processes(&session_id, BackgroundReason::MessageDelivery)
+            as u32
+    }
+
     #[napi]
     pub async fn stop_all_background_processes(&self, session_id: String) -> Result<String> {
         serialize_process_summaries(self.agent.stop_all_background_processes(&session_id).await)

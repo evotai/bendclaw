@@ -346,6 +346,13 @@ export class Agent {
     return this.raw.backgroundForegroundProcesses(sessionId)
   }
 
+  /** Same detach, attributed to a queued message needing delivery. Steering is
+   *  only inspected between tool calls, so a foreground shell would otherwise
+   *  hold a typed message until it finished. */
+  backgroundForegroundProcessesForMessage(sessionId: string): number {
+    return this.raw.backgroundForegroundProcessesForMessage(sessionId)
+  }
+
   /** Kill every background process synchronously. Safe to call before fastExit,
    *  which skips the async teardown that would otherwise stop them. */
   killAllBackgroundProcessesNow(): number {

@@ -1977,6 +1977,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const queued = streamRef.steer(expandedText)
         if (displayText) queuedUserMessages.push({ ...queued, text: displayText, queue: 'steering' })
       }
+      // Steering is only inspected between tool calls, so a shell being watched
+      // in the foreground would hold this message until it finished — a 120s
+      // wait during which typing appears to do nothing. Detaching lets the
+      // message land now; the command keeps running.
+      backgroundTerminals.backgroundForegroundForMessage()
       // Save expanded text to input history before clearAll() drops the
       // in-memory paste registry. Keep displayText only for compact rendering.
       if (historyText) {

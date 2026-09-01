@@ -1849,6 +1849,43 @@ async fn a_user_detach_says_the_result_is_still_wanted() -> Result<(), Box<dyn E
 }
 
 #[tokio::test]
+async fn a_message_delivery_detach_names_the_waiting_message() -> Result<(), Box<dyn Error>> {
+    // Steering is only inspected between tool calls, so a watched shell holds a
+    // typed message until it finishes. The lede has to say why the command moved,
+    // or the model reads it as the user losing interest in the result.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_process_manager(manager.clone())
+            .with_timeout(Duration::from_secs(60)),
+    );
+
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"command": "sleep 30", "yield_time_ms": 600_000}),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    manager.background_all_foreground(BackgroundReason::MessageDelivery);
+
+    let body = text(&handle.await??);
+    assert!(body.contains("queued user message"), "got: {body}");
+    assert!(body.contains("was not interrupted"), "got: {body}");
+    assert!(body.contains("result is still wanted"), "got: {body}");
+    // Distinct from both the timeout yield and the user-initiated detach.
+    assert!(!body.contains("did not finish within"), "got: {body}");
+    assert!(!body.contains("keep talking"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn detaching_twice_moves_nothing_the_second_time() -> Result<(), Box<dyn Error>> {
     // The gesture is idempotent, so a double keypress cannot double-report.
     let dir = tempfile::tempdir()?;

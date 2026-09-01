@@ -36,6 +36,21 @@ function harness(options: {
   let panel: SelectorState | null = null
   const commits: Array<{ slot: string; text: string }> = []
   let renders = 0
+  let messageDetaches = 0
+
+  // Shared by both detach entry points so a test cannot pass for one and fail
+  // for the other. Mirrors the native side: only foreground shells move, and
+  // they keep running.
+  const detachForeground = (): number => {
+    if (options.backgroundForeground) return options.backgroundForeground()
+    const moved = processes.filter(candidate => candidate.status === 'running_foreground')
+    processes = processes.map(candidate =>
+      candidate.status === 'running_foreground'
+        ? { ...candidate, status: 'running' as const }
+        : candidate,
+    )
+    return moved.length
+  }
 
   const controller = new BackgroundTerminals({
     client: {
@@ -54,15 +69,10 @@ function harness(options: {
         processes = processes.map(candidate => ({ ...candidate, status: 'killed' as const }))
         return live
       },
-      backgroundForegroundProcesses: () => {
-        if (options.backgroundForeground) return options.backgroundForeground()
-        const moved = processes.filter(candidate => candidate.status === 'running_foreground')
-        processes = processes.map(candidate =>
-          candidate.status === 'running_foreground'
-            ? { ...candidate, status: 'running' as const }
-            : candidate,
-        )
-        return moved.length
+      backgroundForegroundProcesses: () => detachForeground(),
+      backgroundForegroundProcessesForMessage: () => {
+        messageDetaches++
+        return detachForeground()
       },
       killAllBackgroundProcessesNow: () => processes.length,
     },
@@ -88,6 +98,7 @@ function harness(options: {
     renders: () => renders,
     setProcesses: (next: BackgroundProcess[]) => { processes = next },
     processes: () => processes,
+    messageDetaches: () => messageDetaches,
   }
 }
 
@@ -375,6 +386,29 @@ describe('BackgroundTerminals.backgroundForeground', () => {
     })
     h.controller.refresh()
     expect(h.controller.foregroundCount()).toBe(1)
+  })
+
+  test('the message-delivery detach frees the shell through its own entry point', () => {
+    // Attribution matters: the model is told the shell moved so a queued message
+    // could land, not that the user walked away from the result.
+    const h = harness({ processes: [proc({ status: 'running_foreground' })] })
+    h.controller.refresh()
+
+    expect(h.controller.backgroundForegroundForMessage()).toBe(1)
+
+    expect(h.messageDetaches()).toBe(1)
+    expect(h.controller.foregroundCount()).toBe(0)
+    // Still live: typing must not cost the user their build.
+    expect(h.controller.runningCount()).toBe(1)
+  })
+
+  test('a message with nothing in the foreground detaches nothing', () => {
+    // Steering already reaches the model between tool calls, so there is no
+    // reason to disturb a task the model backgrounded itself.
+    const h = harness({ processes: [proc({ status: 'running' })] })
+    h.controller.refresh()
+    expect(h.controller.backgroundForegroundForMessage()).toBe(0)
+    expect(h.controller.runningCount()).toBe(1)
   })
 })
 

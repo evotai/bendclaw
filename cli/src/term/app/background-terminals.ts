@@ -33,6 +33,7 @@ export interface BackgroundTerminalsClient {
   stopBackgroundProcess(sessionId: string, taskId: string): Promise<BackgroundProcess | null>
   stopAllBackgroundProcesses(sessionId: string): Promise<BackgroundProcess[]>
   backgroundForegroundProcesses(sessionId: string): number
+  backgroundForegroundProcessesForMessage(sessionId: string): number
   killAllBackgroundProcessesNow(): number
 }
 
@@ -104,10 +105,29 @@ export class BackgroundTerminals {
    * Returns how many moved, so the caller can tell whether the gesture applied.
    */
   backgroundForeground(): number {
+    return this.detachForeground(sessionId =>
+      this.deps.client.backgroundForegroundProcesses(sessionId),
+    )
+  }
+
+  /**
+   * Detach foreground shells so a queued message can reach the model.
+   *
+   * Steering is only inspected between tool calls, so a shell being watched in
+   * the foreground holds a typed message until it finishes. Detaching lets the
+   * message land while the command keeps running.
+   */
+  backgroundForegroundForMessage(): number {
+    return this.detachForeground(sessionId =>
+      this.deps.client.backgroundForegroundProcessesForMessage(sessionId),
+    )
+  }
+
+  private detachForeground(detach: (sessionId: string) => number): number {
     const sessionId = this.deps.sessionId()
     if (!sessionId) return 0
     try {
-      const moved = this.deps.client.backgroundForegroundProcesses(sessionId)
+      const moved = detach(sessionId)
       if (moved > 0) this.refresh()
       return moved
     } catch {

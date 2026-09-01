@@ -105,8 +105,12 @@ export function formatStatusDetail(process: BackgroundProcess): string {
 export const PANEL_EMPTY_MESSAGE = 'No tasks currently running'
 
 /**
- * Count line under the title. Mirrors the phrasing of the footer chip so the
- * panel and the prompt agree on what "active" means: live tasks only.
+ * Count line under the title. Counts live tasks only, finished ones separately.
+ *
+ * "active" is deliberately broader than the footer chip's "background shells
+ * running": this counts `running` and `running_foreground` alike, because the
+ * panel lists both, whereas the chip counts only detached shells. The two lines
+ * can therefore disagree by design, and the wording is what keeps that honest.
  *
  * An empty list has no subtitle: the body already says there is nothing to show,
  * and repeating it two rows apart reads like two different statements.

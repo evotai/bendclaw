@@ -17,6 +17,7 @@ pub use agent::ForkedAgent;
 pub use agent::QueryRequest;
 pub use agent::SelectionReload;
 pub use agent::SubmitOutcome;
+pub use evot_engine::tools::BackgroundReason;
 pub use run::AssistantContentType;
 pub use run::Run;
 pub use run::RunControl;

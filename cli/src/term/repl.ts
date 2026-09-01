@@ -831,6 +831,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         {
           interruptible: foregroundCommand === null,
           model: appState.model,
+          // Esc detaches rather than kills while a shell is being watched, so
+          // the hint must name that outcome instead of promising an interrupt.
+          backgroundable: backgroundTerminals.foregroundCount() > 0,
         },
       )
       spinnerBlock = {
@@ -1626,6 +1629,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       logMode: logMode !== null,
       hasQueuedPrompt: queuedUserMessages.length > 0,
       isCompacting: compactionTask !== null,
+      foregroundShells: backgroundTerminals.foregroundCount(),
     })
 
     for (const action of actions) {
@@ -1638,6 +1642,23 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'restore-queued':
         restoreLastQueuedUserMessageToEditor()
         return true
+      case 'background-foreground-shells': {
+        // Non-destructive: the shells keep running, so the only thing esc ends
+        // here is the waiting. If nothing actually moved (the task finished in
+        // the same tick), fall through to interrupting so the key is never inert.
+        const moved = backgroundTerminals.backgroundForeground()
+        if (moved === 0) {
+          interruptStream('sys-int', '  Interrupted.')
+          return true
+        }
+        const plural = moved === 1 ? '' : 's'
+        commitSystem(
+          'sys-bg-foreground',
+          `  ■ Moved ${moved} shell${plural} to the background; still running. Press esc again to interrupt.`,
+        )
+        renderer.requestRender()
+        return true
+      }
       case 'interrupt':
         if (compactionTask) {
           compactionTask.abort()

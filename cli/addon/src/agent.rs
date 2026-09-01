@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use evot::agent::Agent;
+use evot::agent::BackgroundReason;
 use evot::agent::ForkRequest;
 use evot::agent::HostTools;
 use evot::agent::QueryRequest;
@@ -231,6 +232,16 @@ impl NapiAgent {
             .await
             .map_err(|e| Error::from_reason(format!("stop background process: {e}")))?;
         summary.map(serialize_process_summary).transpose()
+    }
+
+    /// Detach every foreground shell in a session so the turn can be reclaimed.
+    ///
+    /// The processes keep running; only the waiting ends. Returns how many moved.
+    #[napi]
+    pub fn background_foreground_processes(&self, session_id: String) -> u32 {
+        self.agent
+            .background_foreground_processes(&session_id, BackgroundReason::UserRequested)
+            as u32
     }
 
     #[napi]

@@ -287,6 +287,23 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('esc to interrupt')
   })
 
+  test('names backgrounding instead while a shell is being watched', () => {
+    // Esc detaches rather than kills in this state, so promising an interrupt
+    // would describe the wrong outcome.
+    const state = createSpinnerState()
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
+    expect(line).toContain('esc to background')
+    expect(line).not.toContain('esc to interrupt')
+  })
+
+  test('a suppressed hint stays suppressed even when backgroundable', () => {
+    const state = createSpinnerState()
+    const line = stripAnsi(
+      formatSpinnerLine(state, Date.now(), undefined, { interruptible: false, backgroundable: true }),
+    )
+    expect(line).not.toContain('esc to')
+  })
+
   test('shows token count after 30s', () => {
     const now = Date.now()
     const state = {

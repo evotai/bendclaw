@@ -90,6 +90,63 @@ describe('repl control', () => {
     expect(kinds({ ...base, event: { type: 'escape' }, isLoading: true, hasStream: true })).toEqual(['interrupt'])
   })
 
+  test('escape backgrounds a watched shell before it means interrupt', () => {
+    // Killing used to be the only way to reclaim the turn, discarding however
+    // far a build or test run had got. Backgrounding keeps the work.
+    expect(kinds({
+      ...base,
+      event: { type: 'escape' },
+      isLoading: true,
+      hasStream: true,
+      foregroundShells: 1,
+    })).toEqual(['background-foreground-shells'])
+  })
+
+  test('escape interrupts once nothing is left in the foreground', () => {
+    // Escalation is by repeat: the first esc detaches, the second interrupts.
+    expect(kinds({
+      ...base,
+      event: { type: 'escape' },
+      isLoading: true,
+      hasStream: true,
+      foregroundShells: 0,
+    })).toEqual(['interrupt'])
+  })
+
+  test('a queued prompt still outranks backgrounding a shell', () => {
+    // Pulling back text the user typed is the more recent intent, and it is
+    // reversible: the shell can still be detached with the next esc.
+    expect(kinds({
+      ...base,
+      event: { type: 'escape' },
+      isLoading: true,
+      hasStream: true,
+      hasQueuedPrompt: true,
+      foregroundShells: 1,
+    })).toEqual(['restore-queued'])
+  })
+
+  test('ctrl-c still interrupts immediately with a shell in the foreground', () => {
+    // Ctrl+C is the unambiguous stop gesture; only esc gained the softer step.
+    expect(kinds({
+      ...base,
+      event: { type: 'ctrl', key: 'c' },
+      isLoading: true,
+      hasStream: true,
+      foregroundShells: 1,
+    })).toEqual(['interrupt'])
+  })
+
+  test('compaction escape interrupts regardless of foreground shells', () => {
+    expect(kinds({
+      ...base,
+      event: { type: 'escape' },
+      isLoading: true,
+      isCompacting: true,
+      foregroundShells: 2,
+    })).toEqual(['interrupt'])
+  })
+
   test('escape clears editor before exiting log mode', () => {
     expect(kinds({ ...base, event: { type: 'escape' }, editor: textEditor, logMode: true })).toEqual(['clear-editor'])
   })

@@ -299,6 +299,13 @@ impl AgentTool for BashTool {
                 self.process_manager.forget(&task_id);
                 return result;
             }
+            // Someone outside this call moved the task to the background — the
+            // user reclaiming the turn, or a queued message needing delivery.
+            // Hand it back as a background result: the command keeps running, so
+            // the only thing that ends here is the waiting.
+            if let ProcessStatus::RunningBackground(reason) = snapshot.status {
+                return background_result(&self.process_manager, &task_id, reason);
+            }
 
             let elapsed = started.elapsed();
             if yield_time.is_some_and(|limit| elapsed >= limit) {
@@ -416,7 +423,22 @@ fn background_lede(reason: BackgroundReason) -> String {
             "Command did not finish within its {}s foreground wait and was moved to the background; it was not interrupted.",
             DEFAULT_YIELD_TIME.as_secs()
         ),
-        _ => "Command is running in the background.".to_string(),
+        // The user moved this aside, which is not the same as abandoning it:
+        // saying only "running in the background" would let the model treat the
+        // result as unwanted and skip a step that still depends on it.
+        BackgroundReason::UserRequested => concat!(
+            "The user moved this command to the background so they could keep talking to you; ",
+            "it was not interrupted and its result is still wanted. ",
+            "Continue with whatever does not depend on it.",
+        )
+        .to_string(),
+        BackgroundReason::MessageDelivery => concat!(
+            "This command was moved to the background so a queued user message could reach you; ",
+            "it was not interrupted and its result is still wanted. ",
+            "Read the new message first, then continue.",
+        )
+        .to_string(),
+        BackgroundReason::Explicit => "Command is running in the background.".to_string(),
     }
 }
 

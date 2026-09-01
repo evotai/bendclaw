@@ -399,6 +399,37 @@ impl ProcessManager {
         true
     }
 
+    /// Detach every foreground task, returning the ids that moved.
+    ///
+    /// This is how a user reclaims the turn without destroying work: the
+    /// processes keep running and their output files stay put, so the only thing
+    /// that ends is the waiting. The `bash` foreground loop re-reads each task's
+    /// status every tick, so flipping it here is enough to make that loop hand
+    /// the task back as a background result — no cancellation involved.
+    ///
+    /// Already-background and terminal tasks are skipped, so calling this twice
+    /// is harmless.
+    pub fn background_all_foreground(&self, reason: BackgroundReason) -> Vec<String> {
+        let tasks = self
+            .inner
+            .tasks
+            .read()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut moved = Vec::new();
+        for task in tasks {
+            let mut state = task.state.lock();
+            if !matches!(state.status, ProcessStatus::RunningForeground) {
+                continue;
+            }
+            state.status = ProcessStatus::RunningBackground(reason);
+            state.notify_on_completion = true;
+            moved.push(task.id.clone());
+        }
+        moved
+    }
+
     pub fn snapshot(&self, task_id: &str) -> Option<ProcessSnapshot> {
         self.inner
             .tasks

@@ -2,6 +2,7 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
+use evotengine::tools::BackgroundReason;
 use evotengine::tools::BashTool;
 use evotengine::tools::ProcessManager;
 use evotengine::tools::TaskOutputTool;
@@ -1757,5 +1758,197 @@ async fn tombstones_are_bounded() -> Result<(), Box<dyn Error>> {
             .contains("already finished"),
         "the oldest tombstone should survive below the cap"
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// User-initiated detach — reclaiming the turn without destroying work. Esc used
+// to be the only way out of a long foreground wait, and it killed the process
+// and deleted its output, discarding however far a build had already got.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_watched_command_can_be_handed_back_while_it_keeps_running() -> Result<(), Box<dyn Error>>
+{
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_process_manager(manager.clone())
+            .with_timeout(Duration::from_secs(60)),
+    );
+
+    // A command being watched in the foreground, with a yield far away so only
+    // the external detach can end the wait.
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"command": "sleep 30; echo finished", "yield_time_ms": 600_000}),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let moved = manager.background_all_foreground(BackgroundReason::UserRequested);
+    assert_eq!(moved.len(), 1, "the watched shell should move");
+
+    // The wait ends with a background result, not an error: nothing was cancelled.
+    let result = handle.await??;
+    assert_eq!(result.details["backgrounded"], true);
+    let id = task_id(&result)?.to_string();
+    assert_eq!(id, moved[0]);
+
+    // The process is still alive and its output file still exists.
+    let snapshot = manager.snapshot(&id).ok_or("task disappeared")?;
+    assert!(
+        !snapshot.status.is_terminal(),
+        "detaching must not stop the command, got {:?}",
+        snapshot.status
+    );
+    assert!(snapshot.output_path.exists());
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_user_detach_says_the_result_is_still_wanted() -> Result<(), Box<dyn Error>> {
+    // "Running in the background" alone would let the model treat the result as
+    // abandoned and skip a step that still depends on it.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_process_manager(manager.clone())
+            .with_timeout(Duration::from_secs(60)),
+    );
+
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"command": "sleep 30", "yield_time_ms": 600_000}),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    manager.background_all_foreground(BackgroundReason::UserRequested);
+
+    let body = text(&handle.await??);
+    assert!(body.contains("The user moved this command"), "got: {body}");
+    assert!(body.contains("was not interrupted"), "got: {body}");
+    assert!(body.contains("result is still wanted"), "got: {body}");
+    // Must not be framed as the timeout-driven yield.
+    assert!(!body.contains("did not finish within"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn detaching_twice_moves_nothing_the_second_time() -> Result<(), Box<dyn Error>> {
+    // The gesture is idempotent, so a double keypress cannot double-report.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_process_manager(manager.clone())
+            .with_timeout(Duration::from_secs(60)),
+    );
+
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"command": "sleep 30", "yield_time_ms": 600_000}),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    assert_eq!(
+        manager
+            .background_all_foreground(BackgroundReason::UserRequested)
+            .len(),
+        1
+    );
+    assert_eq!(
+        manager
+            .background_all_foreground(BackgroundReason::UserRequested)
+            .len(),
+        0,
+        "an already-background task must not move again"
+    );
+
+    let _ = handle.await?;
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn detaching_leaves_explicitly_background_tasks_alone() -> Result<(), Box<dyn Error>> {
+    // Only the foreground wait is affected; a task the model detached itself is
+    // already where it belongs.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    assert!(manager
+        .background_all_foreground(BackgroundReason::UserRequested)
+        .is_empty());
+    // Still tracked and still running.
+    let snapshot = manager.snapshot(&id).ok_or("task disappeared")?;
+    assert!(!snapshot.status.is_terminal());
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_detached_command_still_notifies_on_completion() -> Result<(), Box<dyn Error>> {
+    // The whole point is that the result survives: a detach that dropped the
+    // completion notification would silently lose it.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = Arc::new(
+        BashTool::new()
+            .with_process_manager(manager.clone())
+            .with_timeout(Duration::from_secs(60)),
+    );
+
+    let tool = bash.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"command": "sleep 0.6; echo survived", "yield_time_ms": 600_000}),
+            context("bash", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    manager.background_all_foreground(BackgroundReason::UserRequested);
+    let id = task_id(&handle.await??)?.to_string();
+
+    let snapshot = manager
+        .wait(&id, Duration::from_secs(5))
+        .await
+        .ok_or("task disappeared")?;
+    assert_eq!(snapshot.exit_code, Some(0));
+
+    let notifications = manager.take_notifications();
+    assert_eq!(notifications.len(), 1, "got: {notifications:?}");
+    assert!(notifications[0].contains(&id));
     Ok(())
 }

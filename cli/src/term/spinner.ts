@@ -187,6 +187,12 @@ export interface SpinnerFormatOptions {
   interruptible?: boolean
   /** Requested model, used to identify long quota waits. */
   model?: string
+  /**
+   * A shell is being watched in the foreground, so esc detaches it instead of
+   * killing it. The hint has to say so: offering only "esc to interrupt" while
+   * the softer gesture is the one bound would describe the wrong outcome.
+   */
+  backgroundable?: boolean
 }
 
 export function formatSpinnerLine(
@@ -234,7 +240,11 @@ export function formatSpinnerLine(
 
   const status = humanDuration(elapsed)
   const tokenSuffix = isLongWaitPhase(state.phase) ? '' : formatSpinnerTokenSuffix(state, now, stats)
-  const interruptHint = options.interruptible === false ? '' : ' · esc to interrupt'
+  const interruptHint = options.interruptible === false
+    ? ''
+    : options.backgroundable
+      ? ' · esc to background'
+      : ' · esc to interrupt'
 
   if (slow) {
     return `\x1b[31m${char}\x1b[0m \x1b[31m${label}\x1b[0m\x1b[2m (${status}${tokenSuffix})${interruptHint}\x1b[0m`

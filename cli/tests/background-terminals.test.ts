@@ -29,6 +29,7 @@ function harness(options: {
   output?: string | (() => string)
   stopOne?: (taskId: string) => Promise<BackgroundProcess | null>
   stopAll?: () => Promise<BackgroundProcess[]>
+  backgroundForeground?: () => number
   onList?: () => BackgroundProcess[]
 } = {}) {
   let processes = options.processes ?? []
@@ -52,6 +53,16 @@ function harness(options: {
         const live = processes.filter(candidate => candidate.status === 'running')
         processes = processes.map(candidate => ({ ...candidate, status: 'killed' as const }))
         return live
+      },
+      backgroundForegroundProcesses: () => {
+        if (options.backgroundForeground) return options.backgroundForeground()
+        const moved = processes.filter(candidate => candidate.status === 'running_foreground')
+        processes = processes.map(candidate =>
+          candidate.status === 'running_foreground'
+            ? { ...candidate, status: 'running' as const }
+            : candidate,
+        )
+        return moved.length
       },
       killAllBackgroundProcessesNow: () => processes.length,
     },
@@ -315,6 +326,55 @@ describe('BackgroundTerminals panel entry', () => {
     h.controller.handlePanelKey({ type: 'char', char: 'X' })
     await h.controller.settled()
     expect(h.texts().join('\n')).toContain('Stopped 1 background terminal')
+  })
+})
+
+describe('BackgroundTerminals.backgroundForeground', () => {
+  test('hands foreground shells to the background without killing them', () => {
+    // The point of the gesture: reclaim the turn, keep the work. A killed task
+    // would lose however far a build or test run had already got.
+    const h = harness({ processes: [proc({ status: 'running_foreground' })] })
+    h.controller.refresh()
+    expect(h.controller.foregroundCount()).toBe(1)
+
+    expect(h.controller.backgroundForeground()).toBe(1)
+
+    expect(h.controller.foregroundCount()).toBe(0)
+    // Still live, just no longer waited on, so the footer now counts it.
+    expect(h.controller.runningCount()).toBe(1)
+  })
+
+  test('reports nothing moved when no shell is in the foreground', () => {
+    // Lets the caller fall through to interrupting, so esc is never inert.
+    const h = harness({ processes: [proc({ status: 'running' })] })
+    expect(h.controller.foregroundCount()).toBe(0)
+    expect(h.controller.backgroundForeground()).toBe(0)
+  })
+
+  test('a session that disappeared mid-gesture reports nothing moved', () => {
+    const h = harness({ processes: [proc({ status: 'running_foreground' })], sessionId: null })
+    expect(h.controller.backgroundForeground()).toBe(0)
+  })
+
+  test('a failing native call is swallowed rather than surfaced over a keypress', () => {
+    const h = harness({
+      processes: [proc({ status: 'running_foreground' })],
+      backgroundForeground: () => { throw new Error('session vanished') },
+    })
+    expect(h.controller.backgroundForeground()).toBe(0)
+    expect(h.texts()).toHaveLength(0)
+  })
+
+  test('foregroundCount ignores finished and already-background tasks', () => {
+    const h = harness({
+      processes: [
+        proc({ task_id: 'a', status: 'running_foreground' }),
+        proc({ task_id: 'b', status: 'running' }),
+        proc({ task_id: 'c', status: 'completed', exit_code: 0 }),
+      ],
+    })
+    h.controller.refresh()
+    expect(h.controller.foregroundCount()).toBe(1)
   })
 })
 

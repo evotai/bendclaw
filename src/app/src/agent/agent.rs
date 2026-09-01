@@ -1209,6 +1209,22 @@ impl Agent {
             .find(|summary| summary.task_id == resolved))
     }
 
+    /// Detach every foreground shell in a session, returning how many moved.
+    ///
+    /// The processes keep running; only the waiting ends. Used when the user
+    /// wants the turn back without discarding work in flight.
+    pub fn background_foreground_processes(
+        &self,
+        session_id: &str,
+        reason: evot_engine::tools::BackgroundReason,
+    ) -> usize {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        match manager {
+            Some(manager) => manager.background_all_foreground(reason).len(),
+            None => 0,
+        }
+    }
+
     pub async fn stop_all_background_processes(
         &self,
         session_id: &str,

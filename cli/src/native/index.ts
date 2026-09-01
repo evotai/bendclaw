@@ -339,6 +339,13 @@ export class Agent {
     return JSON.parse(json) as BackgroundProcess[]
   }
 
+  /** Detach every foreground shell so the turn can be reclaimed without
+   *  discarding work. The processes keep running; only the waiting ends.
+   *  Returns how many moved. */
+  backgroundForegroundProcesses(sessionId: string): number {
+    return this.raw.backgroundForegroundProcesses(sessionId)
+  }
+
   /** Kill every background process synchronously. Safe to call before fastExit,
    *  which skips the async teardown that would otherwise stop them. */
   killAllBackgroundProcessesNow(): number {

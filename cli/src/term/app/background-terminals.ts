@@ -32,6 +32,7 @@ export interface BackgroundTerminalsClient {
   backgroundProcesses(sessionId: string): BackgroundProcess[]
   stopBackgroundProcess(sessionId: string, taskId: string): Promise<BackgroundProcess | null>
   stopAllBackgroundProcesses(sessionId: string): Promise<BackgroundProcess[]>
+  backgroundForegroundProcesses(sessionId: string): number
   killAllBackgroundProcessesNow(): number
 }
 
@@ -86,6 +87,34 @@ export class BackgroundTerminals {
   /** Footer count: backgrounded work only. */
   runningCount(): number {
     return runningBackgroundCount(this.processes)
+  }
+
+  /** Shells still being waited on in the foreground. */
+  foregroundCount(): number {
+    return this.processes.filter(process => process.status === 'running_foreground').length
+  }
+
+  /**
+   * Hand every foreground shell back as a background task.
+   *
+   * The processes keep running and their output files stay put; only the waiting
+   * ends. This is what makes esc non-destructive while a long command is being
+   * watched — previously the only way to reclaim the turn was to kill the work.
+   *
+   * Returns how many moved, so the caller can tell whether the gesture applied.
+   */
+  backgroundForeground(): number {
+    const sessionId = this.deps.sessionId()
+    if (!sessionId) return 0
+    try {
+      const moved = this.deps.client.backgroundForegroundProcesses(sessionId)
+      if (moved > 0) this.refresh()
+      return moved
+    } catch {
+      // A session can disappear mid-gesture; treat it as nothing to move rather
+      // than surfacing an error over a keypress.
+      return 0
+    }
   }
 
   /**

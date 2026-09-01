@@ -150,7 +150,7 @@ impl AgentTool for BashTool {
 
     fn description(&self) -> &str {
         if self.background_enabled {
-            "Execute a bash command. Short commands return normally. Set run_in_background to return immediately, or use yield_time_ms to control how long to wait before returning a background task ID. The timeout parameter remains the command's hard runtime limit."
+            "Execute a bash command. Short commands return normally. Set run_in_background to return immediately, or use yield_time_ms to control how long to wait before returning a background task ID. Neither yielding nor the timeout stops the command: both hand it back still running. Use task_stop to actually stop one."
         } else {
             "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). The timeout parameter is the command's hard runtime limit."
         }
@@ -182,7 +182,16 @@ impl AgentTool for BashTool {
             },
             "timeout": {
                 "type": "number",
-                "description": "Deadline in seconds for watching this command (default 600, max 1800). When it elapses the command is moved to the background and keeps running — it is never killed. Use yield_time_ms to hand a command back sooner; use task_stop to actually stop one."
+                // Branch-specific because the behaviour is. With background
+                // support the deadline hands the command back alive; without it
+                // there is nowhere to hand it, so it still kills. One shared
+                // sentence would be a lie in whichever half it did not describe,
+                // and "it is never killed" is the more dangerous lie to tell.
+                "description": if self.background_enabled {
+                    "Deadline in seconds for watching this command (default 600, max 1800). When it elapses the command is moved to the background and keeps running — it is never killed. Use yield_time_ms to hand a command back sooner; use task_stop to actually stop one."
+                } else {
+                    "Hard runtime limit in seconds (default 600, max 1800). The command is killed when it elapses, so set it above the time the command legitimately needs."
+                }
             }
         });
         if self.background_enabled {

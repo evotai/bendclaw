@@ -616,6 +616,50 @@ fn timeout_schema_says_it_backgrounds_rather_than_kills() {
 }
 
 #[test]
+fn without_background_support_the_timeout_schema_still_promises_a_kill() {
+    // The behaviour differs by runtime, so the description has to as well. A
+    // headless run gets a deadline that really does kill; telling it "never
+    // killed" would be the same trap this work removed, just relocated -- a
+    // model would set a tight timeout believing it only bounded a wait.
+    let bash = BashTool::new();
+    let schema = bash.parameters_schema();
+    let description = schema["properties"]["timeout"]["description"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(description.contains("killed"), "got: {description}");
+    assert!(!description.contains("never killed"), "got: {description}");
+    assert!(
+        !description.contains("moved to the background"),
+        "got: {description}"
+    );
+    // No point naming tools this runtime does not have.
+    assert!(!description.contains("task_stop"), "got: {description}");
+    assert!(!description.contains("yield_time_ms"), "got: {description}");
+}
+
+#[test]
+fn the_two_timeout_descriptions_do_not_agree() {
+    // Guards the split itself: if these ever collapse back to one string, one of
+    // the two runtimes is being told the wrong thing about whether its work
+    // survives the deadline.
+    let with_background = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
+    let without_background = BashTool::new();
+    let describe = |bash: &BashTool| {
+        bash.parameters_schema()["properties"]["timeout"]["description"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let backgrounding = describe(&with_background);
+    let killing = describe(&without_background);
+    // Non-empty first: two missing keys would also compare unequal-to-nothing and
+    // let a broken lookup pass as a passing assertion.
+    assert!(!backgrounding.is_empty());
+    assert!(!killing.is_empty());
+    assert_ne!(backgrounding, killing);
+}
+
+#[test]
 fn block_schema_names_the_cost_of_waiting() {
     // `block` defaults to true, so the heaviest behaviour is what a model gets
     // by saying nothing. The description has to price it: a blocking call holds

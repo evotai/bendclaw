@@ -1,8 +1,16 @@
 import { describe, test, expect } from 'bun:test'
-import { extractAtPrefix, completeAtFile, fileCompletionNote, fuzzyScore, anchoredAtQuery } from '../src/commands/file-completion.js'
+import { extractAtPrefix, completeAtFile, fileCompletionNote, fuzzyScore, anchoredAtQuery, fileCompletionTest } from '../src/commands/file-completion.js'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+
+const {
+  FD_FUZZY_FETCH,
+  collectFuzzyCandidates,
+  rankCandidates,
+  escapeFdGlob,
+  fdSubsequencePattern,
+} = fileCompletionTest
 
 describe('extractAtPrefix', () => {
   test('extracts @ at start of line', () => {
@@ -133,6 +141,87 @@ describe('fuzzyScore', () => {
 
   test('is case-insensitive and ignores trailing slash for basename', () => {
     expect(fuzzyScore('src/Nested/', 'nested')).toBe(0)
+  })
+})
+
+describe('collectFuzzyCandidates', () => {
+  const target = 'src/app/[language]/(home)/gallery/components/GalleryCard.tsx'
+  const sibling = 'src/app/[language]/(home)/gallery/components/GalleryCard.test.tsx'
+  const noise = (n: number) => Array.from({ length: n }, (_, i) =>
+    `public/gallery/product-manager/file-${String(i).padStart(4, '0')}.pdf`)
+
+  test('keeps a basename hit when subsequence noise would fill the fetch cap', () => {
+    // The screenshot case: @GalleryCard. `g.*a.*l.*l.*e.*r.*y.*c.*a.*r.*d`
+    // matches every `public/gallery/**` path. A 400-result subsequence scan
+    // never even sees GalleryCard.tsx, so ranking has nothing to promote.
+    const paths = [
+      'gallery-research/research.md',
+      ...noise(FD_FUZZY_FETCH),
+      target,
+      sibling,
+    ]
+    const collected = collectFuzzyCandidates(paths, 'GalleryCard')
+    expect(collected).toContain(target)
+    expect(collected).toContain(sibling)
+    expect(collected[0]).not.toMatch(/^public\/gallery\//)
+
+    const ranked = rankCandidates(collected, 'GalleryCard')
+    expect(ranked.map(item => item.label).slice(0, 2)).toEqual([target, sibling])
+  })
+
+  test('still fills leftover slots with path subsequence matches', () => {
+    const collected = collectFuzzyCandidates(
+      ['README.md', 'cli/src/term/repl.ts'],
+      'ctrepl',
+    )
+    expect(collected).toContain('cli/src/term/repl.ts')
+    expect(rankCandidates(collected, 'ctrepl').map(item => item.label))
+      .toEqual(['cli/src/term/repl.ts'])
+  })
+})
+
+describe('fd query encoding', () => {
+  test('glob-escapes characters that would otherwise expand', () => {
+    expect(escapeFdGlob('GalleryCard')).toBe('GalleryCard')
+    expect(escapeFdGlob('file[draft]')).toBe('file[[]draft[]]')
+    expect(escapeFdGlob('photo{1}')).toBe('photo[{]1[}]')
+    expect(escapeFdGlob('a*b?c')).toBe('a[*]b[?]c')
+  })
+
+  test('builds a literal subsequence regex, including metacharacters', () => {
+    expect(fdSubsequencePattern('repl')).toBe('r.*e.*p.*l')
+    expect(fdSubsequencePattern('a.b')).toBe('a.*\\..*b')
+    expect(fdSubsequencePattern('src/n')).toBe('s.*r.*c.*/.*n')
+  })
+})
+
+/**
+ * End-to-end against a real tree: the screenshot case where @GalleryCard
+ * must surface GalleryCard.tsx even when public/gallery/** would fill a
+ * subsequence-only fd fetch.
+ */
+describe('completeAtFile prefers basename hits over path subsequence noise', () => {
+  const project = mkdtempSync(join(tmpdir(), 'evot-gallery-completion-'))
+  const noiseDir = join(project, 'public', 'gallery', 'product-manager')
+  mkdirSync(noiseDir, { recursive: true })
+  mkdirSync(join(project, 'gallery-research'))
+  writeFileSync(join(project, 'gallery-research', 'research.md'), 'x')
+  for (let i = 0; i < FD_FUZZY_FETCH; i++) {
+    writeFileSync(join(noiseDir, `file-${String(i).padStart(4, '0')}.pdf`), 'x')
+  }
+  const cardDir = join(project, 'src', 'app', '[language]', '(home)', 'gallery', 'components')
+  mkdirSync(cardDir, { recursive: true })
+  const card = 'src/app/[language]/(home)/gallery/components/GalleryCard.tsx'
+  const cardTest = 'src/app/[language]/(home)/gallery/components/GalleryCard.test.tsx'
+  writeFileSync(join(project, card), 'export {}')
+  writeFileSync(join(project, cardTest), 'export {}')
+
+  test('ranks GalleryCard.tsx first for @GalleryCard', async () => {
+    const result = await completeAtFile('@GalleryCard', project)
+    expect(result).not.toBeNull()
+    expect(result!.items[0]!.label).toBe(card)
+    expect(result!.items.some(item => item.label === cardTest)).toBe(true)
+    expect(result!.items[0]!.label.startsWith('public/gallery/')).toBe(false)
   })
 })
 

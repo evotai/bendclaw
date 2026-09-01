@@ -684,6 +684,47 @@ describe('prompt completion menu', () => {
     expect(visibleWidth(advisory!)).toBeLessThanOrEqual(columns)
   })
 
+  test('keeps the file name when a completion path is wider than the label column', () => {
+    const path = 'src/app/[language]/(home)/gallery/components/GalleryCard.tsx'
+    const plain = renderPlain(defaultInput({
+      columns: 40,
+      lines: ['@GalleryCard'],
+      cursorCol: 12,
+      placeholder: false,
+      completion: {
+        items: [{ label: path, value: `@${path} ` }],
+        selectedIndex: 0,
+        replaceStart: 0,
+        replaceEnd: 12,
+      },
+    }))
+    expect(plain).toContain('GalleryCard.tsx')
+    expect(plain).toContain('…')
+    expect(plain).not.toContain('src/app/[language]')
+  })
+
+  test('gives file candidates the full row when they have no description', () => {
+    const path = 'src/app/[language]/(home)/gallery/components/GalleryCard.tsx'
+    const at = (columns: number) => renderPlain(defaultInput({
+      columns,
+      lines: ['@GalleryCard'],
+      cursorCol: 12,
+      placeholder: false,
+      completion: {
+        items: [{ label: path, value: `@${path} ` }],
+        selectedIndex: 0,
+        replaceStart: 0,
+        replaceEnd: 12,
+      },
+    }))
+    // 80 columns is enough for the whole path once the 45% description reserve
+    // is released; 40 columns still has to keep the leaf and drop the head.
+    expect(at(80)).toContain(path)
+    expect(at(80)).not.toContain('…')
+    expect(at(40)).toContain('GalleryCard.tsx')
+    expect(at(40)).toContain('…')
+  })
+
   test('shrinks candidates so the prompt never exceeds a short terminal', () => {
     const note = 'files up to 6 levels deep — install fd to search deeper'
     for (const rows of [5, 6, 9, 10, 12, 14]) {

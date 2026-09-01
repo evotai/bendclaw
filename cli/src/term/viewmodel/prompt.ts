@@ -19,7 +19,7 @@ import { createFrame } from './frame.js'
 import { promptMode, promptModeLabels, promptModeStyle, type PromptModeStyle } from './prompt-mode.js'
 import { buildPromptFooterBlocks, type PromptFooterVM } from './prompt-footer.js'
 import { line, block, plain, dim, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
-import { finiteSize, truncateToWidth, wrapTextByWidth } from './width.js'
+import { finiteSize, truncateToWidth, truncateTailToWidth, wrapTextByWidth } from './width.js'
 
 export interface PromptVMInput extends PromptFooterVM {
   lines: string[]
@@ -279,16 +279,17 @@ function buildCompletionLines(
   const ideal = menu.selectedIndex - Math.floor((visible - 1) / 2)
   const start = Math.max(0, Math.min(ideal, menu.items.length - visible))
   const end = start + visible
+  const hasDescriptions = menu.items.slice(start, end).some(item => item.description)
   const labelWidth = Math.min(
     Math.max(...menu.items.slice(start, end).map(item => stringWidth(item.label))),
-    Math.max(1, Math.floor(contentWidth * 0.45)),
+    Math.max(1, hasDescriptions ? Math.floor(contentWidth * 0.45) : contentWidth - 2),
   )
   const lines: StyledLine[] = []
 
   for (let index = start; index < end; index++) {
     const item = menu.items[index]!
     const selected = index === menu.selectedIndex
-    const label = truncateToWidth(item.label, labelWidth)
+    const label = truncateTailToWidth(item.label, labelWidth)
     const padding = ' '.repeat(Math.max(0, labelWidth - stringWidth(label)))
     const bg = selected ? selectionBgHex : undefined
     const prefix = selected ? { text: '❯ ', hex: brandHex, bold: true, bg } : plain('  ')

@@ -167,6 +167,47 @@ function isSubsequence(needle: string, haystack: string): boolean {
   return needle.length === 0
 }
 
+function escapeFdGlob(query: string): string {
+  return query.replace(/[*?\[\]{}]/g, '[$&]')
+}
+
+function fdSubsequencePattern(query: string): string {
+  return query
+    .split('')
+    .map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*')
+}
+
+/**
+ * fd / walk fetches are capped. A subsequence scan of a tree like
+ * `public/gallery/**` can fill that cap before a basename hit such as
+ * `GalleryCard.tsx` is even seen, so ranking never gets a chance.
+ * Prefer name matches, then fill leftover slots with path subsequence hits.
+ */
+function collectFuzzyCandidates(
+  paths: string[],
+  query: string,
+  cap = FD_FUZZY_FETCH,
+): string[] {
+  const q = query.toLowerCase()
+  const names: string[] = []
+  const rest: string[] = []
+  const seen = new Set<string>()
+  const take = (path: string, bucket: string[]) => {
+    if (path === '.git' || path.startsWith('.git/') || seen.has(path)) return
+    seen.add(path)
+    bucket.push(path)
+  }
+  for (const path of paths) {
+    const p = path.toLowerCase()
+    const base = basename(p.endsWith('/') ? p.slice(0, -1) : p)
+    if (base.includes(q)) take(path, names)
+    else if (p.includes(q) || isSubsequence(q, p)) take(path, rest)
+  }
+  if (names.length >= cap) return names.slice(0, cap)
+  return names.concat(rest.slice(0, cap - names.length))
+}
+
 /** Rank candidate relative paths against a query and build completion items. */
 function rankCandidates(paths: string[], query: string): FileCompletionItem[] {
   const scored: { path: string; score: number }[] = []
@@ -253,7 +294,7 @@ export async function completeAtFile(
   } else {
     const candidates = fd
       ? await fuzzyCandidatesWithFd(fd, query, cwd, signal)
-      : walkDir(cwd)
+      : collectFuzzyCandidates(walkDir(cwd), query)
     items = rankCandidates(candidates, query)
   }
 
@@ -349,8 +390,10 @@ async function browseDirWithFd(
 }
 
 /**
- * Fuzzy mode: fetch recursive candidates whose full path matches the query as
- * a subsequence (fd regex `a.*b.*c`); ranking happens in [`rankCandidates`].
+ * Fuzzy mode: fetch recursive candidates, preferring basename matches so a
+ * name like `GalleryCard` is not drowned by thousands of path-subsequence
+ * hits (`gallery-research`, `public/gallery/...`). Ranking still happens in
+ * [`rankCandidates`].
  */
 async function fuzzyCandidatesWithFd(
   fdPath: string,
@@ -358,21 +401,26 @@ async function fuzzyCandidatesWithFd(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const pattern = query
-    .split('')
-    .map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*')
-  return runFd(fdPath, [
+  const globSafe = escapeFdGlob(query)
+  const subsequence = fdSubsequencePattern(query)
+  const common = [
     '--base-directory', cwd,
     '--max-results', String(FD_FUZZY_FETCH),
     '--type', 'f',
     '--type', 'd',
     '--follow',
     '--exclude', '.git',
-    '--full-path',
     '--ignore-case',
-    pattern,
-  ], signal)
+  ]
+  // Glob against the file name only. A regex here still matches directory
+  // components (`gallery` in `public/gallery/...`), which is the noise that
+  // drowned @GalleryCard.
+  const names = await runFd(fdPath, [...common, '--glob', `*${globSafe}*`], signal)
+  if (signal?.aborted) return []
+  const rest = names.length >= FD_FUZZY_FETCH
+    ? []
+    : await runFd(fdPath, [...common, '--full-path', subsequence], signal)
+  return collectFuzzyCandidates(names.concat(rest), query)
 }
 
 /** Browse fallback without fd: list one directory level with readdir. */
@@ -430,4 +478,13 @@ function walkDir(cwd: string): string[] {
   }
   walk('', 0)
   return out
+}
+
+/** Test-only surface for ranking and fd query encoding. */
+export const fileCompletionTest = {
+  FD_FUZZY_FETCH,
+  collectFuzzyCandidates,
+  rankCandidates,
+  escapeFdGlob,
+  fdSubsequencePattern,
 }

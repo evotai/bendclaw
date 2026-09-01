@@ -1225,6 +1225,30 @@ impl Agent {
         }
     }
 
+    /// Blocking `task_output` waits in flight for a session.
+    ///
+    /// Such a wait holds the whole turn while the task it watches is already
+    /// backgrounded, so there is no foreground shell to detach — the UI needs
+    /// this count to know esc has something softer to do than kill the run.
+    pub fn blocking_task_waits(&self, session_id: &str) -> usize {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        match manager {
+            Some(manager) => manager.blocking_waiters(),
+            None => 0,
+        }
+    }
+
+    /// End in-flight blocking waits, returning how many were released.
+    ///
+    /// The watched tasks keep running; only the waiting ends.
+    pub fn release_blocking_task_waits(&self, session_id: &str) -> usize {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        match manager {
+            Some(manager) => manager.release_blocking_waiters(),
+            None => 0,
+        }
+    }
+
     pub async fn stop_all_background_processes(
         &self,
         session_id: &str,

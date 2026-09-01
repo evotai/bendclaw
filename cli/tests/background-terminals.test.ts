@@ -30,6 +30,9 @@ function harness(options: {
   stopOne?: (taskId: string) => Promise<BackgroundProcess | null>
   stopAll?: () => Promise<BackgroundProcess[]>
   backgroundForeground?: () => number
+  startingBlockingWaits?: number
+  blockingWaits?: () => number
+  releaseBlockingWaits?: () => number
   onList?: () => BackgroundProcess[]
 } = {}) {
   let processes = options.processes ?? []
@@ -37,6 +40,7 @@ function harness(options: {
   const commits: Array<{ slot: string; text: string }> = []
   let renders = 0
   let messageDetaches = 0
+  let blockingWaits = options.startingBlockingWaits ?? 0
 
   // Shared by both detach entry points so a test cannot pass for one and fail
   // for the other. Mirrors the native side: only foreground shells move, and
@@ -73,6 +77,16 @@ function harness(options: {
       backgroundForegroundProcessesForMessage: () => {
         messageDetaches++
         return detachForeground()
+      },
+      blockingTaskWaits: () => {
+        if (options.blockingWaits) return options.blockingWaits()
+        return blockingWaits
+      },
+      releaseBlockingTaskWaits: () => {
+        if (options.releaseBlockingWaits) return options.releaseBlockingWaits()
+        const released = blockingWaits
+        blockingWaits = 0
+        return released
       },
       killAllBackgroundProcessesNow: () => processes.length,
     },
@@ -409,6 +423,80 @@ describe('BackgroundTerminals.backgroundForeground', () => {
     h.controller.refresh()
     expect(h.controller.backgroundForegroundForMessage()).toBe(0)
     expect(h.controller.runningCount()).toBe(1)
+  })
+})
+
+describe('BackgroundTerminals.reclaimTurn', () => {
+  test('releases a blocking wait even with no foreground shell', () => {
+    // The state from the reported screenshot: `bash` had already detached, and a
+    // blocking `task_output` call was what held the turn. No shell is in the
+    // foreground, so the shell-only check saw nothing and esc fell through to
+    // killing the run.
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      startingBlockingWaits: 1,
+    })
+    h.controller.refresh()
+    expect(h.controller.foregroundCount()).toBe(0)
+    expect(h.controller.blockingWaitCount()).toBe(1)
+    expect(h.controller.canReclaimTurn()).toBe(true)
+
+    expect(h.controller.reclaimTurn()).toBe(1)
+
+    // The watched task is untouched: only the waiting ended.
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    expect(h.controller.runningCount()).toBe(1)
+  })
+
+  test('covers a foreground shell and a blocking wait in one gesture', () => {
+    const h = harness({
+      processes: [proc({ status: 'running_foreground' })],
+      startingBlockingWaits: 2,
+    })
+    h.controller.refresh()
+    expect(h.controller.reclaimTurn()).toBe(3)
+    expect(h.controller.foregroundCount()).toBe(0)
+    expect(h.controller.blockingWaitCount()).toBe(0)
+  })
+
+  test('reports nothing freed when neither is present', () => {
+    // Lets the caller fall through to interrupting, so esc is never inert.
+    const h = harness({ processes: [proc({ status: 'running' })] })
+    h.controller.refresh()
+    expect(h.controller.canReclaimTurn()).toBe(false)
+    expect(h.controller.reclaimTurn()).toBe(0)
+  })
+
+  test('a failing release still counts the shell that was detached', () => {
+    // Partial success must not read as total failure: reporting 0 here would
+    // make the caller kill a run whose shell had in fact just been freed.
+    const h = harness({
+      processes: [proc({ status: 'running_foreground' })],
+      releaseBlockingWaits: () => { throw new Error('session vanished') },
+    })
+    h.controller.refresh()
+    expect(h.controller.reclaimTurn()).toBe(1)
+    expect(h.texts()).toHaveLength(0)
+  })
+
+  test('a vanished session reclaims nothing', () => {
+    const h = harness({
+      processes: [proc({ status: 'running_foreground' })],
+      sessionId: null,
+      startingBlockingWaits: 1,
+    })
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    expect(h.controller.reclaimTurn()).toBe(0)
+  })
+
+  test('a failing wait probe reads as nothing waiting', () => {
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      blockingWaits: () => { throw new Error('session vanished') },
+    })
+    h.controller.refresh()
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    expect(h.controller.canReclaimTurn()).toBe(false)
   })
 })
 

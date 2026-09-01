@@ -39,11 +39,17 @@ impl TaskOutputTool {
         task_id: &str,
         timeout: Duration,
         ctx: &ToolContext,
-    ) -> Result<Option<ProcessSnapshot>, ToolError> {
+    ) -> Result<Option<(ProcessSnapshot, bool)>, ToolError> {
         let started = Instant::now();
         let mut last_progress = Instant::now();
         let mut last_update = Instant::now();
         let mut reported_lines = 0usize;
+        // A blocking wait holds the whole turn while the task it watches is
+        // already backgrounded, so there is no foreground shell for the user to
+        // detach. Registering the wait lets the UI see that state, and the
+        // generation lets it end the wait without cancelling the run.
+        let _wait_guard = self.manager.enter_blocking_wait();
+        let release_generation = self.manager.wait_release_generation();
         loop {
             if ctx.cancel.is_cancelled() {
                 return Err(ToolError::Cancelled);
@@ -53,7 +59,13 @@ impl TaskOutputTool {
             };
             let elapsed = started.elapsed();
             if snapshot.status.is_terminal() || elapsed >= timeout {
-                return Ok(Some(snapshot));
+                return Ok(Some((snapshot, false)));
+            }
+            // The user reclaimed the turn. Hand back what the task looks like now
+            // rather than erroring: the command keeps running, so this reads as a
+            // wait that ended early, not as a failure.
+            if self.manager.wait_release_generation() != release_generation {
+                return Ok(Some((snapshot, true)));
             }
 
             if elapsed >= PROGRESS_INTERVAL && last_progress.elapsed() >= PROGRESS_INTERVAL {
@@ -147,13 +159,15 @@ impl AgentTool for TaskOutputTool {
             .as_u64()
             .map_or(30_000, |value| value.min(600_000));
 
-        let snapshot = match if block {
+        let (snapshot, released) = match if block {
             self.watch(task_id, Duration::from_millis(timeout_ms), &ctx)
                 .await?
         } else {
-            self.manager.snapshot(task_id)
+            self.manager
+                .snapshot(task_id)
+                .map(|snapshot| (snapshot, false))
         } {
-            Some(snapshot) => snapshot,
+            Some(pair) => pair,
             // A reaped task ran to completion; saying "not found" invites
             // re-running work that already succeeded.
             None => {
@@ -166,6 +180,10 @@ impl AgentTool for TaskOutputTool {
         let retrieval_status = if snapshot.status.is_terminal() {
             self.manager.claim_notification(task_id);
             "success"
+        } else if released {
+            // Distinct from `timeout`: nothing went wrong and no deadline was
+            // hit, so the model must not read this as the task being slow.
+            "released"
         } else if block {
             "timeout"
         } else {
@@ -179,6 +197,14 @@ impl AgentTool for TaskOutputTool {
         );
         if let Some(exit_code) = snapshot.exit_code {
             text.push_str(&format!("\nExit code: {exit_code}"));
+        }
+        if released {
+            // Without this the model sees a non-terminal status and reasonably
+            // calls task_output again, walking straight back into the wait the
+            // user just ended.
+            text.push_str(
+                "\nThe user ended this wait to get the turn back; the task was not interrupted and is still running. Do not wait on it again unless they ask — stop polling and respond to them now.",
+            );
         }
         if snapshot.stopped_by_user {
             // A bare `killed` left the model inferring a cause from process

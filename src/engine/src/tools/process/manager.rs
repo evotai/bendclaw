@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -48,6 +50,18 @@ pub struct ProcessManager {
 }
 
 struct ProcessManagerInner {
+    /// Blocking `task_output` waits currently in flight.
+    ///
+    /// A blocking wait occupies the whole turn while the task it watches is
+    /// already backgrounded, so no foreground shell exists for the user to
+    /// detach. Without this count the UI cannot tell that state apart from an
+    /// ordinary model call, and esc has nothing softer to offer than a kill.
+    blocking_waiters: AtomicUsize,
+    /// Bumped to tell in-flight blocking waits to give up the turn.
+    ///
+    /// A generation rather than a flag: a release must free the waits that
+    /// existed when the user asked, without arming the next one.
+    wait_release_generation: AtomicU64,
     tasks: RwLock<HashMap<String, Arc<ProcessTask>>>,
     /// Outcomes of tasks whose records have been reaped, oldest first.
     ///
@@ -85,6 +99,17 @@ enum StopOrigin {
     Model,
     /// `/stop` or the background panel. The model must be told.
     User,
+}
+
+/// Keeps the blocking-wait count accurate even if the wait exits by `?`.
+pub(super) struct BlockingWaitGuard {
+    inner: Arc<ProcessManagerInner>,
+}
+
+impl Drop for BlockingWaitGuard {
+    fn drop(&mut self) {
+        self.inner.blocking_waiters.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 struct ProcessTask {
@@ -205,6 +230,8 @@ impl ProcessManager {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(ProcessManagerInner {
+                blocking_waiters: AtomicUsize::new(0),
+                wait_release_generation: AtomicU64::new(0),
                 tasks: RwLock::new(HashMap::new()),
                 tombstones: Mutex::new(VecDeque::new()),
                 notifications: Mutex::new(Vec::new()),
@@ -428,6 +455,40 @@ impl ProcessManager {
             moved.push(task.id.clone());
         }
         moved
+    }
+
+    /// Blocking `task_output` waits currently in flight.
+    pub fn blocking_waiters(&self) -> usize {
+        self.inner.blocking_waiters.load(Ordering::Acquire)
+    }
+
+    /// Tell in-flight blocking waits to give up the turn, returning how many
+    /// were released.
+    ///
+    /// The tasks they watch keep running; only the waiting ends. This is the
+    /// counterpart to detaching a foreground shell, for the case where the shell
+    /// is already backgrounded and a `task_output` call is what holds the turn.
+    pub fn release_blocking_waiters(&self) -> usize {
+        let waiting = self.blocking_waiters();
+        if waiting > 0 {
+            self.inner
+                .wait_release_generation
+                .fetch_add(1, Ordering::AcqRel);
+        }
+        waiting
+    }
+
+    /// Generation marker a wait captures when it starts.
+    pub(super) fn wait_release_generation(&self) -> u64 {
+        self.inner.wait_release_generation.load(Ordering::Acquire)
+    }
+
+    /// Registers a blocking wait for the lifetime of the returned guard.
+    pub(super) fn enter_blocking_wait(&self) -> BlockingWaitGuard {
+        self.inner.blocking_waiters.fetch_add(1, Ordering::AcqRel);
+        BlockingWaitGuard {
+            inner: Arc::clone(&self.inner),
+        }
     }
 
     pub fn snapshot(&self, task_id: &str) -> Option<ProcessSnapshot> {

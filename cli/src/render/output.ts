@@ -1049,8 +1049,16 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
       break
     case 'running':
     case 'running_foreground':
-      // `retrieval_status` distinguishes "waited and gave up" from "just looked".
-      parts.push(retrieval === 'timeout' ? 'still running · wait timed out' : 'still running')
+      // `retrieval_status` distinguishes "waited and gave up" from "just looked"
+      // and from a wait the user ended. `released` must not read as a timeout:
+      // nothing went wrong and no deadline was hit.
+      parts.push(
+        retrieval === 'timeout'
+          ? 'still running · wait timed out'
+          : retrieval === 'released'
+            ? 'still running · stopped waiting'
+            : 'still running',
+      )
       break
     default:
       if (status) parts.push(status)

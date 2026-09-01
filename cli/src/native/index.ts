@@ -353,6 +353,19 @@ export class Agent {
     return this.raw.backgroundForegroundProcessesForMessage(sessionId)
   }
 
+  /** Blocking `task_output` waits in flight. Such a wait holds the turn while
+   *  the task it watches is already backgrounded, so no foreground shell exists
+   *  to detach. */
+  blockingTaskWaits(sessionId: string): number {
+    return this.raw.blockingTaskWaits(sessionId)
+  }
+
+  /** End in-flight blocking waits, returning how many were released. The
+   *  watched tasks keep running; only the waiting ends. */
+  releaseBlockingTaskWaits(sessionId: string): number {
+    return this.raw.releaseBlockingTaskWaits(sessionId)
+  }
+
   /** Kill every background process synchronously. Safe to call before fastExit,
    *  which skips the async teardown that would otherwise stop them. */
   killAllBackgroundProcessesNow(): number {

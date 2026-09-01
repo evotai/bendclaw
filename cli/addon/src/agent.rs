@@ -256,6 +256,22 @@ impl NapiAgent {
             as u32
     }
 
+    /// Blocking `task_output` waits in flight for this session.
+    ///
+    /// Such a wait holds the turn while the task it watches is already
+    /// backgrounded, so no foreground shell exists to detach.
+    #[napi]
+    pub fn blocking_task_waits(&self, session_id: String) -> u32 {
+        self.agent.blocking_task_waits(&session_id) as u32
+    }
+
+    /// End in-flight blocking waits, returning how many were released. The
+    /// watched tasks keep running; only the waiting ends.
+    #[napi]
+    pub fn release_blocking_task_waits(&self, session_id: String) -> u32 {
+        self.agent.release_blocking_task_waits(&session_id) as u32
+    }
+
     #[napi]
     pub async fn stop_all_background_processes(&self, session_id: String) -> Result<String> {
         serialize_process_summaries(self.agent.stop_all_background_processes(&session_id).await)

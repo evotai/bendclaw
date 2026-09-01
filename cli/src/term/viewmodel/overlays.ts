@@ -166,7 +166,7 @@ function buildHelpBlocks(columns: number): ViewBlock[] {
     ['Esc', 'Clear input / Dismiss / Interrupt'],
     ['Ctrl+B', 'Focus queued prompts when non-empty'],
     ['↓ / Ctrl+T', 'Background task panel when shells are running'],
-    ['Esc', 'Background a watched shell; again to interrupt'],
+    ['Esc', 'Stop waiting on a task; again to interrupt'],
     ['↑ / ↓', 'History navigation / multi-line'],
     ['Tab', 'Complete command / path'],
     ['Ctrl+U', 'Clear line before cursor'],

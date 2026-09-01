@@ -34,6 +34,8 @@ export interface BackgroundTerminalsClient {
   stopAllBackgroundProcesses(sessionId: string): Promise<BackgroundProcess[]>
   backgroundForegroundProcesses(sessionId: string): number
   backgroundForegroundProcessesForMessage(sessionId: string): number
+  blockingTaskWaits(sessionId: string): number
+  releaseBlockingTaskWaits(sessionId: string): number
   killAllBackgroundProcessesNow(): number
 }
 
@@ -93,6 +95,53 @@ export class BackgroundTerminals {
   /** Shells still being waited on in the foreground. */
   foregroundCount(): number {
     return this.processes.filter(process => process.status === 'running_foreground').length
+  }
+
+  /**
+   * Blocking `task_output` waits in flight.
+   *
+   * Such a wait holds the turn while the task it watches is already
+   * backgrounded, so `foregroundCount()` is zero and there is no shell to
+   * detach. Counted separately so esc still has something softer to do than
+   * kill the run.
+   */
+  blockingWaitCount(): number {
+    const sessionId = this.deps.sessionId()
+    if (!sessionId) return 0
+    try {
+      return this.deps.client.blockingTaskWaits(sessionId)
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * True while esc should detach rather than interrupt: either a shell is being
+   * watched, or a blocking wait is holding the turn.
+   */
+  canReclaimTurn(): boolean {
+    return this.foregroundCount() > 0 || this.blockingWaitCount() > 0
+  }
+
+  /**
+   * End the waiting without touching the work.
+   *
+   * Detaches any foreground shell and releases any blocking `task_output` wait.
+   * Both keep their processes alive, so this is safe to bind to a key that used
+   * to kill. Returns how many things stopped waiting.
+   */
+  reclaimTurn(): number {
+    const sessionId = this.deps.sessionId()
+    if (!sessionId) return 0
+    let freed = this.detachForeground(id =>
+      this.deps.client.backgroundForegroundProcesses(id),
+    )
+    try {
+      freed += this.deps.client.releaseBlockingTaskWaits(sessionId)
+    } catch {
+      // A session can disappear mid-gesture; the detach above still counts.
+    }
+    return freed
   }
 
   /**

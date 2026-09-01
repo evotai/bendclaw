@@ -2039,3 +2039,208 @@ async fn a_detached_command_still_notifies_on_completion() -> Result<(), Box<dyn
     assert!(notifications[0].contains(&id));
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Releasing a blocking wait. A `task_output` call with `block: true` holds the
+// whole turn while the task it watches is already backgrounded, so no foreground
+// shell exists to detach and esc had nothing softer to do than kill the run.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_blocking_wait_is_visible_while_it_holds_the_turn() -> Result<(), Box<dyn Error>> {
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = Arc::new(TaskOutputTool::new(manager.clone()));
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+    assert_eq!(manager.blocking_waiters(), 0);
+
+    let tool = output.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"task_id": id, "block": true, "timeout": 600_000}),
+            context("task_output", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    assert_eq!(
+        manager.blocking_waiters(),
+        1,
+        "the wait must be observable, or the UI cannot offer to release it"
+    );
+
+    assert_eq!(manager.release_blocking_waiters(), 1);
+    let _ = handle.await?;
+    // The guard drops with the wait, so the count returns to zero on its own.
+    assert_eq!(manager.blocking_waiters(), 0);
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn releasing_a_wait_leaves_the_watched_task_running() -> Result<(), Box<dyn Error>> {
+    // The whole point: reclaiming the turn must not cost the user their build.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = Arc::new(TaskOutputTool::new(manager.clone()));
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    let tool = output.clone();
+    let watched = id.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"task_id": watched, "block": true, "timeout": 600_000}),
+            context("task_output", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    manager.release_blocking_waiters();
+
+    let result = handle.await??;
+    // Not an error and not a timeout: the wait ended early by request.
+    assert_eq!(result.details["retrieval_status"], "released");
+    assert_eq!(result.details["status"], "running");
+
+    let snapshot = manager.snapshot(&id).ok_or("task disappeared")?;
+    assert!(
+        !snapshot.status.is_terminal(),
+        "releasing the wait must not stop the task, got {:?}",
+        snapshot.status
+    );
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_released_wait_tells_the_model_to_stop_polling() -> Result<(), Box<dyn Error>> {
+    // A non-terminal status alone would have the model call task_output again,
+    // walking straight back into the wait the user just ended.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = Arc::new(TaskOutputTool::new(manager.clone()));
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    let tool = output.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        tool.execute(
+            serde_json::json!({"task_id": id, "block": true, "timeout": 600_000}),
+            context("task_output", &dir_path),
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    manager.release_blocking_waiters();
+
+    let body = text(&handle.await??);
+    assert!(body.contains("The user ended this wait"), "got: {body}");
+    assert!(body.contains("was not interrupted"), "got: {body}");
+    assert!(body.contains("stop polling"), "got: {body}");
+    // Must not be confused with the user killing the task outright.
+    assert!(!body.contains("Treat its work as cancelled"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn releasing_with_nothing_waiting_reports_zero() -> Result<(), Box<dyn Error>> {
+    // Lets the UI fall through to interrupting, so esc is never inert.
+    let manager = ProcessManager::new();
+    assert_eq!(manager.blocking_waiters(), 0);
+    assert_eq!(manager.release_blocking_waiters(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_release_does_not_arm_the_next_wait() -> Result<(), Box<dyn Error>> {
+    // The generation is captured when a wait starts, so a release cannot leak
+    // into a wait the model begins afterwards -- which would make every later
+    // task_output return immediately.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = Arc::new(TaskOutputTool::new(manager.clone()));
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 0.8", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    // A release while nothing is waiting must not bump the generation.
+    assert_eq!(manager.release_blocking_waiters(), 0);
+
+    // This wait therefore has to run to the task's own completion.
+    let result = output
+        .execute(
+            serde_json::json!({"task_id": id, "block": true, "timeout": 600_000}),
+            context("task_output", dir.path()),
+        )
+        .await?;
+    assert_eq!(result.details["retrieval_status"], "success");
+    assert_eq!(result.details["exit_code"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_non_blocking_poll_is_never_counted_as_waiting() -> Result<(), Box<dyn Error>> {
+    // `block: false` returns at once, so it must not make the UI believe there
+    // is a wait to release.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = TaskOutputTool::new(manager.clone());
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    let result = output
+        .execute(
+            serde_json::json!({"task_id": id, "block": false}),
+            context("task_output", dir.path()),
+        )
+        .await?;
+    assert_eq!(result.details["retrieval_status"], "not_ready");
+    assert_eq!(manager.blocking_waiters(), 0);
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}

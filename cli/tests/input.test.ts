@@ -64,6 +64,18 @@ describe('parseInput', () => {
     test('Ctrl+A', () => {
       expect(parse('\x01')).toEqual([{ type: 'ctrl', key: 'a' }])
     })
+
+    // Both of these reach the parser's default `code + 96` branch rather than a
+    // case of their own. They are asserted because two keybindings now depend on
+    // it: ctrl+b backgrounds a running command, ctrl+g focuses queued prompts.
+    // A future explicit case for either code would silently break that.
+    test('Ctrl+B, which backgrounds a running command', () => {
+      expect(parse('\x02')).toEqual([{ type: 'ctrl', key: 'b' }])
+    })
+
+    test('Ctrl+G, which focuses queued prompts', () => {
+      expect(parse('\x07')).toEqual([{ type: 'ctrl', key: 'g' }])
+    })
   })
 
   describe('arrow keys', () => {

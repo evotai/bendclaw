@@ -8,6 +8,8 @@ mod agent_variable_test;
 mod auth_test;
 #[path = "auto_compact_test.rs"]
 mod auto_compact_test;
+#[path = "background_reclaim_test.rs"]
+mod background_reclaim_test;
 #[path = "command_test.rs"]
 mod command_test;
 #[path = "compact_test.rs"]

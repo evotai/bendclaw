@@ -1333,10 +1333,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     backgroundTerminals.refresh()
   }
 
-  async function handleBackgroundProcessCommand(name: '/ps' | '/stop', args: string): Promise<void> {
-    await backgroundTerminals.handleCommand(name, args)
-  }
-
   /** Insert pasted text, collapsing large pastes into refs. */
   function insertPaste(raw: string) {
     const cleaned = cleanPastedText(raw)
@@ -1902,20 +1898,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // A slash command may be typed with images attached; probe the visible
     // draft too so "/compact" plus an image ref is still treated as a command.
     const commandProbe = trimmed || displayText.trim()
-    const directCommand = commandProbe ? resolveCommand(commandProbe) : null
-    if (
-      directCommand?.kind === 'resolved'
-      && (directCommand.name === '/ps' || directCommand.name === '/stop')
-    ) {
-      if (historyText) {
-        historyMgr.append(historyText)
-        historyState = pushHistory(historyState, historyText)
-      }
-      clearAll()
-      void handleSlashInput(commandProbe)
-      renderer.requestRender()
-      return
-    }
     if (compactionTask) {
       if (commandProbe && isSlashCommand(commandProbe)) {
         // Not silently swallowed: commands cannot run mid-compaction and are
@@ -2472,9 +2454,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       renderer.requestRender()
     }
 
-    if (name === '/ps' || name === '/stop') {
-      await handleBackgroundProcessCommand(name, args)
-    } else if (name === '/compact') {
+    if (name === '/compact') {
       await runManualCompaction(args)
     } else if (name === '/env') {
       handleEnvCommand(replCommands, args)

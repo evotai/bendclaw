@@ -42,7 +42,7 @@ export type SessionSwitchDecision =
  *
  * The first attempt warns; an immediate repeat of the same command proceeds.
  * A hard block would trap the user in the session whenever a task ignores
- * SIGKILL or a `/stop` times out, so the escape hatch is deliberate and
+ * SIGKILL or a stop times out, so the escape hatch is deliberate and
  * mirrors the confirm-by-repeat pattern of the Ctrl+C exit hint.
  */
 export function decideSessionSwitch(input: {
@@ -61,7 +61,7 @@ export function decideSessionSwitch(input: {
   }
 }
 
-/** Summary line for `/stop` with no argument. */
+/** Summary line for stopping every task (`X` in the panel). */
 export function stopAllMessage(stoppedCount: number): string {
   if (stoppedCount === 0) return '  No background terminals running.'
   const plural = stoppedCount === 1 ? '' : 's'
@@ -69,8 +69,9 @@ export function stopAllMessage(stoppedCount: number): string {
 }
 
 /**
- * Result line for a targeted `/stop`. A task that outlived the stop timeout is
- * reported as still running rather than silently claimed as stopped.
+ * Result line for stopping one task (`x` in the panel). A task that outlived
+ * the stop timeout is reported as still running rather than silently claimed as
+ * stopped.
  */
 export function stopOneMessage(stopped: BackgroundProcess): string {
   const command = stopped.command.split('\n', 1)[0] ?? stopped.command

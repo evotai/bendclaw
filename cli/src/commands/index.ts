@@ -19,8 +19,6 @@ export const COMMANDS: SlashCommand[] = [
   { name: '/login', description: 'Log in to evot cloud', handler: 'builtin' },
   { name: '/logout', description: 'Log out of evot cloud', handler: 'builtin' },
   { name: '/restart', description: 'Restart evot in place', handler: 'builtin' },
-  { name: '/ps', description: 'Open the background task panel', handler: 'builtin' },
-  { name: '/stop', description: 'Stop background terminals', usage: '/stop [task-id | all]', handler: 'builtin' },
 ]
 
 /** Hidden commands — recognised but not shown in /help or ghost hints */

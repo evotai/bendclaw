@@ -92,8 +92,20 @@ describe('formatStatusDetail', () => {
       .toBe('failed · exit 7 · 2s')
   })
 
-  test('a stopped task reads as stopped rather than killed', () => {
+  test('a model-initiated stop reads as stopped rather than killed', () => {
     expect(formatStatusDetail(proc({ status: 'killed' }))).toBe('stopped · 2s')
+  })
+
+  test('a user cancellation is named as such, matching the task cards', () => {
+    // The panel and the tool cards must not spell the same outcome two ways.
+    expect(formatStatusDetail(proc({ status: 'killed', stopped_by_user: true })))
+      .toBe('cancelled by user · 2s')
+  })
+
+  test('an absent attribution flag degrades to the neutral word', () => {
+    // Older addon payloads have no such field.
+    expect(formatStatusDetail(proc({ status: 'killed', stopped_by_user: undefined })))
+      .toBe('stopped · 2s')
   })
 
   test('a timeout is distinguished from a plain failure', () => {

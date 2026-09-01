@@ -1,10 +1,11 @@
 /**
  * Background terminal management for the TUI.
  *
- * Owns the polled task list, the interactive panel (`ctrl+t` / `/ps`), the
- * `/stop` command flow, and the session-switch gate. Kept outside `startRepl` so
- * the whole interaction can be driven in tests without a terminal or a live
- * agent.
+ * Owns the polled task list, the interactive panel (`ctrl+t` or `↓` on an empty
+ * composer), and the session-switch gate. Every gesture lives in the panel —
+ * there are no slash commands for background work, so the list has exactly one
+ * presentation. Kept outside `startRepl` so the whole interaction can be driven
+ * in tests without a terminal or a live agent.
  */
 
 import type { BackgroundProcess } from '../../native/index.js'
@@ -234,41 +235,6 @@ export class BackgroundTerminals {
 
   private paint(text: string): string {
     return (this.deps.paintError ?? ((value: string) => value))(text)
-  }
-
-  async handleCommand(name: '/ps' | '/stop', args: string): Promise<void> {
-    // `/ps` is an alias for the panel shortcut: one surface for viewing tasks,
-    // so the list never has two divergent presentations to keep in sync.
-    if (name === '/ps') {
-      this.togglePanel()
-      return
-    }
-    const sessionId = this.deps.sessionId()
-    if (!sessionId) {
-      this.deps.commit('none', '  No active session or background terminals.')
-      return
-    }
-    try {
-      const target = args.trim()
-      if (target && target !== 'all') {
-        const stopped = await this.deps.client.stopBackgroundProcess(sessionId, target)
-        this.deps.commit(
-          'stop',
-          stopped
-            ? stopOneMessage(stopped)
-            : `  No running background terminal matches ${target}.`,
-        )
-      } else {
-        const stopped = await this.deps.client.stopAllBackgroundProcesses(sessionId)
-        this.deps.commit('stop-all', stopAllMessage(stopped.length))
-      }
-      this.refresh()
-    } catch (err) {
-      this.deps.commit(
-        'error',
-        this.paint(`  Background terminal command failed: ${this.deps.errorText(err)}`),
-      )
-    }
   }
 
   /**

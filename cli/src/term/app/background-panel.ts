@@ -1,7 +1,7 @@
 /**
  * Background task panel: an interactive list of background terminals.
  *
- * Replaces the old `/ps` line dump. Rows are selectable, a task can be stopped
+ * Replaces the old line dump. Rows are selectable, a task can be stopped
  * in place, and its captured output can be pulled into the transcript — so
  * managing background work never requires typing a task id.
  *
@@ -91,7 +91,12 @@ export function formatStatusDetail(process: BackgroundProcess): string {
     case 'timed_out':
       return `timed out · ${exit}${elapsed}`
     case 'killed':
-      return `stopped · ${elapsed}`
+      // "cancelled" when the user asked for it, matching the task tool cards:
+      // the same task must not read as `stopped` here and `cancelled by user`
+      // there. Absent flag (older payloads) degrades to the neutral word.
+      return process.stopped_by_user === true
+        ? `cancelled by user · ${elapsed}`
+        : `stopped · ${elapsed}`
   }
 }
 

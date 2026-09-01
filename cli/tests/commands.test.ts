@@ -50,9 +50,12 @@ describe('resolveCommand', () => {
     expect(isSlashCommand('/restart')).toBe(true)
   })
 
-  test('resolves background terminal commands', () => {
-    expect(resolveCommand('/ps')).toEqual({ kind: 'resolved', name: '/ps', args: '' })
-    expect(resolveCommand('/stop abc123')).toEqual({ kind: 'resolved', name: '/stop', args: 'abc123' })
+  test('background work has no slash commands', () => {
+    // Managed only through the TUI panel (ctrl+t, or ↓ on an empty composer).
+    // Keeping a command surface too would mean two presentations to keep in sync.
+    expect(resolveCommand('/tasks')).toEqual({ kind: 'unknown' })
+    expect(resolveCommand('/ps')).toEqual({ kind: 'unknown' })
+    expect(resolveCommand('/stop')).toEqual({ kind: 'unknown' })
   })
 
   test('resolves aliases', () => {
@@ -81,9 +84,11 @@ describe('resolveCommand', () => {
   })
 
   test('returns ambiguous for multiple prefix matches', () => {
-    // /plan and /ps intentionally require another character to disambiguate.
-    const result = resolveCommand('/p')
+    // `/s` still spans several commands. `/p` no longer does: it used to collide
+    // with the background `/ps`, and now resolves straight to `/plan`.
+    const result = resolveCommand('/s')
     expect(result.kind).toBe('ambiguous')
+    expect(resolveCommand('/p')).toEqual({ kind: 'resolved', name: '/plan', args: '' })
   })
 
   test('routes removed /history command to the unknown-command handler', () => {

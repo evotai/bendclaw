@@ -299,24 +299,22 @@ describe('BackgroundTerminals.handlePanelKey', () => {
   })
 })
 
-describe('BackgroundTerminals./ps', () => {
-  test('/ps opens the panel rather than dumping lines', async () => {
+describe('BackgroundTerminals panel entry', () => {
+  test('togglePanel opens the panel rather than dumping lines', async () => {
+    // Background work is managed only through the panel: there are no slash
+    // commands, so this is the single entry point.
     const h = harness({ processes: [proc()] })
-    await h.controller.handleCommand('/ps', '')
+    h.controller.togglePanel()
     expect(h.panel()).not.toBeNull()
     expect(h.texts()).toHaveLength(0)
   })
 
-  test('/stop all still works as a typed command', async () => {
+  test('X stops every task from the panel', async () => {
     const h = harness({ processes: [proc()] })
-    await h.controller.handleCommand('/stop', 'all')
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'char', char: 'X' })
+    await h.controller.settled()
     expect(h.texts().join('\n')).toContain('Stopped 1 background terminal')
-  })
-
-  test('/stop with an unknown id says so', async () => {
-    const h = harness({ processes: [proc()] })
-    await h.controller.handleCommand('/stop', 'nope')
-    expect(h.texts().join('\n')).toContain('No running background terminal matches nope')
   })
 })
 

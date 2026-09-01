@@ -131,17 +131,29 @@ export class BackgroundTerminals {
    * to kill. Returns how many things stopped waiting.
    */
   reclaimTurn(): number {
+    return this.backgroundForeground() + this.releaseBlockingWaits()
+  }
+
+  /**
+   * Same release, so a queued message can reach the model.
+   *
+   * Steering is only inspected between tool calls, so anything holding the turn
+   * holds the message with it — a foreground shell or a blocking `task_output`
+   * call alike. Both are freed; the work keeps running.
+   */
+  reclaimTurnForMessage(): number {
+    return this.backgroundForegroundForMessage() + this.releaseBlockingWaits()
+  }
+
+  private releaseBlockingWaits(): number {
     const sessionId = this.deps.sessionId()
     if (!sessionId) return 0
-    let freed = this.detachForeground(id =>
-      this.deps.client.backgroundForegroundProcesses(id),
-    )
     try {
-      freed += this.deps.client.releaseBlockingTaskWaits(sessionId)
+      return this.deps.client.releaseBlockingTaskWaits(sessionId)
     } catch {
-      // A session can disappear mid-gesture; the detach above still counts.
+      // A session can disappear mid-gesture; any detach still counts.
+      return 0
     }
-    return freed
   }
 
   /**

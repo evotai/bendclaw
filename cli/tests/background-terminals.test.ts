@@ -424,6 +424,46 @@ describe('BackgroundTerminals.backgroundForeground', () => {
     expect(h.controller.backgroundForegroundForMessage()).toBe(0)
     expect(h.controller.runningCount()).toBe(1)
   })
+
+  test('a message frees a blocking wait, not just a foreground shell', () => {
+    // The reported case: `bash` had already detached and a blocking task_output
+    // held the turn. Detaching shells alone left the message stuck behind it,
+    // which is what made typing look inert.
+    const h = harness({
+      processes: [proc({ status: 'running' })],
+      startingBlockingWaits: 1,
+    })
+    h.controller.refresh()
+    expect(h.controller.foregroundCount()).toBe(0)
+
+    expect(h.controller.reclaimTurnForMessage()).toBe(1)
+
+    expect(h.controller.blockingWaitCount()).toBe(0)
+    // Speaking up must never cost the user their build.
+    expect(h.controller.runningCount()).toBe(1)
+  })
+
+  test('a message covers a shell and a wait together', () => {
+    const h = harness({
+      processes: [proc({ status: 'running_foreground' })],
+      startingBlockingWaits: 1,
+    })
+    h.controller.refresh()
+    expect(h.controller.reclaimTurnForMessage()).toBe(2)
+    // Attributed to message delivery, so the model is told why the shell moved.
+    expect(h.messageDetaches()).toBe(1)
+    expect(h.controller.foregroundCount()).toBe(0)
+    expect(h.controller.blockingWaitCount()).toBe(0)
+  })
+
+  test('a message with nothing holding the turn frees nothing', () => {
+    // Steering already reaches the model between tool calls, so there is
+    // nothing to disturb.
+    const h = harness({ processes: [proc({ status: 'running' })] })
+    h.controller.refresh()
+    expect(h.controller.reclaimTurnForMessage()).toBe(0)
+    expect(h.controller.runningCount()).toBe(1)
+  })
 })
 
 describe('BackgroundTerminals.reclaimTurn', () => {

@@ -1643,18 +1643,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         restoreLastQueuedUserMessageToEditor()
         return true
       case 'reclaim-turn': {
-        // Non-destructive: the shells and watched tasks keep running, so the
-        // only thing esc ends here is the waiting. If nothing was actually
-        // released (it all finished in the same tick), fall through to
-        // interrupting so the key is never inert.
+        // Non-destructive by contract: ctrl+b never kills. If nothing was
+        // actually released (it all finished in the same tick) say so rather
+        // than falling through to an interrupt — this key must never be the one
+        // that ends a run.
         const freed = backgroundTerminals.reclaimTurn()
         if (freed === 0) {
-          interruptStream('sys-int', '  Interrupted.')
+          commitSystem('sys-reclaim-turn', '  Nothing to move to the background.')
+          renderer.requestRender()
           return true
         }
         commitSystem(
           'sys-reclaim-turn',
-          '  ■ Stopped waiting; the work is still running. Press esc again to interrupt.',
+          '  ■ Running in the background; use esc to interrupt.',
         )
         renderer.requestRender()
         return true

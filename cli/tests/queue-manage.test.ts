@@ -38,12 +38,14 @@ describe('queue manager', () => {
     expect(decideQueueSelectorAction(items[1]!, 'delete')).toEqual({ kind: 'remove', entry: entries[1] })
   })
 
-  test('recognizes only B queue shortcuts', () => {
-    expect(isQueueManageShortcut({ type: 'ctrl', key: 'b' })).toBe(true)
+  test('recognizes only ctrl+g as the queue shortcut', () => {
+    expect(isQueueManageShortcut({ type: 'ctrl', key: 'g' })).toBe(true)
+    // Ctrl+B is the background chord now, so it must not open the queue pane.
+    expect(isQueueManageShortcut({ type: 'ctrl', key: 'b' })).toBe(false)
     expect(isQueueManageShortcut({ type: 'ctrl', key: ';' })).toBe(false)
     expect(isQueueManageShortcut({ type: 'ctrl', key: '4' })).toBe(false)
     expect(isQueueManageShortcut({ type: 'ctrl', key: 'o' })).toBe(false)
-    expect(isQueueManageShortcut({ type: 'char', char: 'b' })).toBe(false)
+    expect(isQueueManageShortcut({ type: 'char', char: 'g' })).toBe(false)
   })
 
   test('shows first-line previews, multiline counts, and truncation', () => {

@@ -28,11 +28,18 @@ const MAX_DISPLAY_BYTES: usize = 50 * 1024;
 const MAX_LINE_BYTES: usize = 4096;
 /// Default foreground wait before a still-running command is yielded.
 ///
-/// Deliberately generous: a build or test suite routinely runs for a minute,
-/// and a command that gets yielded mid-dependency-chain (`cargo test` before
-/// `git commit`) is the expensive failure — the model has to notice the task ID
-/// and wait, where staying in the foreground would just have worked.
-const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(120);
+/// Deliberately short, matching Claude Code's 2s. The point is that "a command
+/// is holding the turn" becomes a state that barely exists: anything not
+/// effectively instant leaves the foreground immediately, so the user is never
+/// stuck watching a build they cannot talk over, and the model is never blocked
+/// on one either.
+///
+/// A long wait looks safer and is not. With a 120s window every mitigation had
+/// to be built inside it — an escape gesture, message delivery past a live
+/// shell, releasing a blocking wait — all to make a state survivable that is
+/// better avoided. Yielding early costs the model one extra step to collect a
+/// result it was going to wait for anyway.
+const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(2);
 /// Longest model-requested foreground wait.
 const MAX_YIELD_TIME: Duration = Duration::from_secs(600);
 
@@ -177,7 +184,7 @@ impl AgentTool for BashTool {
             },
             "timeout": {
                 "type": "number",
-                "description": "Hard kill deadline in seconds (default 600, max 1800). The command is SIGKILLed when it elapses, even if it has already moved to the background — this is a death sentence, not a wait. Leave it unset unless you want the command dead by a specific time; to control how long to watch a command, use yield_time_ms instead."
+                "description": "Deadline in seconds for watching this command (default 600, max 1800). When it elapses the command is moved to the background and keeps running — it is never killed. Use yield_time_ms to hand a command back sooner; use task_stop to actually stop one."
             }
         });
         if self.background_enabled {
@@ -186,7 +193,7 @@ impl AgentTool for BashTool {
                     "yield_time_ms".into(),
                     serde_json::json!({
                         "type": "number",
-                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 120000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Raise this to watch longer, not to keep a command alive."
+                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 2000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Raise this only to keep a short command's result inline, never to keep a long one alive."
                     }),
                 );
                 properties.insert(
@@ -271,6 +278,11 @@ impl AgentTool for BashTool {
                 output_dir,
                 tail_bytes: self.max_output_bytes,
                 background_reason: run_in_background.then_some(BackgroundReason::Explicit),
+                // Only meaningful where background support exists. Without it
+                // there is no yield, no task_output and no notification, so a
+                // backgrounded command would be orphaned with nothing to collect
+                // it — the deadline has to stay a kill.
+                background_on_timeout: self.background_enabled,
             })
             .await?;
 
@@ -423,6 +435,14 @@ fn background_lede(reason: BackgroundReason) -> String {
             "Command did not finish within its {}s foreground wait and was moved to the background; it was not interrupted.",
             DEFAULT_YIELD_TIME.as_secs()
         ),
+        // A timeout no longer kills, so the lede must not imply the work is over.
+        // A model that reads "timed out" as "dead" would re-run a build that is
+        // still going, which is the failure the old kill behaviour caused.
+        BackgroundReason::TimeoutElapsed => concat!(
+            "Command hit its timeout and was moved to the background; it was not interrupted and is still running. ",
+            "The timeout bounded the wait, not the command.",
+        )
+        .to_string(),
         // The user moved this aside, which is not the same as abandoning it:
         // saying only "running in the background" would let the model treat the
         // result as unwanted and skip a step that still depends on it.

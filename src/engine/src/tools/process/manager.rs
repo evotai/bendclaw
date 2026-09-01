@@ -353,17 +353,40 @@ impl ProcessManager {
         tokio::spawn(async move {
             let timeout = tokio::time::sleep(request.timeout);
             tokio::pin!(timeout);
-            let (wait_result, forced_status) = tokio::select! {
-                result = child.wait() => (result, None),
-                _ = task.cancel.cancelled() => {
-                    let requested = task.state.lock().requested_status.clone()
-                        .unwrap_or(ProcessStatus::Killed);
-                    let _ = child.kill().await;
-                    (child.wait().await, Some(requested))
-                }
-                _ = &mut timeout => {
-                    let _ = child.kill().await;
-                    (child.wait().await, Some(ProcessStatus::TimedOut))
+            let mut timed_out = false;
+            let (wait_result, forced_status) = loop {
+                tokio::select! {
+                    result = child.wait() => break (result, None),
+                    _ = task.cancel.cancelled() => {
+                        let requested = task.state.lock().requested_status.clone()
+                            .unwrap_or(ProcessStatus::Killed);
+                        let _ = child.kill().await;
+                        break (child.wait().await, Some(requested));
+                    }
+                    // The deadline hands the command to the background instead of
+                    // killing it. A `timeout` that destroyed work made the
+                    // parameter a trap: a model setting one to bound its own wait
+                    // was sentencing its build to death. Killing stays an explicit
+                    // act — task_stop, or the user.
+                    //
+                    // Unless this runtime cannot background at all, in which case
+                    // the deadline is the only bound there is and still kills.
+                    _ = &mut timeout, if !timed_out => {
+                        timed_out = true;
+                        if !request.background_on_timeout {
+                            let _ = child.kill().await;
+                            break (child.wait().await, Some(ProcessStatus::TimedOut));
+                        }
+                        let mut state = task.state.lock();
+                        if matches!(state.status, ProcessStatus::RunningForeground) {
+                            state.status = ProcessStatus::RunningBackground(
+                                BackgroundReason::TimeoutElapsed,
+                            );
+                            // The caller stops waiting, so completion has to
+                            // arrive as a notification or the result is lost.
+                            state.notify_on_completion = true;
+                        }
+                    }
                 }
             };
 

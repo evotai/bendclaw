@@ -18,6 +18,9 @@ pub const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 pub enum BackgroundReason {
     Explicit,
     YieldElapsed,
+    /// The `timeout` deadline elapsed. Matches Claude Code, where a timeout
+    /// auto-backgrounds rather than killing.
+    TimeoutElapsed,
     UserRequested,
     MessageDelivery,
 }
@@ -29,6 +32,13 @@ pub enum ProcessStatus {
     RunningBackground(BackgroundReason),
     Completed,
     Failed,
+    /// No longer produced: a timeout now backgrounds the command instead of
+    /// killing it, so nothing reaches this state.
+    ///
+    /// Kept because it is a published value. Stored sessions and addon JSON
+    /// written before that change still carry `timed_out`, and dropping the
+    /// variant would make them unreadable. Readers must keep handling it; only
+    /// the writer stopped emitting it.
     TimedOut,
     Killed,
 }
@@ -102,4 +112,11 @@ pub struct StartProcess {
     pub output_dir: PathBuf,
     pub tail_bytes: usize,
     pub background_reason: Option<BackgroundReason>,
+    /// Whether the deadline may hand the command to the background.
+    ///
+    /// False when this runtime has no background support: with no yield, no
+    /// `task_output` and no notification path, backgrounding would orphan the
+    /// command and leave the caller nothing to collect. There the deadline is
+    /// the only bound that exists, so it must still kill.
+    pub background_on_timeout: bool,
 }

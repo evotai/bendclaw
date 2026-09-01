@@ -287,14 +287,14 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('esc to interrupt')
   })
 
-  test('names stopping the wait instead while work is being waited on', () => {
-    // Esc releases the wait rather than killing in this state, so promising an
-    // interrupt would describe the wrong outcome. Worded as "stop waiting"
-    // because a blocked task is already backgrounded.
+  test('offers ctrl+b alongside esc while work can be backgrounded', () => {
+    // Both keys are shown because both apply: esc always kills, ctrl+b never
+    // does. Replacing the interrupt hint would hide the kill gesture exactly
+    // when a user might want it.
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
-    expect(line).toContain('esc to stop waiting')
-    expect(line).not.toContain('esc to interrupt')
+    expect(line).toContain('esc to interrupt')
+    expect(line).toContain('ctrl+b to background')
   })
 
   test('a suppressed hint stays suppressed even when backgroundable', () => {

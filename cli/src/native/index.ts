@@ -59,6 +59,9 @@ export interface BackgroundProcess {
   command: string
   cwd: string
   output_path: string
+  /** `timed_out` is legacy-only: a timeout now backgrounds the command instead
+   *  of killing it, so nothing new reports it. Sessions written before that
+   *  change still carry it, so it stays readable here. */
   status: 'running_foreground' | 'running' | 'completed' | 'failed' | 'timed_out' | 'killed'
   exit_code: number | null
   elapsed_ms: number

@@ -3,11 +3,17 @@ import type { SelectorItem } from '../selector.js'
 import { createSelectorState, type SelectorState } from '../selector.js'
 
 export const QUEUE_SELECTOR_TITLE = 'Prompt queue'
-export const QUEUE_MANAGE_SHORTCUT_HINT = 'ctrl+b'
+export const QUEUE_MANAGE_SHORTCUT_HINT = 'ctrl+g'
 
-/** Queue-pane toggle key. Ctrl+B is a portable C0 control character. */
+/**
+ * Queue-pane toggle key.
+ *
+ * Moved off ctrl+b, which is the conventional "run in background" chord and is
+ * now bound to that. Ctrl+G is likewise a portable C0 control character and is
+ * otherwise unclaimed here.
+ */
 export function isQueueManageShortcut(event: KeyEvent): boolean {
-  return event.type === 'ctrl' && event.key === 'b'
+  return event.type === 'ctrl' && event.key === 'g'
 }
 
 export type PromptQueueKind = 'steering' | 'follow_up'

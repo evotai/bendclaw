@@ -188,12 +188,11 @@ export interface SpinnerFormatOptions {
   /** Requested model, used to identify long quota waits. */
   model?: string
   /**
-   * Work is being waited on that esc can release without killing it: a shell
-   * watched in the foreground, or a blocking `task_output` call holding the
-   * turn. The hint has to say so — offering only "esc to interrupt" while the
-   * softer gesture is the one bound would describe the wrong outcome. Worded as
-   * "stop waiting" because a blocked task is already in the background; what
-   * ends is the waiting, not the work.
+   * Work is running that ctrl+b can move to the background without killing it.
+   *
+   * Adds a second hint rather than replacing the interrupt one: esc always
+   * means interrupt, so swapping the text would hide the kill gesture exactly
+   * when a user might want it. Both keys are shown because both apply.
    */
   backgroundable?: boolean
 }
@@ -246,7 +245,7 @@ export function formatSpinnerLine(
   const interruptHint = options.interruptible === false
     ? ''
     : options.backgroundable
-      ? ' · esc to stop waiting'
+      ? ' · esc to interrupt · ctrl+b to background'
       : ' · esc to interrupt'
 
   if (slow) {

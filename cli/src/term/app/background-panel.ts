@@ -89,6 +89,7 @@ export function formatStatusDetail(process: BackgroundProcess): string {
     case 'failed':
       return `failed · ${exit}${elapsed}`
     case 'timed_out':
+      // Legacy sessions only: a timeout now backgrounds rather than kills.
       return `timed out · ${exit}${elapsed}`
     case 'killed':
       // "cancelled" when the user asked for it, matching the task tool cards:

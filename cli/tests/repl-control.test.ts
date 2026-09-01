@@ -90,32 +90,47 @@ describe('repl control', () => {
     expect(kinds({ ...base, event: { type: 'escape' }, isLoading: true, hasStream: true })).toEqual(['interrupt'])
   })
 
-  test('escape stops waiting on a task before it means interrupt', () => {
-    // Killing used to be the only way to reclaim the turn, discarding however
-    // far a build or test run had got. Releasing the wait keeps the work.
+  test('escape always interrupts, even with work that could be backgrounded', () => {
+    // The two gestures are kept separate on purpose: esc means kill regardless
+    // of state, so its outcome never depends on something the user cannot see.
+    // Backgrounding lives on ctrl+b.
     expect(kinds({
       ...base,
       event: { type: 'escape' },
       isLoading: true,
       hasStream: true,
       canReclaimTurn: true,
-    })).toEqual(['reclaim-turn'])
-  })
-
-  test('escape interrupts once nothing is being waited on', () => {
-    // Escalation is by repeat: the first esc releases, the second interrupts.
-    expect(kinds({
-      ...base,
-      event: { type: 'escape' },
-      isLoading: true,
-      hasStream: true,
-      canReclaimTurn: false,
     })).toEqual(['interrupt'])
   })
 
-  test('a queued prompt still outranks reclaiming the turn', () => {
-    // Pulling back text the user typed is the more recent intent, and it is
-    // reversible: the wait can still be released with the next esc.
+  test('ctrl-b backgrounds the running work instead of killing it', () => {
+    expect(kinds({
+      ...base,
+      event: { type: 'ctrl', key: 'b' },
+      isLoading: true,
+      hasStream: true,
+      canReclaimTurn: true,
+    })).toEqual(['reclaim-turn'])
+  })
+
+  test('ctrl-b falls through to the editor when there is nothing to background', () => {
+    // It must never become a second interrupt: this key is non-destructive by
+    // contract, so with nothing running it is just an ordinary keypress.
+    expect(kinds({
+      ...base,
+      event: { type: 'ctrl', key: 'b' },
+      isLoading: true,
+      hasStream: true,
+      canReclaimTurn: false,
+    })).toEqual(['normal-key'])
+  })
+
+  test('ctrl-b is inert while idle', () => {
+    expect(kinds({ ...base, event: { type: 'ctrl', key: 'b' } })).toEqual(['normal-key'])
+  })
+
+  test('a queued prompt still outranks interrupting on escape', () => {
+    // Pulling back text the user typed is the more recent intent.
     expect(kinds({
       ...base,
       event: { type: 'escape' },
@@ -126,8 +141,8 @@ describe('repl control', () => {
     })).toEqual(['restore-queued'])
   })
 
-  test('ctrl-c still interrupts immediately while work is being waited on', () => {
-    // Ctrl+C is the unambiguous stop gesture; only esc gained the softer step.
+  test('ctrl-c still interrupts immediately while work is backgroundable', () => {
+    // Both stop gestures stay unambiguous; only ctrl+b is the soft one.
     expect(kinds({
       ...base,
       event: { type: 'ctrl', key: 'c' },

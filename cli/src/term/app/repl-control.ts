@@ -56,6 +56,15 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
     return [{ kind: 'clear-editor' }]
   }
 
+  // Ctrl+B is the dedicated "stop waiting, keep the work" gesture. Keeping it
+  // separate from esc is what makes both unambiguous: esc always kills, ctrl+b
+  // never does. Overloading esc meant the same key had two outcomes depending on
+  // state the user could not see.
+  if (event.type === 'ctrl' && event.key === 'b') {
+    if (isLoading && hasStream && canReclaimTurn) return [{ kind: 'reclaim-turn' }]
+    return [{ kind: 'normal-key' }]
+  }
+
   if (exitHint) actions.push({ kind: 'clear-exit-hint' })
 
   if (event.type === 'escape') {
@@ -66,14 +75,8 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
     }
     if (editor.completion) return actions.concat({ kind: 'close-completion' })
     if (isLoading && hasStream && hasQueuedPrompt) return actions.concat({ kind: 'restore-queued' })
-    // Waiting on a background task is released before esc is allowed to mean
-    // "interrupt". Killing was previously the only way to reclaim the turn,
-    // which threw away however far a build or test run had already got.
-    // Escalation is by repeat: once nothing is waiting, the next esc interrupts
-    // as it always did.
-    if (isLoading && hasStream && canReclaimTurn) {
-      return actions.concat({ kind: 'reclaim-turn' })
-    }
+    // Esc always interrupts. Backgrounding lives on ctrl+b, so neither key's
+    // meaning depends on state the user cannot see.
     if (isLoading && hasStream) return actions.concat({ kind: 'interrupt' })
     if (!isEditorEmpty(editor)) return actions.concat({ kind: 'clear-editor' })
     if (logMode) return actions.concat({ kind: 'exit-log-mode' })

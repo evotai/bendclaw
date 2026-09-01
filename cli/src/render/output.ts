@@ -1040,6 +1040,7 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
       parts.push(exitCode !== undefined ? `failed · exit ${exitCode}` : 'failed')
       break
     case 'timed_out':
+      // Legacy sessions only: a timeout now backgrounds rather than kills.
       parts.push('timed out')
       break
     case 'killed':

@@ -150,7 +150,11 @@ impl AgentTool for BashTool {
 
     fn description(&self) -> &str {
         if self.background_enabled {
-            "Execute a bash command. Short commands return normally. Set run_in_background to return immediately, or use yield_time_ms to control how long to wait before returning a background task ID. Neither yielding nor the timeout stops the command: both hand it back still running. Use task_stop to actually stop one."
+            // `{{task_stop}}` resolves here because descriptions pass through
+            // `resolve_tool_refs`. The schema below and BACKGROUND_GUIDANCE do
+            // not, so those must keep literal names or the model would be shown
+            // a raw `{{...}}`.
+            "Execute a bash command. Short commands return normally. Set run_in_background to return immediately, or use yield_time_ms to control how long to wait before returning a background task ID. Neither yielding nor the timeout stops the command: both hand it back still running. Use {{task_stop}} to actually stop one."
         } else {
             "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). The timeout parameter is the command's hard runtime limit."
         }

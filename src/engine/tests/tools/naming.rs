@@ -113,3 +113,47 @@ fn a_bash_without_background_support_offers_no_background_guideline() {
 
     assert!(BashTool::new().prompt_guidelines().is_empty());
 }
+
+#[test]
+fn the_bash_description_resolves_task_stop_per_model() {
+    // Descriptions pass through `resolve_tool_refs` (see build_tool_definitions),
+    // so a placeholder is correct here and a literal `task_stop` would name a
+    // tool Claude models do not have -- they see `TaskStop`.
+    use std::sync::Arc;
+
+    use evotengine::tools::BashTool;
+    use evotengine::tools::ProcessManager;
+    use evotengine::tools::TaskStopTool;
+
+    let manager = Arc::new(ProcessManager::new());
+    let tools: Vec<Box<dyn AgentTool>> = vec![
+        Box::new(BashTool::new().with_process_manager(manager.clone())),
+        Box::new(TaskStopTool::new(manager)),
+    ];
+    let description = tools[0].description();
+
+    let claude = resolve_tool_refs(description, &tools, "claude-opus-4-6");
+    assert!(claude.contains("TaskStop"), "got: {claude}");
+    assert!(!claude.contains("{{"), "unresolved placeholder: {claude}");
+
+    let other = resolve_tool_refs(description, &tools, "gpt-4o");
+    assert!(other.contains("task_stop"), "got: {other}");
+    assert!(!other.contains("{{"), "unresolved placeholder: {other}");
+}
+
+#[test]
+fn text_that_bypasses_the_resolver_keeps_literal_names() {
+    // The schema and the background guidance are handed to the model verbatim:
+    // parameters_schema() is passed through untouched by build_tool_definitions,
+    // and tool-result bodies never reach the resolver at all. A placeholder in
+    // either would render as a raw `{{...}}`.
+    use std::sync::Arc;
+
+    use evotengine::tools::BashTool;
+    use evotengine::tools::ProcessManager;
+
+    let bash = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
+    let schema = bash.parameters_schema().to_string();
+    assert!(!schema.contains("{{"), "got: {schema}");
+    assert!(schema.contains("task_stop"), "got: {schema}");
+}

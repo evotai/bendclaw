@@ -45,6 +45,12 @@ describe('resolveCommand', () => {
     expect(isSlashCommand('/harden')).toBe(true)
   })
 
+  test('visible commands own prefixes shared with hidden commands', () => {
+    expect(resolveCommand('/re')).toEqual({ kind: 'resolved', name: '/resume', args: '' })
+    expect(resolveCommand('/res')).toEqual({ kind: 'resolved', name: '/resume', args: '' })
+    expect(resolveCommand('/rest')).toEqual({ kind: 'resolved', name: '/restart', args: '' })
+  })
+
   test('resolves /restart', () => {
     expect(resolveCommand('/restart')).toEqual({ kind: 'resolved', name: '/restart', args: '' })
     expect(isSlashCommand('/restart')).toBe(true)

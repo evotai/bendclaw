@@ -82,9 +82,7 @@ export function getGhostHint(line: string, cursorCol: number): string {
     return `  [${COMMANDS.map(c => c.name.slice(1)).join('  ')}]`
   }
 
-  // Ghost hints match all commands (hidden ones stay completable);
-  // only the bare-`/` list above is limited to visible commands.
-  const matches = commandCandidates().filter(c => c.label.startsWith(cmd))
+  const matches = commandCandidates().filter(candidate => prefixMatches(candidate, cmd))
 
   if (matches.length === 0) return ''
 
@@ -111,13 +109,18 @@ export function getGhostHint(line: string, cursorCol: number): string {
  * class here: a user who types an alias gets the same hints as the canonical
  * name, and sub-command hints resolve through to the canonical entry.
  */
-function commandCandidates(): { label: string; command: SlashCommand }[] {
+function commandCandidates(commands: SlashCommand[] = ALL_COMMANDS): { label: string; command: SlashCommand }[] {
   const candidates: { label: string; command: SlashCommand }[] = []
-  for (const command of ALL_COMMANDS) {
+  for (const command of commands) {
     candidates.push({ label: command.name, command })
     for (const alias of command.aliases ?? []) candidates.push({ label: alias, command })
   }
   return candidates
+}
+
+function prefixMatches(candidate: { label: string; command: SlashCommand }, prefix: string): boolean {
+  return prefix.length >= (candidate.command.minPrefixLength ?? 1)
+    && candidate.label.startsWith(prefix)
 }
 
 function getSubCommandHint(cmd: string, partial: string): string {
@@ -168,14 +171,9 @@ function completeSlashCommand(input: string): CompletionResult | null {
   // Only complete the command name itself (first word)
   if (parts.length > 1) return null
 
-  const allCmds = ALL_COMMANDS
-  const allNames: string[] = []
-  for (const c of allCmds) {
-    allNames.push(c.name)
-    if (c.aliases) allNames.push(...c.aliases)
-  }
-
-  const matches = allNames.filter((n) => n.startsWith(cmd))
+  const matches = commandCandidates()
+    .filter(candidate => prefixMatches(candidate, cmd))
+    .map(candidate => candidate.label)
 
   if (matches.length === 0) return null
   if (matches.length === 1) {

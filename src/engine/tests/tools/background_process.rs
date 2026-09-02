@@ -741,7 +741,8 @@ async fn a_yielded_command_tells_the_model_to_wait_before_dependent_steps(
     assert!(body.contains("cannot proceed without"), "got: {body}");
     assert!(body.contains("task_output"), "got: {body}");
     assert!(
-        body.contains("never treat a started task as a passed one"),
+        body.contains("never treat a started task as a passed one")
+            || body.contains("Never treat a started task as a passed one"),
         "got: {body}"
     );
     // Both ways of collecting the result are present, each with what it is for.
@@ -752,6 +753,15 @@ async fn a_yielded_command_tells_the_model_to_wait_before_dependent_steps(
     // The cost of waiting is still stated, just not as a reprimand.
     assert!(body.contains("holds the turn"), "got: {body}");
     assert!(!body.contains("do not use it merely"), "got: {body}");
+    // The non-blocking path has to be named too. Completion notices arrive in a
+    // later turn, so ending the turn is how an independent task reports back;
+    // forbidding that left blocking as the only option the model could see.
+    assert!(body.contains("end your turn"), "got: {body}");
+    assert!(!body.contains("Never end your turn"), "got: {body}");
+    // Polling is the failure both paths degrade into, and a sleep loop is itself
+    // a long command that gets backgrounded, so it nests the problem.
+    assert!(body.contains("do not poll"), "got: {body}");
+    assert!(body.contains("sleep loops"), "got: {body}");
     Ok(())
 }
 

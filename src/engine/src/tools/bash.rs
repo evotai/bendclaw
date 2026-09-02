@@ -182,7 +182,7 @@ impl AgentTool for BashTool {
             // Code's stance that blocking is a misuse; it is not, it is what the
             // tool exists for.
             vec![
-                "For long-running commands that can continue independently, use `run_in_background: true`; read the returned output path to check progress, or call {{task_output}} to wait when a later step needs the result.",
+                "For long-running commands that can continue independently, use `run_in_background: true`; read the returned output path to check progress, or call {{task_output}} once to wait when a later step needs the result. Never poll a task with sleep loops or repeated {{task_output}} calls.",
             ]
         } else {
             Vec::new()
@@ -529,12 +529,28 @@ fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String
 /// `matches_call_name` is case-insensitive and accepts every alias, so a Claude
 /// model that reads `task_output` here and calls it still dispatches, even
 /// though its own schema spells the tool `TaskOutput`.
+/// What to do with a task that is now running outside the foreground.
+///
+/// This is a two-way choice, and both ways have to be spelled out. An earlier
+/// version named only the blocking one and then added "never end your turn to
+/// wait", which closed the only path that does not hold the turn: completion
+/// notices are delivered into the next turn, so ending the turn is how an
+/// independent task reports back. With that path forbidden the model had no
+/// option but to block, get handed back at the wait bound, and block again —
+/// one card and one decision per bound, for a single wait.
+///
+/// The anti-polling sentence is about `sleep` loops as much as repeated calls:
+/// a `while ...; do sleep 30; done` poller is itself a long command that gets
+/// backgrounded, so polling this way nests the very problem it tries to solve.
 const BACKGROUND_GUIDANCE: &str = concat!(
     "You will be notified when it completes. ",
     "To check progress without waiting, use Read on the output path. ",
     "When a later step cannot proceed without this command's result, call task_output to wait for it ",
     "before that step: it holds the turn until the task ends, so the user cannot be answered meanwhile. ",
-    "Never end your turn to wait, and never treat a started task as a passed one. ",
+    "When nothing you can do next depends on it, carry on with other work or end your turn — ",
+    "the result reaches you on its own once the task finishes. ",
+    "Either way, do not poll: no sleep loops, and no repeated task_output calls to watch it progress. ",
+    "Never treat a started task as a passed one. ",
     "Use task_stop to terminate it.",
 );
 

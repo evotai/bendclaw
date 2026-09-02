@@ -4,7 +4,6 @@
  */
 
 import { formatCacheHitPercent } from '../render/cache.js'
-import { backgroundChord } from './app/hint.js'
 
 function getSpinnerChars(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {
@@ -266,13 +265,13 @@ export function formatSpinnerLine(
   const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
     ? ''
     : formatSpinnerTokenSuffix(state, now, stats)
-  // A passive wait offers no gesture: esc does not reach the detached task, and
-  // ctrl+b cannot background work that is already backgrounded. The panel is the
-  // way in, and the footer chip already names it.
+  // Foreground shells are handed back automatically after one minute. Ctrl+B
+  // remains available as an early-detach shortcut, but advertising it here made
+  // the automatic policy look like a required manual step.
   const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
     : options.backgroundable
-      ? ` · esc to interrupt · ${backgroundChord()} to background`
+      ? ' · esc to interrupt · auto-background after 60s'
       : ' · esc to interrupt'
 
   if (slow) {

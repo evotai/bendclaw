@@ -37,9 +37,9 @@ function settled(
 
 describe('task tool card identity', () => {
   test('the headline names the command, not the tool', () => {
-    // The regression: three concurrent polls all rendered `task_output` with a
-    // bare `running`, so there was no way to tell which shell each waited on.
-    expect(render(poll())[0]).toBe('◷ task_output  cargo test -p evotengine')
+    // The internal tool name is implementation detail; use the same
+    // "background shell" term as the status row and management panel.
+    expect(render(poll())[0]).toBe('◷ background shell  cargo test -p evotengine')
   })
 
   test('concurrent polls render distinguishable headlines', () => {
@@ -61,8 +61,8 @@ describe('task tool card identity', () => {
   test('claude-style tool aliases render the same way', () => {
     // The engine exposes TaskOutput/TaskStop to some models; the card must not
     // fall through to generic rendering for those names.
-    expect(render(poll({ name: 'TaskOutput' }))[0]).toBe('◷ TaskOutput  cargo test -p evotengine')
-    expect(render(poll({ name: 'TaskStop' }))[0]).toBe('⊘ TaskStop  cargo test -p evotengine')
+    expect(render(poll({ name: 'TaskOutput' }))[0]).toBe('◷ background shell  cargo test -p evotengine')
+    expect(render(poll({ name: 'TaskStop' }))[0]).toBe('⊘ stop background shell  cargo test -p evotengine')
   })
 
   test('a multi-line command collapses to one headline row', () => {
@@ -75,7 +75,7 @@ describe('task tool card identity', () => {
     // Resume from transcript has no previewCommand; an empty headline would
     // leave a nameless card.
     const lines = render(poll({ previewCommand: undefined }))
-    expect(lines[0]).toBe('◷ task_output  task-abc')
+    expect(lines[0]).toBe('◷ background shell  task-abc')
   })
 })
 
@@ -256,7 +256,7 @@ describe('task tool settled status', () => {
     // Every lifecycle state shares this shape, so the transcript does not
     // reflow when a card settles.
     const lines = render(settled({ status: 'completed', exit_code: 0, elapsed_ms: 1_000 }))
-    expect(lines[0]?.startsWith('◷ task_output')).toBe(true)
+    expect(lines[0]?.startsWith('◷ background shell')).toBe(true)
     expect(lines[1]).toBe('  ✓ · completed · exit 0 · 1s')
   })
 })

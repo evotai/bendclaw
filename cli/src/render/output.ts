@@ -39,6 +39,15 @@ function toolGlyph(name: string): ToolGlyph {
   }
 }
 
+/** User-facing label for internal tool names. Protocol names remain unchanged. */
+function toolDisplayName(name: string): string {
+  switch (name.toLowerCase()) {
+    case 'task_output': case 'taskoutput': return 'background shell'
+    case 'task_stop': case 'taskstop': return 'stop background shell'
+    default: return name
+  }
+}
+
 /** True for the tools that act on an existing background task by id. */
 function isTaskTool(name: string): boolean {
   const n = name.toLowerCase()
@@ -144,8 +153,9 @@ function toolCallText(
   options?: { failed?: boolean },
 ): string {
   const glyph = toolGlyph(name).icon
+  const displayName = toolDisplayName(name)
   const primary = toolPrimaryArg(name, args, previewCommand, expanded, options)
-  return primary ? `${glyph} ${name}  ${primary}` : `${glyph} ${name}`
+  return primary ? `${glyph} ${displayName}  ${primary}` : `${glyph} ${displayName}`
 }
 
 function toolDraftText(args: Record<string, unknown>, keys: string[]): string {

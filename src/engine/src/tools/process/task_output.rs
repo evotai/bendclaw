@@ -15,13 +15,31 @@ use crate::types::ToolContext;
 use crate::types::ToolError;
 use crate::types::ToolResult;
 
+/// Maximum time any blocking poll may hold the user's turn.
+///
+/// This interaction policy belongs to the runtime. It is intentionally not an
+/// AI-visible parameter, so a tool call cannot extend or disable the bound.
+const BLOCKING_WAIT_LIMIT: Duration = Duration::from_secs(60);
+
 pub struct TaskOutputTool {
     manager: Arc<ProcessManager>,
+    blocking_wait_limit: Duration,
 }
 
 impl TaskOutputTool {
     pub fn new(manager: Arc<ProcessManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            blocking_wait_limit: BLOCKING_WAIT_LIMIT,
+        }
+    }
+
+    /// Override the runtime wait policy.
+    ///
+    /// This is configured by the host rather than exposed in the tool schema.
+    pub fn with_blocking_wait_limit(mut self, limit: Duration) -> Self {
+        self.blocking_wait_limit = limit;
+        self
     }
 
     /// Wait for a task to finish, reporting progress while it runs.
@@ -119,7 +137,7 @@ impl AgentTool for TaskOutputTool {
         // make: waiting on a task whose result the next step needs is what this
         // tool is for, and framing it as the inferior option told a model its
         // legitimate use was a mistake.
-        "Get status and recent output from a background command. Waits for the task to finish by default; pass block: false for an immediate snapshot. The task's output file is also readable directly at the path the command returned."
+        "Get status and recent output from a background command. Waits for the task to finish by default, but automatically returns after at most 60 seconds so the user regains the turn. Pass block: false for an immediate snapshot. The task's output file is also readable directly at the path the command returned."
     }
 
     fn prompt_snippet(&self) -> Option<&str> {
@@ -135,8 +153,7 @@ impl AgentTool for TaskOutputTool {
                 // model should know it holds the turn; calling it "throwing away
                 // the point" of backgrounding went further and framed the tool's
                 // primary use as a misuse.
-                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). A blocking call holds the turn until the task ends or the timeout elapses, so the user cannot be answered in the meantime. Pass false for an immediate status snapshot when you have other work to do first." },
-                "timeout": { "type": "number", "description": "Maximum wait time in milliseconds. Defaults to 30000, max 600000." }
+                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). The runtime automatically returns after at most 60 seconds; pass false for an immediate status snapshot." }
             },
             "required": ["task_id"]
         })
@@ -164,13 +181,9 @@ impl AgentTool for TaskOutputTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArgs("missing 'task_id' parameter".into()))?;
         let block = params["block"].as_bool().is_none_or(|value| value);
-        let timeout_ms = params["timeout"]
-            .as_u64()
-            .map_or(30_000, |value| value.min(600_000));
 
         let (snapshot, released) = match if block {
-            self.watch(task_id, Duration::from_millis(timeout_ms), &ctx)
-                .await?
+            self.watch(task_id, self.blocking_wait_limit, &ctx).await?
         } else {
             self.manager
                 .snapshot(task_id)

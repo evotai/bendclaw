@@ -379,7 +379,7 @@ function insertToolStatus(lines: OutputLine[], status: OutputLine): void {
 
 export interface OutputLine {
   id: string
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system'
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system' | 'cancelled'
   text: string
   rawMarkdown?: string
   /** Thinking text already contains markdown ANSI; apply only the outer pi tint. */
@@ -1088,19 +1088,15 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
  * card and Claude Code: the useful fact is that the work is detached and the
  * turn is free, not merely that it has not finished.
  *
- * `retrieval_status` then says what this particular poll did. `released` must
- * not read as a timeout — nothing went wrong and no deadline was hit, the user
- * reclaimed the turn.
+ * Only a hit deadline earns an extra clause. `released` and `not_ready` both
+ * mean the same thing to someone reading the card — the task is detached and
+ * this poll returned no result — and "running in background · stopped waiting"
+ * said that twice.
  */
 function runningInBackgroundLabel(retrieval: string | undefined): string {
-  switch (retrieval) {
-    case 'timeout':
-      return 'running in background · wait timed out'
-    case 'released':
-      return 'running in background · stopped waiting'
-    default:
-      return 'running in background'
-  }
+  return retrieval === 'timeout'
+    ? 'running in background · wait timed out'
+    : 'running in background'
 }
 
 function resultLineCount(content: string): number {

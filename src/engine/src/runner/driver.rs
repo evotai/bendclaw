@@ -21,6 +21,7 @@ use super::llm_call::AssistantStreamInput;
 use super::thinking_only_guard::ThinkingOnlyGuard;
 use super::tool_exec::build_tool_definitions;
 use super::tool_exec::execute_tool_calls;
+use super::tool_exec::fail_truncated_tool_calls;
 use super::tool_exec::skip_tool_call_doom_loop;
 use crate::context::now_ms;
 use crate::context::ContextTracker;
@@ -482,28 +483,39 @@ async fn run_loop(
 
         let mut tool_results = Vec::new();
         if has_tool_calls {
-            let idle_clock = tracker.as_ref().map(|t| t.idle_clock());
-            let execution = execute_tool_calls(
-                &context.tools,
-                &tool_calls,
-                tx,
-                cancel,
-                config.get_steering_messages.as_ref(),
-                &config.tool_execution,
-                &context.cwd,
-                &context.path_guard,
-                &config.spill,
-                idle_clock.as_ref(),
-                config
-                    .model_config
-                    .as_ref()
-                    .map(|m| m.supports_image())
-                    .unwrap_or(true),
-            )
-            .await;
+            if matches!(message, Message::Assistant {
+                stop_reason: StopReason::Length,
+                ..
+            }) {
+                // A length-limited response can contain arguments salvaged by
+                // provider JSON repair. They may parse successfully while
+                // still being incomplete, so fail the whole batch and let the
+                // model re-issue it rather than executing corrupted input.
+                tool_results = fail_truncated_tool_calls(&tool_calls, tx);
+            } else {
+                let idle_clock = tracker.as_ref().map(|t| t.idle_clock());
+                let execution = execute_tool_calls(
+                    &context.tools,
+                    &tool_calls,
+                    tx,
+                    cancel,
+                    config.get_steering_messages.as_ref(),
+                    &config.tool_execution,
+                    &context.cwd,
+                    &context.path_guard,
+                    &config.spill,
+                    idle_clock.as_ref(),
+                    config
+                        .model_config
+                        .as_ref()
+                        .map(|m| m.supports_image())
+                        .unwrap_or(true),
+                )
+                .await;
 
-            tool_results = execution.tool_results;
-            steering_after_tools = execution.steering_messages;
+                tool_results = execution.tool_results;
+                steering_after_tools = execution.steering_messages;
+            }
 
             for result in &tool_results {
                 let am: AgentMessage = result.clone().into();

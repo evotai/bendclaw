@@ -3,7 +3,6 @@
  */
 
 import type { UIMessage, UIAssistantBlock, RunStats, VerboseEvent, AskUserRequest } from './types.js'
-import type { PromptCacheSnapshot } from '../../render/cache.js'
 
 
 // ---------------------------------------------------------------------------
@@ -31,9 +30,6 @@ export interface AppState {
   askUserRequest: AskUserRequest | null
   /** Session-level cumulative token stats (not reset between runs) */
   sessionTokens: SessionTokenStats
-  /** Last billed request for cache-miss detection and the footer segment.
-   *  Survives across runs; reset when compaction rewrites the context. */
-  promptCache: PromptCacheSnapshot | null
 }
 
 export interface SessionTokenStats {
@@ -83,6 +79,5 @@ export function createInitialState(model: string, cwd: string): AppState {
     lastTokenAt: 0,
     askUserRequest: null,
     sessionTokens: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, contextTokens: 0, contextWindow: 0 },
-    promptCache: null,
   }
 }

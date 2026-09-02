@@ -9,8 +9,7 @@ const BASH_EXPLORE_GUIDELINE: &str = "Use bash for file operations like ls, rg, 
 /// Parallel tool-call guidance. Named "tool calls" so models emit N independent
 /// calls instead of packing several argument objects into one call.
 const PARALLEL_TOOL_CALLS_GUIDELINE: &str =
-    "You can call multiple tools in a single response. If there are no dependencies \
-     between them, make all independent tool calls in parallel; otherwise run them sequentially";
+    "You can call multiple tools in a single response. For independent work, emit multiple separate tool calls in the same response so they can run in parallel; never pass an array of argument objects to a tool that expects one object. If calls depend on earlier results, run them sequentially";
 const GUIDELINES_TRAILER: &[&str] = &[
     "Be concise in your responses",
     "Show file paths clearly when working with files",

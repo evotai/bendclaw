@@ -344,6 +344,12 @@ describe('buildOutputBlocks', () => {
     expect(result).toContain('\x1b[38;2;119;119;119m')
   })
 
+  test('interrupted lines are yellow and not dim', () => {
+    const result = render([{ id: 'interrupted', kind: 'cancelled', text: '  Interrupted.' }])
+    expect(result).toContain('\x1b[33m')
+    expect(result).not.toContain('\x1b[38;2;119;119;119m')
+  })
+
   test('error lines are red', () => {
     const result = render([{ id: 'e1', kind: 'error', text: 'something broke' }])
     expect(result).toContain('\x1b[31m')

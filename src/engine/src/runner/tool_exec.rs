@@ -414,6 +414,63 @@ async fn execute_single_tool(
     (tool_result_msg, is_error)
 }
 
+pub(super) fn fail_truncated_tool_calls(
+    tool_calls: &[(String, String, serde_json::Value)],
+    tx: &mpsc::UnboundedSender<AgentEvent>,
+) -> Vec<Message> {
+    tool_calls
+        .iter()
+        .map(|(tool_call_id, tool_name, args)| {
+            let result = ToolResult {
+                content: vec![Content::Text {
+                    text: format!(
+                        "Tool call \"{tool_name}\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments."
+                    ),
+                }],
+                details: serde_json::Value::Null,
+                retention: Retention::Normal,
+            };
+
+            tx.send(AgentEvent::ToolExecutionStart {
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                args: args.clone(),
+                preview_command: None,
+            })
+            .ok();
+
+            let result_tokens = context::content_tokens(&result.content);
+            tx.send(AgentEvent::ToolExecutionEnd {
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                result: result.clone(),
+                is_error: true,
+                result_tokens,
+                duration_ms: 0,
+            })
+            .ok();
+
+            let message = Message::ToolResult {
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                content: result.content,
+                is_error: true,
+                timestamp: now_ms(),
+                retention: Retention::Normal,
+            };
+            tx.send(AgentEvent::MessageStart {
+                message: message.clone().into(),
+            })
+            .ok();
+            tx.send(AgentEvent::MessageEnd {
+                message: message.clone().into(),
+            })
+            .ok();
+            message
+        })
+        .collect()
+}
+
 pub(super) fn skip_tool_call(
     tool_call_id: &str,
     tool_name: &str,

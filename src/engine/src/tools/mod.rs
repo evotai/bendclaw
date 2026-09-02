@@ -18,6 +18,7 @@ pub use file::WriteFileTool;
 pub use file::FILE_UNCHANGED_STUB;
 pub use guard::PathGuard;
 pub use naming::resolve_tool_refs;
+pub use process::task_label;
 pub use process::BackgroundReason;
 pub use process::ProcessManager;
 pub use process::ProcessSnapshot;

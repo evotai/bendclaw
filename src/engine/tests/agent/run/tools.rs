@@ -16,6 +16,65 @@ use crate::fixtures::agent_harness::MockTool;
 use crate::fixtures::agent_harness::TestHarness;
 
 // ---------------------------------------------------------------------------
+// Truncated tool-call safety
+// ---------------------------------------------------------------------------
+
+/// A length-limited response may carry arguments that provider JSON repair
+/// salvaged into parseable-but-incomplete input. Every call in the batch must
+/// fail, not just the one that was cut off mid-stream.
+#[tokio::test]
+async fn length_limited_tool_calls_are_failed_without_execution() {
+    let output = TestHarness::new()
+        .responses(vec![
+            MockResponse::ToolCallsWithStop {
+                calls: vec![
+                    MockToolCall {
+                        name: "first_tool".into(),
+                        arguments: serde_json::json!({ "command": "complete command" }),
+                    },
+                    MockToolCall {
+                        name: "second_tool".into(),
+                        arguments: serde_json::json!({ "command": "partial comm" }),
+                    },
+                ],
+                stop_reason: StopReason::Length,
+            },
+            MockResponse::Text("retried safely".into()),
+        ])
+        .tool(MockTool::ok("first_tool", "FIRST RAN"))
+        .tool(MockTool::ok("second_tool", "SECOND RAN"))
+        .run("run the tools")
+        .await;
+
+    output.assert_completed();
+
+    // The whole batch fails, including the call whose arguments look complete.
+    assert_eq!(output.tool_errors().len(), 2);
+    let truncation_errors = output
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(event, AgentEvent::ToolExecutionEnd { result, .. }
+                if result.content.iter().any(|block| matches!(block, Content::Text { text }
+                    if text.contains("arguments may be truncated"))))
+        })
+        .count();
+    assert_eq!(
+        truncation_errors, 2,
+        "every call in a truncated batch must report the truncation error"
+    );
+
+    assert!(
+        output.context_messages.iter().all(|message| {
+            !matches!(message, AgentMessage::Llm(Message::ToolResult { content, .. })
+                if content.iter().any(|block| matches!(block, Content::Text { text }
+                    if text == "FIRST RAN" || text == "SECOND RAN")))
+        }),
+        "no underlying tool may execute for a truncated batch"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Parallel tool execution tests
 // ---------------------------------------------------------------------------
 

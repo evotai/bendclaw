@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use super::task_label;
 use super::ProcessManager;
 use crate::types::AgentTool;
 use crate::types::Content;
@@ -55,9 +56,10 @@ impl AgentTool for TaskStopTool {
     fn preview_command(&self, params: &serde_json::Value) -> Option<String> {
         let task_id = params["task_id"].as_str()?;
         // Name the task being stopped so the card says *what* is being killed,
-        // not just that a stop was issued.
+        // not just that a stop was issued. A short label is enough: the bash
+        // card that started the task already printed the command in full.
         match self.manager.summary(task_id) {
-            Some(summary) => Some(summary.command),
+            Some(summary) => Some(task_label(&summary.command)),
             None => Some(task_id.to_string()),
         }
     }

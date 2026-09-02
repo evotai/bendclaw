@@ -193,6 +193,15 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         break
       }
 
+      case 'cancelled': {
+        const cols = initialContext.columns
+        const cancelledLines = cols
+          ? wrapTextWithAnsi(ol.text, Math.max(1, cols))
+          : ol.text.split(/\r\n|\r|\n/)
+        blocks.push(block(cancelledLines.map(l => line(colored(l, 'yellow')))))
+        break
+      }
+
       case 'system': {
         const cols = initialContext.columns
         const systemLines = cols

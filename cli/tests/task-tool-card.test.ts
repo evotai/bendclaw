@@ -173,17 +173,19 @@ describe('task tool settled status', () => {
     expect(statusLine(lines)).toBe('  ● · running in background · wait timed out · 45s · 12 lines')
   })
 
-  test('a wait the user ended reads as stopped waiting, not a timeout', () => {
+  test('a wait the user ended reads as plainly detached, not as a timeout', () => {
     // Nothing went wrong and no deadline was hit: the user reclaimed the turn
     // and the task is still running. Reporting a timeout here would suggest the
-    // task was slow, which is a different problem with a different fix.
+    // task was slow, which is a different problem with a different fix. It also
+    // earns no clause of its own — "stopped waiting" only repeated what
+    // "running in background" already says.
     const lines = render(settled({
       retrieval_status: 'released',
       status: 'running',
       elapsed_ms: 45_000,
       total_lines: 12,
     }))
-    expect(statusLine(lines)).toBe('  ● · running in background · stopped waiting · 45s · 12 lines')
+    expect(statusLine(lines)).toBe('  ● · running in background · 45s · 12 lines')
   })
 
   test('a non-blocking check that found work in progress omits the timeout note', () => {

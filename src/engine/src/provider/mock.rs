@@ -18,6 +18,10 @@ pub enum MockResponse {
         usage: Usage,
     },
     ToolCalls(Vec<MockToolCall>),
+    ToolCallsWithStop {
+        calls: Vec<MockToolCall>,
+        stop_reason: StopReason,
+    },
     TextWithUsageAndStop {
         text: String,
         usage: Usage,
@@ -107,41 +111,10 @@ impl StreamProvider for MockProvider {
                 model,
             } => build_text_response(text, usage, stop_reason, model, &tx),
             MockResponse::ToolCalls(calls) => {
-                let content: Vec<Content> = calls
-                    .iter()
-                    .enumerate()
-                    .map(|(i, call)| {
-                        let id = format!("mock-tool-{}", i);
-                        let _ = tx.send(StreamEvent::ToolCallStart {
-                            content_index: i,
-                            id: id.clone(),
-                            name: call.name.clone(),
-                        });
-                        let _ = tx.send(StreamEvent::ToolCallEnd {
-                            content_index: i,
-                            id: id.clone(),
-                            name: call.name.clone(),
-                            arguments: call.arguments.clone(),
-                        });
-                        Content::ToolCall {
-                            id,
-                            name: call.name.clone(),
-                            arguments: call.arguments.clone(),
-                            metadata: None,
-                        }
-                    })
-                    .collect();
-
-                Message::Assistant {
-                    content,
-                    stop_reason: StopReason::ToolUse,
-                    model: "mock".into(),
-                    provider: "mock".into(),
-                    usage: Usage::default(),
-                    timestamp: now_ms(),
-                    error_message: None,
-                    response_id: None,
-                }
+                build_tool_call_response(calls, StopReason::ToolUse, &tx)
+            }
+            MockResponse::ToolCallsWithStop { calls, stop_reason } => {
+                build_tool_call_response(calls, stop_reason, &tx)
             }
         };
 
@@ -149,6 +122,48 @@ impl StreamProvider for MockProvider {
             message: message.clone(),
         });
         Ok(StreamOutcome::complete(message))
+    }
+}
+
+fn build_tool_call_response(
+    calls: Vec<MockToolCall>,
+    stop_reason: StopReason,
+    tx: &mpsc::UnboundedSender<StreamEvent>,
+) -> Message {
+    let content = calls
+        .iter()
+        .enumerate()
+        .map(|(index, call)| {
+            let id = format!("mock-tool-{index}");
+            let _ = tx.send(StreamEvent::ToolCallStart {
+                content_index: index,
+                id: id.clone(),
+                name: call.name.clone(),
+            });
+            let _ = tx.send(StreamEvent::ToolCallEnd {
+                content_index: index,
+                id: id.clone(),
+                name: call.name.clone(),
+                arguments: call.arguments.clone(),
+            });
+            Content::ToolCall {
+                id,
+                name: call.name.clone(),
+                arguments: call.arguments.clone(),
+                metadata: None,
+            }
+        })
+        .collect();
+
+    Message::Assistant {
+        content,
+        stop_reason,
+        model: "mock".into(),
+        provider: "mock".into(),
+        usage: Usage::default(),
+        timestamp: now_ms(),
+        error_message: None,
+        response_id: None,
     }
 }
 

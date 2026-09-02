@@ -104,6 +104,26 @@ pub struct ProcessSummary {
     pub stopped_by_user: bool,
 }
 
+/// Compact width for the task label on a `task_output` / `task_stop` card.
+const TASK_LABEL_MAX_CHARS: usize = 40;
+
+/// Short label naming the task a card acts on.
+///
+/// The full command already appears on the `bash` card that started the task,
+/// so echoing it verbatim on every poll printed the same long pipeline twice and
+/// wrapped it across the terminal. A short head is all this label is for:
+/// telling concurrent tasks apart.
+pub fn task_label(command: &str) -> String {
+    // Collapse whitespace runs first: a multi-line command would otherwise put
+    // a newline into a single-line card headline.
+    let collapsed = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    match collapsed.char_indices().nth(TASK_LABEL_MAX_CHARS) {
+        // `char_indices` yields boundaries, so this cannot split a code point.
+        Some((boundary, _)) => format!("{}…", &collapsed[..boundary]),
+        None => collapsed,
+    }
+}
+
 pub struct StartProcess {
     pub command: Command,
     pub command_text: String,

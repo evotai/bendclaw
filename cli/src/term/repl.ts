@@ -1204,8 +1204,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         contextTokens: outcome.tokens_after,
         contextWindow: outcome.context_window || appState.sessionTokens.contextWindow,
       },
-      // Manual compaction rewrote the context; the next cold call is not a miss.
-      promptCache: null,
     }
     renderer.clearScreen()
     compactLines.length = 0
@@ -1843,9 +1841,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     stopSpinner()
     // Mid-stream queue was steered but the run is aborted — put it back in the
     // editor so the user can edit and press Enter, instead of committing it as
-    // history under the Interrupted notice.
+    // history under the cancellation notice.
     restoreQueuedUserMessagesToEditor()
-    commitLines([{ id, kind: 'system', text }])
+    commitLines([{ id, kind: 'cancelled', text }])
     // Ownership was revoked above, so the aborted run's own finally block will
     // not settle the hook. Settle here or an external adapter would stay stuck
     // on working/blocked after every interrupt.

@@ -155,13 +155,19 @@ pub fn validate_and_coerce_with_received(
     if schema.get("properties").is_some() && !input.is_object() {
         return Err(format_error(
             tool_name,
-            &["Tool input must be a JSON object".to_string()],
+            &[
+                "Tool input must be a JSON object".to_string(),
+                "To run this tool multiple times in parallel, emit multiple separate tool calls in the same assistant response; do not wrap their argument objects in an array".to_string(),
+            ],
             received,
         ));
     }
 
+    let mut normalized = input.clone();
+    strip_optional_nulls(schema, &mut normalized);
+
     let mut errors = Vec::new();
-    let coerced = validate_node(schema, input, "", &mut errors);
+    let coerced = validate_node(schema, &normalized, "", &mut errors);
     if errors.is_empty() {
         Ok(coerced)
     } else {
@@ -189,6 +195,58 @@ pub fn truncate_error(text: &str) -> String {
 }
 
 // ── internals ───────────────────────────────────────────────────────────
+
+fn strip_optional_nulls(schema: &Value, input: &mut Value) {
+    if let (Some(properties), Some(object)) = (
+        schema.get("properties").and_then(Value::as_object),
+        input.as_object_mut(),
+    ) {
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<std::collections::HashSet<_>>();
+
+        let removable = properties
+            .iter()
+            .filter_map(|(name, property_schema)| {
+                let is_optional_null = object.get(name).is_some_and(Value::is_null)
+                    && !required.contains(name.as_str())
+                    && schema_rejects_null(property_schema);
+                is_optional_null.then_some(name.clone())
+            })
+            .collect::<Vec<_>>();
+        for name in removable {
+            object.remove(&name);
+        }
+
+        for (name, property_schema) in properties {
+            if let Some(value) = object.get_mut(name) {
+                strip_optional_nulls(property_schema, value);
+            }
+        }
+        return;
+    }
+
+    if let (Some(item_schema), Some(items)) = (schema.get("items"), input.as_array_mut()) {
+        for item in items {
+            strip_optional_nulls(item_schema, item);
+        }
+    }
+}
+
+fn schema_rejects_null(schema: &Value) -> bool {
+    match schema.get("type") {
+        Some(Value::String(expected)) => expected != "null",
+        Some(Value::Array(types)) => !types.iter().any(|value| value.as_str() == Some("null")),
+        _ => schema
+            .get("enum")
+            .and_then(Value::as_array)
+            .is_some_and(|values| !values.iter().any(Value::is_null)),
+    }
+}
 
 fn validate_node(schema: &Value, input: &Value, path: &str, errors: &mut Vec<String>) -> Value {
     let value = match schema.get("type").and_then(Value::as_str) {

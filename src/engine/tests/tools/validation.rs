@@ -356,6 +356,10 @@ fn root_input_is_array() {
     let input = json!([1, 2, 3]);
     let err = validate_and_coerce("read", &read_file_schema(), &input).unwrap_err();
     assert!(err.contains("must be a JSON object"), "got: {err}");
+    assert!(
+        err.contains("emit multiple separate tool calls"),
+        "array mistakes should tell the model how to retry: {err}"
+    );
 }
 
 #[test]
@@ -379,6 +383,94 @@ fn valid_input_optional_fields_omitted() {
     let input = json!({ "path": "/tmp/foo.rs" });
     let result = validate_and_coerce("read", &read_file_schema(), &input).unwrap();
     assert_eq!(result, input);
+}
+
+#[test]
+fn optional_null_field_is_removed() {
+    let input = json!({ "path": "/tmp/foo.rs", "offset": null });
+    let result = match validate_and_coerce("read", &read_file_schema(), &input) {
+        Ok(value) => value,
+        Err(error) => panic!("optional null should be omitted: {error}"),
+    };
+    assert_eq!(result, json!({ "path": "/tmp/foo.rs" }));
+}
+
+#[test]
+fn required_null_field_is_not_removed() {
+    let input = json!({ "path": null });
+    let error = match validate_and_coerce("read", &read_file_schema(), &input) {
+        Ok(value) => panic!("required null unexpectedly passed: {value}"),
+        Err(error) => error,
+    };
+    assert!(error.contains("path"), "got: {error}");
+    assert!(error.contains("null"), "got: {error}");
+}
+
+#[test]
+fn nullable_optional_field_is_preserved() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "note": { "type": ["string", "null"] }
+        }
+    });
+    let input = json!({ "note": null });
+    let result = match validate_and_coerce("test", &schema, &input) {
+        Ok(value) => value,
+        Err(error) => panic!("nullable field should pass: {error}"),
+    };
+    assert_eq!(result, input);
+}
+
+#[test]
+fn nested_optional_null_field_is_removed() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "options": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer" }
+                }
+            }
+        }
+    });
+    let input = json!({ "options": { "limit": null } });
+    let result = match validate_and_coerce("test", &schema, &input) {
+        Ok(value) => value,
+        Err(error) => panic!("nested optional null should be omitted: {error}"),
+    };
+    assert_eq!(result, json!({ "options": {} }));
+}
+
+#[test]
+fn required_null_inside_array_item_is_not_removed() {
+    // Edit-shaped schema: null must survive inside array items so validation
+    // reports the missing replacement rather than silently dropping it.
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "edits": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "oldText": { "type": "string" },
+                        "newText": { "type": "string" }
+                    },
+                    "required": ["oldText", "newText"]
+                }
+            }
+        },
+        "required": ["edits"]
+    });
+    let input = json!({ "edits": [{ "oldText": null, "newText": "x" }] });
+    let error = match validate_and_coerce("edit", &schema, &input) {
+        Ok(value) => panic!("required null inside an array item must fail: {value}"),
+        Err(error) => error,
+    };
+    assert!(error.contains("oldText"), "got: {error}");
+    assert!(error.contains("null"), "got: {error}");
 }
 
 // ── schema without properties (degenerate) ──────────────────────────────

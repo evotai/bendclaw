@@ -2,6 +2,7 @@ use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
+use evotengine::tools::task_label;
 use evotengine::tools::BackgroundReason;
 use evotengine::tools::BashTool;
 use evotengine::tools::ProcessManager;
@@ -1110,6 +1111,40 @@ fn a_missing_task_id_has_no_preview() {
     let manager = Arc::new(ProcessManager::new());
     let output = TaskOutputTool::new(manager);
     assert!(output.preview_command(&serde_json::json!({})).is_none());
+}
+
+#[test]
+fn a_short_command_is_its_own_label() {
+    assert_eq!(task_label("make check"), "make check");
+}
+
+#[test]
+fn a_long_command_is_cut_to_a_headline_width() {
+    // The bash card that started the task already printed the command in full;
+    // repeating a long pipeline on every poll only wraps the card.
+    let label = task_label("cd /Users/bohu/github/evotai/evot && make check 2>&1 | tail -20");
+    assert_eq!(label, "cd /Users/bohu/github/evotai/evot && mak…");
+    assert!(
+        label.chars().count() <= 41,
+        "got {} chars",
+        label.chars().count()
+    );
+}
+
+#[test]
+fn a_multi_line_command_collapses_to_one_line() {
+    // A newline in a single-line headline would break the card geometry.
+    let label = task_label("cargo build \\\n  --release\n\n# then ship");
+    assert!(!label.contains('\n'), "got: {label}");
+    assert_eq!(label, "cargo build \\ --release # then ship");
+}
+
+#[test]
+fn a_multibyte_command_is_not_cut_mid_character() {
+    // Byte slicing at a fixed offset would panic on a CJK boundary.
+    let label = task_label(&"检查".repeat(40));
+    assert_eq!(label.chars().count(), 41);
+    assert!(label.ends_with('…'), "got: {label}");
 }
 
 #[tokio::test]

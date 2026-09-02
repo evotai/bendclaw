@@ -43,7 +43,7 @@ import {
   type ViewBlock,
 } from './viewmodel/index.js'
 import { joinLeftRight, spansWidth } from './viewmodel/width.js'
-import { createAdSlotState, tickAdSlot, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, type AdSlotState } from './viewmodel/ad-slot.js'
+import { createAdSlotState, tickAdSlot, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, campaignFingerprint, type AdSlotState } from './viewmodel/ad-slot.js'
 import { HistoryRenderCache } from './viewmodel/history-cache.js'
 import { Committer } from './committer.js'
 import {
@@ -99,7 +99,7 @@ import {
   type AskUserParams,
 } from './host-tools.js'
 import { extractPlanItems, type PlanModeItem } from './plan-mode.js'
-import { currentModelSpec, formatModelLabel, formatModelOptionLabel, isCloudModel, modelOptions, modelSelectorItems, providerDisplayName, selectModelOption } from './app/provider.js'
+import { currentModelSpec, formatModelLabel, formatModelOptionLabel, hasPremiumModel, isCloudModel, modelOptions, modelSelectorItems, providerDisplayName, selectModelOption } from './app/provider.js'
 import chalk from 'chalk'
 import {
   shouldCollapse,
@@ -256,20 +256,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let exitHint = false
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
-  const adSlot: AdSlotState = createAdSlotState(
-    authNotices().map(n => ({
-      id: n.id,
-      kind: n.kind,
-      priority: n.priority,
-      title: n.title,
-      body: n.body_md ?? '',
-    })),
-  )
-  // Logged-in users see the slot from the start — no need to wait for a
-  // task to finish. The live sync below refreshes content first.
-  if (adSlot.notices.length > 0 || adSlot.ads.length > 0) {
-    triggerAdSlot(adSlot, Date.now())
-  }
+  // Assigned after configInfo below, which decides the premium intake filter.
+  let adSlot: AdSlotState
   // Promise-based bridge for the ask-user overlay. Both the `ask_user` host
   // tool and the plan-review flow present questions through the same overlay
   // and await the user's answers here. Resolves with the collected answers, or
@@ -513,6 +501,23 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     try { configInfo = agent.configInfo() } catch {}
   }
   refreshConfigInfo()
+
+  const premiumAccount = hasPremiumModel(configInfo)
+  adSlot = createAdSlotState(
+    authNotices().map(n => ({
+      id: n.id,
+      kind: n.kind,
+      priority: n.priority,
+      title: n.title,
+      body: n.body_md ?? '',
+    })),
+    { premium: premiumAccount },
+  )
+  // Logged-in users see the slot from the start — no need to wait for a
+  // task to finish. The live sync below refreshes content first.
+  if (adSlot.notices.length > 0 || adSlot.ads.length > 0) {
+    triggerAdSlot(adSlot, Date.now())
+  }
 
   /** Single cloud-session status line; updates replace it in place. */
   function commitCloudSession(text: string, tone: 'dim' | 'ok' | 'warn'): void {
@@ -2702,10 +2707,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }))
   }
 
-  function campaignFingerprint(campaign: { id: string; title: string; body: string; kind: string; priority?: number }): string {
-    return `${campaign.id}\0${campaign.kind}\0${campaign.priority ?? 0}\0${campaign.title}\0${campaign.body}`
-  }
-
   /** Re-read the synced catalog: refresh model config and the ad/notice slot.
    *  Called after login, by the live-sync poller, and on demand. */
   function reloadCloudContent(fresh = cloudCampaigns()): void {
@@ -2720,8 +2721,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       shownAt: adSlot.shownAt,
       rotationDueAt: adSlot.rotationDueAt,
       queuedId: adSlot.queuedId,
+      shownFingerprints: adSlot.shownFingerprints,
     }
-    Object.assign(adSlot, createAdSlotState(fresh), keep)
+    // Re-read, not cached: a mid-session login can grant a premium model.
+    const premium = hasPremiumModel(configInfo)
+    Object.assign(
+      adSlot,
+      createAdSlotState(fresh, { premium, shownFingerprints: adSlot.shownFingerprints }),
+      keep,
+    )
     const showing = [...adSlot.notices, ...adSlot.ads].find(campaign => campaign.id === adSlot.currentId)
     if (adSlot.currentId && !showing) {
       adSlot.currentId = null

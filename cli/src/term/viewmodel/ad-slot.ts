@@ -31,6 +31,21 @@ export interface AdSlotState {
    * for AD_GAP_MS, then this item types itself in.
    */
   queuedId: string | null
+  /** Granted (premium) model: no ads, and notices announce rather than banner. */
+  premium: boolean
+  /** Copy shown this session, so the 15s sync cannot replay unchanged copy. */
+  shownFingerprints: Set<string>
+}
+
+export function campaignFingerprint(
+  campaign: { id: string; kind: string; priority?: number; title: string; body: string },
+): string {
+  return `${campaign.id}\0${campaign.kind}\0${campaign.priority ?? 0}\0${campaign.title}\0${campaign.body}`
+}
+
+export interface AdSlotOptions {
+  premium?: boolean
+  shownFingerprints?: Iterable<string>
 }
 
 // ---- timing (ms) -----------------------------------------------------------
@@ -40,16 +55,26 @@ export const AD_STEADY_MS = 45_000
 /** Enter animation length. */
 export const AD_ENTER_MS = 400
 
-export function createAdSlotState(notices: AdContent[]): AdSlotState {
+export function createAdSlotState(
+  notices: AdContent[],
+  options: AdSlotOptions = {},
+): AdSlotState {
+  const premium = options.premium ?? false
+  const shown = new Set(options.shownFingerprints ?? [])
+  const admitted = premium
+    ? notices.filter(n => n.kind === 'notice' && !shown.has(campaignFingerprint(n)))
+    : notices
   return {
-    notices: notices.filter(n => n.kind === 'notice'),
-    ads: notices.filter(n => n.kind === 'ad'),
+    notices: admitted.filter(n => n.kind === 'notice'),
+    ads: admitted.filter(n => n.kind === 'ad'),
     seenNoticeIds: new Set(),
     triggered: false,
     currentId: null,
     shownAt: 0,
     rotationDueAt: 0,
     queuedId: null,
+    premium,
+    shownFingerprints: shown,
   }
 }
 
@@ -59,8 +84,12 @@ function byId(state: AdSlotState, id: string | null): AdContent | null {
 }
 
 function nextNotice(state: AdSlotState): AdContent | null {
+  // Premium gates on copy, not id: an edit keeps the id.
+  const unseen = state.premium
+    ? (n: AdContent) => !state.shownFingerprints.has(campaignFingerprint(n))
+    : (n: AdContent) => !state.seenNoticeIds.has(n.id)
   return state.notices
-    .filter(n => !state.seenNoticeIds.has(n.id))
+    .filter(unseen)
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))[0] ?? null
 }
 
@@ -113,7 +142,8 @@ export function tickAdSlot(state: AdSlotState, now: number): { content: AdConten
   const freshNotice = nextNotice(state)
   const content = byId(state, state.currentId)
   if (!content) {
-    const next = freshNotice ?? playlist(state)[0] ?? null
+    // No playlist fallback for premium: it ignores shown copy.
+    const next = state.premium ? freshNotice : (freshNotice ?? playlist(state)[0] ?? null)
     if (!next) return { content: null, phase: 'gone', progress: 0 }
     pin(state, next, now)
     return enterFrame(state, next, now)
@@ -145,6 +175,17 @@ export function tickAdSlot(state: AdSlotState, now: number): { content: AdConten
   // a just-typed line isn't yanked away.
   const preempt = content.kind === 'ad' && freshNotice !== null && settled
   if (rotationDue || preempt) {
+    // Premium shows a notice once, then goes quiet.
+    if (state.premium) {
+      retireCurrent(state, content)
+      state.shownFingerprints.add(campaignFingerprint(content))
+      state.currentId = null
+      state.queuedId = null
+      const nextFresh = nextNotice(state)
+      if (!nextFresh) return { content: null, phase: 'gone', progress: 0 }
+      pin(state, nextFresh, now)
+      return enterFrame(state, nextFresh, now)
+    }
     const followUp = preempt ? freshNotice! : pickFollowUp(state, content)
     if (followUp.id !== content.id) {
       // Start the erase on this frame; the transition completes on later ones.
@@ -189,9 +230,10 @@ export function queueAdSlotTransition(state: AdSlotState, id: string, now = Date
  * after login and on task completion. Returns the content that will show.
  */
 export function triggerAdSlot(state: AdSlotState, now: number): AdContent | null {
-  // Resume whatever was showing; otherwise start at the head of the playlist.
   const resume = byId(state, state.currentId)
-  const content = nextNotice(state) ?? resume ?? playlist(state)[0] ?? null
+  // Every sync re-triggers the slot; the fallback would bring back shown copy.
+  const fallback = state.premium ? null : playlist(state)[0] ?? null
+  const content = nextNotice(state) ?? resume ?? fallback
   if (!content) return null
   if (resume && resume.id !== content.id) retireCurrent(state, resume)
   state.queuedId = null

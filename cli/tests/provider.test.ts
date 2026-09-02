@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatModelOptionDetail, formatModelOptionLabel, formatModelLabel, isCloudModel, modelGroupLabel, modelSelectorItems, providerDisplayName, sortModelOptionsForSelector } from '../src/term/app/provider.js'
+import { formatModelOptionDetail, formatModelOptionLabel, formatModelLabel, hasPremiumModel, isCloudModel, modelGroupLabel, modelSelectorItems, providerDisplayName, sortModelOptionsForSelector } from '../src/term/app/provider.js'
 
 const options = [
   { provider: 'anthropic', protocol: 'anthropic' as const, model: 'claude-opus-4-8', spec: 'anthropic:claude-opus-4-8' },
@@ -236,5 +236,80 @@ describe('catalog rank across split cloud providers', () => {
     const items = modelSelectorItems(split, 'none:none')
     expect(items.filter(item => item.header).map(item => item.label))
       .toEqual(['Evot Premium'])
+  })
+})
+
+describe('hasPremiumModel', () => {
+  const cloud = (model: string, tier: string) => ({
+    provider: 'evot-pro',
+    protocol: 'anthropic' as const,
+    model,
+    spec: `evot-pro:${model}`,
+    group_label: 'Evot Premium',
+    free: { tier },
+  })
+
+  test('a granted model marks the account premium', () => {
+    // `special` is the server's own word for "granted per account", so its
+    // presence in the synced catalog is the entitlement signal.
+    expect(hasPremiumModel({
+      provider: 'evot-pro',
+      protocol: 'anthropic',
+      envPath: '',
+      hasApiKey: true,
+      baseUrl: null,
+      thinkingLevel: 'high',
+      availableModels: [cloud('gpt-5.6-luna', 'base'), cloud('claude-opus-5', 'special')],
+    })).toBe(true)
+  })
+
+  test('a base-only cloud catalog is not premium', () => {
+    expect(hasPremiumModel({
+      provider: 'evot-free',
+      protocol: 'anthropic',
+      envPath: '',
+      hasApiKey: true,
+      baseUrl: null,
+      thinkingLevel: 'high',
+      availableModels: [cloud('gpt-5.6-luna', 'base')],
+    })).toBe(false)
+  })
+
+  test('a BYOK-only user is not premium', () => {
+    // No cloud group at all: nothing was granted to them either.
+    expect(hasPremiumModel({
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      envPath: '',
+      hasApiKey: true,
+      baseUrl: null,
+      thinkingLevel: 'high',
+      availableModels: options,
+    })).toBe(false)
+  })
+
+  test('a special tier outside a cloud group does not count', () => {
+    // group_label is what makes a model server-pushed; a local provider cannot
+    // grant itself premium by setting a tier string.
+    expect(hasPremiumModel({
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      envPath: '',
+      hasApiKey: true,
+      baseUrl: null,
+      thinkingLevel: 'high',
+      availableModels: [{
+        provider: 'anthropic',
+        protocol: 'anthropic' as const,
+        model: 'claude-opus-4-8',
+        spec: 'anthropic:claude-opus-4-8',
+        free: { tier: 'special' },
+      }],
+    })).toBe(false)
+  })
+
+  test('missing config is not premium', () => {
+    // Before the first catalog read there is no evidence of a grant.
+    expect(hasPremiumModel(undefined)).toBe(false)
   })
 })

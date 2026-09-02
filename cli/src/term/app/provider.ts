@@ -19,6 +19,13 @@ export function isCloudModel(option: ModelOption): boolean {
   return option.group_label !== undefined
 }
 
+/** True when the catalog carries a `special` (granted per account) cloud model. */
+export function hasPremiumModel(configInfo: ConfigInfo | undefined): boolean {
+  return (configInfo?.availableModels ?? []).some(
+    option => isCloudModel(option) && option.free?.tier === 'special',
+  )
+}
+
 /** Human name for a wire protocol, or '' when unknown. */
 function protocolLabel(protocol: ModelOption['protocol']): string {
   return protocol === 'anthropic'

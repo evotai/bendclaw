@@ -6,6 +6,7 @@ import {
   tickAdSlot,
   triggerAdSlot,
   buildAdSlotBlocks,
+  campaignFingerprint,
   AD_STEADY_MS,
   AD_GAP_MS,
   ERASE_STEP_MS,
@@ -336,5 +337,171 @@ describe('buildAdSlotBlocks rendering', () => {
         }
       }
     }
+  })
+})
+
+describe('premium accounts', () => {
+  test('ads never enter the slot', () => {
+    const state = createAdSlotState([notice, ad1, ad2], { premium: true })
+    expect(state.ads).toEqual([])
+    expect(state.notices.map(n => n.id)).toEqual(['n1'])
+  })
+
+  test('an ad-only catalog leaves the slot empty and hidden', () => {
+    const state = createAdSlotState([ad1, ad2], { premium: true })
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 1000).content).toBeNull()
+  })
+
+  test('copy already shown this session is not shown again', () => {
+    const shown = campaignFingerprint(notice)
+    const state = createAdSlotState([notice], { premium: true, shownFingerprints: [shown] })
+    expect(state.notices).toEqual([])
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 1000).content).toBeNull()
+  })
+
+  test('edited copy counts as new even under the same id', () => {
+    const shown = campaignFingerprint(notice)
+    const edited = { ...notice, body: 'fast inference — now cheaper' }
+    const state = createAdSlotState([edited], { premium: true, shownFingerprints: [shown] })
+    expect(state.notices.map(n => n.id)).toEqual(['n1'])
+  })
+
+  test('a shown notice retires instead of looping forever', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 1000).content?.id).toBe('n1')
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 1).content).toBeNull()
+  })
+
+  test('retiring records the copy so a refresh cannot replay it', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    tickAdSlot(state, T0 + AD_STEADY_MS + 1)
+    expect(Array.from(state.shownFingerprints)).toEqual([campaignFingerprint(notice)])
+  })
+
+  test('two new notices are shown one after the other, then the slot goes quiet', () => {
+    const second: AdContent = { id: 'n2', kind: 'notice', priority: 5, title: 'Second', body: 'also new' }
+    const state = createAdSlotState([notice, second], { premium: true })
+    triggerAdSlot(state, T0)
+    const seen: string[] = []
+    for (let t = T0; t < T0 + AD_STEADY_MS * 4; t += 250) {
+      const content = tickAdSlot(state, t).content
+      if (content && seen[seen.length - 1] !== content.id) seen.push(content.id)
+    }
+    expect(seen).toEqual(['n1', 'n2'])
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS * 4).content).toBeNull()
+  })
+
+  test('a free account is untouched: ads stay and rotation still wraps', () => {
+    const state = createAdSlotState([notice, ad1])
+    expect(state.ads.map(a => a.id)).toEqual(['a1'])
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 10 * AD_STEADY_MS).content).not.toBeNull()
+  })
+
+  test('shown history is ignored for a free account', () => {
+    const state = createAdSlotState([notice], { shownFingerprints: [campaignFingerprint(notice)] })
+    expect(state.notices.map(n => n.id)).toEqual(['n1'])
+  })
+})
+
+describe('premium re-trigger', () => {
+  test('a retired notice does not come back when the slot is re-triggered', () => {
+    // Reachable on every 15s sync: reloadCloudContent and syncCloudNow both
+    // re-trigger the slot.
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 1).content).toBeNull()
+
+    expect(triggerAdSlot(state, T0 + AD_STEADY_MS + 2)).toBeNull()
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 3).content).toBeNull()
+  })
+
+  test('a free account still resumes its rotation on re-trigger', () => {
+    const state = createAdSlotState([notice, ad1])
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    expect(triggerAdSlot(state, T0 + AD_STEADY_MS + 2)).not.toBeNull()
+  })
+})
+
+describe('premium mid-session refresh', () => {
+  // Mirrors reloadCloudContent: fresh catalog, runtime state carried across.
+  function refresh(state: ReturnType<typeof createAdSlotState>, fresh: AdContent[]) {
+    const keep = {
+      seenNoticeIds: state.seenNoticeIds,
+      triggered: state.triggered,
+      currentId: state.currentId,
+      shownAt: state.shownAt,
+      rotationDueAt: state.rotationDueAt,
+      queuedId: state.queuedId,
+      shownFingerprints: state.shownFingerprints,
+    }
+    Object.assign(
+      state,
+      createAdSlotState(fresh, { premium: true, shownFingerprints: state.shownFingerprints }),
+      keep,
+    )
+    return state
+  }
+
+  test('unchanged copy is not replayed by the 15s sync', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    tickAdSlot(state, T0 + AD_STEADY_MS + 1)
+
+    refresh(state, [notice])
+    triggerAdSlot(state, T0 + AD_STEADY_MS + 2)
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 3).content).toBeNull()
+  })
+
+  test('edited copy is announced without waiting for a rotation', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    tickAdSlot(state, T0 + AD_STEADY_MS + 1)
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 2).content).toBeNull()
+
+    const edited = { ...notice, body: 'fast inference — extended through Sep 10' }
+    refresh(state, [edited])
+    const shown = tickAdSlot(state, T0 + AD_STEADY_MS + 3)
+    expect(shown.content?.id).toBe('n1')
+    expect(shown.content?.body).toContain('Sep 10')
+  })
+
+  test('a brand new notice arriving mid-session is announced', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    tickAdSlot(state, T0 + 1000)
+    tickAdSlot(state, T0 + AD_STEADY_MS + 1)
+
+    const second: AdContent = { id: 'n2', kind: 'notice', priority: 5, title: 'Second', body: 'brand new' }
+    refresh(state, [notice, second])
+    expect(tickAdSlot(state, T0 + AD_STEADY_MS + 3).content?.id).toBe('n2')
+  })
+
+  test('an edit that arrives while the notice is still showing does not restart it', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    expect(tickAdSlot(state, T0 + 1000).content?.id).toBe('n1')
+
+    const edited = { ...notice, body: 'fast inference — now cheaper' }
+    refresh(state, [edited])
+    const still = tickAdSlot(state, T0 + 2000)
+    expect(still.content?.id).toBe('n1')
+    expect(still.phase).not.toBe('gone')
+  })
+
+  test('ads still never appear on a refresh', () => {
+    const state = createAdSlotState([notice], { premium: true })
+    triggerAdSlot(state, T0)
+    refresh(state, [notice, ad1, ad2])
+    expect(state.ads).toEqual([])
   })
 })

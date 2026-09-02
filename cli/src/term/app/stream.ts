@@ -1,5 +1,5 @@
 import { formatLongWaitError } from '../../render/verbose.js'
-import { buildError, buildVerboseEvent, buildEventCard, isVisibleEvent, type OutputLine } from '../../render/output.js'
+import { buildError, buildVerboseEvent, buildEventCard, isVisibleEvent, withoutRedundantErrorTail, type OutputLine } from '../../render/output.js'
 import { formatDuration } from '../../render/format.js'
 import { recordStreamDelta, resetStreamStats, setLongWait, setRetryWait, setSpinnerPhase, type SpinnerState } from '../spinner.js'
 import { assistantToolCalls } from './assistant-content.js'
@@ -195,7 +195,13 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
         writeLines.push(...buildVerboseEvent(evt.text))
         continue
       }
-      routeVerbose(evt.text, { commit: commitLines, write: writeLines })
+      // Even the first attempt said it twice: the failed call's `✗` card and
+      // the `↻` card carry the same provider sentence. Keep what only the
+      // retry line knows.
+      routeVerbose(
+        isRetryEvent ? withoutRedundantErrorTail(evt.text, capturedLlmError) : evt.text,
+        { commit: commitLines, write: writeLines },
+      )
     }
     if (isRetryEvent) state = { ...state, retryCardShown: true }
     rerenderStatus = true

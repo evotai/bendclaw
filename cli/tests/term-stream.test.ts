@@ -1316,6 +1316,32 @@ describe('term stream machine', () => {
     expect(failed.commitLines).toEqual([])
   })
 
+  test('the first attempt prints the provider sentence once, not twice', () => {
+    // Even before any suppression kicks in, one attempt produced two cards
+    // carrying the same text: `✗ turn 27` from the failed call and `↻ attempt
+    // 1/10` from the retry. The retry keeps only what it alone knows.
+    const err = 'Overloaded: HTTP 529: overloaded_error: Service is temporarily overloaded.'
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+
+    const failed = reduceRunEvent(state, {
+      kind: 'llm_call_completed',
+      payload: { model: 'claude-opus-5', turn: 27, error: err, metrics: { duration_ms: 830 } },
+    }, { termRows: 24 })
+    state = failed.state
+
+    const retry = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: err },
+    }, { termRows: 24 })
+
+    const text = [...failed.commitLines, ...retry.commitLines].map(l => l.text).join('\n')
+    expect(text.split(err).length - 1).toBe(1)
+    // Both cards still appear; only the repeated sentence is gone.
+    expect(text).toContain('✦ llm  claude-opus-5')
+    expect(text).toContain('✦ llm  retry')
+    expect(text).toContain('attempt 1/10')
+  })
+
   test('a fresh call re-arms the retry card, a mid-storm attempt does not', () => {
     // `llm_call_started` re-fires on every bounded attempt — only a long wait
     // suppresses it — so resetting on the event kind alone would clear the flag

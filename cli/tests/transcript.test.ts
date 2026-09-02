@@ -150,4 +150,49 @@ describe('transcript conversion', () => {
     expect(rendered).toContain('answer after error')
     expect(rendered).not.toContain('403')
   })
+
+  test('resuming a session does not replay a retry storm card by card', () => {
+    // The live stream drops the repeats before they reach scrollback, but a
+    // stored transcript still holds every attempt. Without the same collapse on
+    // replay, reopening a session brought back the wall of duplicate 529s: eight
+    // copies of one sentence for four attempts.
+    const err = 'Overloaded: HTTP 529: overloaded_error: Service is temporarily overloaded.'
+    const messages = [{
+      id: 'a1',
+      role: 'assistant' as const,
+      text: 'recovered',
+      timestamp: 0,
+      verboseEvents: [1, 2, 3, 4].flatMap(n => ([
+        { kind: 'llm_completed' as const, text: `[LLM] ✗ · claude-opus-5 · turn 27 · 830ms\n    error     ${err}` },
+        { kind: 'llm_retry' as const, text: `[LLM] ↻ · retrying in ${n} seconds · attempt ${n}/10\n    error     ${err}` },
+      ])),
+    }]
+
+    const rendered = messagesToOutputLines(messages).map(line => line.text).join('\n')
+    expect(rendered.split(err).length - 1).toBe(1)
+    expect(rendered.split('✦ llm  retry').length - 1).toBe(1)
+    // The storm is still visible as an event, just once.
+    expect(rendered).toContain('attempt 1/10')
+    expect(rendered).not.toContain('attempt 4/10')
+  })
+
+  test('a failure after a recovered call is still replayed', () => {
+    // Collapsing is scoped to one storm. A success between failures ends it, so
+    // a later unrelated error is not hidden behind an earlier retry.
+    const messages = [{
+      id: 'a1',
+      role: 'assistant' as const,
+      text: 'done',
+      timestamp: 0,
+      verboseEvents: [
+        { kind: 'llm_retry' as const, text: '[LLM] ↻ · retrying in 2 seconds · attempt 1/10\n    error     Overloaded: HTTP 529' },
+        { kind: 'llm_completed' as const, text: '[LLM] ✓ · claude-opus-5 · turn 28 · 900ms · 40 tok/s' },
+        { kind: 'llm_completed' as const, text: '[LLM] ✗ · claude-opus-5 · turn 29 · 120ms\n    error     API error: HTTP 500' },
+      ],
+    }]
+
+    const rendered = messagesToOutputLines(messages).map(line => line.text).join('\n')
+    expect(rendered).toContain('Overloaded: HTTP 529')
+    expect(rendered).toContain('API error: HTTP 500')
+  })
 })

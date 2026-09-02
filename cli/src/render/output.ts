@@ -849,6 +849,26 @@ function buildCompactionLines(compaction: UICompaction, expanded: boolean): Outp
   ]
 }
 
+/** The `    error     <msg>` tail an LLM event card carries, if any. */
+export function errorTailOf(text: string): string | null {
+  const m = text.match(/\n\s*error\s+([\s\S]+)$/u)
+  return m ? m[1]!.trim() : null
+}
+
+/**
+ * Drop an event's error tail when the card above already printed that sentence.
+ *
+ * A failed attempt and the retry that follows it carry the same provider
+ * message, so the pair said one thing twice. The retry line keeps the part only
+ * it knows — the countdown and the attempt counter.
+ */
+export function withoutRedundantErrorTail(text: string, known: string | null): string {
+  if (!known) return text
+  const tail = errorTailOf(text)
+  if (tail === null || tail !== known) return text
+  return text.replace(/\n\s*error\s+[\s\S]+$/u, '')
+}
+
 export function messagesToOutputLines(messages: UIMessage[], expanded: boolean = false): OutputLine[] {
   const lines: OutputLine[] = []
   for (const msg of messages) {
@@ -861,10 +881,31 @@ export function messagesToOutputLines(messages: UIMessage[], expanded: boolean =
       continue
     }
 
-    // Replay the same always-visible event cards as the live stream.
+    // Replay the same always-visible event cards as the live stream — which
+    // means collapsing a retry storm the same way. The live path drops the
+    // repeats before they reach scrollback; a stored transcript still holds
+    // every attempt, so resuming a session would bring the wall of duplicate
+    // 529s back. Rendering is the only thing filtered here: the events stay in
+    // the transcript, so no stored data changes meaning.
     if (msg.verboseEvents) {
+      let retryCardShown = false
+      let lastErrorShown: string | null = null
       for (const evt of msg.verboseEvents) {
-        if (isVisibleEvent(evt.text)) lines.push(...buildEventCard(evt.text))
+        const isRetry = evt.kind === 'llm_retry'
+        const isFailedCall = evt.kind === 'llm_completed' && /^\[LLM\]\s+✗/u.test(evt.text)
+        if (isRetry || isFailedCall) {
+          if (retryCardShown) continue
+          if (isRetry) retryCardShown = true
+        } else {
+          // Anything else — a successful call, a compaction — ends the storm,
+          // so a later independent failure is announced rather than swallowed.
+          retryCardShown = false
+          lastErrorShown = null
+        }
+        if (!isVisibleEvent(evt.text)) continue
+        const text = withoutRedundantErrorTail(evt.text, lastErrorShown)
+        lines.push(...buildEventCard(text))
+        lastErrorShown = errorTailOf(evt.text) ?? lastErrorShown
       }
     }
 

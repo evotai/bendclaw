@@ -12,6 +12,7 @@
 
 ## 📢 News
 
+- **2026-09-02** `ctrl+b` backgrounds a long-running command so you can keep talking.
 - **2026-09-01** `GPT-5.6 Luna` is free through Sep 3 🎉.
 - **2026-08-31** [herdr](https://herdr.dev) works with evot 🐑 — point `EVOT_SESSION_HOOK` at an adapter and your panes show `working` / `blocked` / `idle` live.
 - **2026-08-27** `GPT-5.6 Luna` is free through Aug 31 🎉 — just `evot login`.

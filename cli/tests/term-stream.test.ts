@@ -1274,6 +1274,110 @@ describe('term stream machine', () => {
     expect(text).toContain('rate limited')
   })
 
+  test('a retry storm commits one card and advances the spinner in place', () => {
+    // An overloaded upstream (529) is a bounded retry, so it used to emit a
+    // fresh pair of cards per attempt: `✗ turn 27` plus `↻ attempt n/10`, each
+    // carrying the same error text. Ten attempts buried the transcript under
+    // twenty cards and twenty copies of one sentence. The countdown and the
+    // attempt counter are the only things that change, and both now live on the
+    // spinner, which repaints.
+    const err = 'Overloaded: HTTP 529: overloaded_error: Service is temporarily overloaded.'
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+
+    const first = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: err },
+    }, { termRows: 24 })
+    state = first.state
+    const firstText = first.commitLines.map(l => l.text).join('\n')
+    expect(firstText).toContain('✦ llm  retry')
+    expect(firstText).toContain(err)
+    expect(state.spinnerState.phase).toBe('retrying')
+    expect(state.spinnerState.retryAttempt).toBe(1)
+    expect(state.spinnerState.retryMaxAttempts).toBe(10)
+
+    // Attempts 2..4: nothing new reaches scrollback.
+    for (const [attempt, delay] of [[2, 3000], [3, 9000], [4, 18000]] as const) {
+      const next = reduceRunEvent(state, {
+        kind: 'llm_call_retry',
+        payload: { attempt, max_retries: 10, retry_delay_ms: delay, error: err },
+      }, { termRows: 24 })
+      state = next.state
+      expect(next.commitLines).toEqual([])
+      expect(state.spinnerState.retryAttempt).toBe(attempt)
+      expect(state.spinnerState.phase).toBe('retrying')
+    }
+
+    // The failed attempt beside each retry is the other half of the doubling.
+    const failed = reduceRunEvent(state, {
+      kind: 'llm_call_completed',
+      payload: { model: 'claude-opus-5', turn: 27, error: err, metrics: { duration_ms: 830 } },
+    }, { termRows: 24 })
+    expect(failed.commitLines).toEqual([])
+  })
+
+  test('a fresh call re-arms the retry card, a mid-storm attempt does not', () => {
+    // `llm_call_started` re-fires on every bounded attempt — only a long wait
+    // suppresses it — so resetting on the event kind alone would clear the flag
+    // on attempt 2 and restore the storm. Attempt 0 is what marks a new call.
+    const err = 'Overloaded: HTTP 529'
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: err },
+    }, { termRows: 24 }).state
+    expect(state.retryCardShown).toBe(true)
+
+    // The re-attempt's own start event must not re-arm the card.
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_started',
+      payload: { model: 'claude-opus-5', turn: 27, attempt: 1 },
+    }, { termRows: 24 }).state
+    expect(state.retryCardShown).toBe(true)
+
+    const suppressed = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 2, max_retries: 10, retry_delay_ms: 3000, error: err },
+    }, { termRows: 24 })
+    expect(suppressed.commitLines).toEqual([])
+
+    // A genuinely new call starts at attempt 0 and earns a card again.
+    state = reduceRunEvent(suppressed.state, {
+      kind: 'llm_call_started',
+      payload: { model: 'claude-opus-5', turn: 28, attempt: 0 },
+    }, { termRows: 24 }).state
+    expect(state.retryCardShown).toBe(false)
+    expect(state.spinnerState.phase).toBe('waiting')
+
+    const announced = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: err },
+    }, { termRows: 24 })
+    expect(announced.commitLines.map(l => l.text).join('\n')).toContain('✦ llm  retry')
+  })
+
+  test('a recovered call keeps reporting its own errors', () => {
+    // The suppression is scoped to a live storm. Once a call succeeds and a
+    // later one fails on its own, that failure is news again — silently
+    // dropping it would hide a real error behind an unrelated earlier retry.
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: 'Overloaded: HTTP 529' },
+    }, { termRows: 24 }).state
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_started',
+      payload: { model: 'claude-opus-5', turn: 28, attempt: 0 },
+    }, { termRows: 24 }).state
+
+    const failed = reduceRunEvent(state, {
+      kind: 'llm_call_completed',
+      payload: { model: 'claude-opus-5', turn: 28, error: 'API error: HTTP 500', metrics: { duration_ms: 120 } },
+    }, { termRows: 24 })
+    expect(failed.commitLines.map(l => l.text).join('\n')).toContain('API error: HTTP 500')
+  })
+
   test('llm error card and following error event do not duplicate the message', () => {
     const msg = 'API error: HTTP 520: error code: 520'
     let state = createStreamMachineState(createInitialState('claude-opus-4-6', '/tmp'), createSpinnerState())

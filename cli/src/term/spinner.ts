@@ -47,13 +47,21 @@ function slowThresholdMs(state: SpinnerState): number {
  * `responding` distinguish reasoning deltas from answer/tool-call deltas, and
  * `executing` is tool execution.
  */
-export type SpinnerPhase = 'preparing' | 'waiting' | 'quota_waiting' | 'outage_waiting' | 'thinking' | 'responding' | 'executing' | 'awaiting_background'
+export type SpinnerPhase = 'preparing' | 'waiting' | 'quota_waiting' | 'outage_waiting' | 'retrying' | 'thinking' | 'responding' | 'executing' | 'awaiting_background'
 
-/** Cancellable long-wait phases: quota exhaustion or a sustained upstream outage. */
-export type LongWaitPhase = 'quota_waiting' | 'outage_waiting'
+/**
+ * Waits that carry a countdown and a retry target.
+ *
+ * `retrying` is the bounded-retry storm (an overloaded upstream, a 529): it is
+ * many attempts against one wall, so it belongs here rather than being painted
+ * as a fresh request each time. Sharing this predicate is what keeps elapsed
+ * time from being read as slowness and keeps token counts off the line — in all
+ * three phases nothing is being generated.
+ */
+export type LongWaitPhase = 'quota_waiting' | 'outage_waiting' | 'retrying'
 
 export function isLongWaitPhase(phase: SpinnerPhase): phase is LongWaitPhase {
-  return phase === 'quota_waiting' || phase === 'outage_waiting'
+  return phase === 'quota_waiting' || phase === 'outage_waiting' || phase === 'retrying'
 }
 
 /**
@@ -105,6 +113,13 @@ export interface SpinnerState {
   streaming: boolean
   toolName: string | null
   waitRetryAt: number | null
+  /** Which attempt the current retry storm is on, and its ceiling.
+   *
+   *  Held on the spinner rather than emitted as a card per attempt: the counter
+   *  is the only part that changes between attempts, and the spinner is the one
+   *  region that can be repainted. Null outside a retry storm. */
+  retryAttempt: number | null
+  retryMaxAttempts: number | null
   tokenCount: number
   streamStartedAt: number | null
   glimmerPos: number
@@ -119,6 +134,8 @@ export function createSpinnerState(): SpinnerState {
     streaming: false,
     toolName: null,
     waitRetryAt: null,
+    retryAttempt: null,
+    retryMaxAttempts: null,
     tokenCount: 0,
     streamStartedAt: null,
     glimmerPos: -2,
@@ -135,12 +152,17 @@ export function advanceSpinner(state: SpinnerState): SpinnerState {
 
 export function setSpinnerPhase(state: SpinnerState, phase: SpinnerPhase, toolName?: string | null): SpinnerState {
   if (state.phase === phase && state.toolName === (toolName ?? null)) return state
+  const staysInWait = isLongWaitPhase(phase)
   return {
     ...state,
     phase,
     phaseStartedAt: Date.now(),
     toolName: toolName ?? null,
-    waitRetryAt: isLongWaitPhase(phase) ? state.waitRetryAt : null,
+    waitRetryAt: staysInWait ? state.waitRetryAt : null,
+    // Leaving a wait clears the counter, so a later storm cannot inherit a
+    // stale `attempt 4/10` from the previous one.
+    retryAttempt: staysInWait ? state.retryAttempt : null,
+    retryMaxAttempts: staysInWait ? state.retryMaxAttempts : null,
   }
 }
 
@@ -151,6 +173,35 @@ export function setLongWait(state: SpinnerState, phase: LongWaitPhase, delayMs: 
     phaseStartedAt: now,
     toolName: null,
     waitRetryAt: now + Math.max(0, delayMs),
+    retryAttempt: null,
+    retryMaxAttempts: null,
+  }
+}
+
+/**
+ * Enter (or advance) a bounded-retry storm.
+ *
+ * Distinct from `setLongWait` only in carrying the attempt counter: quota and
+ * outage waits probe indefinitely and have no attempt to report, while a
+ * bounded retry does and it is the one thing worth watching. Calling this again
+ * on a later attempt updates the counter and the countdown in place, which is
+ * the whole point — the alternative was a fresh pair of cards per attempt.
+ */
+export function setRetryWait(
+  state: SpinnerState,
+  delayMs: number,
+  attempt: number,
+  maxAttempts: number,
+  now = Date.now(),
+): SpinnerState {
+  return {
+    ...resetStreamStats(state),
+    phase: 'retrying',
+    phaseStartedAt: now,
+    toolName: null,
+    waitRetryAt: now + Math.max(0, delayMs),
+    retryAttempt: attempt > 0 ? attempt : null,
+    retryMaxAttempts: maxAttempts > 0 ? maxAttempts : null,
   }
 }
 
@@ -245,6 +296,20 @@ export function formatSpinnerLine(
     case 'outage_waiting': {
       const seconds = Math.max(0, Math.ceil(((state.waitRetryAt ?? now) - now) / 1000))
       label = `Upstream unavailable · retrying in ${seconds}s`
+      break
+    }
+    case 'retrying': {
+      // The line the storm repaints: countdown ticks down, attempt ticks up.
+      // Both live here rather than in scrollback, so ten attempts cost one row.
+      const seconds = Math.max(0, Math.ceil(((state.waitRetryAt ?? now) - now) / 1000))
+      const attempt = state.retryAttempt
+      const max = state.retryMaxAttempts
+      const counter = attempt !== null
+        ? max !== null ? ` · attempt ${attempt}/${max}` : ` · attempt ${attempt}`
+        : ''
+      label = seconds > 0
+        ? `Retrying in ${seconds}s${counter}`
+        : `Retrying…${counter}`
       break
     }
     case 'thinking':

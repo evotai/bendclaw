@@ -1,7 +1,7 @@
 import { formatLongWaitError } from '../../render/verbose.js'
 import { buildError, buildVerboseEvent, buildEventCard, isVisibleEvent, type OutputLine } from '../../render/output.js'
 import { formatDuration } from '../../render/format.js'
-import { recordStreamDelta, resetStreamStats, setLongWait, setSpinnerPhase, type SpinnerState } from '../spinner.js'
+import { recordStreamDelta, resetStreamStats, setLongWait, setRetryWait, setSpinnerPhase, type SpinnerState } from '../spinner.js'
 import { assistantToolCalls } from './assistant-content.js'
 import { assistantMessageToOutputLines } from '../../render/assistant.js'
 import { applyEvent } from './reducer.js'
@@ -15,6 +15,13 @@ export interface StreamMachineState {
   /** Whether this logical LLM call already committed a quota-wait card.
    *  Re-probes update the countdown without appending another warning. */
   quotaWaitShown: boolean
+  /** Whether this logical LLM call already committed a bounded-retry card.
+   *
+   *  Same shape as `quotaWaitShown`, for the same reason: a retry storm is one
+   *  wait state, not one event per attempt. The first attempt earns a card; the
+   *  rest advance the attempt counter on the spinner, which repaints in place.
+   *  Reset on `llm_call_started` so the next logical call announces itself. */
+  retryCardShown: boolean
   /** Last error message surfaced via an LLM error card, so a following
    *  `error` event carrying the same text doesn't render it twice. */
   lastLlmErrorMessage: string | null
@@ -79,6 +86,7 @@ export function createStreamMachineState(appState: AppState, spinnerState: Spinn
     spinnerState,
     activeLlmCall: false,
     quotaWaitShown: false,
+    retryCardShown: false,
     lastLlmErrorMessage: null,
     sessionRevokedHandled: false,
   }
@@ -150,25 +158,47 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
         }
       : flushStreaming(state)
     const activeLlmCall = event.kind === 'llm_call_started' || event.kind === 'llm_call_retry' || event.kind === 'api_retry'
+    const isRetryEvent = event.kind === 'llm_call_retry' || event.kind === 'api_retry'
+    // A bounded retry re-emits `llm_call_started` for every attempt — only a
+    // long wait suppresses it. So the reset keys off `attempt`, not the event
+    // kind: keying off the kind would clear the flag on attempt 2 and bring
+    // back the card-per-attempt storm this is meant to collapse.
+    const startsFreshCall = event.kind === 'llm_call_started' && ((p.attempt as number) ?? 0) === 0
+    const retryDelayMs = (p.retry_delay_ms as number) ?? (p.delay_ms as number) ?? 0
     state = {
       ...flushed.state,
       activeLlmCall,
-      quotaWaitShown: event.kind === 'llm_call_started'
-        ? false
-        : flushed.state.quotaWaitShown,
+      quotaWaitShown: startsFreshCall ? false : flushed.state.quotaWaitShown,
+      retryCardShown: startsFreshCall ? false : flushed.state.retryCardShown,
       // Compaction execution is driven by the real-time phase event. The
       // started event is an observability snapshot and may be delivered beside
       // completion, so it must not overwrite the method-specific phase label.
-      spinnerState: activeLlmCall
-        ? setSpinnerPhase(resetStreamStats(flushed.state.spinnerState), 'waiting')
-        : flushed.state.spinnerState,
+      spinnerState: isRetryEvent
+        ? setRetryWait(
+            flushed.state.spinnerState,
+            retryDelayMs,
+            (p.attempt as number) ?? 0,
+            (p.max_retries as number) ?? 0,
+          )
+        : activeLlmCall
+          ? setSpinnerPhase(resetStreamStats(flushed.state.spinnerState), 'waiting')
+          : flushed.state.spinnerState,
     }
     commitLines.push(...flushed.lines)
     mergeFlushExpanded(flushed)
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
     for (const evt of newEvents) {
+      // The countdown and attempt counter now live on the spinner, which
+      // repaints. Committing a card per attempt printed the same 529 ten times
+      // and buried whatever came before it.
+      if (isRetryEvent && state.retryCardShown) {
+        writeLines.push(...buildVerboseEvent(evt.text))
+        continue
+      }
       routeVerbose(evt.text, { commit: commitLines, write: writeLines })
     }
+    if (isRetryEvent) state = { ...state, retryCardShown: true }
+    rerenderStatus = true
   }
 
   if (event.kind === 'context_compaction_phase') {
@@ -319,9 +349,14 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     // LLM accounting completes before tool execution and is not an assistant
     // content boundary. Keep any tool-bearing ordered message live.
     state = { ...state, activeLlmCall: false }
+    // The other half of the doubling: a failed attempt emits its own `✗` card
+    // beside the `↻` retry card, so each attempt printed the same error twice.
+    // Once a storm has announced itself, the failures are what the countdown is
+    // already reporting — keep them in the verbose stream instead.
+    const failedInsideStorm = state.retryCardShown && typeof p.error === 'string' && p.error.length > 0
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
     for (const evt of newEvents) {
-      if (revokedEvent) writeLines.push(...buildVerboseEvent(evt.text))
+      if (revokedEvent || failedInsideStorm) writeLines.push(...buildVerboseEvent(evt.text))
       else routeVerbose(evt.text, { commit: commitLines, write: writeLines })
     }
   }

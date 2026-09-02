@@ -4,6 +4,7 @@ import {
   advanceSpinner,
   setSpinnerPhase,
   setLongWait,
+  setRetryWait,
   recordStreamDelta,
   isSlow,
   formatSpinnerLine,
@@ -192,6 +193,42 @@ describe('formatSpinnerLine', () => {
     expect(line).not.toContain('cache')
     expect(line).toContain('esc to interrupt')
     expect(line).not.toContain('slow')
+  })
+
+  test('a retry storm repaints one line: countdown down, attempt up', () => {
+    // What replaced a pair of committed cards per attempt. Both moving parts
+    // live here, so a ten-attempt storm costs one row instead of twenty.
+    const now = Date.now()
+    const state = setRetryWait(createSpinnerState(), 9_000, 3, 10, now)
+    expect(state.phase).toBe('retrying')
+
+    const line = stripAnsi(formatSpinnerLine(state, now + 2_000))
+    expect(line).toContain('Retrying in 7s · attempt 3/10')
+
+    // Elapsed time in a retry storm says nothing about health, so it must not
+    // be painted red as a stalled request.
+    expect(isSlow(state, now + 30_000)).toBe(false)
+
+    // Advancing to the next attempt updates the same line, not a new one.
+    const next = setRetryWait(state, 18_000, 4, 10, now)
+    expect(stripAnsi(formatSpinnerLine(next, now))).toContain('attempt 4/10')
+  })
+
+  test('a retry line with the delay elapsed reads as retrying now', () => {
+    const now = Date.now()
+    const state = setRetryWait(createSpinnerState(), 2_000, 1, 10, now)
+    const line = stripAnsi(formatSpinnerLine(state, now + 5_000))
+    expect(line).toContain('Retrying…')
+    expect(line).toContain('attempt 1/10')
+  })
+
+  test('leaving a retry storm clears the counter', () => {
+    // Otherwise a later storm inherits a stale `attempt 4/10` from this one.
+    const state = setRetryWait(createSpinnerState(), 2_000, 4, 10)
+    const resumed = setSpinnerPhase(state, 'waiting')
+    expect(resumed.retryAttempt).toBeNull()
+    expect(resumed.retryMaxAttempts).toBeNull()
+    expect(resumed.waitRetryAt).toBeNull()
   })
 
   test('contains action label when executing', () => {

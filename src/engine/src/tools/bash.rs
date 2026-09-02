@@ -219,7 +219,7 @@ impl AgentTool for BashTool {
                     "run_in_background".into(),
                     serde_json::json!({
                         "type": "boolean",
-                        "description": "Start the command and return a background task ID immediately."
+                        "description": "Start the command and return a background task ID immediately. Only one background task may run at a time: wait for the current one with task_output, or end it with task_stop, before starting another."
                     }),
                 );
             }
@@ -266,6 +266,32 @@ impl AgentTool for BashTool {
         }
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
+        }
+
+        // One deliberate background task at a time.
+        //
+        // Enforced here rather than in the manager because this is a policy about
+        // *this entry point*, not an invariant of the task table. The manager
+        // legitimately holds many live tasks: ctrl+b detaches every foreground
+        // shell at once, and a yield or an elapsed deadline hands back a command
+        // that is already running. Refusing those would kill live work or strand
+        // the caller, so only an explicit request is capped.
+        if run_in_background {
+            let already_backgrounded = self.process_manager.summaries().iter().any(|summary| {
+                matches!(
+                    summary.status,
+                    ProcessStatus::RunningBackground(BackgroundReason::Explicit)
+                )
+            });
+            if already_backgrounded {
+                return Err(ToolError::Failed(
+                    "A background task is already running. Only one at a time is allowed: \
+                     wait for it with task_output, or end it with task_stop, before starting \
+                     another. To run this command now without backgrounding it, call bash \
+                     without run_in_background."
+                        .into(),
+                ));
+            }
         }
 
         let cwd = match self.cwd.as_ref() {

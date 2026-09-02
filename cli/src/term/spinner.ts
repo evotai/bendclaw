@@ -47,13 +47,26 @@ function slowThresholdMs(state: SpinnerState): number {
  * `responding` distinguish reasoning deltas from answer/tool-call deltas, and
  * `executing` is tool execution.
  */
-export type SpinnerPhase = 'preparing' | 'waiting' | 'quota_waiting' | 'outage_waiting' | 'thinking' | 'responding' | 'executing'
+export type SpinnerPhase = 'preparing' | 'waiting' | 'quota_waiting' | 'outage_waiting' | 'thinking' | 'responding' | 'executing' | 'awaiting_background'
 
 /** Cancellable long-wait phases: quota exhaustion or a sustained upstream outage. */
 export type LongWaitPhase = 'quota_waiting' | 'outage_waiting'
 
 export function isLongWaitPhase(phase: SpinnerPhase): phase is LongWaitPhase {
   return phase === 'quota_waiting' || phase === 'outage_waiting'
+}
+
+/**
+ * True while nothing is being computed and no key applies to the wait.
+ *
+ * Kept separate from `isLongWaitPhase` rather than folded into it: that type
+ * narrows to the two cancellable retry phases, which carry a countdown and a
+ * retry target. A background wait has neither — it ends when a detached task
+ * reports back. What the two share is only that elapsed time says nothing about
+ * health, so each caller opts in explicitly.
+ */
+export function isPassiveWaitPhase(phase: SpinnerPhase): boolean {
+  return phase === 'awaiting_background'
 }
 
 /**
@@ -164,6 +177,9 @@ export function resetStreamStats(state: SpinnerState): SpinnerState {
 
 export function isSlow(state: SpinnerState, now: number): boolean {
   if (isLongWaitPhase(state.phase)) return false
+  // A detached task may legitimately run for minutes. Reddening the line would
+  // report a fault where there is none.
+  if (isPassiveWaitPhase(state.phase)) return false
   const threshold = slowThresholdMs(state)
   // While the model is emitting, health is measured from the last token:
   // a flowing stream is never slow, and a stalled one is surfaced instead of
@@ -237,13 +253,23 @@ export function formatSpinnerLine(
     case 'responding':
       label = slow ? 'Stream stalled…' : 'Responding…'
       break
+    case 'awaiting_background':
+      // Not "Working": nothing is being computed here. The agent is parked
+      // until a detached task reports back, and it will resume on its own.
+      label = 'Waiting for background task…'
+      break
     default:
       label = slow ? 'Preparing slow…' : 'Preparing…'
   }
 
   const status = humanDuration(elapsed)
-  const tokenSuffix = isLongWaitPhase(state.phase) ? '' : formatSpinnerTokenSuffix(state, now, stats)
-  const interruptHint = options.interruptible === false
+  const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
+    ? ''
+    : formatSpinnerTokenSuffix(state, now, stats)
+  // A passive wait offers no gesture: esc does not reach the detached task, and
+  // ctrl+b cannot background work that is already backgrounded. The panel is the
+  // way in, and the footer chip already names it.
+  const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
     : options.backgroundable
       ? ` · esc to interrupt · ${backgroundChord()} to background`

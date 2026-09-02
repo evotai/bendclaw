@@ -59,15 +59,15 @@ export interface BackgroundProcess {
   command: string
   cwd: string
   output_path: string
-  /** `timed_out` is legacy-only: a timeout now backgrounds the command instead
-   *  of killing it, so nothing new reports it. Sessions written before that
-   *  change still carry it, so it stays readable here. */
-  status: 'running_foreground' | 'running' | 'completed' | 'failed' | 'timed_out' | 'killed'
+  /** No `timed_out`: the engine only produces that state where background
+   *  support is absent (headless/readonly), and those runtimes have no process
+   *  manager to list. Everything reaching this type comes from a TUI session,
+   *  where the deadline backgrounds instead of killing. */
+  status: 'running_foreground' | 'running' | 'completed' | 'failed' | 'killed'
   exit_code: number | null
   elapsed_ms: number
   output_file_truncated: boolean
-  /** Optional: absent on payloads written before stop attribution existed. */
-  stopped_by_user?: boolean
+  stopped_by_user: boolean
 }
 
 export type SubmitOutcome =
@@ -367,6 +367,13 @@ export class Agent {
    *  watched tasks keep running; only the waiting ends. */
   releaseBlockingTaskWaits(sessionId: string): number {
     return this.raw.releaseBlockingTaskWaits(sessionId)
+  }
+
+  /** Completion notices queued but not yet delivered to a turn. Non-consuming:
+   *  only a turn can carry them, so the UI polls this to decide whether to
+   *  open one. */
+  pendingProcessNotifications(sessionId: string): number {
+    return this.raw.pendingProcessNotifications(sessionId)
   }
 
   /** Kill every background process synchronously. Safe to call before fastExit,

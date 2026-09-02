@@ -1249,6 +1249,19 @@ impl Agent {
         }
     }
 
+    /// Completion notices queued for a session but not yet delivered to a turn.
+    ///
+    /// Non-consuming: the caller is deciding *whether* to open a turn, and a
+    /// turn is the only thing that can actually carry these. `build_turn`
+    /// drains them via `take_notifications`.
+    pub fn pending_process_notifications(&self, session_id: &str) -> usize {
+        let manager = self.process_managers.lock().get(session_id).cloned();
+        match manager {
+            Some(manager) => manager.pending_notifications(),
+            None => 0,
+        }
+    }
+
     pub async fn stop_all_background_processes(
         &self,
         session_id: &str,
@@ -1695,6 +1708,21 @@ impl Agent {
                         .map(|text| evot_engine::Content::Text { text }),
                 );
             }
+        }
+        // A wake carries no prompt of its own: the queued notices *are* its
+        // input. If they were taken by another turn between the poll that
+        // decided to wake and this drain, the turn would reach the provider with
+        // nothing in it — and every provider filters empty text blocks, so the
+        // message would be rejected as contentless rather than merely useless.
+        if input
+            .iter()
+            .all(|content| matches!(content, evot_engine::Content::Text { text } if text.trim().is_empty()))
+        {
+            input = vec![evot_engine::Content::Text {
+                text: "A background task finished, but its result was already delivered. \
+                       Continue from where you left off, or wait for the user."
+                    .to_string(),
+            }];
         }
 
         Ok(runtime::TurnInput {

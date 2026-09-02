@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use serde::Deserialize;
 use serde::Serialize;
 use tokio::process::Command;
 
@@ -13,7 +12,7 @@ pub const PROGRESS_INTERVAL: Duration = Duration::from_secs(3);
 /// Interval between partial output updates while a task is watched.
 pub const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundReason {
     Explicit,
@@ -25,20 +24,22 @@ pub enum BackgroundReason {
     MessageDelivery,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// In-memory task state. Never persisted: the manager lives in
+/// `Agent::process_managers`, so every task dies with the process that started
+/// it. That is why there are no `Deserialize` impls here and no schema version —
+/// there is no old data to read back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "state", content = "reason")]
 pub enum ProcessStatus {
     RunningForeground,
     RunningBackground(BackgroundReason),
     Completed,
     Failed,
-    /// No longer produced: a timeout now backgrounds the command instead of
-    /// killing it, so nothing reaches this state.
+    /// The deadline killed the command.
     ///
-    /// Kept because it is a published value. Stored sessions and addon JSON
-    /// written before that change still carry `timed_out`, and dropping the
-    /// variant would make them unreadable. Readers must keep handling it; only
-    /// the writer stopped emitting it.
+    /// Only reachable without background support: with a process manager the
+    /// deadline backgrounds instead, so this is the headless/readonly outcome
+    /// where the timeout is the only bound there is.
     TimedOut,
     Killed,
 }

@@ -638,7 +638,7 @@ export function buildToolResult(
   const taskStatus = !isError && isTaskTool(name) ? detailString(details, 'status') : undefined
   // The poll succeeded but the task did not. Marking that `✓` would report a
   // broken build as a success, so the glyph follows the task, not the call.
-  const taskFailed = taskStatus === 'failed' || taskStatus === 'timed_out'
+  const taskFailed = taskStatus === 'failed'
   // A poll that found the task still running is in-flight work, not a completed
   // step, so it keeps the `●` running glyph — whether the task is detached or
   // still being waited on in the foreground.
@@ -1044,10 +1044,6 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
       break
     case 'failed':
       parts.push(exitCode !== undefined ? `failed · exit ${exitCode}` : 'failed')
-      break
-    case 'timed_out':
-      // Legacy sessions only: a timeout now backgrounds rather than kills.
-      parts.push('timed out')
       break
     case 'killed':
       // "cancelled" rather than "stopped" when it was the user's decision: the

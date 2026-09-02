@@ -129,11 +129,6 @@ describe('task tool settled status', () => {
     expect(statusLine(lines)).toBe('  ✗ · failed · exit 1 · 8s · 30 lines')
   })
 
-  test('a timed-out task is distinguished from a failed one', () => {
-    const lines = render(settled({ status: 'timed_out', elapsed_ms: 600_000 }))
-    expect(statusLine(lines)).toBe('  ✗ · timed out · 10m')
-  })
-
   test('a stopped task reads as stopped and stays non-failing', () => {
     // A stop is a deliberate outcome, not an error.
     const lines = render(settled({ status: 'killed', elapsed_ms: 300_000 }))
@@ -160,8 +155,10 @@ describe('task tool settled status', () => {
     expect(statusLine(lines)).toBe('  ✓ · stopped · 21s')
   })
 
-  test('an absent attribution flag degrades to a plain stop', () => {
-    // Old sessions and older addon payloads have no such field.
+  test('a missing attribution flag degrades to a plain stop', () => {
+    // Unlike the panel's typed BackgroundProcess, a card reads untyped tool-result
+    // details, so a missing key is a real parse case rather than a type error.
+    // Attributing an unattributed stop to the user would be the worse guess.
     const lines = render(settled({ status: 'killed', elapsed_ms: 21_000 }))
     expect(statusLine(lines)).toBe('  ✓ · stopped · 21s')
   })

@@ -88,14 +88,11 @@ export function formatStatusDetail(process: BackgroundProcess): string {
       return `${exit}${elapsed}`
     case 'failed':
       return `failed · ${exit}${elapsed}`
-    case 'timed_out':
-      // Legacy sessions only: a timeout now backgrounds rather than kills.
-      return `timed out · ${exit}${elapsed}`
     case 'killed':
       // "cancelled" when the user asked for it, matching the task tool cards:
       // the same task must not read as `stopped` here and `cancelled by user`
-      // there. Absent flag (older payloads) degrades to the neutral word.
-      return process.stopped_by_user === true
+      // there.
+      return process.stopped_by_user
         ? `cancelled by user · ${elapsed}`
         : `stopped · ${elapsed}`
   }
@@ -331,6 +328,5 @@ const STATUS_MARK: Record<BackgroundProcess['status'], string> = {
   running: '●',
   completed: '✓',
   failed: '✗',
-  timed_out: '✗',
   killed: '■',
 }

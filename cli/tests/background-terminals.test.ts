@@ -14,6 +14,7 @@ function proc(overrides: Partial<BackgroundProcess> = {}): BackgroundProcess {
     exit_code: null,
     elapsed_ms: 1500,
     output_file_truncated: false,
+    stopped_by_user: false,
     ...overrides,
   }
 }
@@ -34,12 +35,20 @@ function harness(options: {
   blockingWaits?: () => number
   releaseBlockingWaits?: () => number
   onList?: () => BackgroundProcess[]
+  /** Queued completion notices the engine has not yet handed to a turn. */
+  pendingNotifications?: () => number
+  runInFlight?: () => boolean
+  queuedMessages?: () => number
+  overlayBlocking?: () => boolean
+  /** Present by default so a wake is observable; pass null to omit the hook. */
+  wake?: (() => void) | null
 } = {}) {
   let processes = options.processes ?? []
   let panel: SelectorState | null = null
   const commits: Array<{ slot: string; text: string }> = []
   let renders = 0
   let messageDetaches = 0
+  let wakes = 0
   let blockingWaits = options.startingBlockingWaits ?? 0
 
   // Shared by both detach entry points so a test cannot pass for one and fail
@@ -89,6 +98,7 @@ function harness(options: {
         return released
       },
       killAllBackgroundProcessesNow: () => processes.length,
+      pendingProcessNotifications: () => options.pendingNotifications?.() ?? 0,
     },
     sessionId: () => (options.sessionId === undefined ? 'session-1' : options.sessionId),
     commit: (slot, text) => commits.push({ slot, text }),
@@ -102,6 +112,12 @@ function harness(options: {
     updatePanel: state => { panel = state },
     panelOpen: () => panel !== null && isBackgroundPanelTitle(panel.title),
     panelState: () => panel,
+    runInFlight: () => options.runInFlight?.() ?? false,
+    queuedMessages: () => options.queuedMessages?.() ?? 0,
+    overlayBlocking: () => options.overlayBlocking?.() ?? false,
+    wakeForNotifications: options.wake === null
+      ? undefined
+      : (options.wake ?? (() => { wakes++ })),
   })
 
   return {
@@ -113,6 +129,7 @@ function harness(options: {
     setProcesses: (next: BackgroundProcess[]) => { processes = next },
     processes: () => processes,
     messageDetaches: () => messageDetaches,
+    wakes: () => wakes,
   }
 }
 
@@ -589,5 +606,209 @@ describe('BackgroundTerminals.guardSessionSwitch', () => {
   test('an idle session is never gated', () => {
     const h = harness({ processes: [proc({ status: 'completed', exit_code: 0 })] })
     expect(h.controller.guardSessionSwitch('/clear')).toBe(false)
+  })
+})
+
+describe('BackgroundTerminals settled notices', () => {
+  test('a task finishing while idle is reported in the transcript', () => {
+    // The whole point: with no spinner and no turn in flight, the footer count
+    // ticking down was the only trace a `make check` had ever finished.
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    expect(h.texts()).toEqual([])
+
+    h.setProcesses([proc({ status: 'completed', exit_code: 0 })])
+    h.controller.refresh()
+    const notice = h.commits.find(entry => entry.slot === 'settled')
+    expect(notice?.text).toBe('  ✓ completed in background · exit 0 · aaaaaaaa  sleep 30')
+  })
+
+  test('a failure is named and carries its exit code', () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    h.setProcesses([proc({ status: 'failed', exit_code: 2 })])
+    h.controller.refresh()
+    expect(h.texts().join('\n')).toContain('✗ failed in background · exit 2')
+  })
+
+  test('the notice is emitted once, not on every poll', () => {
+    // The poll runs twice a second; repeating the line would bury the session.
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    h.setProcesses([proc({ status: 'completed', exit_code: 0 })])
+    h.controller.refresh()
+    h.controller.refresh()
+    h.controller.refresh()
+    expect(h.commits.filter(entry => entry.slot === 'settled')).toHaveLength(1)
+  })
+
+  test('a task already settled when first seen is not announced', () => {
+    // Otherwise resuming a session would replay outcomes the user has read.
+    const h = harness({ processes: [proc({ status: 'completed', exit_code: 0 })] })
+    h.controller.refresh()
+    h.controller.refresh()
+    expect(h.commits.filter(entry => entry.slot === 'settled')).toEqual([])
+  })
+
+  test('a panel stop is reported once, by the panel', async () => {
+    // stopFromPanel already commits its own line; the poll that observes the
+    // same transition must not say it a second time.
+    const h = harness({ processes: [proc()] })
+    h.controller.togglePanel()
+    expect(h.controller.handlePanelKey({ type: 'char', char: 'x' })).toBe(true)
+    await h.controller.settled()
+    h.controller.refresh()
+    expect(h.texts().join('\n')).toContain('Stopped aaaaaaaa')
+    expect(h.commits.filter(entry => entry.slot === 'settled')).toEqual([])
+  })
+
+  test('a user cancellation is attributed, matching the panel and cards', () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    h.setProcesses([proc({ status: 'killed', stopped_by_user: true })])
+    h.controller.refresh()
+    expect(h.texts().join('\n')).toContain('was cancelled by the user')
+  })
+
+  test('a task that vanishes between polls is not given an invented outcome', () => {
+    // The engine reclaims entries. Its last observed state is all we ever saw.
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    h.setProcesses([])
+    h.controller.refresh()
+    expect(h.commits.filter(entry => entry.slot === 'settled')).toEqual([])
+  })
+})
+
+describe('BackgroundTerminals wake on completion', () => {
+  test('a queued notice while idle opens a turn to deliver it', () => {
+    // The point of the whole mechanism: "run the build, then fix what breaks"
+    // must survive a build that outlives its own turn.
+    const h = harness({ processes: [proc()], pendingNotifications: () => 1 })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(1)
+  })
+
+  test('nothing queued means no turn', () => {
+    const h = harness({ processes: [proc()], pendingNotifications: () => 0 })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a run in flight is left to drain the queue itself', () => {
+    // The engine hands queued notices to the running turn between calls, so
+    // waking here would deliver the same text twice.
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => 1,
+      runInFlight: () => true,
+    })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a queued user message carries the notices instead', () => {
+    // It will submit on its own and pick them up, and it outranks a synthetic
+    // turn the user did not ask for.
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => 1,
+      queuedMessages: () => 1,
+    })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('an open ask is not answered by a synthetic turn', () => {
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => 1,
+      overlayBlocking: () => true,
+    })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('no session means nothing to wake', () => {
+    const h = harness({
+      processes: [proc()],
+      sessionId: null,
+      pendingNotifications: () => 1,
+    })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a host without the hook never wakes', () => {
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => 1,
+      wake: null,
+    })
+    expect(() => h.controller.refresh()).not.toThrow()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a failing probe does not wake and does not abandon the poll', () => {
+    // Reading it as "something is pending" would open turns in a loop.
+    const h = harness({
+      processes: [proc({ status: 'completed', exit_code: 0 })],
+      pendingNotifications: () => { throw new Error('native boundary') },
+    })
+    expect(() => h.controller.refresh()).not.toThrow()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('the queue draining stops the waking', () => {
+    // build_turn consumes the queue, so the next poll sees zero and must not
+    // open a second turn for the same batch.
+    let pending = 1
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => pending,
+      wake: () => { pending = 0 },
+    })
+    h.controller.refresh()
+    h.controller.refresh()
+    h.controller.refresh()
+    expect(pending).toBe(0)
+  })
+})
+
+describe('BackgroundTerminals wake arming', () => {
+  test('a wake that opens no turn is not retried every poll', () => {
+    // A host can decline: a signed-out cloud session returns before starting a
+    // run, leaving the queue pending. Retrying twice a second would hammer it.
+    let pending = 1
+    let attempts = 0
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => pending,
+      wake: () => { attempts++ },
+    })
+    h.controller.refresh()
+    h.controller.refresh()
+    h.controller.refresh()
+    expect(attempts).toBe(1)
+    expect(pending).toBe(1)
+  })
+
+  test('a drained queue re-arms the next batch', () => {
+    // One refusal must not disable waking for the rest of the session.
+    let pending = 1
+    let attempts = 0
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => pending,
+      wake: () => { attempts++; pending = 0 },
+    })
+    h.controller.refresh()
+    expect(attempts).toBe(1)
+    // The turn took delivery, so the next poll observes an empty queue.
+    h.controller.refresh()
+    // A later task finishes.
+    pending = 1
+    h.controller.refresh()
+    expect(attempts).toBe(2)
   })
 })

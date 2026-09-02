@@ -200,6 +200,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     ...createInitialState(agent.model, agent.cwd),
   }
   let spinnerState = createSpinnerState()
+  /**
+   * Spinner state for the idle wait on a detached task.
+   *
+   * Separate from `spinnerState` so the two never overwrite each other: a run
+   * starting mid-wait resets its own animation, and the wait keeps its own
+   * elapsed clock rather than inheriting the last run's.
+   */
+  let backgroundWaitSpinner = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
+  let backgroundWaitSince: number | null = null
   let manualCompactionPhase: string | null = null
   let editor: EditorState = createEditorState()
   // Undo stack lives outside EditorState so snapshots stay plain data. Cleared
@@ -841,6 +850,25 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // Separating blank above the status row; queue rows bring their own.
         marginTop: 1,
       }
+    } else if (backgroundWaitSince !== null && overlay.kind !== 'ask-user') {
+      // Idle, but a detached task is still running and will wake the agent when
+      // it finishes. Without a status row here the transcript looks finished, so
+      // a user watching a long build would conclude the work had stopped.
+      //
+      // Elapsed is measured from when the wait began, not from the last run, so
+      // the clock reads as the age of the wait itself.
+      const waitText = formatSpinnerLine(
+        { ...backgroundWaitSpinner, phaseStartedAt: backgroundWaitSince },
+        Date.now(),
+        // No per-call usage belongs to a wait: nothing is being spent while the
+        // agent is parked.
+        undefined,
+        { model: appState.model },
+      )
+      spinnerBlock = {
+        lines: wrapTextWithAnsi(waitText, renderer.termCols).map(text => ({ spans: [{ text }] })),
+        marginTop: 1,
+      }
     }
 
     // Match pi's sibling order before editorContainer: pending messages, then
@@ -1330,11 +1358,46 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     panelOpen: () => overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title),
     panelState: () =>
       overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title) ? overlay.state : null,
+    // A run drains the notification queue itself between turns, so waking is
+    // only for the idle case.
+    runInFlight: () => isLoading,
+    queuedMessages: () => queuedUserMessages.length + queuedCompactionSubmissions.length,
+    // An ask overlay is the agent waiting on the user: seizing the turn would
+    // answer a question they have not answered yet.
+    overlayBlocking: () => overlay.kind === 'ask-user',
+    wakeForNotifications: () => {
+      // No text: build_turn puts the queued completion notices into this turn's
+      // input, so a synthetic prompt would duplicate what the model just read.
+      // Fire-and-forget because the poll cannot await; runQuery owns its own
+      // lifecycle and errors from here.
+      void runQuery('')
+    },
   })
 
   function refreshBackgroundProcesses(): void {
     backgroundTerminals.refresh()
+    // Track the idle wait alongside the poll that discovers it. A live
+    // background task will wake the agent when it finishes, so while one is
+    // running the agent is genuinely parked rather than done.
+    const waiting = backgroundTerminals.runningCount() > 0
+    if (waiting && backgroundWaitSince === null) {
+      backgroundWaitSince = Date.now()
+      renderer.requestRender()
+    } else if (!waiting && backgroundWaitSince !== null) {
+      backgroundWaitSince = null
+      renderer.requestRender()
+    }
   }
+
+  // Animates the idle wait row. The spinner timer only runs during a turn, and
+  // the ad-slot ticker stops whenever an overlay owns the screen, so neither can
+  // be relied on to keep this glyph moving.
+  const backgroundWaitTimer = setInterval(() => {
+    if (isLoading || backgroundWaitSince === null) return
+    backgroundWaitSpinner = advanceSpinner(backgroundWaitSpinner)
+    renderer.requestRender()
+  }, SPINNER_INTERVAL_MS)
+  ;(backgroundWaitTimer as unknown as { unref?: () => void }).unref?.()
 
   /** Insert pasted text, collapsing large pastes into refs. */
   function insertPaste(raw: string) {
@@ -3225,6 +3288,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     clearInterval(adSlotTimer)
     clearInterval(syncTimer)
     clearInterval(backgroundProcessTimer)
+    clearInterval(backgroundWaitTimer)
     authWatcher?.dispose()
     authWatcher = null
     caretBlink.dispose()

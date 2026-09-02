@@ -272,6 +272,15 @@ impl NapiAgent {
         self.agent.release_blocking_task_waits(&session_id) as u32
     }
 
+    /// Completion notices queued for this session but not yet delivered.
+    ///
+    /// Does not consume them: only a turn can carry them, so the UI polls this
+    /// to decide whether to open one.
+    #[napi]
+    pub fn pending_process_notifications(&self, session_id: String) -> u32 {
+        self.agent.pending_process_notifications(&session_id) as u32
+    }
+
     #[napi]
     pub async fn stop_all_background_processes(&self, session_id: String) -> Result<String> {
         serialize_process_summaries(self.agent.stop_all_background_processes(&session_id).await)

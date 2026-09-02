@@ -31,6 +31,7 @@ function proc(overrides: Partial<BackgroundProcess> = {}): BackgroundProcess {
     exit_code: null,
     elapsed_ms: 1500,
     output_file_truncated: false,
+    stopped_by_user: false,
     ...overrides,
   }
 }
@@ -100,17 +101,6 @@ describe('formatStatusDetail', () => {
     // The panel and the tool cards must not spell the same outcome two ways.
     expect(formatStatusDetail(proc({ status: 'killed', stopped_by_user: true })))
       .toBe('cancelled by user · 2s')
-  })
-
-  test('an absent attribution flag degrades to the neutral word', () => {
-    // Older addon payloads have no such field.
-    expect(formatStatusDetail(proc({ status: 'killed', stopped_by_user: undefined })))
-      .toBe('stopped · 2s')
-  })
-
-  test('a timeout is distinguished from a plain failure', () => {
-    expect(formatStatusDetail(proc({ status: 'timed_out', exit_code: 143 })))
-      .toBe('timed out · exit 143 · 2s')
   })
 })
 

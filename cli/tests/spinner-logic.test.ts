@@ -449,3 +449,49 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('~50 tok/s')
   })
 })
+
+describe('awaiting_background phase', () => {
+  test('names the wait rather than claiming work is happening', () => {
+    // "Working" would be a lie: nothing is being computed while the agent is
+    // parked on a detached task.
+    const state = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
+    const line = stripAnsi(formatSpinnerLine(state, Date.now()))
+    expect(line).toContain('Waiting for background task…')
+  })
+
+  test('offers no keyboard hint, because no key applies', () => {
+    // esc does not reach a detached task, and ctrl+b cannot background work that
+    // is already backgrounded. Advertising either would be a false promise.
+    const state = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, {
+      backgroundable: true,
+    }))
+    expect(line).not.toContain('esc to interrupt')
+    expect(line).not.toContain('to background')
+  })
+
+  test('reports no tokens, since a parked agent spends nothing', () => {
+    const state = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), {
+      inputTokens: 1200,
+      outputTokens: 340,
+    }))
+    expect(line).not.toContain('↑')
+    expect(line).not.toContain('↓')
+  })
+
+  test('a long wait is not treated as a fault', () => {
+    // A detached build legitimately runs for minutes; reddening the row would
+    // report a problem that does not exist.
+    const start = 10_000
+    const state = { ...setSpinnerPhase(createSpinnerState(), 'awaiting_background'), phaseStartedAt: start }
+    expect(isSlow(state, start + 10 * 60_000)).toBe(false)
+  })
+
+  test('still shows elapsed, so the wait reads as ongoing', () => {
+    const start = 10_000
+    const state = { ...setSpinnerPhase(createSpinnerState(), 'awaiting_background'), phaseStartedAt: start }
+    const line = stripAnsi(formatSpinnerLine(state, start + 42_000))
+    expect(line).toContain('42.0s')
+  })
+})

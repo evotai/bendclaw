@@ -853,6 +853,15 @@ impl ProcessManager {
             .collect()
     }
 
+    /// Notifications queued but not yet delivered to a turn.
+    ///
+    /// Read-only on purpose: an idle UI polls this to decide whether a task
+    /// finished with nobody left to receive its result. Consuming here instead
+    /// would drop the text on the floor, since a poll has no turn to put it in.
+    pub fn pending_notifications(&self) -> usize {
+        self.inner.notifications.lock().len()
+    }
+
     pub async fn terminate_all_and_wait(&self, timeout: Duration) {
         self.terminate_all();
         let started = Instant::now();
@@ -1009,10 +1018,10 @@ fn notification_summary(snapshot: &ProcessSnapshot) -> String {
     match snapshot.status {
         ProcessStatus::Completed => format!("Command \"{}\" completed", command),
         ProcessStatus::Failed => format!("Command \"{}\" failed", command),
-        // Retired: a timeout backgrounds rather than kills, and the one runtime
-        // where it still kills never notifies (`notify_on_completion` is only
-        // armed for a background reason). Kept so a legacy snapshot read back
-        // from a stored session still describes itself.
+        // Unreachable in practice: notifications are only armed when a task is
+        // backgrounded, and a runtime that backgrounds never lets the deadline
+        // kill. Kept as a named arm so the fallback below stays reserved for a
+        // genuinely unexpected state rather than describing a timeout vaguely.
         ProcessStatus::TimedOut => format!("Command \"{}\" timed out", command),
         // Cancelled, not merely stopped: the work is void. Mirrors Claude
         // Code's phrasing for a user-stopped agent — "won't be resumed" plus a

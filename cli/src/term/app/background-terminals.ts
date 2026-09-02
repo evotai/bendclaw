@@ -14,7 +14,10 @@ import type { SelectorState } from '../selector.js'
 import {
   backgroundProcessFingerprint,
   decideSessionSwitch,
+  newlySettled,
   runningBackgroundCount,
+  settledNoticeMessage,
+  shouldWakeForNotifications,
   stopAllMessage,
   stopOneMessage,
 } from './background-processes.js'
@@ -35,6 +38,7 @@ export interface BackgroundTerminalsClient {
   backgroundForegroundProcesses(sessionId: string): number
   backgroundForegroundProcessesForMessage(sessionId: string): number
   blockingTaskWaits(sessionId: string): number
+  pendingProcessNotifications(sessionId: string): number
   releaseBlockingTaskWaits(sessionId: string): number
   killAllBackgroundProcessesNow(): number
 }
@@ -63,6 +67,21 @@ export interface BackgroundTerminalsDeps {
   panelOpen: () => boolean
   /** The panel's current state, or null when it is closed. */
   panelState: () => SelectorState | null
+  /**
+   * Opens a turn to deliver queued completion notices, if the host wants that.
+   *
+   * Optional so a host that has no notion of turns (tests, non-interactive
+   * callers) simply never wakes. The controller supplies no text: the engine
+   * puts the queued notices into the turn's input, so a synthetic user prompt
+   * would only duplicate what the model is about to read.
+   */
+  wakeForNotifications?: () => void
+  /** True while a run owns the turn. Such a run drains the queue itself. */
+  runInFlight?: () => boolean
+  /** Pending user messages, which will carry the notices when they submit. */
+  queuedMessages?: () => number
+  /** True while an overlay is waiting on the user (an ask, a prompt). */
+  overlayBlocking?: () => boolean
 }
 
 export class BackgroundTerminals {
@@ -77,6 +96,26 @@ export class BackgroundTerminals {
    */
   private blockingWaits = 0
   private warnedFor: string | null = null
+  /**
+   * Task ids whose settled outcome has already been reported.
+   *
+   * Prevents the 500ms poll from re-announcing the same transition, and lets a
+   * panel-initiated stop claim its own id so the poll stays quiet about it.
+   * Pruned against the live list, so it tracks the engine rather than growing
+   * for the life of the session.
+   */
+  private readonly announced = new Set<string>()
+  /**
+   * Whether a wake may fire.
+   *
+   * Disarmed the moment one is requested and re-armed only when the queue is
+   * observed empty. Without this, anything that makes `wakeForNotifications`
+   * return without opening a turn — a signed-out cloud session, a run the host
+   * declines to start — would leave the queue pending and the 500ms poll would
+   * retry forever. It also means a wake is requested at most once per batch, so
+   * the turn that drains the queue cannot race a second one.
+   */
+  private wakeArmed = true
   private readonly deps: BackgroundTerminalsDeps
   /**
    * The stop currently in flight, if any.
@@ -250,6 +289,7 @@ export class BackgroundTerminals {
         const state = this.deps.panelState()
         if (state) this.deps.updatePanel(refreshBackgroundPanelState(state, next))
       }
+      this.announceSettled(previous, next)
       if (
         backgroundProcessFingerprint(previous) !== backgroundProcessFingerprint(next)
         // The ctrl+b hint is derived from this, so a change has to repaint even
@@ -258,6 +298,9 @@ export class BackgroundTerminals {
       ) {
         this.deps.requestRender()
       }
+      // Last in the poll: opening a turn re-enters the REPL, so every field
+      // above is already settled before control leaves this method.
+      this.maybeWake(sessionId)
     } catch {
       // A session can disappear during clear/delete/resume. Keep the last known
       // list and let the next poll recover rather than blanking the footer.
@@ -359,6 +402,9 @@ export class BackgroundTerminals {
     if (!sessionId) return
     try {
       const stopped = await this.deps.client.stopBackgroundProcess(sessionId, taskId)
+      // Claimed before the refresh below observes the transition: the panel is
+      // reporting this stop itself, and the poll must not say it again.
+      this.announced.add(taskId)
       if (stopped) this.deps.commit('stop', stopOneMessage(stopped))
     } catch (err) {
       this.deps.commit('error', this.paint(`  Could not stop ${taskId.slice(0, 8)}: ${this.deps.errorText(err)}`))
@@ -371,6 +417,7 @@ export class BackgroundTerminals {
     if (!sessionId) return
     try {
       const stopped = await this.deps.client.stopAllBackgroundProcesses(sessionId)
+      for (const process of stopped) this.announced.add(process.task_id)
       this.deps.commit('stop-all', stopAllMessage(stopped.length))
     } catch (err) {
       this.deps.commit('error', this.paint(`  Could not stop background terminals: ${this.deps.errorText(err)}`))
@@ -378,8 +425,75 @@ export class BackgroundTerminals {
     this.refresh()
   }
 
+  /**
+   * Report tasks that settled since the last poll, once each.
+   *
+   * The engine already queues an equivalent notification for the model, so this
+   * is the user's half of the same event: a task finishing while the agent is
+   * idle otherwise changes nothing on screen but the footer count.
+   */
+  private announceSettled(previous: BackgroundProcess[], next: BackgroundProcess[]): void {
+    for (const process of newlySettled(previous, next)) {
+      if (this.announced.has(process.task_id)) continue
+      this.announced.add(process.task_id)
+      this.deps.commit('settled', settledNoticeMessage(process))
+    }
+    // Forget ids the engine has reclaimed so the set cannot grow without bound
+    // over a long session. A reclaimed task can never transition again.
+    if (this.announced.size > 0) {
+      const live = new Set(next.map(process => process.task_id))
+      for (const id of this.announced) {
+        if (!live.has(id)) this.announced.delete(id)
+      }
+    }
+  }
+
   private paint(text: string): string {
     return (this.deps.paintError ?? ((value: string) => value))(text)
+  }
+
+  /**
+   * Open a turn when a finished task left a result nobody will receive.
+   *
+   * This is what keeps a multi-step instruction alive across a long task: the
+   * engine queues the completion notice, and without a turn to carry it the
+   * queue sits untouched until the user types, so "run the build, then fix what
+   * breaks" would stop after the build.
+   *
+   * The queue itself is the trigger, not the settled transition, so this fires
+   * exactly once per batch — `build_turn` drains it, and the next poll sees
+   * zero. A host that supplies no `wakeForNotifications` never wakes.
+   */
+  private maybeWake(sessionId: string): void {
+    const wake = this.deps.wakeForNotifications
+    if (!wake) return
+    // Guarded like the blocking-wait probe: a failing count must not abandon
+    // the poll, and must not be read as "something is pending".
+    let pending = 0
+    try {
+      pending = this.deps.client.pendingProcessNotifications(sessionId)
+    } catch {
+      return
+    }
+    // Re-arm only once the engine confirms the queue is empty, which is the one
+    // signal that a turn actually took delivery.
+    if (pending === 0) {
+      this.wakeArmed = true
+      return
+    }
+    if (!this.wakeArmed) return
+    const ready = shouldWakeForNotifications({
+      pending,
+      hasSession: true,
+      runInFlight: this.deps.runInFlight?.() ?? false,
+      queuedMessages: this.deps.queuedMessages?.() ?? 0,
+      overlayBlocking: this.deps.overlayBlocking?.() ?? false,
+    })
+    if (!ready) return
+    // Disarmed before the call, not after: opening a turn re-enters the REPL
+    // synchronously, so a later assignment could be reached after a nested poll.
+    this.wakeArmed = false
+    wake()
   }
 
   /**

@@ -567,25 +567,29 @@ async fn completion_notification_is_claimed_once() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn yield_schema_advertises_the_generous_foreground_wait() {
-    // 120s, not the 2s I briefly set here. Claude Code's 2s mark only arms its
-    // ctrl+b hint; the command stays in the foreground until its timeout. Yielding
-    // at 2s would charge the model an extra round trip, on every command slower
-    // than a couple of seconds, to collect a result it was already waiting for.
+fn yield_schema_advertises_the_foreground_limit() {
+    // Long commands automatically release the user's turn after one minute.
+    // Models may request an earlier yield, but cannot extend the interaction
+    // bound by supplying a larger value.
     let bash = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
     let schema = bash.parameters_schema();
     let description = schema["properties"]["yield_time_ms"]["description"]
         .as_str()
         .unwrap_or_default();
-    assert!(description.contains("120000"), "got: {description}");
-    assert!(description.contains("600000"), "got: {description}");
+    assert!(
+        description.contains("default and max 60000"),
+        "got: {description}"
+    );
+    assert!(
+        description.contains("above 60000 are capped"),
+        "got: {description}"
+    );
     // Yielding must read as handing back a live command, not as stopping one.
     assert!(
         description.contains("never interrupts"),
         "got: {description}"
     );
-    // Both directions are legitimate, so neither is discouraged.
-    assert!(description.contains("Lower it"), "got: {description}");
+    assert!(description.contains("lower value"), "got: {description}");
 }
 
 #[test]
@@ -604,16 +608,12 @@ fn timeout_schema_says_it_bounds_the_wait_rather_than_killing() {
         "got: {description}"
     );
     assert!(description.contains("never killed"), "got: {description}");
-    // The one case where it does nothing at all. Without this a model would set
-    // a timeout on a run_in_background call and believe it bounded something.
     assert!(
         description.contains("No effect with run_in_background"),
         "got: {description}"
     );
-    // Points at the parameter that shortens the wait, and the one that stops it.
     assert!(description.contains("yield_time_ms"), "got: {description}");
     assert!(description.contains("task_stop"), "got: {description}");
-    // Must not carry the old kill language.
     assert!(!description.contains("SIGKILL"), "got: {description}");
     assert!(
         !description.contains("death sentence"),
@@ -792,30 +792,6 @@ async fn an_explicit_background_request_is_not_framed_as_a_timeout() -> Result<(
     assert!(!body.contains("did not finish within"), "got: {body}");
     // Still told how to collect the result.
     assert!(body.contains("You will be notified"), "got: {body}");
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_model_requested_wait_can_exceed_the_old_thirty_second_ceiling(
-) -> Result<(), Box<dyn Error>> {
-    // MAX_YIELD_TIME used to be 30s, which clamped any explicit request below
-    // what the model asked for. Raising the ceiling is what lets a model keep a
-    // specific command inline despite the short default.
-    let dir = tempfile::tempdir()?;
-    let manager = Arc::new(ProcessManager::new());
-    let bash = BashTool::new().with_process_manager(manager.clone());
-
-    let result = bash
-        .execute(
-            serde_json::json!({"command": "echo quick", "yield_time_ms": 90_000}),
-            context("bash", dir.path()),
-        )
-        .await?;
-
-    // A 90s wait is honored rather than clamped, so the command completes in
-    // the foreground instead of being yielded.
-    assert!(result.details["backgrounded"].is_null());
-    assert!(text(&result).contains("quick"));
     Ok(())
 }
 
@@ -2540,11 +2516,9 @@ async fn with_background_support_the_same_deadline_spares_the_command() -> Resul
 
 #[tokio::test]
 async fn the_yield_lede_reports_the_wait_that_actually_elapsed() -> Result<(), Box<dyn Error>> {
-    // The lede used to interpolate DEFAULT_YIELD_TIME regardless of what was
-    // asked for, so a model requesting a 1s yield was told its command "did not
-    // finish within its 120s foreground wait". False, and it overstates how long
-    // the command has been running -- which is exactly the input a model uses to
-    // decide whether to keep waiting or move on.
+    // The lede must report the requested wait that actually elapsed. Otherwise
+    // a short explicit yield can be mislabeled as the full 60s default, which
+    // overstates how long the command has already been running.
     let dir = tempfile::tempdir()?;
     let manager = Arc::new(ProcessManager::new());
     let bash = BashTool::new()
@@ -2562,7 +2536,7 @@ async fn the_yield_lede_reports_the_wait_that_actually_elapsed() -> Result<(), B
     let body = text(&result);
     assert!(body.contains("its 1s foreground wait"), "got: {body}");
     // The default must not appear when it is not the wait that happened.
-    assert!(!body.contains("120s"), "got: {body}");
+    assert!(!body.contains("60s"), "got: {body}");
 
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())
@@ -2579,7 +2553,7 @@ async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn 
         .with_process_manager(manager.clone());
 
     // Detach externally, which reports the configured yield rather than a
-    // deadline -- waiting out the real 120s default would stall the suite.
+    // deadline -- waiting out the real 60s default would stall the suite.
     let tool = Arc::new(bash);
     let watcher = tool.clone();
     let dir_path = dir.path().to_path_buf();
@@ -2600,7 +2574,43 @@ async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn 
     );
 
     let body = text(&handle.await??);
-    assert!(body.contains("its 120s foreground wait"), "got: {body}");
+    assert!(body.contains("its 60s foreground wait"), "got: {body}");
+
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_excessive_yield_request_is_capped_at_one_minute() -> Result<(), Box<dyn Error>> {
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let tool = Arc::new(
+        BashTool::new()
+            .with_timeout(Duration::from_secs(30))
+            .with_process_manager(manager.clone()),
+    );
+    let watcher = tool.clone();
+    let dir_path = dir.path().to_path_buf();
+    let handle = tokio::spawn(async move {
+        watcher
+            .execute(
+                serde_json::json!({"command": "sleep 30", "yield_time_ms": 600_000}),
+                context("bash", &dir_path),
+            )
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        manager
+            .background_all_foreground(BackgroundReason::YieldElapsed)
+            .len(),
+        1
+    );
+
+    let body = text(&handle.await??);
+    assert!(body.contains("its 60s foreground wait"), "got: {body}");
+    assert!(!body.contains("600s foreground wait"), "got: {body}");
 
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())

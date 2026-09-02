@@ -11,6 +11,7 @@
 import type { BackgroundProcess } from '../../native/index.js'
 import type { KeyEvent } from '../input.js'
 import type { SelectorState } from '../selector.js'
+import { selectorFocusOn } from '../selector.js'
 import {
   backgroundProcessFingerprint,
   decideSessionSwitch,
@@ -22,10 +23,12 @@ import {
   stopOneMessage,
 } from './background-processes.js'
 import {
+  createBackgroundOutputState,
   createBackgroundPanelState,
   decideBackgroundPanelAction,
   focusedPanelTarget,
-  formatOutputView,
+  isBackgroundOutputTitle,
+  refreshBackgroundOutputState,
   refreshBackgroundPanelState,
   shouldDownOpenPanel,
 } from './background-panel.js'
@@ -283,11 +286,17 @@ export class BackgroundTerminals {
       } catch {
         this.blockingWaits = 0
       }
-      // An open panel is a live view of this list: refresh it in place so a task
-      // finishing is reflected without the user reopening the panel.
+      // Open list and output views are live: the list tracks status changes,
+      // while the output view also re-reads the captured tail on every poll.
       if (this.deps.panelOpen()) {
         const state = this.deps.panelState()
-        if (state) this.deps.updatePanel(refreshBackgroundPanelState(state, next))
+        if (state) {
+          if (isBackgroundOutputTitle(state.title)) {
+            this.refreshOutputView(state, next)
+          } else {
+            this.deps.updatePanel(refreshBackgroundPanelState(state, next))
+          }
+        }
       }
       this.announceSettled(previous, next)
       if (
@@ -307,7 +316,7 @@ export class BackgroundTerminals {
     }
   }
 
-  /** Open the panel, or close it when it is already the active overlay. */
+  /** Open the panel, or close either background view when already active. */
   togglePanel(): void {
     if (this.deps.panelOpen()) {
       this.deps.updatePanel(null)
@@ -349,6 +358,17 @@ export class BackgroundTerminals {
   handlePanelKey(event: KeyEvent): boolean {
     const state = this.deps.panelState()
     if (!state) return false
+    if (isBackgroundOutputTitle(state.title)) {
+      if (event.type === 'escape') {
+        const taskId = state.items[0]?.id
+        const panel = createBackgroundPanelState(this.processes)
+        this.deps.updatePanel(taskId ? selectorFocusOn(panel, item => item.id === taskId) : panel)
+        return true
+      }
+      // Keep editor/navigation input out of the hidden composer, but let global
+      // control chords (Ctrl+C, Ctrl+B, Ctrl+O, …) retain their REPL meaning.
+      return event.type !== 'ctrl'
+    }
     const action = decideBackgroundPanelAction(event, focusedPanelTarget(state, this.processes))
     switch (action.kind) {
       case 'none':
@@ -357,7 +377,7 @@ export class BackgroundTerminals {
         this.deps.updatePanel(null)
         return true
       case 'view':
-        this.viewOutput(action.taskId)
+        this.openOutputView(action.taskId)
         return true
       case 'stop':
         this.track(this.stopFromPanel(action.taskId))
@@ -376,23 +396,36 @@ export class BackgroundTerminals {
     this.pending = this.pending.then(() => work).catch(() => {})
   }
 
-  /** Commit the tail of a task's captured output into the transcript. */
-  private viewOutput(taskId: string): void {
+  /** Open a full-width live tail without writing snapshots into history. */
+  private openOutputView(taskId: string): void {
     const process = this.processes.find(candidate => candidate.task_id === taskId)
     if (!process) return
-    let output = ''
-    try {
-      output = this.deps.readOutput(process.output_path)
-    } catch (err) {
-      // The file can be missing if the task failed to spawn or was reclaimed.
-      this.deps.commit(
-        'output',
-        this.paint(`  Could not read output for ${taskId.slice(0, 8)}: ${this.deps.errorText(err)}`),
-      )
+    this.deps.updatePanel(createBackgroundOutputState(process, this.readOutput(process)))
+  }
+
+  /** Refresh an open live tail from the latest process snapshot and file. */
+  private refreshOutputView(state: SelectorState, processes: BackgroundProcess[]): void {
+    const taskId = state.items[0]?.id
+    const process = processes.find(candidate => candidate.task_id === taskId)
+    if (!process) {
+      this.deps.updatePanel(createBackgroundPanelState(processes))
       return
     }
-    for (const text of formatOutputView(process, output)) {
-      this.deps.commit('output', text)
+    const next = refreshBackgroundOutputState(state, process, this.readOutput(process))
+    const currentItem = state.items[0]
+    const nextItem = next.items[0]
+    const unchanged = state.subtitle === next.subtitle
+      && currentItem?.detail === nextItem?.detail
+      && currentItem?.preview?.length === nextItem?.preview?.length
+      && currentItem?.preview?.every((line, index) => line === nextItem?.preview?.[index])
+    if (!unchanged) this.deps.updatePanel(next)
+  }
+
+  private readOutput(process: BackgroundProcess): string {
+    try {
+      return this.deps.readOutput(process.output_path)
+    } catch (err) {
+      return `(could not read output: ${this.deps.errorText(err)})`
     }
   }
 

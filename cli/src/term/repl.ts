@@ -955,7 +955,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         lines: [
           ...contentLines,
           ...blocksToLines(preEditorBlocks),
-          ...buildSelectorRegionLines(overlay.state, renderer.termCols),
+          ...buildSelectorRegionLines(overlay.state, renderer.termCols, renderer.termRows),
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
         bottomAnchor: true,

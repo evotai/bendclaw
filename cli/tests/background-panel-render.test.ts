@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
-import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
+import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
-import { createBackgroundPanelState } from '../src/term/app/background-panel.js'
+import { createBackgroundOutputState, createBackgroundPanelState } from '../src/term/app/background-panel.js'
 import { selectorDown } from '../src/term/selector.js'
 import type { BackgroundProcess } from '../src/native/index.js'
 
@@ -120,6 +120,31 @@ describe('background panel rendering', () => {
     expect(lines[lines.length - 1]).toBe('Esc to close')
     // No count line above an empty body: the body is the whole message.
     expect(lines.join('\n')).not.toContain('active shell')
+  })
+
+  test('live output uses a bounded full-width tail with a back hint', () => {
+    const output = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n')
+    const state = createBackgroundOutputState(proc(), output)
+    const lines = buildSelectorRegionLines(state, 100, 24).map(stripAnsi)
+
+    expect(lines).toContain('Background output')
+    expect(lines.some(line => line.trim() === 'line 30')).toBe(true)
+    expect(lines.some(line => line.trim() === 'line 1')).toBe(false)
+    expect(lines).toContain('Esc to back')
+    expect(lines.every(line => line.length <= 100)).toBe(true)
+
+    const short = buildSelectorRegionLines(state, 100, 12).map(stripAnsi)
+    expect(short.length).toBeLessThan(lines.length)
+    expect(short.some(line => line.trim() === 'line 30')).toBe(true)
+  })
+
+  test('capped-output warning stays pinned above a noisy tail', () => {
+    const output = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n')
+    const state = createBackgroundOutputState(proc({ output_file_truncated: true }), output)
+    const lines = buildSelectorRegionLines(state, 100, 12).map(stripAnsi)
+
+    expect(lines.some(line => line.includes('output file was capped'))).toBe(true)
+    expect(lines.some(line => line.trim() === 'line 30')).toBe(true)
   })
 
   test('a multi-line command stays on one row', () => {

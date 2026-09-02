@@ -5,12 +5,14 @@ import {
   PANEL_EMPTY_MESSAGE,
   SHELLS_GROUP,
   backgroundPanelHints,
+  createBackgroundOutputState,
   createBackgroundPanelState,
   decideBackgroundPanelAction,
   focusedPanelTarget,
   formatCommandLabel,
   formatElapsed,
   formatOutputView,
+  sanitizeTerminalOutput,
   formatPanelItems,
   formatPanelSubtitle,
   formatStatusDetail,
@@ -380,11 +382,31 @@ describe('decideBackgroundPanelAction', () => {
   })
 })
 
+describe('sanitizeTerminalOutput', () => {
+  test('removes ANSI, OSC and unsafe controls from shell output', () => {
+    const raw = '\x1b[31mred\x1b[0m\x1b]0;owned\x07\rprogress\u0000done'
+    const safe = sanitizeTerminalOutput(raw)
+    expect(safe).toBe('red\nprogressdone')
+    expect(safe).not.toContain('\x1b')
+    expect(safe).not.toContain('\u0000')
+  })
+})
+
 describe('formatOutputView', () => {
   test('leads with a status header naming the task and command', () => {
     const lines = formatOutputView(proc({ command: 'bun run dev' }), 'hello\n')
     expect(lines[0]).toBe('  ● 028deb34 · running · 2s  bun run dev')
     expect(lines[1]).toBe('    hello')
+  })
+
+  test('limits noisy output before rendering and states what was omitted', () => {
+    const output = Array.from({ length: 250 }, (_, index) => `line ${index + 1}`).join('\n')
+    const state = createBackgroundOutputState(proc(), output)
+    const preview = state.items[0]?.preview ?? []
+
+    expect(preview).toContain('  … 50 earlier lines')
+    expect(preview).not.toContain('line 1')
+    expect(preview).toContain('line 250')
   })
 
   test('a trailing newline is a terminator, not an empty last line', () => {

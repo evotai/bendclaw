@@ -40,9 +40,9 @@ export interface SelectorState {
   title: string
   /** Optional secondary context displayed below the title. */
   subtitle?: string
-  /** Model selection uses pi's editor-replacement component instead of the
-   * generic titled selector. */
-  presentation?: 'model'
+  /** Model selection and live background output use dedicated editor-replacement
+   * presentations instead of the generic titled selector. */
+  presentation?: 'model' | 'background-output'
   /** Wraps up/down navigation between the first and last focusable items. */
   circularNavigation?: boolean
   /** Session id armed for deletion, awaiting a confirming second keypress.

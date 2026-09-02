@@ -9,6 +9,7 @@
  * terminal: the controller in `background-terminals.ts` owns the side effects.
  */
 
+import stripAnsi from 'strip-ansi'
 import type { KeyEvent } from '../input.js'
 import type { BackgroundProcess } from '../../native/index.js'
 import type { Hint } from './hint.js'
@@ -16,6 +17,11 @@ import { createSelectorState, type SelectorItem, type SelectorState } from '../s
 import { formatElapsed } from '../../render/format.js'
 
 export const BACKGROUND_PANEL_TITLE = 'Background'
+export const BACKGROUND_OUTPUT_TITLE = 'Background output'
+
+export function isBackgroundOutputTitle(title: string): boolean {
+  return title === BACKGROUND_OUTPUT_TITLE
+}
 
 /**
  * Gesture advertised at the prompt while background work is live.
@@ -45,9 +51,9 @@ export function shouldDownOpenPanel(input: { editorEmpty: boolean; running: numb
   return input.editorEmpty && input.running > 0
 }
 
-/** True when a selector is the background panel. */
+/** True when a selector belongs to background terminal management. */
 export function isBackgroundPanelTitle(title: string): boolean {
-  return title === BACKGROUND_PANEL_TITLE
+  return title === BACKGROUND_PANEL_TITLE || isBackgroundOutputTitle(title)
 }
 
 /** Statuses that are still doing work. */
@@ -285,18 +291,67 @@ export function backgroundPanelHints(
   ]
 }
 
-/** Output lines the panel pulls into the transcript for one task. */
-export const OUTPUT_TAIL_LINES = 40
+/** Output lines shown in the live tail view. */
+export const OUTPUT_TAIL_LINES = 200
 
-/**
- * Transcript block for `enter` on a task: a header naming the task, then the
- * tail of its captured output.
- *
- * The tail is used rather than the head because a running task's interesting
- * state is its latest output. Truncation is always stated so a partial view is
- * never mistaken for the whole run, and the output path is included so the full
- * file stays reachable.
- */
+/** Build the dedicated, full-width live output view for one task. */
+export function createBackgroundOutputState(
+  process: BackgroundProcess,
+  output: string,
+): SelectorState {
+  const safeOutput = sanitizeTerminalOutput(output)
+  return {
+    ...createSelectorState(BACKGROUND_OUTPUT_TITLE, [{
+      id: process.task_id,
+      label: formatCommandLabel(process.command),
+      detail: formatStatusDetail(process),
+      preview: formatLiveOutputView(process, safeOutput),
+    }]),
+    presentation: 'background-output',
+    subtitle: `${process.task_id.slice(0, 8)} · ${formatStatusDetail(process)}`,
+    noFilter: true,
+    hints: [{ keys: 'escape', action: 'back' }],
+  }
+}
+
+/** Strip terminal control sequences before command output enters the renderer. */
+export function sanitizeTerminalOutput(output: string): string {
+  return stripAnsi(output)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '')
+}
+
+/** Pinned metadata, a blank separator, then the tail-following body. */
+export function formatLiveOutputView(process: BackgroundProcess, output: string): string[] {
+  const normalized = output.endsWith('\n') ? output.slice(0, -1) : output
+  const all = normalized.length === 0 ? [] : normalized.split('\n')
+  const visible = all.slice(-OUTPUT_TAIL_LINES)
+  const hidden = all.length - visible.length
+  const body = visible.length === 0 ? ['  (no output yet)'] : visible
+  return [
+    `  ${formatCommandLabel(process.command)}`,
+    `  ${process.output_path}`,
+    ...(process.output_file_truncated
+      ? ['  ⚠ output file was capped; earlier output was dropped']
+      : []),
+    ...(hidden > 0 ? [`  … ${hidden} earlier ${hidden === 1 ? 'line' : 'lines'}`] : []),
+    '',
+    ...body,
+  ]
+}
+
+/** Replace status and tail while preserving the open output view. */
+export function refreshBackgroundOutputState(
+  state: SelectorState,
+  process: BackgroundProcess,
+  output: string,
+): SelectorState {
+  const next = createBackgroundOutputState(process, output)
+  return { ...next, query: state.query }
+}
+
+/** Transcript-compatible formatting shared by the live output renderer. */
 export function formatOutputView(
   process: BackgroundProcess,
   output: string,

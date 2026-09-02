@@ -275,24 +275,65 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     expect(h.controller.handlePanelKey({ type: 'down' })).toBe(false)
   })
 
-  test('enter commits the task output into the transcript', () => {
+  test('enter opens a live output view without writing to the transcript', () => {
     const h = harness({ processes: [proc()], output: 'building…\ndone\n' })
     h.controller.togglePanel()
     expect(h.controller.handlePanelKey({ type: 'enter' })).toBe(true)
-    expect(h.texts()[0]).toContain('sleep 30')
-    expect(h.texts()).toContain('    building…')
-    expect(h.texts()).toContain('    done')
+    expect(h.panel()?.presentation).toBe('background-output')
+    expect(h.panel()?.items[0]?.preview).toContain('building…')
+    expect(h.panel()?.items[0]?.preview).toContain('done')
+    expect(h.texts()).toHaveLength(0)
   })
 
-  test('an unreadable output file reports the error instead of throwing', () => {
+  test('the output view refreshes its tail and status on each poll', () => {
+    let output = 'building…\n'
+    const h = harness({ processes: [proc()], output: () => output })
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'enter' })
+
+    output += 'done\n'
+    h.setProcesses([proc({ status: 'completed', exit_code: 0, elapsed_ms: 2500 })])
+    h.controller.refresh()
+
+    expect(h.panel()?.items[0]?.preview).toContain('done')
+    expect(h.panel()?.subtitle).toContain('exit 0')
+  })
+
+  test('esc returns from output to the list and keeps focus on the task', () => {
+    const h = harness({
+      processes: [proc(), proc({ task_id: 'bbbbbbbb-2222', command: 'make check' })],
+    })
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'down' })
+    // Navigation is owned by the selector in production; focus it directly in
+    // this controller harness before opening the second task.
+    const panel = h.panel()
+    if (panel) panel.focusIndex = 1
+    h.controller.handlePanelKey({ type: 'enter' })
+    expect(h.panel()?.items[0]?.id).toBe('bbbbbbbb-2222')
+
+    expect(h.controller.handlePanelKey({ type: 'escape' })).toBe(true)
+    expect(h.panel()?.presentation).toBeUndefined()
+    expect(h.panel()?.items[h.panel()?.focusIndex ?? 0]?.id).toBe('bbbbbbbb-2222')
+  })
+
+  test('global control chords pass through the live output view', () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'enter' })
+    expect(h.controller.handlePanelKey({ type: 'ctrl', key: 'c' })).toBe(false)
+    expect(h.controller.handlePanelKey({ type: 'char', char: 'x' })).toBe(true)
+  })
+
+  test('an unreadable output file is shown in the live view instead of throwing', () => {
     const h = harness({
       processes: [proc()],
       output: () => { throw new Error('ENOENT') },
     })
     h.controller.togglePanel()
     h.controller.handlePanelKey({ type: 'enter' })
-    expect(h.texts()[0]).toContain('Could not read output for aaaaaaa')
-    expect(h.texts()[0]).toContain('ENOENT')
+    expect(h.panel()?.items[0]?.preview?.join('\n')).toContain('could not read output: ENOENT')
+    expect(h.texts()).toHaveLength(0)
   })
 
   test('x stops the focused task and confirms it', async () => {

@@ -26,20 +26,13 @@ const MAX_DISPLAY_LINES: usize = 2000;
 const MAX_DISPLAY_BYTES: usize = 50 * 1024;
 /// Max bytes per single output line before truncation.
 const MAX_LINE_BYTES: usize = 4096;
-/// Default foreground wait before a still-running command is yielded.
+/// Longest foreground wait before a still-running command is yielded.
 ///
-/// Generous on purpose. Claude Code's equivalent is its command timeout
-/// (10 minutes), not the 2s mark: at 2s it only arms ctrl+b and shows the
-/// background hint, leaving the command in the foreground. Yielding early
-/// instead would make the model pay a second round trip to collect a result it
-/// was already waiting for, on every command slower than a couple of seconds.
-///
-/// The equivalent hint here lives in the TUI, which shows `ctrl+b to
-/// background` for as long as a command is being watched. That is a rendering
-/// concern, so no threshold belongs on this side.
-const DEFAULT_YIELD_TIME: Duration = Duration::from_secs(120);
-/// Longest model-requested foreground wait.
-const MAX_YIELD_TIME: Duration = Duration::from_secs(600);
+/// This is an interaction bound, not a command runtime limit. A model may ask
+/// to yield sooner when it does not need the result inline, but it must not hold
+/// the user's turn longer. `timeout` remains independent and can allow the
+/// backgrounded command to keep running for much longer.
+const MAX_FOREGROUND_WAIT: Duration = Duration::from_secs(60);
 
 /// Execute shell commands. Short commands return normally; long commands can
 /// yield into a session-scoped [`ProcessManager`] and be queried later.
@@ -212,7 +205,7 @@ impl AgentTool for BashTool {
                     "yield_time_ms".into(),
                     serde_json::json!({
                         "type": "number",
-                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default 120000, max 600000). Yielding never interrupts the command; it keeps running and its output keeps accumulating. Lower it when you do not need the result inline; raise it to keep waiting."
+                        "description": "How long to watch a command in the foreground before handing it back as a background task, in ms (default and max 60000). Use a lower value when you do not need the result inline. Values above 60000 are capped so a command cannot hold the user's turn longer. Yielding never interrupts the command; it keeps running and its output keeps accumulating."
                     }),
                 );
                 properties.insert(
@@ -432,10 +425,11 @@ fn requested_timeout(
 }
 
 fn requested_yield_time(params: &serde_json::Value) -> Duration {
-    match params["yield_time_ms"].as_u64() {
-        Some(milliseconds) => Duration::from_millis(milliseconds).min(MAX_YIELD_TIME),
-        None => DEFAULT_YIELD_TIME,
-    }
+    params["yield_time_ms"]
+        .as_u64()
+        .map(Duration::from_millis)
+        .unwrap_or(MAX_FOREGROUND_WAIT)
+        .min(MAX_FOREGROUND_WAIT)
 }
 
 fn process_output_dir(ctx: &ToolContext) -> PathBuf {
@@ -484,10 +478,9 @@ fn background_result(
 /// intentional detach from one it should wait out.
 ///
 /// `waited` is the wait that actually elapsed. It has to be passed in rather
-/// than read from [`DEFAULT_YIELD_TIME`]: a model that asked for
-/// `yield_time_ms: 5000` was being told its command "did not finish within its
-/// 120s foreground wait", which is false and, worse, overstates how long the
-/// command has already been running.
+/// than inferred from the default: a model that asked for
+/// `yield_time_ms: 5000` must be told that its 5s foreground wait elapsed, not
+/// that the full default elapsed.
 fn background_lede(reason: BackgroundReason, waited: Option<Duration>) -> String {
     match reason {
         BackgroundReason::YieldElapsed => match waited {

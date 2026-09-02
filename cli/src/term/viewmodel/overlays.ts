@@ -36,12 +36,45 @@ export function buildAskRegionLines(state: AskState, columns: number): string[] 
 }
 
 /** Render a selector in pi's editorContainer position, never as a modal. */
-export function buildSelectorRegionLines(state: SelectorState, columns: number): string[] {
+export function buildSelectorRegionLines(state: SelectorState, columns: number, rows = 24): string[] {
   const width = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 80
   if (state.presentation === 'model') return ['', ...buildModelSelectorRegionLines(state, width)]
 
   const border = styledLineToAnsi(line(dim('─'.repeat(width))))
+  if (state.presentation === 'background-output') {
+    return ['', border, ...buildBackgroundOutputRegionLines(state, width, rows), border]
+  }
+
   return ['', border, ...blocksToLines(buildSelectorBlocks(state, width)), border]
+}
+
+/** Full-width, tail-following view for one background shell. */
+function buildBackgroundOutputRegionLines(state: SelectorState, width: number, rows: number): string[] {
+  const item = state.items[0]
+  const preview = item?.preview ?? ['  (no output yet)']
+  const split = preview.indexOf('')
+  const metadata = split < 0 ? [] : preview.slice(0, split)
+  const body = split < 0 ? preview : preview.slice(split + 1)
+  // Keep metadata pinned and follow only the output body. A capped-file warning
+  // must never scroll away, or a partial log can be mistaken for the whole run.
+  const metadataRows = metadata.flatMap(entry => wrapTextWithAnsi(entry, width))
+  const wrappedBody = body.flatMap(entry => wrapTextWithAnsi(entry, width))
+  const maxRows = Math.max(3, Math.min(18, Math.floor(rows) - 10))
+  const bodyBudget = Math.max(1, maxRows - metadataRows.length - 1)
+  const hidden = Math.max(0, wrappedBody.length - bodyBudget)
+  const visible = wrappedBody.slice(-bodyBudget)
+  const lines: StyledLine[] = [
+    line(colored(state.title, 'cyan', { bold: true })),
+    ...(state.subtitle ? [line(dim(state.subtitle))] : []),
+    line(plain('')),
+    ...metadataRows.map(text => line(dim(text))),
+    line(plain('')),
+    ...(hidden > 0 ? [line(dim(`  … ${hidden} earlier display lines`))] : []),
+    ...visible.map(text => line(plain(text))),
+    line(plain('')),
+    buildHintLine(state.hints ?? [{ keys: 'escape', action: 'back' }]),
+  ]
+  return blocksToLines([block(lines)])
 }
 
 /** Mirrors pi's ModelSelectorComponent hierarchy and line geometry. */

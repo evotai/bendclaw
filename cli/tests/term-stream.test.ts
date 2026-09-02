@@ -1404,6 +1404,34 @@ describe('term stream machine', () => {
     expect(failed.commitLines.map(l => l.text).join('\n')).toContain('API error: HTTP 500')
   })
 
+  test('an exhausted storm still reports the failure that ended the run', () => {
+    // The risk in suppressing per-attempt cards: if the storm never recovers,
+    // the user must still learn why the run died. The final `✗` card is indeed
+    // suppressed, but the terminal `error` event commits the message — so the
+    // outcome is one visible sentence instead of none, and instead of ten.
+    const err = 'Overloaded: HTTP 529: overloaded_error: Service is temporarily overloaded.'
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_retry',
+      payload: { attempt: 1, max_retries: 10, retry_delay_ms: 2000, error: err },
+    }, { termRows: 24 }).state
+
+    const failed = reduceRunEvent(state, {
+      kind: 'llm_call_completed',
+      payload: { model: 'claude-opus-5', turn: 27, error: err, metrics: { duration_ms: 830 } },
+    }, { termRows: 24 })
+    expect(failed.commitLines).toEqual([])
+
+    const terminal = reduceRunEvent(failed.state, {
+      kind: 'error',
+      payload: { message: err },
+    }, { termRows: 24 })
+    const visible = terminal.commitLines.map(l => l.text).join('\n')
+    expect(visible).toContain(err)
+    expect(visible.split(err).length - 1).toBe(1)
+  })
+
   test('llm error card and following error event do not duplicate the message', () => {
     const msg = 'API error: HTTP 520: error code: 520'
     let state = createStreamMachineState(createInitialState('claude-opus-4-6', '/tmp'), createSpinnerState())

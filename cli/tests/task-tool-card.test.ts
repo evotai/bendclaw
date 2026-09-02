@@ -163,7 +163,11 @@ describe('task tool settled status', () => {
     expect(statusLine(lines)).toBe('  ✓ · stopped · 21s')
   })
 
-  test('a wait that expired says so and keeps the running glyph', () => {
+  test('a legacy expired wait still renders from a replayed transcript', () => {
+    // Nothing writes `timeout` any more: a blocking wait now ends only when the
+    // task finishes or the user reclaims the turn. Tool-result details are
+    // persisted per transcript, so sessions recorded before that change replay
+    // through this branch and must keep explaining themselves.
     const lines = render(settled({
       retrieval_status: 'timeout',
       status: 'running',

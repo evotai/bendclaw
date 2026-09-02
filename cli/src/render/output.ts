@@ -1070,6 +1070,8 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
       break
     case 'running_foreground':
       // No "in background" here: this task really is still in the foreground.
+      // The `timeout` clause is legacy for the same reason as above: replayed
+      // transcripts still carry it, nothing new writes it.
       parts.push(retrieval === 'timeout' ? 'still running · wait timed out' : 'still running')
       break
     default:
@@ -1094,6 +1096,10 @@ function taskToolStatusParts(details: Record<string, unknown>): string[] {
  * said that twice.
  */
 function runningInBackgroundLabel(retrieval: string | undefined): string {
+  // `timeout` is a legacy value: waits are no longer cut short by a bound, so
+  // nothing writes it any more. Tool-result details are persisted per
+  // transcript, so sessions recorded before that change still replay through
+  // here and must not render a bare, unexplained "running in background".
   return retrieval === 'timeout'
     ? 'running in background · wait timed out'
     : 'running in background'

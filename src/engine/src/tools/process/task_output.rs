@@ -16,30 +16,37 @@ use crate::types::ToolContext;
 use crate::types::ToolError;
 use crate::types::ToolResult;
 
-/// Maximum time any blocking poll may hold the user's turn.
+/// Bound on a blocking wait, when a host asks for one.
+///
+/// Unset by default, for the same reason `bash` no longer slices its foreground
+/// wait: `ctrl+b` and typing a message both release a blocking wait, so the turn
+/// is one keypress away and a timer adds nothing. What the timer did add was a
+/// loop — the wait returned `timeout` with the task still running, which reads
+/// as "ask again", so one wait became a series of them.
 ///
 /// This interaction policy belongs to the runtime. It is intentionally not an
 /// AI-visible parameter, so a tool call cannot extend or disable the bound.
-const BLOCKING_WAIT_LIMIT: Duration = Duration::from_secs(60);
+const NO_BLOCKING_WAIT_LIMIT: Option<Duration> = None;
 
 pub struct TaskOutputTool {
     manager: Arc<ProcessManager>,
-    blocking_wait_limit: Duration,
+    blocking_wait_limit: Option<Duration>,
 }
 
 impl TaskOutputTool {
     pub fn new(manager: Arc<ProcessManager>) -> Self {
         Self {
             manager,
-            blocking_wait_limit: BLOCKING_WAIT_LIMIT,
+            blocking_wait_limit: NO_BLOCKING_WAIT_LIMIT,
         }
     }
 
-    /// Override the runtime wait policy.
+    /// Bound the blocking wait, which is unbounded by default.
     ///
     /// This is configured by the host rather than exposed in the tool schema.
+    /// Tests use it to reach the bounded path without waiting one out.
     pub fn with_blocking_wait_limit(mut self, limit: Duration) -> Self {
-        self.blocking_wait_limit = limit;
+        self.blocking_wait_limit = Some(limit);
         self
     }
 
@@ -56,7 +63,7 @@ impl TaskOutputTool {
     async fn watch(
         &self,
         task_id: &str,
-        timeout: Duration,
+        timeout: Option<Duration>,
         ctx: &ToolContext,
     ) -> Result<Option<(ProcessSnapshot, bool)>, ToolError> {
         let started = Instant::now();
@@ -77,7 +84,7 @@ impl TaskOutputTool {
                 return Ok(None);
             };
             let elapsed = started.elapsed();
-            if snapshot.status.is_terminal() || elapsed >= timeout {
+            if snapshot.status.is_terminal() || timeout.is_some_and(|limit| elapsed >= limit) {
                 return Ok(Some((snapshot, false)));
             }
             // The user reclaimed the turn. Hand back what the task looks like now
@@ -138,7 +145,7 @@ impl AgentTool for TaskOutputTool {
         // make: waiting on a task whose result the next step needs is what this
         // tool is for, and framing it as the inferior option told a model its
         // legitimate use was a mistake.
-        "Get status and recent output from a background command. Waits for the task to finish by default, but automatically returns after at most 60 seconds so the user regains the turn. Pass block: false for an immediate snapshot. The task's output file is also readable directly at the path the command returned."
+        "Get status and recent output from a background command. Waits for the task to finish by default, returning when it ends or when the user reclaims the turn. Pass block: false for an immediate snapshot. The task's output file is also readable directly at the path the command returned."
     }
 
     fn prompt_snippet(&self) -> Option<&str> {
@@ -154,7 +161,7 @@ impl AgentTool for TaskOutputTool {
                 // model should know it holds the turn; calling it "throwing away
                 // the point" of backgrounding went further and framed the tool's
                 // primary use as a misuse.
-                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). The runtime automatically returns after at most 60 seconds; pass false for an immediate status snapshot." }
+                "block": { "type": "boolean", "description": "Wait for the task to finish (default true). The wait ends when the task finishes or the user reclaims the turn; pass false for an immediate status snapshot." }
             },
             "required": ["task_id"]
         })

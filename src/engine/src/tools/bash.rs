@@ -26,12 +26,20 @@ const MAX_DISPLAY_LINES: usize = 2000;
 const MAX_DISPLAY_BYTES: usize = 50 * 1024;
 /// Max bytes per single output line before truncation.
 const MAX_LINE_BYTES: usize = 4096;
-/// Foreground wait before a still-running command is yielded.
+/// Foreground wait before a still-running command is yielded, when a host asks
+/// for one.
 ///
-/// This is an interaction bound owned by the runtime, not a model-controlled
-/// command runtime limit. `timeout` remains independent and can allow the
-/// backgrounded command to keep running for much longer.
-const FOREGROUND_WAIT: Duration = Duration::from_secs(60);
+/// Unset by default. A wait bound and a user-driven detach solve the same
+/// problem, and the detach is the better half: `ctrl+b` and typing a message
+/// both hand foreground shells to the background and release blocking waits, so
+/// the turn is always one keypress away. Slicing on top of that did not add
+/// safety, it split one wait into a series of them — the model was handed back
+/// mid-wait, learned nothing new, and asked again.
+///
+/// `timeout` remains the bound that survives an absent user: it hands the
+/// command back alive where backgrounding exists, and still kills where it does
+/// not.
+const NO_FOREGROUND_WAIT: Option<Duration> = None;
 
 /// Execute shell commands. Short commands return normally; long commands can
 /// yield into a session-scoped [`ProcessManager`] and be queried later.
@@ -54,7 +62,7 @@ pub struct BashTool {
     pub sandbox_dirs: Option<Vec<PathBuf>>,
     process_manager: Arc<ProcessManager>,
     background_enabled: bool,
-    foreground_wait: Duration,
+    foreground_wait: Option<Duration>,
 }
 
 impl Default for BashTool {
@@ -76,7 +84,7 @@ impl Default for BashTool {
             sandbox_dirs: None,
             process_manager: Arc::new(ProcessManager::new()),
             background_enabled: false,
-            foreground_wait: FOREGROUND_WAIT,
+            foreground_wait: NO_FOREGROUND_WAIT,
         }
     }
 }
@@ -127,12 +135,13 @@ impl BashTool {
         self
     }
 
-    /// Override the runtime foreground-wait policy.
+    /// Set a foreground-wait bound, which is unset by default.
     ///
     /// This is host configuration and is deliberately absent from the tool
-    /// schema, so callers cannot extend or disable the interaction bound.
+    /// schema, so a tool call cannot extend or disable the bound. Tests use it
+    /// to reach the yield path in milliseconds instead of waiting one out.
     pub fn with_foreground_wait(mut self, wait: Duration) -> Self {
-        self.foreground_wait = wait;
+        self.foreground_wait = Some(wait);
         self
     }
 }
@@ -157,7 +166,7 @@ impl AgentTool for BashTool {
             // `resolve_tool_refs`. The schema below and BACKGROUND_GUIDANCE do
             // not, so those must keep literal names or the model would be shown
             // a raw `{{...}}`.
-            "Execute a bash command. Short commands return normally. Commands still running after 60 seconds are automatically handed back as background tasks; this does not stop them. Set run_in_background to return immediately. Use {{task_stop}} to actually stop one."
+            "Execute a bash command. Short commands return normally. A long command holds the turn until it finishes, its timeout elapses, or the user moves it to the background; none of these stop it. Set run_in_background to return immediately. Use {{task_stop}} to actually stop one."
         } else {
             "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). The timeout parameter is the command's hard runtime limit."
         }
@@ -203,7 +212,7 @@ impl AgentTool for BashTool {
                 // sentence would be a lie in whichever half it did not describe,
                 // and "it is never killed" is the more dangerous lie to tell.
                 "description": if self.background_enabled {
-                    "Deadline in seconds for bounding command execution (default 600, max 1800). A foreground command is automatically handed back alive after 60 seconds; if this later deadline elapses, it remains available as a background task. No effect with run_in_background. Use task_stop to actually stop one."
+                    "Deadline in seconds for bounding command execution (default 600, max 1800). When it elapses the command is handed back alive as a background task rather than killed, so it remains available to collect. No effect with run_in_background. Use task_stop to actually stop one."
                 } else {
                     "Hard runtime limit in seconds (default 600, max 1800). The command is killed when it elapses, so set it above the time the command legitimately needs."
                 }
@@ -242,7 +251,7 @@ impl AgentTool for BashTool {
         let timeout = requested_timeout(&params, self.timeout, self.max_timeout);
         let run_in_background =
             self.background_enabled && params["run_in_background"].as_bool().unwrap_or(false);
-        let yield_time = self.background_enabled.then_some(self.foreground_wait);
+        let yield_time = self.foreground_wait.filter(|_| self.background_enabled);
 
         for pattern in &self.deny_patterns {
             if command_text.contains(pattern.as_str()) {

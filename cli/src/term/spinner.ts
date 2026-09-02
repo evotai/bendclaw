@@ -4,6 +4,7 @@
  */
 
 import { formatCacheHitPercent } from '../render/cache.js'
+import { backgroundChord } from './app/hint.js'
 
 function getSpinnerChars(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {
@@ -265,13 +266,15 @@ export function formatSpinnerLine(
   const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
     ? ''
     : formatSpinnerTokenSuffix(state, now, stats)
-  // Foreground shells are handed back automatically after one minute. Ctrl+B
-  // remains available as an early-detach shortcut, but advertising it here made
-  // the automatic policy look like a required manual step.
+  // Ctrl+B is named again. It used to be hidden because foreground shells were
+  // handed back on a timer, which made the shortcut look like a required manual
+  // step for something the runtime did anyway. Nothing yields on a timer now, so
+  // this is the only way to get the turn back without killing the work — and an
+  // unadvertised key is one nobody presses.
   const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
     : options.backgroundable
-      ? ' · esc to interrupt · auto-background after 60s'
+      ? ` · esc to interrupt · ${backgroundChord()} to background`
       : ' · esc to interrupt'
 
   if (slow) {

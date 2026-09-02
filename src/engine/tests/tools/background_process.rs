@@ -573,7 +573,14 @@ fn foreground_wait_is_runtime_owned() {
     let bash = BashTool::new().with_process_manager(Arc::new(ProcessManager::new()));
     let schema = bash.parameters_schema();
     assert!(schema["properties"]["yield_time_ms"].is_null());
-    assert!(bash.description().contains("after 60 seconds"));
+    // No number to quote: a long command holds the turn until one of three
+    // things happens, and naming a fixed hand-back taught the model to wait for
+    // one that no longer arrives.
+    assert!(bash.description().contains("holds the turn"));
+    assert!(bash
+        .description()
+        .contains("user moves it to the background"));
+    assert!(!bash.description().contains("60 seconds"));
 }
 
 #[test]
@@ -588,9 +595,10 @@ fn timeout_schema_says_it_bounds_the_wait_rather_than_killing() {
         .as_str()
         .unwrap_or_default();
     assert!(
-        description.contains("after 60 seconds"),
+        description.contains("handed back alive"),
         "got: {description}"
     );
+    assert!(!description.contains("60 seconds"), "got: {description}");
     assert!(description.contains("task_stop"), "got: {description}");
     assert!(!description.contains("SIGKILL"), "got: {description}");
     assert!(
@@ -655,16 +663,19 @@ fn block_schema_names_the_cost_of_waiting() {
         .as_str()
         .unwrap_or_default();
     assert!(description.contains("default true"), "got: {description}");
+    // The two ways a wait ends, so neither is a surprise. No number: the wait is
+    // unbounded by default, and quoting one taught the model to expect a
+    // hand-back that never comes and to re-ask when it did.
     assert!(
-        description.contains("at most 60 seconds"),
+        description.contains("the task finishes"),
         "got: {description}"
     );
     assert!(
-        description.contains("runtime automatically"),
+        description.contains("user reclaims the turn"),
         "got: {description}"
     );
+    assert!(!description.contains("60 seconds"), "got: {description}");
     assert!(description.contains("false"), "got: {description}");
-    assert!(!description.contains("timeout"), "got: {description}");
     assert!(schema["properties"]["timeout"].is_null());
     // No language that frames waiting as a misuse of the tool.
     assert!(!description.contains("throws away"), "got: {description}");
@@ -679,9 +690,10 @@ fn task_output_description_states_both_modes() {
     let description = output.description();
     // Both modes named, so `block` is not a surprise discovered later.
     assert!(
-        description.contains("at most 60 seconds"),
+        description.contains("user reclaims the turn"),
         "got: {description}"
     );
+    assert!(!description.contains("60 seconds"), "got: {description}");
     assert!(description.contains("block: false"), "got: {description}");
     // The file is mentioned as available, not as the better choice.
     assert!(description.contains("output file"), "got: {description}");
@@ -712,6 +724,67 @@ async fn a_command_finishing_inside_the_default_wait_stays_in_the_foreground(
     assert!(result.details["backgrounded"].is_null());
     assert!(text(&result).contains("done"));
     assert_eq!(result.details["exit_code"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn nothing_yields_a_foreground_command_on_a_timer() -> Result<(), Box<dyn Error>> {
+    // The default has no foreground wait at all. A command that outlives any
+    // bound the runtime used to impose still answers inline, because the only
+    // things that end a wait now are the command finishing, its timeout, or the
+    // user. A timer on top of those did not make anything safer: it split one
+    // wait into a series of them, handing the model back mid-wait with nothing
+    // new to act on, which is what made it ask again.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new()
+        .with_timeout(Duration::from_secs(30))
+        .with_process_manager(manager.clone());
+
+    let result = bash
+        .execute(
+            serde_json::json!({"command": "sleep 1.2; echo waited"}),
+            context("bash", dir.path()),
+        )
+        .await?;
+
+    assert!(result.details["backgrounded"].is_null());
+    assert!(result.details["background_reason"].is_null());
+    assert!(text(&result).contains("waited"), "got: {}", text(&result));
+    assert_eq!(result.details["exit_code"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_blocking_wait_is_not_cut_short_by_a_bound() -> Result<(), Box<dyn Error>> {
+    // Same policy on the collection side. The wait used to return `timeout` with
+    // the task still running, which reads as "ask again" — the model had learned
+    // nothing and the user had not asked for the turn back, so the only sensible
+    // next move was another identical call.
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let output = TaskOutputTool::new(manager.clone());
+
+    let started = bash
+        .execute(
+            serde_json::json!({"command": "sleep 1.2; echo late", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    let id = task_id(&started)?.to_string();
+
+    let result = output
+        .execute(
+            serde_json::json!({"task_id": id}),
+            context("task_output", dir.path()),
+        )
+        .await?;
+
+    // Waited to completion rather than being handed back mid-run.
+    assert_eq!(result.details["retrieval_status"], "success");
+    assert_eq!(result.details["status"], "completed");
+    assert!(text(&result).contains("late"), "got: {}", text(&result));
     Ok(())
 }
 
@@ -2576,17 +2649,18 @@ async fn the_yield_lede_reports_the_runtime_wait() -> Result<(), Box<dyn Error>>
 }
 
 #[tokio::test]
-async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn Error>> {
-    // The other direction: with no yield_time_ms the number quoted must be the
-    // default that actually governed the wait.
+async fn a_yield_with_no_configured_wait_quotes_no_number() -> Result<(), Box<dyn Error>> {
+    // The other direction: with no host-configured wait there is no number that
+    // governed anything, so the lede must not invent one. Quoting a default here
+    // is what taught the model to expect a hand-back on a schedule.
     let dir = tempfile::tempdir()?;
     let manager = Arc::new(ProcessManager::new());
     let bash = BashTool::new()
         .with_timeout(Duration::from_secs(30))
         .with_process_manager(manager.clone());
 
-    // Detach externally, which reports the configured yield rather than a
-    // deadline -- waiting out the real 60s default would stall the suite.
+    // Detach externally, which is now the only way this reason arises: nothing
+    // in the runtime yields on a timer any more.
     let tool = Arc::new(bash);
     let watcher = tool.clone();
     let dir_path = dir.path().to_path_buf();
@@ -2607,7 +2681,9 @@ async fn the_default_yield_lede_still_names_the_default() -> Result<(), Box<dyn 
     );
 
     let body = text(&handle.await??);
-    assert!(body.contains("its 60s foreground wait"), "got: {body}");
+    assert!(body.contains("its foreground wait"), "got: {body}");
+    assert!(!body.contains("60s"), "got: {body}");
+    assert!(body.contains("was not interrupted"), "got: {body}");
 
     manager.terminate_all_and_wait(Duration::from_secs(5)).await;
     Ok(())

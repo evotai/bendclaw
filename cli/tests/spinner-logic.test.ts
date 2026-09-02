@@ -287,12 +287,31 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('esc to interrupt')
   })
 
-  test('announces automatic backgrounding while work can be detached', () => {
+  test('names ctrl+b while work can be detached', () => {
+    // The hint used to advertise a timer instead of the key. With nothing
+    // yielding on a timer, ctrl+b is the only non-destructive way out of a
+    // wait, so it has to be the thing the line names.
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
     expect(line).toContain('esc to interrupt')
-    expect(line).toContain('auto-background after 60s')
-    expect(line).not.toContain('ctrl+b')
+    expect(line).toContain('ctrl+b to background')
+    expect(line).not.toContain('auto-background')
+  })
+
+  test('inside tmux the hint spells the chord the way tmux forwards it', () => {
+    // Ctrl+B is tmux's own prefix, so a single press never reaches us there.
+    // Advertising the plain spelling would send a tmux user pressing a key that
+    // does nothing and concluding backgrounding is broken.
+    const previous = process.env.TMUX
+    process.env.TMUX = '/tmp/tmux-1000/default,1234,0'
+    try {
+      const state = createSpinnerState()
+      const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
+      expect(line).toContain('ctrl+b ctrl+b (twice) to background')
+    } finally {
+      if (previous === undefined) delete process.env.TMUX
+      else process.env.TMUX = previous
+    }
   })
 
   test('a suppressed hint stays suppressed even when backgroundable', () => {

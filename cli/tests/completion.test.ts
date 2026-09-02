@@ -126,6 +126,12 @@ describe('file path completion', () => {
 })
 
 describe('ghost hints', () => {
+  test('bare slash keeps resume visible and hides restart', () => {
+    const hint = getGhostHint('/', 1)
+    expect(hint).toContain('resume')
+    expect(hint).not.toContain('restart')
+  })
+
   test('shows clip all subcommand', () => {
     expect(getGhostHint('/clip ', 6)).toContain('all')
     expect(getGhostHint('/clip a', 7)).toBe('ll')

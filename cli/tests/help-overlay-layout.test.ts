@@ -55,9 +55,10 @@ describe('help overlay layout', () => {
     }
   })
 
-  test('advertises the /sessions alias next to /resume', () => {
+  test('advertises the /sessions alias next to /resume without showing /restart', () => {
     const rows = helpRows()
     const resumeRow = rows.find(row => row.includes('/resume'))
     expect(resumeRow).toContain('/sessions')
+    expect(rows.some(row => row.includes('/restart'))).toBe(false)
   })
 })

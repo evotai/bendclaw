@@ -71,6 +71,34 @@ describe('term stream machine', () => {
     expect(changed.commitLines).toEqual([])
   })
 
+  test('the quota card re-arms on a fresh call, not on a mid-storm attempt', () => {
+    // The retry work moved this reset from "any llm_call_started" to "attempt 0",
+    // which the quota path shares. A bounded retry re-emits the start event with
+    // attempt > 0; treating that as a new call would let one quota wait print its
+    // card again mid-storm.
+    const qerr = 'HTTP 429: rate_limit_error: Rate limit exceeded.'
+    const event = { kind: 'quota_waiting', payload: { delay_ms: 60_000, error: qerr } }
+    let state = createStreamMachineState(createInitialState('claude-opus-5', '/tmp'), createSpinnerState())
+
+    const first = reduceRunEvent(state, event, { termRows: 24 })
+    expect(first.commitLines.length).toBeGreaterThan(0)
+    state = first.state
+
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_started',
+      payload: { model: 'claude-opus-5', turn: 1, attempt: 2 },
+    }, { termRows: 24 }).state
+    expect(state.quotaWaitShown).toBe(true)
+    expect(reduceRunEvent(state, event, { termRows: 24 }).commitLines).toEqual([])
+
+    state = reduceRunEvent(state, {
+      kind: 'llm_call_started',
+      payload: { model: 'claude-opus-5', turn: 2, attempt: 0 },
+    }, { termRows: 24 }).state
+    expect(state.quotaWaitShown).toBe(false)
+    expect(reduceRunEvent(state, event, { termRows: 24 }).commitLines.length).toBeGreaterThan(0)
+  })
+
   test('quota wait sanitizes provider ANSI before committing a card', () => {
     const initial = createStreamMachineState(createInitialState('claude-fable-5', '/tmp'), createSpinnerState())
     const waiting = reduceRunEvent(initial, {

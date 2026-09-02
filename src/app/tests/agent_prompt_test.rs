@@ -62,7 +62,7 @@ fn base_prompt_includes_parallel_tool_calls_guideline() {
     let prompt = base_prompt(&tmp.path().to_string_lossy());
 
     let parallel_pos = prompt
-        .find("You can call multiple tools in a single response")
+        .find("make all independent tool calls in parallel")
         .expect("missing parallel tool-calls guideline");
     let concise_pos = prompt
         .find("Be concise in your responses")
@@ -70,6 +70,10 @@ fn base_prompt_includes_parallel_tool_calls_guideline() {
     assert!(
         parallel_pos < concise_pos,
         "parallel guideline should precede the trailer guidelines"
+    );
+    assert!(
+        !prompt.contains("make them together in one response"),
+        "ambiguous 'together' wording invites array-batched arguments"
     );
 }
 

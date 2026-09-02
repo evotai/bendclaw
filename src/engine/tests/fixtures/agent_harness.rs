@@ -131,6 +131,7 @@ pub struct TestHarness {
     system_prompt: String,
     prior_messages: Vec<AgentMessage>,
     steering_messages: Vec<AgentMessage>,
+    follow_up_messages: Vec<AgentMessage>,
     context_config: Option<ContextConfig>,
     execution_limits: Option<ExecutionLimits>,
     retry_policy: RetryPolicy,
@@ -147,6 +148,7 @@ impl TestHarness {
             system_prompt: "test".into(),
             prior_messages: vec![],
             steering_messages: vec![],
+            follow_up_messages: vec![],
             context_config: None,
             execution_limits: None,
             retry_policy: RetryPolicy::disabled(),
@@ -222,12 +224,29 @@ impl TestHarness {
         self
     }
 
+    /// Set follow-up messages, drained once the model stops calling tools.
+    ///
+    /// This is the path background-task completion notices travel: the engine
+    /// appends them to whatever the follow-up queue returns, so a notice keeps
+    /// the current run going instead of waiting for a new one.
+    pub fn follow_up(mut self, messages: Vec<AgentMessage>) -> Self {
+        self.follow_up_messages = messages;
+        self
+    }
+
     /// Run agent_loop with a text prompt. Returns TestOutput.
     pub async fn run(self, prompt: &str) -> TestOutput {
         let provider = MockProvider::new(self.responses);
         let steering = Arc::new(parking_lot::Mutex::new(self.steering_messages));
         let get_steering: Option<evotengine::GetMessagesFn> = {
             let q = steering.clone();
+            Some(Box::new(move || q.lock().drain(..).collect()))
+        };
+        // Drains once, like the real queue: a hook that kept returning the same
+        // message would spin the run forever rather than deliver it.
+        let follow_ups = Arc::new(parking_lot::Mutex::new(self.follow_up_messages));
+        let get_follow_up: Option<evotengine::GetMessagesFn> = {
+            let q = follow_ups.clone();
             Some(Box::new(move || q.lock().drain(..).collect()))
         };
         let config = AgentLoopConfig {
@@ -240,7 +259,7 @@ impl TestHarness {
             convert_to_llm: None,
             transform_context: None,
             get_steering_messages: get_steering,
-            get_follow_up_messages: None,
+            get_follow_up_messages: get_follow_up,
             context_config: self.context_config,
             compaction_context: None,
             compaction_fallback_context: None,

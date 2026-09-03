@@ -15,18 +15,17 @@ import { homedir } from 'os'
 import stringWidth from 'string-width'
 
 import { getTheme } from '../../render/theme.js'
+import { sectionHeaderLines, SECTION_MUTED } from '../../render/section.js'
+import { OFFICIAL_URL } from './source.js'
 
 const INDENT = 2
 const MEMBER_INDENT = 4
 const COLUMN_GAP = 2
-const MEMBER_GAP = 3
-/** Beyond this, member columns get too narrow to scan. */
-const MAX_MEMBER_COLUMNS = 8
 
 /** Matches the `dim: true` span the viewmodel paints, so `/skill` sits in the
  *  same visual register as every other system line. */
 function muted(text: string): string {
-  return chalk.hex('#777777')(text)
+  return chalk.hex(SECTION_MUTED)(text)
 }
 
 export function tildify(dir: string): string {
@@ -46,6 +45,8 @@ export interface SkillUnitView {
   label: string
   /** Short source label: `@40b5130`, `acme/pack@1a2b3c4`, or `~/.evotai/skills`. */
   origin: string
+  /** Whether this unit belongs to the auto-managed official catalog. */
+  official?: boolean
   /** Skills inside a group, with the group's own name prefix stripped. Empty for a lone skill. */
   members: string[]
 }
@@ -56,99 +57,18 @@ export interface SkillListView {
   total: number
 }
 
-/** Drop the redundant `lark-` from `lark-im` when it sits under `● lark/`. */
-export function shortMemberName(unit: string, member: string): string {
-  const prefix = `${unit}-`
-  return member.startsWith(prefix) && member.length > prefix.length
-    ? member.slice(prefix.length)
-    : member
-}
-
-// ---------------------------------------------------------------------------
-// Grid
-// ---------------------------------------------------------------------------
-
-/**
- * Split items into columns, filling top to bottom.
- *
- * Column-major, like `ls`. Filling left to right instead would put a long name
- * in every column it touched, so one 24-character skill widened the whole first
- * column and every short name after it sat behind a gap. Down-filling confines
- * that cost to the one column the long name lands in.
- */
-function columnsOf(items: string[], maxColumns: number): string[][] {
-  const rows = Math.ceil(items.length / maxColumns)
-  const columns: string[][] = []
-  for (let start = 0; start < items.length; start += rows) {
-    columns.push(items.slice(start, start + rows))
-  }
-  return columns
-}
-
-function layoutColumns(columns: string[][], indent: number, gap: number): string[] {
-  const widths = columns.map((column) => Math.max(...column.map((item) => stringWidth(item))))
-  const rowCount = Math.max(...columns.map((column) => column.length))
-  const rows: string[] = []
-  for (let row = 0; row < rowCount; row++) {
-    let text = ' '.repeat(indent)
-    // Trailing empty cells are never padded, so a short last row adds no
-    // invisible width the caller would have to account for.
-    const last = columns.reduce((found, column, index) => (column[row] ? index : found), -1)
-    for (let column = 0; column <= last; column++) {
-      const item = columns[column]?.[row] ?? ''
-      text += item
-      if (column < last) text += ' '.repeat((widths[column] ?? 0) - stringWidth(item) + gap)
-    }
-    rows.push(text)
-  }
-  return rows
-}
-
-function fits(columns: string[][], available: number, gap: number): boolean {
-  const total = columns.reduce(
-    (sum, column) => sum + Math.max(...column.map((item) => stringWidth(item))),
-    0,
-  )
-  return total + gap * (columns.length - 1) <= available
-}
-
-/**
- * Lay items out in as many columns as the width allows, reading top to bottom.
- *
- * Each column is sized from the items that actually land in it, so one long
- * name does not widen the whole grid the way a single uniform cell width would.
- */
-export function gridLines(
-  items: string[],
-  width: number,
-  indent = MEMBER_INDENT,
-  gap = MEMBER_GAP,
-): string[] {
-  if (items.length === 0) return []
-  const available = Math.max(1, width - indent)
-  const max = Math.min(items.length, MAX_MEMBER_COLUMNS)
-  for (let count = max; count > 1; count--) {
-    const columns = columnsOf(items, count)
-    // A smaller `count` can produce the same row count, and therefore the same
-    // columns, as one already rejected; measuring again is cheap and keeps the
-    // loop a plain search over candidates.
-    if (fits(columns, available, gap)) return layoutColumns(columns, indent, gap)
-  }
-  return layoutColumns([items], indent, gap)
-}
-
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 
-const HINT = '/skill install <source> · update [name] · remove <name>'
+const CUSTOM_HINT = '/skill install <source> · update [name] · remove <name>'
 
 interface Row {
   marker: string
   label: string
   origin: string
+  official: boolean
   count: string
-  members: string[]
 }
 
 function toRow(unit: SkillUnitView): Row {
@@ -157,89 +77,70 @@ function toRow(unit: SkillUnitView): Row {
     marker: grouped ? '●' : '○',
     label: unit.label,
     origin: unit.origin,
+    official: unit.official === true,
     count: grouped ? String(unit.members.length) : '',
-    members: unit.members.map((member) => shortMemberName(unit.name, member)),
   }
+}
+
+function rowLabelWidth(row: Row): number {
+  return stringWidth(row.label)
 }
 
 function renderRow(row: Row, labelWidth: number, originWidth: number): string {
   const theme = getTheme()
   const head = `${' '.repeat(INDENT)}${theme.accent.paint(row.marker)} ${theme.brandBold.paint(row.label)}`
   if (!row.origin && !row.count) return head
-  const labelPad = ' '.repeat(labelWidth - stringWidth(row.label) + COLUMN_GAP)
+  const labelPad = ' '.repeat(labelWidth - rowLabelWidth(row) + COLUMN_GAP)
   if (!row.count) return `${head}${labelPad}${muted(row.origin)}`
   const originPad = ' '.repeat(originWidth - stringWidth(row.origin) + COLUMN_GAP)
   return `${head}${labelPad}${muted(row.origin)}${originPad}${muted(row.count)}`
 }
 
-/**
- * The `/skill list` block.
- *
- * Groups come first with their members spread across columns; lone skills
- * follow as a compact table. Both share one label and one origin column so the
- * whole block reads as a single list rather than two unrelated shapes.
- */
-export function renderSkillList(view: SkillListView, width: number): string {
-  // Routed through renderNotice, not returned bare: the caller commits this as
-  // pre-styled, so unstyled text would render undimmed while every other
-  // one-line result is gray.
-  if (view.units.length === 0) return renderNotice('no skills installed')
+/** Shared categorized inventory used by the startup banner and `/skill list`. */
+export function renderSkillInventoryLines(view: SkillListView, width: number): string[] {
+  if (view.units.length === 0) return []
 
   const rows = view.units.map(toRow)
-  const groups = rows.filter((row) => row.members.length > 0)
-  const singles = rows.filter((row) => row.members.length === 0)
-  const labelWidth = Math.max(...rows.map((row) => stringWidth(row.label)))
+  const official = rows.filter((row) => row.official)
+  const custom = rows.filter((row) => !row.official)
+  const labelWidth = Math.max(...rows.map(rowLabelWidth))
+  const groupedRows = rows.filter((row) => row.count !== '')
   // Only group rows carry a count, so only they need the origin column padded.
   // Sizing it across every row let one long directory path push the counts far
   // to the right of the origins they follow.
-  const originWidth = groups.length
-    ? Math.max(...groups.map((row) => stringWidth(row.origin)))
+  const originWidth = groupedRows.length
+    ? Math.max(...groupedRows.map((row) => stringWidth(row.origin)))
     : 0
 
-  const theme = getTheme()
   const unitWord = view.units.length === 1 ? 'unit' : 'units'
-  const lines: string[] = [
-    '',
-    `${' '.repeat(INDENT)}${theme.brandBold.paint('Skills')}  ${muted(`${view.total} · ${view.units.length} ${unitWord}`)}`,
-    '',
-  ]
-  for (const row of groups) {
-    lines.push(renderRow(row, labelWidth, originWidth))
-    lines.push(...gridLines(row.members, width).map((line) => muted(line)))
-    lines.push('')
+  const lines = sectionHeaderLines('Skills', width, `${view.total} · ${view.units.length} ${unitWord}`)
+  lines.push('')
+
+  const appendRows = (section: Row[]): void => {
+    for (const row of section) lines.push(renderRow(row, labelWidth, originWidth))
   }
-  for (const row of singles) lines.push(renderRow(row, labelWidth, originWidth))
-  if (singles.length > 0) lines.push('')
-  lines.push(`${' '.repeat(INDENT)}${muted(HINT)}`)
+
+  if (official.length > 0) {
+    lines.push(...sectionHeaderLines('Official', width, `auto-updated · ${OFFICIAL_URL}`))
+    appendRows(official)
+    if (custom.length > 0) lines.push('')
+  }
+
+  if (custom.length > 0) {
+    lines.push(...sectionHeaderLines('Custom', width))
+    appendRows(custom)
+  }
+
+  return lines
+}
+
+/** The `/skill list` block: shared inventory plus its management hint. */
+export function renderSkillList(view: SkillListView, width: number): string {
+  if (view.units.length === 0) return renderNotice('no skills installed')
+
+  const lines = ['', ...renderSkillInventoryLines(view, width)]
+  lines.push('', `${' '.repeat(INDENT)}${muted(CUSTOM_HINT)}`)
   return lines.join('\n')
-}
-
-/**
- * The startup banner's one-line-per-unit summary.
- *
- * The banner is a glance, not an inventory, so members collapse into a count:
- * spelling out all 27 lark skills cost three wrapped lines and told the user
- * nothing they could act on. Labels follow `/skill list` exactly, so `lark/`
- * means the same thing in both places.
- *
- * `mutedHex` exists because the banner's own secondary text is a different gray
- * from the REPL's. Left to the default, the counts would sit a shade off from
- * the `[Context]` values directly above them.
- */
-export function skillSummaryParts(view: SkillListView, mutedHex?: string): string[] {
-  const theme = getTheme()
-  const secondary = mutedHex ? (text: string) => chalk.hex(mutedHex)(text) : muted
-  return view.units.map((unit) =>
-    unit.members.length > 0
-      ? `${theme.brand.paint(unit.label)} ${secondary(String(unit.members.length))}`
-      : theme.brand.paint(unit.label),
-  )
-}
-
-/** Joined form of {@link skillSummaryParts}, ready to wrap. */
-export function renderSkillSummary(view: SkillListView, mutedHex?: string): string {
-  const separator = mutedHex ? chalk.hex(mutedHex)(' · ') : muted(' · ')
-  return skillSummaryParts(view, mutedHex).join(separator)
 }
 
 // ---------------------------------------------------------------------------

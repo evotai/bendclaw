@@ -10,15 +10,12 @@ beforeAll(() => {
 })
 
 import {
-  gridLines,
   renderNotice,
   renderOperation,
   renderProgress,
   renderRemoved,
+  renderSkillInventoryLines,
   renderSkillList,
-  renderSkillSummary,
-  shortMemberName,
-  skillSummaryParts,
   type SkillListView,
   type UnitResult,
 } from '../src/commands/skill/render.js'
@@ -42,76 +39,24 @@ function view(overrides: Partial<SkillListView> = {}): SkillListView {
   }
 }
 
-describe('gridLines', () => {
-  test('packs as many columns as the width allows', () => {
-    const items = ['aa', 'bb', 'cc', 'dd']
-    // indent 4 + 4 items of width 2 + 3 gaps of 3 = 21 columns.
-    expect(gridLines(items, 40)).toEqual(['    aa   bb   cc   dd'])
-  })
-
-  test('falls back to one item per row when nothing else fits', () => {
-    expect(gridLines(['alpha', 'beta'], 10)).toEqual(['    alpha', '    beta'])
-  })
-
-  test('fills top to bottom so a long name widens only its own column', () => {
-    // Two columns: `a`/`bbbbbb` then `ccc`/`d`. `bbbbbb` sets column 0's width
-    // and nothing in column 1 pays for it.
-    expect(gridLines(['a', 'bbbbbb', 'ccc', 'd'], 19)).toEqual([
-      '    a        ccc',
-      '    bbbbbb   d',
-    ])
-  })
-
-  test('a short last row pads no trailing cells', () => {
-    for (const row of gridLines(['aa', 'bb', 'ccc'], 30)) {
-      expect(row).toBe(row.trimEnd())
-    }
-  })
-
-  test('never exceeds the given width', () => {
-    const items = Array.from({ length: 30 }, (_, i) => `skill-name-${i}`)
-    for (const width of [40, 60, 80, 120]) {
-      for (const row of gridLines(items, width)) {
-        expect(row.length).toBeLessThanOrEqual(width)
-      }
-    }
-  })
-
-  test('an empty set produces no rows', () => {
-    expect(gridLines([], 80)).toEqual([])
-  })
-})
-
-describe('shortMemberName', () => {
-  test('drops the group prefix the group row already shows', () => {
-    expect(shortMemberName('lark', 'lark-im')).toBe('im')
-    expect(shortMemberName('lark', 'lark-workflow-standup-report')).toBe('workflow-standup-report')
-  })
-
-  test('leaves names that are not prefixed, or are only the prefix', () => {
-    expect(shortMemberName('lark', 'databend-cloud')).toBe('databend-cloud')
-    expect(shortMemberName('lark', 'lark')).toBe('lark')
-    expect(shortMemberName('lark', 'lark-')).toBe('lark-')
-  })
-})
-
 describe('renderSkillList', () => {
   test('heads with the skill and unit counts', () => {
-    expect(lines(renderSkillList(view(), 80))[1]).toBe('  Skills  3 · 2 units')
+    expect(lines(renderSkillList(view(), 80))[1]).toBe('  [Skills]  3 · 2 units')
   })
 
   test('singular unit count reads naturally', () => {
     const single = view({
       total: 1,
-      units: [{ name: 'solo', label: 'solo', origin: 'builtin', members: [] }],
+      units: [{ name: 'solo', label: 'solo', origin: '~/.evotai/skills', members: [] }],
     })
-    expect(lines(renderSkillList(single, 80))[1]).toBe('  Skills  1 · 1 unit')
+    expect(lines(renderSkillList(single, 80))[1]).toBe('  [Skills]  1 · 1 unit')
   })
 
-  test('groups carry a filled marker, a count, and their members below', () => {
+  test('groups carry a filled marker and count without listing child skills', () => {
     const out = lines(renderSkillList(view(), 80))
     expect(out).toContain('  ● lark/           @40b5130  2')
-    expect(out).toContain('    im   doc')
+    expect(out.join('\n')).not.toContain('lark-im')
+    expect(out.join('\n')).not.toContain('im | doc')
   })
 
   test('the count column is sized from group origins, not long directory paths', () => {
@@ -138,9 +83,43 @@ describe('renderSkillList', () => {
   })
 
   test('closes with the subcommand hint', () => {
-    expect(lines(renderSkillList(view(), 80)).at(-1)).toBe(
+    const out = lines(renderSkillList(view(), 80))
+    expect(out.at(-1)).toBe(
       '  /skill install <source> · update [name] · remove <name>',
     )
+  })
+
+  test('official units share one compact section before custom units', () => {
+    const official = view({
+      total: 4,
+      units: [
+        { name: 'lark', label: 'lark/', origin: '@40b5130', official: true, members: ['lark-im'] },
+        { name: 'humanize', label: 'humanize', origin: '@40b5130', official: true, members: [] },
+        { name: 'local', label: 'local', origin: '~/.evotai/skills', members: [] },
+      ],
+    })
+    const out = lines(renderSkillList(official, 120))
+    const officialHeader = out.indexOf('  [Official]  auto-updated · https://github.com/evotai/evot-skills')
+    const group = out.findIndex((line) => line.includes('● lark/') && line.includes('@40b5130'))
+    const lone = out.findIndex((line) => line.includes('○ humanize') && line.includes('@40b5130'))
+    const customHeader = out.indexOf('  [Custom]')
+    const local = out.findIndex((line) => line.includes('○ local') && line.includes('~/.evotai/skills'))
+
+    expect(officialHeader).toBeGreaterThan(-1)
+    expect(officialHeader).toBeLessThan(group)
+    expect(group).toBeLessThan(lone)
+    expect(lone).toBeLessThan(customHeader)
+    expect(customHeader).toBeLessThan(local)
+    expect(out.join('\n')).not.toContain('[official]')
+    expect(out).not.toContain('    Automatically installed and updated by evot.')
+    expect(out).not.toContain('    No manual action needed.')
+  })
+
+  test('the shared inventory omits only the list management hint', () => {
+    const inventory = renderSkillInventoryLines(view(), 80).map(stripAnsi)
+    const listed = lines(renderSkillList(view(), 80))
+    expect(listed.slice(1, -2)).toEqual(inventory)
+    expect(inventory.join('\n')).not.toContain('/skill install')
   })
 
   test('an empty view says so in one line, styled like every other notice', () => {
@@ -155,45 +134,6 @@ describe('renderSkillList', () => {
     for (const row of lines(renderSkillList(wide, 60))) {
       expect(row.length).toBeLessThanOrEqual(60)
     }
-  })
-})
-
-describe('renderSkillSummary', () => {
-  test('collapses group members into a count', () => {
-    // The banner is a glance: 27 spelled-out lark names cost three wrapped
-    // lines and named nothing the user could act on.
-    expect(stripAnsi(renderSkillSummary(view()))).toBe('lark/ 2 · zero-tech-debt')
-  })
-
-  test('labels match the ones /skill list shows', () => {
-    const parts = skillSummaryParts(view()).map(stripAnsi)
-    const listed = lines(renderSkillList(view(), 80))
-    for (const part of parts) {
-      const label = part.split(' ')[0]!
-      expect(listed.some((row) => row.includes(label))).toBe(true)
-    }
-  })
-
-  test('a lone skill carries no count', () => {
-    const single = view({
-      total: 1,
-      units: [{ name: 'solo', label: 'solo', origin: 'builtin', members: [] }],
-    })
-    expect(stripAnsi(renderSkillSummary(single))).toBe('solo')
-  })
-
-  test('an empty view produces nothing to render', () => {
-    expect(skillSummaryParts({ units: [], total: 0 })).toEqual([])
-    expect(renderSkillSummary({ units: [], total: 0 })).toBe('')
-  })
-
-  test('an explicit muted hue paints the counts and separators', () => {
-    // The banner's secondary gray differs from the REPL's; left to the default
-    // the counts would sit a shade off from the [Context] values above them.
-    const out = renderSkillSummary(view(), '#808080')
-    expect(out).toContain('\x1b[38;2;128;128;128m')
-    expect(out).not.toContain('\x1b[38;2;119;119;119m')
-    expect(stripAnsi(out)).toBe('lark/ 2 · zero-tech-debt')
   })
 })
 

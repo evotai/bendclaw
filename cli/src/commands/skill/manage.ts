@@ -18,6 +18,13 @@ export interface ManageOptions {
   variablesFile?: string
 }
 
+export interface OfficialSyncResult {
+  installed: string[]
+  updated: string[]
+  unchanged: string[]
+  skipped: string[]
+}
+
 interface Context {
   root: string
   fetch: FetchFn
@@ -57,8 +64,9 @@ async function applyUnit(
   source: Source,
   unit: Unit,
   commit: string,
+  replaceSuperseded = true,
 ): Promise<UnitNote[]> {
-  const superseded = source.official ? supersededDirs(ctx.root, unit) : []
+  const superseded = source.official && replaceSuperseded ? supersededDirs(ctx.root, unit) : []
   await installUnit(unit, record(source, unit, commit), ctx.root)
 
   const notes: UnitNote[] = []
@@ -110,6 +118,59 @@ export async function skillInstall(arg?: string, options: ManageOptions = {}): P
   } finally {
     await discardCheckout(checkout)
   }
+}
+
+let officialSyncInFlight: Promise<OfficialSyncResult> | null = null
+
+/**
+ * Reconcile the managed root with the complete official catalog.
+ *
+ * New official units are installed and previously managed official units are
+ * updated. A local or third-party unit with the same directory name is left
+ * untouched, so background maintenance never replaces user-owned content.
+ */
+export async function syncOfficialSkills(
+  options: ManageOptions = {},
+): Promise<OfficialSyncResult> {
+  const ctx = context(options)
+  const source = resolveSource(undefined, ctx.env)
+  const checkout = await ctx.fetch(source, ctx.progress)
+  const result: OfficialSyncResult = { installed: [], updated: [], unchanged: [], skipped: [] }
+
+  try {
+    const units = enumerateUnits(checkout.dir, source)
+    for (const unit of units) {
+      const destination = join(ctx.root, unit.name)
+      const installed = existsSync(destination)
+      const previous = installed ? readSourceRecord(destination) : null
+
+      if (installed && (!previous || !isOfficialRepo(previous.repo, ctx.env))) {
+        result.skipped.push(unit.name)
+        continue
+      }
+      if (previous?.commit === checkout.commit) {
+        result.unchanged.push(unit.name)
+        continue
+      }
+
+      await applyUnit(ctx, source, unit, checkout.commit, false)
+      if (previous) result.updated.push(unit.name)
+      else result.installed.push(unit.name)
+    }
+    return result
+  } finally {
+    await discardCheckout(checkout)
+  }
+}
+
+/** Share one background reconciliation when startup paths overlap. */
+export function startOfficialSkillSync(options: ManageOptions = {}): Promise<OfficialSyncResult> {
+  if (!officialSyncInFlight) {
+    officialSyncInFlight = syncOfficialSkills(options).finally(() => {
+      officialSyncInFlight = null
+    })
+  }
+  return officialSyncInFlight
 }
 
 interface Installed {

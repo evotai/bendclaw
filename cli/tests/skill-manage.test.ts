@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 import { parseRequires } from '../src/commands/skill/frontmatter.js'
 import { commitFromRoot } from '../src/commands/skill/fetch.js'
 import { readSourceRecord } from '../src/commands/skill/install.js'
-import { skillInstall, skillRemove, skillUpdate } from '../src/commands/skill/manage.js'
+import { skillInstall, skillRemove, skillUpdate, syncOfficialSkills } from '../src/commands/skill/manage.js'
 import { isValidSkillName, scanSkillDir } from '../src/commands/skill/scan.js'
 import { resolveSource } from '../src/commands/skill/source.js'
 import { enumerateUnits, supersededDirs } from '../src/commands/skill/units.js'
@@ -290,6 +290,56 @@ describe('skillInstall', () => {
       env: { BENDCLOUD_DSN: 'bendcloud://org:token@api.databend.com/default' },
     })
     expect(unit(out, 'databend-cloud').notes).toEqual([])
+  })
+})
+
+describe('syncOfficialSkills', () => {
+  test('installs new official units and updates them on later runs', async () => {
+    const root = workspace()
+
+    const first = await syncOfficialSkills({
+      root,
+      variablesFile: vars(root),
+      fetch: stubFetch('abc1234').fetch,
+      env: {},
+    })
+    expect(first).toEqual({
+      installed: ['databend-cloud', 'lark'],
+      updated: [],
+      unchanged: [],
+      skipped: [],
+    })
+
+    const second = await syncOfficialSkills({
+      root,
+      variablesFile: vars(root),
+      fetch: stubFetch('def5678').fetch,
+      env: {},
+    })
+    expect(second.updated).toEqual(['databend-cloud', 'lark'])
+    expect(readSourceRecord(join(root, 'lark'))?.commit).toBe('def5678')
+  })
+
+  test('does not rewrite units already at the catalog commit', async () => {
+    const root = workspace()
+    await syncOfficialSkills({ root, fetch: stubFetch('abc1234').fetch, env: {} })
+    writeFileSync(join(root, 'databend-cloud', 'SKILL.md'), 'local runtime change')
+
+    const result = await syncOfficialSkills({ root, fetch: stubFetch('abc1234').fetch, env: {} })
+    expect(result.unchanged).toEqual(['databend-cloud', 'lark'])
+    expect(readFileSync(join(root, 'databend-cloud', 'SKILL.md'), 'utf8')).toBe('local runtime change')
+  })
+
+  test('preserves local and third-party units with official catalog names', async () => {
+    const root = workspace()
+    writeSkill(join(root, 'databend-cloud'), 'databend-cloud')
+    writeSkill(join(root, 'lark-im'), 'lark-im')
+
+    const result = await syncOfficialSkills({ root, fetch: stubFetch('abc1234').fetch, env: {} })
+    expect(result.skipped).toEqual(['databend-cloud'])
+    expect(result.installed).toEqual(['lark'])
+    expect(readSourceRecord(join(root, 'databend-cloud'))).toBeNull()
+    expect(existsSync(join(root, 'lark-im', 'SKILL.md'))).toBe(true)
   })
 })
 

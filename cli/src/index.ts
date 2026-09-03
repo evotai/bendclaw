@@ -36,6 +36,13 @@ async function main() {
     if (applied) reportAppliedUpdate(applied, opts.command)
   } catch { /* never block launch on update bookkeeping */ }
 
+  if (opts.command === 'repl' || opts.command === 'login' || opts.command === 'prompt') {
+    try {
+      const { startOfficialSkillSync } = await import('./commands/skill.js')
+      void startOfficialSkillSync().catch(() => { /* never block launch on skill sync */ })
+    } catch { /* never block launch on skill sync bookkeeping */ }
+  }
+
   switch (opts.command) {
     case 'serve': {
       const { startServer } = await import('./native/index.js')

@@ -1,17 +1,22 @@
 export { resolveSkillsDirs } from './skill/paths.js'
 export { getSkillEntries, type SkillEntry } from './skill/scan.js'
 export { skillList, skillListFromDirs, skillListView, type SkillListOptions } from './skill/list.js'
-export { skillInstall, skillRemove, skillUpdate, type ManageOptions } from './skill/manage.js'
 export {
-  gridLines,
+  skillInstall,
+  skillRemove,
+  skillUpdate,
+  startOfficialSkillSync,
+  syncOfficialSkills,
+  type ManageOptions,
+  type OfficialSyncResult,
+} from './skill/manage.js'
+export {
   renderNotice,
   renderOperation,
   renderProgress,
   renderRemoved,
+  renderSkillInventoryLines,
   renderSkillList,
-  renderSkillSummary,
-  shortMemberName,
-  skillSummaryParts,
   tildify,
   type OperationView,
   type SkillListView,

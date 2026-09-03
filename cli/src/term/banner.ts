@@ -2,12 +2,13 @@ import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import chalk from 'chalk'
-import { renderSkillSummary, skillListView } from '../commands/skill.js'
+import { renderSkillInventoryLines, skillListView } from '../commands/skill.js'
 import type { ConfigInfo } from '../native/index.js'
 import { getTheme } from '../render/theme.js'
+import { inlineItemLines, sectionHeaderLines, SECTION_MUTED } from '../render/section.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
 
-const MUTED = '#808080'
+const MUTED = SECTION_MUTED
 const LOGO_MIN_COLUMNS = 50
 const PROMPT_RESERVED_ROWS = 5
 const PROJECT_CONTEXT_FILES = ['EVOT.md', 'CLAUDE.md', 'AGENTS.md']
@@ -56,12 +57,9 @@ function renderLogo(version: string): string[] {
 
 function renderSection(title: string, values: string[], columns: number): string[] {
   if (values.length === 0) return []
-
-  const valueWidth = Math.max(1, columns - 4)
-  const valueLines = wrapTextWithAnsi(values.join(', '), valueWidth)
   return [
-    getTheme().accent.paint(`  [${title}]`),
-    ...valueLines.map(line => chalk.hex(MUTED)(`    ${line}`)),
+    ...sectionHeaderLines(title, columns),
+    ...inlineItemLines(values.map(value => chalk.hex(MUTED)(value)), columns),
   ]
 }
 
@@ -76,11 +74,7 @@ function renderSkillSection(skillsDirs: string[] | undefined, columns: number): 
   const view = skillListView(skillsDirs ?? undefined)
   if (view.units.length === 0) return []
 
-  const valueWidth = Math.max(1, columns - 4)
-  return [
-    getTheme().accent.paint('  [Skills]'),
-    ...wrapTextWithAnsi(renderSkillSummary(view, MUTED), valueWidth).map(line => `    ${line}`),
-  ]
+  return renderSkillInventoryLines(view, columns)
 }
 
 function appendBlock(lines: string[], block: string[]): void {

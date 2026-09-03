@@ -41,19 +41,19 @@ export function skillListView(
   let total = 0
 
   for (const entry of getSkillEntries(dirs)) {
-    total += 1
     const unitDir = unitDirOf(entry)
+    // Builtins are internal commands, not catalog units users can manage.
+    if (unitDir.startsWith(builtinSkillsRoot())) continue
+
+    total += 1
     const record = readSourceRecord(unitDir)
+    const official = record ? isOfficialRepo(record.repo, env) : false
     const origin = originLabel(record, unitDir, env)
-    // Builtins live one directory per skill but ship as one thing, so they
-    // collapse into a single unit instead of five identical rows. They are not
-    // a directory group, so the label carries no trailing slash.
-    const builtin = unitDir.startsWith(builtinSkillsRoot())
-    const name = builtin ? 'builtin' : entry.group ?? entry.name
-    const key = builtin ? 'builtin' : `${unitDir}\u0000${origin}`
-    const label = builtin ? 'builtin' : entry.group ? `${entry.group}/` : entry.name
-    const unit = byKey.get(key) ?? { name, label, origin, members: [] }
-    if (builtin || entry.group) unit.members.push(entry.name)
+    const name = entry.group ?? entry.name
+    const key = `${unitDir}\u0000${origin}`
+    const label = entry.group ? `${entry.group}/` : entry.name
+    const unit = byKey.get(key) ?? { name, label, origin, official, members: [] }
+    if (entry.group) unit.members.push(entry.name)
     byKey.set(key, unit)
   }
 

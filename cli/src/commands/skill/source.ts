@@ -1,6 +1,7 @@
 import { isValidSkillName } from './scan.js'
 
 export const OFFICIAL_REPO = 'evotai/evot-skills'
+export const OFFICIAL_URL = `https://github.com/${OFFICIAL_REPO}`
 export const OFFICIAL_REF = 'main'
 export const OFFICIAL_PREFIX = 'skills'
 export const SOURCE_FILE = '.evot-source.json'

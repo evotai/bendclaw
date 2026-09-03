@@ -214,7 +214,7 @@ describe('skillListFromDirs', () => {
       writeFileSync(join(claude, 'claude-skill', 'SKILL.md'), '---\ndescription: claude\n---\n')
 
       const out = stripAnsi(skillListFromDirs([evotai, claude], { columns: 80 }))
-      expect(out).toContain('Skills  2 · 2 units')
+      expect(out).toContain('[Skills]  2 · 2 units')
       // Lone skills are ○ rows carrying the directory they live in.
       expect(out).toContain(`○ claude-skill  ${claude}`)
       expect(out).toContain(`○ evot-skill    ${evotai}`)
@@ -235,8 +235,9 @@ describe('skillListFromDirs', () => {
 
       const out = stripAnsi(skillListFromDirs([root], { columns: 80 }))
       expect(out).toContain('● lark/')
-      // Members drop the group prefix and lay out as a grid under the group row.
-      expect(out).toContain('    im   shared')
+      // Groups stay collapsed to one unit row; child skills are intentionally hidden.
+      expect(out).not.toContain('lark-im')
+      expect(out).not.toContain('im | shared')
       expect(out).toContain('○ databend-cloud')
       expect(out).not.toContain('● lark ')
     } finally {
@@ -244,7 +245,7 @@ describe('skillListFromDirs', () => {
     }
   })
 
-  test('official installs show only the commit, not the repeated repo', () => {
+  test('official installs show one catalog section with commit and repository', () => {
     const root = join(tmpdir(), `evot-skill-origin-${Date.now()}`)
     try {
       mkdirSync(join(root, 'lark', 'lark-im'), { recursive: true })
@@ -262,8 +263,10 @@ describe('skillListFromDirs', () => {
       )
 
       const out = stripAnsi(skillListFromDirs([root], { columns: 80, env: {} }))
-      expect(out).toContain('@40b5130')
-      expect(out).not.toContain('evotai/evot-skills')
+      expect(out).toContain('[Official]  auto-updated · https://github.com/evotai/evot-skills')
+      expect(out).toContain('● lark/  @40b5130  1')
+      expect(out).not.toContain('[official]')
+      expect(out.match(/evotai\/evot-skills/g)?.length).toBe(1)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

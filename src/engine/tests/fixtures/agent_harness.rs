@@ -376,6 +376,7 @@ impl TestOutput {
                 AgentEvent::ToolExecutionStart { .. } => "ToolExecStart",
                 AgentEvent::ToolExecutionUpdate { .. } => "ToolExecUpdate",
                 AgentEvent::ToolExecutionEnd { .. } => "ToolExecEnd",
+                AgentEvent::ToolInputDiagnostic { .. } => "ToolInputDiagnostic",
                 AgentEvent::ProgressMessage { .. } => "ProgressMessage",
                 AgentEvent::Error { .. } => "Error",
                 AgentEvent::LlmCallStart { .. } => "LlmCallStart",

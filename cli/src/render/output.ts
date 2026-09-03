@@ -150,10 +150,12 @@ function toolCallText(
   args: Record<string, unknown>,
   previewCommand?: string,
   expanded?: boolean,
-  options?: { failed?: boolean },
+  options?: { failed?: boolean; isFanout?: boolean; invocationCount?: number; parallel?: boolean },
 ): string {
   const glyph = toolGlyph(name).icon
-  const displayName = toolDisplayName(name)
+  const count = options?.isFanout ? Math.max(2, options.invocationCount ?? 2) : 1
+  const mode = options?.isFanout ? ` ×${count} ${options.parallel ? 'parallel' : 'sequential'}` : ''
+  const displayName = `${toolDisplayName(name)}${mode}`
   const primary = toolPrimaryArg(name, args, previewCommand, expanded, options)
   return primary ? `${glyph} ${displayName}  ${primary}` : `${glyph} ${displayName}`
 }
@@ -472,7 +474,7 @@ export function buildToolCall(
   args: Record<string, unknown>,
   previewCommand?: string,
   expanded?: boolean,
-  options?: { failed?: boolean },
+  options?: { failed?: boolean; isFanout?: boolean; invocationCount?: number; parallel?: boolean },
 ): OutputLine[] {
   // Keep the operation headline first so every lifecycle state has the same
   // stable card geometry: headline → status → optional reason/output details.
@@ -534,6 +536,44 @@ function failedArgDetailLines(name: string, args: Record<string, unknown>): stri
   return lines
 }
 
+function fanoutResultWithCommands(
+  result: string | undefined,
+  details: Record<string, unknown>,
+): string | undefined {
+  if (!result) return result
+  const fanout = asDetails(details.fanout)
+  const children = Array.isArray(fanout.children) ? fanout.children : []
+  if (children.length === 0) return result
+
+  const commands = new Map<number, string>()
+  for (const child of children) {
+    const item = asDetails(child)
+    const index = detailNumber(item, 'index')
+    const command = detailString(item, 'preview_command')
+    if (index !== undefined && command) commands.set(index + 1, command)
+  }
+  if (commands.size === 0) return result
+
+  const lines: string[] = []
+  for (const line of result.split('\n')) {
+    lines.push(line)
+    const match = /^### \[(\d+)\/\d+\]/.exec(line)
+    if (!match) continue
+    const index = Number(match[1])
+    const command = commands.get(index)
+    if (!command) continue
+    const commandLines = command
+      .replace(/\r/g, '')
+      .replace(/\t/g, '   ')
+      .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '�')
+      .split('\n')
+    commandLines.forEach((commandLine, commandIndex) => {
+      lines.push(commandIndex === 0 ? `$ ${commandLine}` : `  ${commandLine}`)
+    })
+  }
+  return lines.join('\n')
+}
+
 export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.now()): OutputLine[] {
   // ask_user owns an interactive overlay and commits the selected answer (or
   // cancellation) separately. Rendering its engine-side lifecycle as a generic
@@ -556,7 +596,7 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     args,
     call.previewCommand,
     expanded,
-    { failed: settledFailed },
+    { failed: settledFailed, isFanout: call.isFanout, invocationCount: call.invocationCount, parallel: call.parallel },
   )
 
   if (call.status === 'queued') {
@@ -571,11 +611,14 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     writePreviewCache.delete(call.id)
     // buildToolResult auto-previews failed bodies itself (tail lines), so pass
     // the raw user toggle: ctrl+o still expands/collapses failed cards.
+    const result = expanded && call.isFanout
+      ? fanoutResultWithCommands(call.result, details)
+      : call.result
     const resultLines = buildToolResult(
       call.name,
       args,
       call.status,
-      call.result,
+      result,
       call.durationMs,
       expanded,
       details,

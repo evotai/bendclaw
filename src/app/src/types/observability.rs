@@ -71,6 +71,17 @@ pub struct LlmCallCompletedStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolInputDiagnosticStats {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub model: String,
+    pub provider: String,
+    pub input_shape: String,
+    /// Number of child invocations executed. Zero denotes a rejected mismatch.
+    pub fanout_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolFinishedStats {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -168,6 +179,7 @@ pub enum TranscriptStats {
     LlmCallRetry(LlmCallRetryStats),
     LlmCallCompleted(LlmCallCompletedStats),
     ToolFinished(ToolFinishedStats),
+    ToolInputDiagnostic(ToolInputDiagnosticStats),
     ContextCompactionStarted(ContextCompactionStartedStats),
     ContextCompactionCompleted(ContextCompactionCompletedStats),
     RunFinished(RunFinishedStats),
@@ -181,6 +193,7 @@ impl TranscriptStats {
             Self::LlmCallRetry(_) => "llm_call_retry",
             Self::LlmCallCompleted(_) => "llm_call_completed",
             Self::ToolFinished(_) => "tool_finished",
+            Self::ToolInputDiagnostic(_) => "tool_input_diagnostic",
             Self::ContextCompactionStarted(_) => "context_compaction_started",
             Self::ContextCompactionCompleted(_) => "context_compaction_completed",
             Self::RunFinished(_) => "run_finished",
@@ -195,6 +208,7 @@ impl TranscriptStats {
             Self::LlmCallRetry(s) => serde_json::to_value(s),
             Self::LlmCallCompleted(s) => serde_json::to_value(s),
             Self::ToolFinished(s) => serde_json::to_value(s),
+            Self::ToolInputDiagnostic(s) => serde_json::to_value(s),
             Self::ContextCompactionStarted(s) => serde_json::to_value(s),
             Self::ContextCompactionCompleted(s) => serde_json::to_value(s),
             Self::RunFinished(s) => serde_json::to_value(s),
@@ -224,6 +238,9 @@ impl TranscriptStats {
             "tool_finished" => serde_json::from_value(data.clone())
                 .ok()
                 .map(Self::ToolFinished),
+            "tool_input_diagnostic" => serde_json::from_value(data.clone())
+                .ok()
+                .map(Self::ToolInputDiagnostic),
             "context_compaction_started" => serde_json::from_value(data.clone())
                 .ok()
                 .map(Self::ContextCompactionStarted),

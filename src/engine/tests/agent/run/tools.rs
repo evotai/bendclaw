@@ -75,6 +75,349 @@ async fn length_limited_tool_calls_are_failed_without_execution() {
 }
 
 // ---------------------------------------------------------------------------
+// Compatibility fan-out for array-shaped tool arguments
+// ---------------------------------------------------------------------------
+
+struct RecordingTool {
+    calls: std::sync::Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    max_active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait::async_trait]
+impl AgentTool for RecordingTool {
+    fn name(&self) -> &str {
+        "read"
+    }
+
+    fn label(&self) -> &str {
+        "Recording read"
+    }
+
+    fn description(&self) -> &str {
+        "Records read arguments"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "offset": { "type": "integer" },
+                "limit": { "type": "integer" }
+            },
+            "required": ["path"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        _ctx: ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        use std::sync::atomic::Ordering;
+
+        self.calls.lock().await.push(params.clone());
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_active.fetch_max(active, Ordering::SeqCst);
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        self.active.fetch_sub(1, Ordering::SeqCst);
+
+        Ok(ToolResult {
+            content: vec![Content::Text {
+                text: format!("read:{}", params["path"]),
+            }],
+            details: serde_json::Value::Null,
+            retention: Retention::Normal,
+        })
+    }
+}
+
+#[tokio::test]
+async fn array_shaped_object_arguments_fan_out_and_emit_diagnostic() {
+    use std::sync::atomic::Ordering;
+
+    // Historical shape from session 01a065fd-5a56-7bc0-9077-c07974180816:
+    // one read call containing two otherwise valid argument objects.
+    let calls = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let max_active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let output = TestHarness::new()
+        .responses(vec![
+            MockResponse::ToolCalls(vec![MockToolCall {
+                name: "read".into(),
+                arguments: serde_json::json!([
+                    {"limit": 240, "offset": 1, "path": "lark-im-chat-search.md"},
+                    {"limit": 260, "offset": 1, "path": "lark-im-messages-search.md"}
+                ]),
+            }]),
+            MockResponse::Text("done".into()),
+        ])
+        .tool_boxed(Box::new(RecordingTool {
+            calls: calls.clone(),
+            active,
+            max_active: max_active.clone(),
+        }))
+        .run("read both references")
+        .await;
+
+    output.assert_completed();
+    assert_eq!(calls.lock().await.len(), 2);
+    assert_eq!(max_active.load(Ordering::SeqCst), 2);
+
+    let start_mode = output.events.iter().find_map(|event| match event {
+        AgentEvent::ToolExecutionStart {
+            is_fanout,
+            invocation_count,
+            parallel,
+            ..
+        } => Some((*is_fanout, *invocation_count, *parallel)),
+        _ => None,
+    });
+    assert_eq!(start_mode, Some((true, 2, true)));
+
+    let diagnostics: Vec<_> = output
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolInputDiagnostic {
+                model,
+                provider,
+                input_shape,
+                fanout_count,
+                ..
+            } => Some((
+                model.as_str(),
+                provider.as_str(),
+                input_shape.as_str(),
+                *fanout_count,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(diagnostics, vec![("mock", "unknown", "array", 2)]);
+
+    let ends: Vec<_> = output
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolExecutionEnd {
+                result, is_error, ..
+            } => Some((result, *is_error)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1, "one upstream call must have one result");
+    assert!(!ends[0].1);
+    let text = ends[0]
+        .0
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            Content::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("### [1/2] read — ok"));
+    assert!(text.contains("### [2/2] read — ok"));
+}
+
+#[tokio::test]
+async fn fanout_respects_sequential_execution_strategy() {
+    use std::sync::atomic::Ordering;
+
+    let max_active = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let output = TestHarness::new()
+        .tool_execution(ToolExecutionStrategy::Sequential)
+        .responses(vec![
+            MockResponse::ToolCalls(vec![MockToolCall {
+                name: "read".into(),
+                arguments: serde_json::json!([
+                    {"path": "one.md"},
+                    {"path": "two.md"}
+                ]),
+            }]),
+            MockResponse::Text("done".into()),
+        ])
+        .tool_boxed(Box::new(RecordingTool {
+            calls: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            active: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            max_active: max_active.clone(),
+        }))
+        .run("read sequentially")
+        .await;
+
+    output.assert_completed();
+    assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    let start_mode = output.events.iter().find_map(|event| match event {
+        AgentEvent::ToolExecutionStart {
+            is_fanout,
+            invocation_count,
+            parallel,
+            ..
+        } => Some((*is_fanout, *invocation_count, *parallel)),
+        _ => None,
+    });
+    assert_eq!(start_mode, Some((true, 2, false)));
+}
+
+#[tokio::test]
+async fn heterogeneous_array_routes_only_unique_schema_matches() {
+    let calls = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let output = TestHarness::new()
+        .responses(vec![
+            MockResponse::ToolCalls(vec![MockToolCall {
+                name: "read".into(),
+                arguments: serde_json::json!([
+                    {"path": "harden/SKILL.md"},
+                    {"command": "find skills -name SKILL.md"}
+                ]),
+            }]),
+            MockResponse::Text("done".into()),
+        ])
+        .tool_boxed(Box::new(RecordingTool {
+            calls: calls.clone(),
+            active: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            max_active: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }))
+        .tool(
+            MockTool::ok("bash", "found skills").with_schema(serde_json::json!({
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"]
+            })),
+        )
+        .run("inspect both")
+        .await;
+
+    assert_eq!(calls.lock().await.len(), 1);
+    assert!(output.tool_errors().is_empty());
+    let text = output
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolExecutionEnd { result, .. } => Some(
+                result
+                    .content
+                    .iter()
+                    .filter_map(|block| match block {
+                        Content::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert!(text.contains("### [1/2] read — ok"));
+    assert!(text.contains("### [2/2] bash — ok"));
+    assert!(text.contains("found skills"));
+}
+
+#[tokio::test]
+async fn fanout_preserves_successes_when_one_child_fails_validation() {
+    let calls = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let output = TestHarness::new()
+        .responses(vec![
+            MockResponse::ToolCalls(vec![MockToolCall {
+                name: "read".into(),
+                arguments: serde_json::json!([
+                    {"path": "valid.md"},
+                    {"offset": 1}
+                ]),
+            }]),
+            MockResponse::Text("done".into()),
+        ])
+        .tool_boxed(Box::new(RecordingTool {
+            calls: calls.clone(),
+            active: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            max_active: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }))
+        .run("read")
+        .await;
+
+    assert_eq!(
+        calls.lock().await.len(),
+        1,
+        "invalid child must not execute"
+    );
+    let error = output
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolExecutionEnd {
+                result,
+                is_error: true,
+                ..
+            } => Some(
+                result
+                    .content
+                    .iter()
+                    .filter_map(|block| match block {
+                        Content::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert!(error.contains("read:\"valid.md\""));
+    assert!(error.contains("required parameter `path` is missing"));
+    assert!(error.contains("### [2/2] read — error"));
+}
+
+#[tokio::test]
+async fn unsafe_array_shape_keeps_existing_validation_error() {
+    let output = TestHarness::new()
+        .responses(vec![
+            MockResponse::ToolCalls(vec![MockToolCall {
+                name: "read".into(),
+                arguments: serde_json::json!([]),
+            }]),
+            MockResponse::Text("done".into()),
+        ])
+        .tool(MockTool::ok("read", "must not run"))
+        .run("read")
+        .await;
+
+    let error = output
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolExecutionEnd {
+                result,
+                is_error: true,
+                ..
+            } => Some(
+                result
+                    .content
+                    .iter()
+                    .filter_map(|block| match block {
+                        Content::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert!(error.contains("Tool input must be a JSON object"));
+    assert!(output.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ToolInputDiagnostic {
+            input_shape,
+            fanout_count: 0,
+            ..
+        } if input_shape == "array"
+    )));
+}
+
+// ---------------------------------------------------------------------------
 // Parallel tool execution tests
 // ---------------------------------------------------------------------------
 

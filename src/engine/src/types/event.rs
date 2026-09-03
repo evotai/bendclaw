@@ -60,6 +60,12 @@ pub enum AgentEvent {
         tool_name: String,
         args: serde_json::Value,
         preview_command: Option<String>,
+        /// True when one upstream call is expanded into child invocations.
+        is_fanout: bool,
+        /// Number of invocations represented by this call.
+        invocation_count: usize,
+        /// Whether those invocations may execute concurrently.
+        parallel: bool,
     },
     ToolExecutionUpdate {
         tool_call_id: String,
@@ -75,6 +81,16 @@ pub enum AgentEvent {
         result_tokens: usize,
         /// Wall-clock execution time (ms).
         duration_ms: u64,
+    },
+    /// Diagnostic emitted when raw tool arguments require compatibility
+    /// fan-out or have a top-level shape mismatch.
+    ToolInputDiagnostic {
+        tool_call_id: String,
+        tool_name: String,
+        model: String,
+        provider: String,
+        input_shape: String,
+        fanout_count: usize,
     },
     ProgressMessage {
         tool_call_id: String,

@@ -98,6 +98,7 @@ impl StatsAggregator {
                     entry.errors += 1;
                 }
             }
+            TranscriptStats::ToolInputDiagnostic(_) => {}
             TranscriptStats::ContextCompactionStarted(s) => {
                 self.last_context_budget = Some((s.estimated_tokens, s.budget_tokens));
             }

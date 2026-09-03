@@ -1631,10 +1631,17 @@ describe('term stream machine', () => {
         tool_call_id: 'call-edit',
         tool_name: 'edit',
         args: { path: 'src/b.rs', edits: [] },
+        is_fanout: true,
+        invocation_count: 3,
+        parallel: true,
       },
     }, { termRows: 24 }).state
 
-    expect(findAssistantToolCall(state.appState.currentAssistantContent, 'call-edit')?.status).toBe('running')
+    const startedEdit = findAssistantToolCall(state.appState.currentAssistantContent, 'call-edit')
+    expect(startedEdit?.status).toBe('running')
+    expect(startedEdit?.isFanout).toBe(true)
+    expect(startedEdit?.invocationCount).toBe(3)
+    expect(startedEdit?.parallel).toBe(true)
     expect(state.spinnerState.phase).toBe('executing')
     expect(state.spinnerState.toolName).toBe('edit')
     expect(findAssistantToolCall(state.appState.currentAssistantContent, 'call-edit')?.startedAt).toBeNumber()

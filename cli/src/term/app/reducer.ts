@@ -124,6 +124,9 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
           partialArgs: undefined,
           startedAt: current.startedAt ?? Date.now(),
           previewCommand: p.preview_command ?? current.previewCommand,
+          isFanout: (p.is_fanout as boolean) ?? current.isFanout,
+          invocationCount: (p.invocation_count as number) ?? current.invocationCount,
+          parallel: (p.parallel as boolean) ?? current.parallel,
         })),
       }
     }
@@ -162,6 +165,9 @@ export function applyEvent(state: AppState, event: RunEvent): AppState {
         details: finalDetails,
         previewCommand: current?.previewCommand,
         durationMs,
+        isFanout: current?.isFanout,
+        invocationCount: current?.invocationCount,
+        parallel: current?.parallel,
       }
 
       const stats = { ...state.currentRunStats }

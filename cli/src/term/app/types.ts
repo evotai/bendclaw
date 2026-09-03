@@ -57,6 +57,10 @@ export interface UIToolCall {
   result?: string
   previewCommand?: string
   durationMs?: number
+  /** One upstream tool call expanded into multiple invocations. */
+  isFanout?: boolean
+  invocationCount?: number
+  parallel?: boolean
 }
 
 // ---------------------------------------------------------------------------

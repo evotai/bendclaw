@@ -494,9 +494,16 @@ async fn run_loop(
                 tool_results = fail_truncated_tool_calls(&tool_calls, tx);
             } else {
                 let idle_clock = tracker.as_ref().map(|t| t.idle_clock());
+                let provider = config
+                    .model_config
+                    .as_ref()
+                    .map(|model| model.provider())
+                    .unwrap_or("unknown");
                 let execution = execute_tool_calls(
                     &context.tools,
                     &tool_calls,
+                    &config.model,
+                    provider,
                     tx,
                     cancel,
                     config.get_steering_messages.as_ref(),

@@ -71,8 +71,12 @@ Repeat until convergence:
    - explicitly mark it as accepted risk with the reason (scope, cost, low
      probability).
    Do not close a loophole by waving at it.
-3. **Re-check.** Look at the updated plan and ask: did the fixes introduce new
-   loopholes? If yes, go to step 1. If no, stop.
+3. **Ablate and re-check.** Before converging, run an ablation experiment on
+   the revised plan or change: actively look for unnecessary abstractions and
+   design, and simplify them while preserving required behavior and constraints.
+   Use judgment and codebase context rather than mechanically targeting specific
+   patterns or forcing a removal. Then ask whether the fixes or simplifications
+   introduced new loopholes. If yes, go to step 1. If no, stop.
 
 Typical runs converge in 2-3 iterations. If you're past 4 iterations and still
 finding substantive new loopholes, the underlying design is probably wrong —

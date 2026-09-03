@@ -11,18 +11,6 @@ use crate::types::CompactionResult;
 use crate::types::LlmCallMetrics;
 use crate::types::UsageSummary;
 
-fn default_invocation_count() -> usize {
-    1
-}
-
-fn is_one(value: &usize) -> bool {
-    *value == 1
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCallStreamPhase {
@@ -72,12 +60,6 @@ pub enum RunEventPayload {
         args: serde_json::Value,
         #[serde(skip_serializing_if = "Option::is_none")]
         preview_command: Option<String>,
-        #[serde(default, skip_serializing_if = "is_false")]
-        is_fanout: bool,
-        #[serde(default = "default_invocation_count", skip_serializing_if = "is_one")]
-        invocation_count: usize,
-        #[serde(default, skip_serializing_if = "is_false")]
-        parallel: bool,
     },
     ToolProgress {
         tool_call_id: String,

@@ -39,7 +39,6 @@ use crate::types::LlmCallStartedStats;
 use crate::types::RunFinishedStats;
 use crate::types::ToolDef;
 use crate::types::ToolFinishedStats;
-use crate::types::ToolInputDiagnosticStats;
 use crate::types::TranscriptItem;
 use crate::types::TranscriptStats;
 use crate::types::UsageSummary;
@@ -719,17 +718,11 @@ fn map_agent_event(
             tool_name,
             args,
             preview_command,
-            is_fanout,
-            invocation_count,
-            parallel,
         } => vec![RuntimeEvent::Public(RunEventPayload::ToolStarted {
             tool_call_id: tool_call_id.clone(),
             tool_name: tool_name.clone(),
             args: args.clone(),
             preview_command: preview_command.clone(),
-            is_fanout: *is_fanout,
-            invocation_count: *invocation_count,
-            parallel: *parallel,
         })],
 
         evot_engine::AgentEvent::ToolExecutionUpdate {
@@ -745,25 +738,6 @@ fn map_agent_event(
                 details: partial_result.details.clone(),
             })]
         }
-
-        evot_engine::AgentEvent::ToolInputDiagnostic {
-            tool_call_id,
-            tool_name,
-            model,
-            provider,
-            input_shape,
-            fanout_count,
-        } => vec![RuntimeEvent::Transcript(
-            TranscriptStats::ToolInputDiagnostic(ToolInputDiagnosticStats {
-                tool_call_id: tool_call_id.clone(),
-                tool_name: tool_name.clone(),
-                model: model.clone(),
-                provider: provider.clone(),
-                input_shape: input_shape.clone(),
-                fanout_count: *fanout_count,
-            })
-            .to_item(),
-        )],
 
         evot_engine::AgentEvent::ToolExecutionEnd {
             tool_call_id,

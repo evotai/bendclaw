@@ -93,31 +93,6 @@ fn stats_llm_call_completed_round_trip() {
 }
 
 #[test]
-fn stats_tool_input_diagnostic_round_trip() {
-    let stats = TranscriptStats::ToolInputDiagnostic(ToolInputDiagnosticStats {
-        tool_call_id: "tc-batch".into(),
-        tool_name: "read".into(),
-        model: "gpt-5.6-sol".into(),
-        provider: "evot-pro-anthropic".into(),
-        input_shape: "array".into(),
-        fanout_count: 2,
-    });
-    let item = stats.to_item();
-    assert!(matches!(&item, TranscriptItem::Stats { kind, .. } if kind == "tool_input_diagnostic"));
-
-    let decoded = TranscriptStats::try_from_item(&item);
-    if let Some(TranscriptStats::ToolInputDiagnostic(s)) = decoded {
-        assert_eq!(s.tool_name, "read");
-        assert_eq!(s.model, "gpt-5.6-sol");
-        assert_eq!(s.provider, "evot-pro-anthropic");
-        assert_eq!(s.input_shape, "array");
-        assert_eq!(s.fanout_count, 2);
-    } else {
-        panic!("expected ToolInputDiagnostic");
-    }
-}
-
-#[test]
 fn stats_tool_finished_round_trip() {
     let stats = TranscriptStats::ToolFinished(ToolFinishedStats {
         tool_call_id: "tc1".into(),

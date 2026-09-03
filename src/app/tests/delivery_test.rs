@@ -159,9 +159,6 @@ fn tool_started(name: &str) -> RunEvent {
         tool_name: name.to_string(),
         args: serde_json::json!({}),
         preview_command: None,
-        is_fanout: false,
-        invocation_count: 1,
-        parallel: false,
     })
 }
 

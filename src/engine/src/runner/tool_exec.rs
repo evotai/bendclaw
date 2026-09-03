@@ -34,8 +34,6 @@ pub(super) struct ToolExecutionResult {
 pub(super) async fn execute_tool_calls(
     tools: &[Box<dyn AgentTool>],
     tool_calls: &[(String, String, serde_json::Value)],
-    model: &str,
-    provider: &str,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
@@ -46,18 +44,11 @@ pub(super) async fn execute_tool_calls(
     idle_clock: Option<&crate::context::IdleClock>,
     supports_image: bool,
 ) -> ToolExecutionResult {
-    let fanout_batch_size = match strategy {
-        ToolExecutionStrategy::Sequential => 1,
-        ToolExecutionStrategy::Parallel => usize::MAX,
-        ToolExecutionStrategy::Batched { size } => *size,
-    };
     match strategy {
         ToolExecutionStrategy::Sequential => {
             execute_sequential(
                 tools,
                 tool_calls,
-                model,
-                provider,
                 tx,
                 cancel,
                 get_steering,
@@ -66,7 +57,6 @@ pub(super) async fn execute_tool_calls(
                 spill,
                 idle_clock,
                 supports_image,
-                fanout_batch_size,
             )
             .await
         }
@@ -74,8 +64,6 @@ pub(super) async fn execute_tool_calls(
             execute_batch(
                 tools,
                 tool_calls,
-                model,
-                provider,
                 tx,
                 cancel,
                 get_steering,
@@ -84,7 +72,6 @@ pub(super) async fn execute_tool_calls(
                 spill,
                 idle_clock,
                 supports_image,
-                fanout_batch_size,
             )
             .await
         }
@@ -96,8 +83,6 @@ pub(super) async fn execute_tool_calls(
                 let batch_result = execute_batch(
                     tools,
                     batch,
-                    model,
-                    provider,
                     tx,
                     cancel,
                     None,
@@ -106,7 +91,6 @@ pub(super) async fn execute_tool_calls(
                     spill,
                     idle_clock,
                     supports_image,
-                    fanout_batch_size,
                 )
                 .await;
                 results.extend(batch_result.tool_results);
@@ -141,8 +125,6 @@ pub(super) async fn execute_tool_calls(
 async fn execute_sequential(
     tools: &[Box<dyn AgentTool>],
     tool_calls: &[(String, String, serde_json::Value)],
-    model: &str,
-    provider: &str,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
@@ -151,7 +133,6 @@ async fn execute_sequential(
     spill: &Option<Arc<FsSpill>>,
     idle_clock: Option<&crate::context::IdleClock>,
     supports_image: bool,
-    fanout_batch_size: usize,
 ) -> ToolExecutionResult {
     let mut results: Vec<Message> = Vec::new();
     let mut steering_messages: Option<Vec<AgentMessage>> = None;
@@ -162,8 +143,6 @@ async fn execute_sequential(
             id,
             name,
             args,
-            model,
-            provider,
             tx,
             cancel,
             cwd,
@@ -171,7 +150,6 @@ async fn execute_sequential(
             spill,
             idle_clock,
             supports_image,
-            fanout_batch_size,
         )
         .await;
         results.push(msg);
@@ -200,8 +178,6 @@ async fn execute_sequential(
 async fn execute_batch(
     tools: &[Box<dyn AgentTool>],
     tool_calls: &[(String, String, serde_json::Value)],
-    model: &str,
-    provider: &str,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     get_steering: Option<&GetMessagesFn>,
@@ -210,7 +186,6 @@ async fn execute_batch(
     spill: &Option<Arc<FsSpill>>,
     idle_clock: Option<&crate::context::IdleClock>,
     supports_image: bool,
-    fanout_batch_size: usize,
 ) -> ToolExecutionResult {
     use futures::future::join_all;
 
@@ -222,8 +197,6 @@ async fn execute_batch(
                 id,
                 name,
                 args,
-                model,
-                provider,
                 tx,
                 cancel,
                 cwd,
@@ -231,7 +204,6 @@ async fn execute_batch(
                 spill,
                 idle_clock,
                 supports_image,
-                fanout_batch_size,
             )
         })
         .collect();
@@ -258,17 +230,13 @@ async fn execute_batch(
     }
 }
 
-/// Execute one upstream tool call and emit one correlated event lifecycle.
-/// Compatibility fan-out stays internal so providers still receive exactly one
-/// result for the original tool-call id.
+/// Execute a single tool call and emit events.
 #[allow(clippy::too_many_arguments)]
 async fn execute_single_tool(
     tools: &[Box<dyn AgentTool>],
     id: &str,
     name: &str,
     args: &serde_json::Value,
-    model: &str,
-    provider: &str,
     tx: &mpsc::UnboundedSender<AgentEvent>,
     cancel: &tokio_util::sync::CancellationToken,
     cwd: &std::path::Path,
@@ -276,98 +244,121 @@ async fn execute_single_tool(
     spill: &Option<Arc<FsSpill>>,
     idle_clock: Option<&crate::context::IdleClock>,
     supports_image: bool,
-    fanout_batch_size: usize,
 ) -> (Message, bool) {
-    let tool_index = tools
-        .iter()
-        .position(|candidate| candidate.matches_call_name(name));
-    let fanout = tool_index
-        .and_then(|index| super::tool_fanout::arguments(&tools[index].parameters_schema(), args));
-    let input_shape = json_type_name(args);
-    let fanout_count = fanout.as_ref().map_or(0, Vec::len);
-    let shape_mismatch = tool_index.is_some_and(|index| {
-        tools[index].parameters_schema().get("properties").is_some() && !args.is_object()
-    });
+    let tool = tools.iter().find(|t| t.matches_call_name(name));
 
-    let preview_command = tool_index.and_then(|index| tools[index].preview_command(args));
+    let preview_command = tool.and_then(|t| t.preview_command(args));
+
     tx.send(AgentEvent::ToolExecutionStart {
         tool_call_id: id.to_string(),
         tool_name: name.to_string(),
         args: args.clone(),
         preview_command,
-        is_fanout: fanout_count > 0,
-        invocation_count: fanout_count.max(1),
-        parallel: fanout_count > 1 && fanout_batch_size > 1,
     })
     .ok();
 
-    if fanout_count > 0 {
-        tracing::info!(
-            tool_name = name,
-            tool_call_id = id,
-            input_shape,
-            fanout_count,
-            "fanning out batched tool arguments"
-        );
-        tx.send(AgentEvent::ToolInputDiagnostic {
-            tool_call_id: id.to_string(),
-            tool_name: name.to_string(),
-            model: model.to_string(),
-            provider: provider.to_string(),
-            input_shape: input_shape.to_string(),
-            fanout_count,
-        })
-        .ok();
-    } else if shape_mismatch {
-        tracing::warn!(
-            tool_name = name,
-            tool_call_id = id,
-            input_shape,
-            "tool input shape mismatch"
-        );
-        tx.send(AgentEvent::ToolInputDiagnostic {
-            tool_call_id: id.to_string(),
-            tool_name: name.to_string(),
-            model: model.to_string(),
-            provider: provider.to_string(),
-            input_shape: input_shape.to_string(),
-            fanout_count: 0,
-        })
-        .ok();
-    }
-
     let tool_start = std::time::Instant::now();
-    let base_context = InvocationContext {
-        id: id.to_string(),
-        name: name.to_string(),
-        tx: tx.clone(),
+
+    // --- File Read dedup removed: token-budget microcompact keeps content in context ---
+
+    let on_update: Option<ToolUpdateFn> = {
+        let tx = tx.clone();
+        let id = id.to_string();
+        let name = name.to_string();
+        Some(Arc::new(move |partial: ToolResult| {
+            tx.send(AgentEvent::ToolExecutionUpdate {
+                tool_call_id: id.clone(),
+                tool_name: name.clone(),
+                partial_result: partial,
+            })
+            .ok();
+        }))
+    };
+
+    let on_progress: Option<ProgressFn> = {
+        let tx = tx.clone();
+        let id = id.to_string();
+        let name = name.to_string();
+        Some(Arc::new(move |text: String| {
+            tx.send(AgentEvent::ProgressMessage {
+                tool_call_id: id.clone(),
+                tool_name: name.clone(),
+                text,
+            })
+            .ok();
+        }))
+    };
+
+    let ctx = ToolContext {
+        tool_call_id: id.to_string(),
+        tool_name: name.to_string(),
         cancel: cancel.child_token(),
+        on_update,
+        on_progress,
         cwd: cwd.to_path_buf(),
         path_guard: path_guard.clone(),
         spill: spill.clone(),
         supports_image,
     };
-    // One upstream call contributes one idle interval even when compatibility
-    // fan-out runs several child invocations concurrently.
-    let _idle = idle_clock.map(|clock| clock.pause());
 
-    let (result, is_error) = match (tool_index, fanout) {
-        (Some(preferred_index), Some(items)) => {
-            let results = execute_fanout(
-                tools,
-                preferred_index,
-                items,
-                &base_context,
-                fanout_batch_size,
-            )
-            .await;
-            super::tool_fanout::aggregate(results)
+    let (result, is_error) = match tool {
+        Some(tool) => {
+            // Step 1: Normalize parameter aliases (file_path → path, etc.)
+            let mut normalized = match tool.parameter_aliases() {
+                Some(aliases) => crate::tools::validation::normalize_aliases(args, aliases),
+                None => args.clone(),
+            };
+
+            // Step 2: Run the tool's compatibility shim before validation.
+            normalized = tool.prepare_arguments(&normalized);
+
+            // Step 3: Schema pre-validation + type coercion
+            let validated_args = crate::tools::validation::validate_and_coerce_with_received(
+                name,
+                &tool.parameters_schema(),
+                &normalized,
+                args,
+            );
+            match validated_args {
+                Err(validation_error) => (
+                    ToolResult {
+                        content: vec![Content::Text {
+                            text: crate::tools::validation::truncate_error(&validation_error),
+                        }],
+                        details: serde_json::Value::Null,
+                        retention: Retention::Normal,
+                    },
+                    true,
+                ),
+                Ok(coerced_args) => {
+                    // Exclude tool wall-time from the execution duration limit:
+                    // a legitimately long command (a build, a training run) or a
+                    // slow user response must not trip `max_duration`. The limit
+                    // bounds the agent's own work (LLM inference + loop
+                    // overhead), not how long a tool takes to run. The guard
+                    // records the elapsed span into the idle clock on drop, so
+                    // it counts on success, error, cancellation, and panic alike.
+                    let _idle = idle_clock.map(|c| c.pause());
+                    match tool.execute(coerced_args, ctx).await {
+                        Ok(r) => (r, false),
+                        Err(e) => (
+                            ToolResult {
+                                content: vec![Content::Text {
+                                    text: e.to_string(),
+                                }],
+                                details: serde_json::Value::Null,
+                                retention: Retention::Normal,
+                            },
+                            true,
+                        ),
+                    }
+                }
+            }
         }
-        (Some(index), _) => execute_invocation(tools[index].as_ref(), args, &base_context).await,
-        (None, _) => (
+        None => (
             ToolResult {
                 content: vec![Content::Text {
-                    text: format!("Tool {name} not found"),
+                    text: format!("Tool {} not found", name),
                 }],
                 details: serde_json::Value::Null,
                 retention: Retention::Normal,
@@ -376,8 +367,9 @@ async fn execute_single_tool(
         ),
     };
 
-    // System-level tool result size management. Fan-out children have already
-    // been individually capped; this applies the aggregate cap/spill policy.
+    // System-level tool result size management.
+    // If spill is configured, large results are written to disk with a preview.
+    // Otherwise, fall back to truncation.
     let (result, spill_event) = process_result(spill, id, name, result, is_error).await;
     if let Some(event) = spill_event {
         tx.send(AgentEvent::ProgressMessage {
@@ -390,6 +382,7 @@ async fn execute_single_tool(
 
     let result_tokens = context::content_tokens(&result.content);
     let tool_duration_ms = tool_start.elapsed().as_millis() as u64;
+
     tx.send(AgentEvent::ToolExecutionEnd {
         tool_call_id: id.to_string(),
         tool_name: name.to_string(),
@@ -408,6 +401,7 @@ async fn execute_single_tool(
         timestamp: now_ms(),
         retention: result.retention,
     };
+
     tx.send(AgentEvent::MessageStart {
         message: tool_result_msg.clone().into(),
     })
@@ -418,203 +412,6 @@ async fn execute_single_tool(
     .ok();
 
     (tool_result_msg, is_error)
-}
-
-async fn execute_fanout(
-    tools: &[Box<dyn AgentTool>],
-    preferred_index: usize,
-    items: Vec<serde_json::Value>,
-    base_context: &InvocationContext,
-    batch_size: usize,
-) -> Vec<(String, Option<String>, ToolResult, bool)> {
-    use futures::future::join_all;
-
-    let batch_size = batch_size.max(1);
-    let mut results = Vec::with_capacity(items.len());
-    for (batch_index, batch) in items.chunks(batch_size).enumerate() {
-        let futures = batch.iter().cloned().enumerate().map(|(index, item)| {
-            let absolute_index = batch_index.saturating_mul(batch_size) + index;
-            let selected_index = select_tool_index(tools, preferred_index, &item);
-            let selected_tool = tools[selected_index].as_ref();
-            let selected_name = selected_tool.name().to_string();
-            let preview_command = selected_tool.preview_command(&item);
-            let context = base_context.with_name(selected_name.clone());
-            async move {
-                let (result, is_error) = execute_invocation(selected_tool, &item, &context).await;
-                let child_id = format!("{}:{}", context.id, absolute_index + 1);
-                let (result, spill_event) =
-                    process_result(&context.spill, &child_id, &context.name, result, is_error)
-                        .await;
-                if let Some(event) = spill_event {
-                    context
-                        .tx
-                        .send(AgentEvent::ProgressMessage {
-                            tool_call_id: context.id.clone(),
-                            tool_name: context.name.clone(),
-                            text: event.to_progress_text(),
-                        })
-                        .ok();
-                }
-                (selected_name, preview_command, result, is_error)
-            }
-        });
-        results.extend(join_all(futures).await);
-    }
-    results
-}
-
-#[derive(Clone)]
-struct InvocationContext {
-    id: String,
-    name: String,
-    tx: mpsc::UnboundedSender<AgentEvent>,
-    cancel: tokio_util::sync::CancellationToken,
-    cwd: std::path::PathBuf,
-    path_guard: Arc<PathGuard>,
-    spill: Option<Arc<FsSpill>>,
-    supports_image: bool,
-}
-
-impl InvocationContext {
-    fn with_name(&self, name: String) -> Self {
-        let mut context = self.clone();
-        context.name = name;
-        context
-    }
-}
-
-fn select_tool_index(
-    tools: &[Box<dyn AgentTool>],
-    preferred_index: usize,
-    args: &serde_json::Value,
-) -> usize {
-    if prepare_and_validate(tools[preferred_index].as_ref(), args).is_ok() {
-        return preferred_index;
-    }
-
-    let mut matches = tools
-        .iter()
-        .enumerate()
-        .filter(|(index, tool)| {
-            *index != preferred_index
-                && has_required_parameters(&tool.parameters_schema())
-                && prepare_and_validate(tool.as_ref(), args).is_ok()
-        })
-        .map(|(index, _)| index);
-    let first = matches.next();
-    match (first, matches.next()) {
-        (Some(index), None) => index,
-        _ => preferred_index,
-    }
-}
-
-fn has_required_parameters(schema: &serde_json::Value) -> bool {
-    schema
-        .get("required")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|required| !required.is_empty())
-}
-
-async fn execute_invocation(
-    tool: &dyn AgentTool,
-    args: &serde_json::Value,
-    invocation: &InvocationContext,
-) -> (ToolResult, bool) {
-    let on_update: Option<ToolUpdateFn> = {
-        let tx = invocation.tx.clone();
-        let id = invocation.id.to_string();
-        let name = invocation.name.to_string();
-        Some(Arc::new(move |partial: ToolResult| {
-            tx.send(AgentEvent::ToolExecutionUpdate {
-                tool_call_id: id.clone(),
-                tool_name: name.clone(),
-                partial_result: partial,
-            })
-            .ok();
-        }))
-    };
-    let on_progress: Option<ProgressFn> = {
-        let tx = invocation.tx.clone();
-        let id = invocation.id.to_string();
-        let name = invocation.name.to_string();
-        Some(Arc::new(move |text: String| {
-            tx.send(AgentEvent::ProgressMessage {
-                tool_call_id: id.clone(),
-                tool_name: name.clone(),
-                text,
-            })
-            .ok();
-        }))
-    };
-    let ctx = ToolContext {
-        tool_call_id: invocation.id.clone(),
-        tool_name: invocation.name.clone(),
-        cancel: invocation.cancel.child_token(),
-        on_update,
-        on_progress,
-        cwd: invocation.cwd.clone(),
-        path_guard: invocation.path_guard.clone(),
-        spill: invocation.spill.clone(),
-        supports_image: invocation.supports_image,
-    };
-
-    let coerced_args = match prepare_and_validate(tool, args) {
-        Ok(value) => value,
-        Err(error) => {
-            return (
-                ToolResult {
-                    content: vec![Content::Text {
-                        text: crate::tools::validation::truncate_error(&error),
-                    }],
-                    details: serde_json::Value::Null,
-                    retention: Retention::Normal,
-                },
-                true,
-            );
-        }
-    };
-
-    match tool.execute(coerced_args, ctx).await {
-        Ok(result) => (result, false),
-        Err(error) => (
-            ToolResult {
-                content: vec![Content::Text {
-                    text: error.to_string(),
-                }],
-                details: serde_json::Value::Null,
-                retention: Retention::Normal,
-            },
-            true,
-        ),
-    }
-}
-
-fn prepare_and_validate(
-    tool: &dyn AgentTool,
-    args: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let mut normalized = match tool.parameter_aliases() {
-        Some(aliases) => crate::tools::validation::normalize_aliases(args, aliases),
-        None => args.clone(),
-    };
-    normalized = tool.prepare_arguments(&normalized);
-    crate::tools::validation::validate_and_coerce_with_received(
-        tool.name(),
-        &tool.parameters_schema(),
-        &normalized,
-        args,
-    )
-}
-
-fn json_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "null",
-        serde_json::Value::Bool(_) => "boolean",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-        serde_json::Value::Array(_) => "array",
-        serde_json::Value::Object(_) => "object",
-    }
 }
 
 pub(super) fn fail_truncated_tool_calls(
@@ -639,9 +436,6 @@ pub(super) fn fail_truncated_tool_calls(
                 tool_name: tool_name.clone(),
                 args: args.clone(),
                 preview_command: None,
-                is_fanout: false,
-                invocation_count: 1,
-                parallel: false,
             })
             .ok();
 
@@ -695,9 +489,6 @@ pub(super) fn skip_tool_call(
         tool_name: tool_name.into(),
         args: serde_json::Value::Null,
         preview_command: None,
-        is_fanout: false,
-        invocation_count: 1,
-        parallel: false,
     })
     .ok();
 
@@ -755,9 +546,6 @@ pub(super) fn skip_tool_call_doom_loop(
         tool_name: tool_name.into(),
         args: args.clone(),
         preview_command: Some(preview),
-        is_fanout: false,
-        invocation_count: 1,
-        parallel: false,
     })
     .ok();
 

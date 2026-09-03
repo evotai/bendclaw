@@ -356,6 +356,10 @@ fn root_input_is_array() {
     let input = json!([1, 2, 3]);
     let err = validate_and_coerce("read", &read_file_schema(), &input).unwrap_err();
     assert!(err.contains("must be a JSON object"), "got: {err}");
+    assert!(
+        err.contains("emit multiple separate tool calls"),
+        "array mistakes should tell the model how to retry: {err}"
+    );
 }
 
 #[test]

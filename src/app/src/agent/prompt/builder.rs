@@ -6,10 +6,10 @@ const PROJECT_CONTEXT_FILES: &[&str] = &["EVOT.md", "CLAUDE.md", "AGENTS.md"];
 
 const GUIDELINES_HEADER: &str = "Guidelines:";
 const BASH_EXPLORE_GUIDELINE: &str = "Use bash for file operations like ls, rg, find";
-/// Parallel tool-call guidance states the execution semantics without teaching
-/// provider-specific argument encodings.
+/// Parallel tool-call guidance. Named "tool calls" so models emit N independent
+/// calls instead of packing several argument objects into one call.
 const PARALLEL_TOOL_CALLS_GUIDELINE: &str =
-    "You can call multiple tools in a single response. Run independent work in parallel. If calls depend on earlier results, run them sequentially";
+    "You can call multiple tools in a single response. For independent work, emit multiple separate tool calls in the same response so they can run in parallel; never pass an array of argument objects to a tool that expects one object. If calls depend on earlier results, run them sequentially";
 const GUIDELINES_TRAILER: &[&str] = &[
     "Be concise in your responses",
     "Show file paths clearly when working with files",

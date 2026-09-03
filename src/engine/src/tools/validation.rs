@@ -155,7 +155,10 @@ pub fn validate_and_coerce_with_received(
     if schema.get("properties").is_some() && !input.is_object() {
         return Err(format_error(
             tool_name,
-            &["Tool input must be a JSON object".to_string()],
+            &[
+                "Tool input must be a JSON object".to_string(),
+                "To run this tool multiple times in parallel, emit multiple separate tool calls in the same assistant response; do not wrap their argument objects in an array".to_string(),
+            ],
             received,
         ));
     }

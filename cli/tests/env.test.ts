@@ -170,14 +170,20 @@ describe('renderList', () => {
 })
 
 describe('renderGet', () => {
-  test('masks by default and reveals only when asked', () => {
+  test('masks, with no option to do otherwise', () => {
+    // The reveal was removed from this renderer on purpose. A value has to be
+    // committed on the timed, unlogged path, so a renderer that could return one
+    // here would be reachable by any future caller that forgot — the secret would
+    // land in the screen log with no timer to take it back.
     const row = { key: 'K', value: 'supersecretvalue', updated_at: '2026-09-03T00:00:00Z' }
-    expect(renderGet(row, 'K', false)).not.toContain('supersecretvalue')
-    expect(renderGet(row, 'K', true)).toBe('  K=supersecretvalue')
+    const out = renderGet(row, 'K')
+    expect(out).not.toContain('supersecretvalue')
+    expect(out).toContain('su******ue')
+    expect(out).toContain('2026-09-03')
   })
 
   test('unknown key is reported plainly', () => {
-    expect(renderGet(undefined, 'NOPE', true)).toBe('  not set: NOPE')
+    expect(renderGet(undefined, 'NOPE')).toBe('  not set: NOPE')
   })
 })
 
@@ -226,11 +232,18 @@ describe('runEnvCommand', () => {
     expect(recorded.dels).toEqual(['A', 'A'])
   })
 
-  test('get honours --reveal in either position', async () => {
+  test('no path through this router prints a value, --reveal included', async () => {
+    // The reveal is intercepted by the REPL, which owns the erase timer. This
+    // router is the logged path, so a value reaching it would be written to the
+    // screen log with nothing to take it back. Parsing is pinned in
+    // env-reveal.test.ts (parseRevealTarget); what matters here is that the flag
+    // buys nothing if it ever falls through.
     const { port: p } = port([{ key: 'K', value: 'plainsecret' }])
-    expect(await runEnvCommand(p, 'get K')).not.toContain('plainsecret')
-    expect(await runEnvCommand(p, 'get K --reveal')).toContain('plainsecret')
-    expect(await runEnvCommand(p, 'get --reveal K')).toContain('plainsecret')
+    for (const args of ['get K', 'get K --reveal', 'get --reveal K']) {
+      const out = await runEnvCommand(p, args)
+      expect(out).not.toContain('plainsecret')
+      expect(out).toContain('pl******et')
+    }
   })
 
   test('unknown subcommand shows the full usage', async () => {

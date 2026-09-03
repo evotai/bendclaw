@@ -29,13 +29,13 @@ async function handleSet(port: EnvPort, rest: string): Promise<string> {
 
 function handleGet(port: EnvPort, rest: string): string {
   const parts = rest.split(/\s+/).filter(Boolean)
-  const reveal = parts.includes('--reveal')
   const key = parts.find((part) => part !== '--reveal')
   if (!key) return '  Usage: /env get KEY [--reveal]'
+  // A `--reveal` that reaches here had no matching key (the REPL intercepts the
+  // ones it can show), so the masked view is the honest answer either way.
   return renderGet(
     port.list().find((row) => row.key === key),
     key,
-    reveal,
   )
 }
 

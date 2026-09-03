@@ -31,9 +31,18 @@ export function renderList(rows: VariableRow[]): string {
   return [`\n  Variables (${sorted.length})`, ...lines, '', REVEAL_HINT].join('\n')
 }
 
-export function renderGet(row: VariableRow | undefined, key: string, reveal: boolean): string {
+/**
+ * The masked view of one variable.
+ *
+ * There is deliberately no `reveal` option here. A revealed value has to be
+ * committed on the timed, unlogged path, and a renderer that could return one on
+ * the ordinary path would be reachable by any future caller that forgot — the
+ * secret would land in the screen log with no timer to take it back.
+ * `renderRevealed` is the only function that emits a value, and only the REPL
+ * calls it.
+ */
+export function renderGet(row: VariableRow | undefined, key: string): string {
   if (!row) return `  not set: ${key}`
-  if (reveal) return `  ${row.key}=${row.value}`
   return `  ${row.key}  ${describe(row.value)}  ${shortDate(row.updated_at)}\n${REVEAL_HINT}`
 }
 

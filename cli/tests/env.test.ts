@@ -93,6 +93,53 @@ describe('describe', () => {
     expect(describeValue('abc')).toContain('3 chars')
     expect(describeValue('a'.repeat(120))).toContain('120 chars')
   })
+
+  test('an escape sequence in a value never reaches the transcript', () => {
+    // A value is arbitrary pasted bytes, and the mask copies two of its
+    // characters into a line that is supposed to be inert text.
+    // `\x1b[31mSECRETVALUE\x1b[0m` masked to `\x1b[******0m`: a live escape byte
+    // plus `0m`, which the terminal can read back as a real SGR sequence and
+    // restyle the row. Endpoints come from the printable remainder instead.
+    const shown = describeValue('\x1b[31mSECRETVALUE\x1b[0m')
+    expect(shown).toBe('SE******UE  20 chars')
+    expect(shown).not.toContain('\x1b')
+
+    // OSC 8 is the same hazard wearing a hyperlink: it must not survive either.
+    const link = describeValue('AB\x1b]8;;https://evil.example\x07click\x1b]8;;\x07YZ')
+    expect(link).not.toContain('\x1b')
+    expect(link).not.toContain(']8;;')
+  })
+
+  test('control characters cannot break the row apart', () => {
+    // A newline would split one masked row into two; a carriage return would let
+    // later text overwrite what was already drawn.
+    expect(describeValue('AB\nmiddle\nYZ')).toBe('AB******YZ  12 chars')
+    expect(describeValue('ABmiddle\rOVERWRITTEN')).toBe('AB******EN  20 chars')
+    expect(describeValue('AB\tmid\tYZ')).not.toContain('\t')
+  })
+
+  test('an emoji endpoint is not cut in half', () => {
+    // slice(-2) counted UTF-16 units, so it split a surrogate pair and emitted a
+    // lone surrogate — not valid text, and it renders as a replacement glyph.
+    const shown = describeValue('🔑🔑secretmiddle🗝️🗝️')
+    expect(shown).toContain('🔑🔑')
+    const withoutPairs = shown.replace(/[\ud800-\udbff][\udc00-\udfff]/g, '')
+    expect(/[\ud800-\udfff]/.test(withoutPairs)).toBe(false)
+  })
+
+  test('a value that is only control characters shows nothing but stars', () => {
+    // Nothing printable is left to take endpoints from, and the length still
+    // reports what was stored.
+    expect(describeValue('\x1b[31m\x1b[0m')).toBe('******  9 chars')
+    expect(describeValue('A\x1b[31mB')).toBe('******  7 chars')
+  })
+
+  test('length counts what was stored, not what survived sanitizing', () => {
+    // The count answers "did my paste arrive whole", so stripping escapes for
+    // display must not make a complete value look truncated.
+    expect(describeValue('\x1b[31mSECRETVALUE\x1b[0m')).toContain('20 chars')
+    expect(describeValue('🔑🔑secretmiddle🗝️🗝️')).toContain('18 chars')
+  })
 })
 
 describe('shortDate', () => {

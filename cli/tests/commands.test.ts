@@ -215,11 +215,31 @@ describe('skillListFromDirs', () => {
       expect(skillListFromDirs([evotai, claude])).toBe([
         '',
         '  Skills:',
-        `  • [claude-skill] ${join(claude, 'claude-skill')}`,
-        `  • [evot-skill] ${join(evotai, 'evot-skill')}`,
+        `  claude-skill  external  ${join(claude, 'claude-skill')}`,
+        `  evot-skill    external  ${join(evotai, 'evot-skill')}`,
       ].join('\n'))
     } finally {
       rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  test('groups nested skills under the group directory', () => {
+    const root = join(tmpdir(), `evot-skill-group-${Date.now()}`)
+    try {
+      for (const name of ['lark-im', 'lark-shared']) {
+        mkdirSync(join(root, 'lark', name), { recursive: true })
+        writeFileSync(join(root, 'lark', name, 'SKILL.md'), `---\ndescription: ${name}\n---\n`)
+      }
+      mkdirSync(join(root, 'databend-cloud'), { recursive: true })
+      writeFileSync(join(root, 'databend-cloud', 'SKILL.md'), '---\ndescription: db\n---\n')
+
+      const out = skillListFromDirs([root])
+      expect(out).toContain('  lark/')
+      expect(out).toContain('(2) lark-im, lark-shared')
+      expect(out).toContain('  databend-cloud')
+      expect(out).not.toContain('  lark  ')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

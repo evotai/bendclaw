@@ -134,6 +134,11 @@ export async function handleShareCommand(ctx: ReplCommandContext, args: string):
 
 export async function handleSkillCommand(ctx: ReplCommandContext, args: string): Promise<void> {
   const sub = args.trim()
+  const progress = (msg: string): void => {
+    ctx.commitLines([{ id: `sys-skill-${Date.now()}`, kind: 'system', text: `  ${msg}` }])
+    ctx.requestRender()
+  }
+
   if (!sub || sub === 'list') {
     try {
       const { skillList } = await import('../commands/skill.js')
@@ -141,23 +146,27 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
     } catch {
       ctx.commitSystem('sys-skill-err', '  skill list unavailable')
     }
-  } else if (sub.startsWith('install ')) {
-    const source = sub.slice(8).trim()
-    if (!source) {
-      ctx.commitSystem('sys-skill-err', '  Usage: /skill install <owner/repo>')
-    } else {
-      ctx.commitSystem('sys-skill-inst', `  installing ${source}...`)
-      ctx.requestRender()
-      try {
-        const { skillInstall } = await import('../commands/skill.js')
-        const result = await skillInstall(source, (msg) => {
-          ctx.commitLines([{ id: `sys-skill-${Date.now()}`, kind: 'system', text: `  ${msg}` }])
-          ctx.requestRender()
-        })
-        ctx.commitSystem('sys-skill-done', `  ${result}`)
-      } catch (err) {
-        ctx.commitSystem('sys-skill-err', failureText('install failed', err))
-      }
+  } else if (sub === 'install' || sub.startsWith('install ')) {
+    const source = sub.slice(7).trim()
+    ctx.commitSystem('sys-skill-inst', `  installing ${source || 'official skills'}...`)
+    ctx.requestRender()
+    try {
+      const { skillInstall } = await import('../commands/skill.js')
+      const result = await skillInstall(source || undefined, { progress })
+      ctx.commitSystem('sys-skill-done', result || '  nothing to install')
+    } catch (err) {
+      ctx.commitSystem('sys-skill-err', failureText('install failed', err))
+    }
+  } else if (sub === 'update' || sub.startsWith('update ')) {
+    const name = sub.slice(6).trim()
+    ctx.commitSystem('sys-skill-up', `  updating ${name || 'installed skills'}...`)
+    ctx.requestRender()
+    try {
+      const { skillUpdate } = await import('../commands/skill.js')
+      const result = await skillUpdate(name || undefined, { progress })
+      ctx.commitSystem('sys-skill-done', result || '  nothing to update')
+    } catch (err) {
+      ctx.commitSystem('sys-skill-err', failureText('update failed', err))
     }
   } else if (sub.startsWith('remove ')) {
     const name = sub.slice(7).trim()
@@ -172,7 +181,10 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
       }
     }
   } else {
-    ctx.commitSystem('sys-skill-err', '  Usage: /skill [list | install <source> | remove <name>]')
+    ctx.commitSystem(
+      'sys-skill-err',
+      '  Usage: /skill [list | install [name | source] | update [name] | remove <name>]',
+    )
   }
   ctx.requestRender()
 }

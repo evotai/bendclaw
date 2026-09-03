@@ -20,7 +20,6 @@ fn create_skill(dir: &Path, name: &str, description: &str) {
     )
     .unwrap();
 }
-
 #[test]
 fn load_from_directory() -> Result<(), Box<dyn std::error::Error>> {
     let tmp = TempDir::new()?;
@@ -178,6 +177,112 @@ fn handles_quoted_description() {
 
     let specs = load_fs_skills(&[tmp.path().to_path_buf()]).unwrap();
     assert_eq!(specs[0].description, "A quoted desc");
+}
+
+// ---------------------------------------------------------------------------
+// Nested group tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nested_group_skill_loads() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    create_skill(&tmp.path().join("lark"), "lark-im", "Lark IM");
+
+    let specs = load_fs_skills(&[tmp.path().to_path_buf()])?;
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].name, "lark-im");
+    assert!(specs[0].base_dir.ends_with("lark/lark-im"));
+    assert!(specs[0].file_path.ends_with("lark/lark-im/SKILL.md"));
+    Ok(())
+}
+
+#[test]
+fn group_dir_is_not_a_skill() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    let group = tmp.path().join("lark");
+    create_skill(&group, "lark-im", "Lark IM");
+    fs::write(group.join("README.md"), "group readme")?;
+
+    let specs = load_fs_skills(&[tmp.path().to_path_buf()])?;
+    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, vec!["lark-im"]);
+    Ok(())
+}
+
+#[test]
+fn third_level_is_not_scanned() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    create_skill(&tmp.path().join("a").join("b"), "deep", "Too deep");
+
+    assert!(load_fs_skills(&[tmp.path().to_path_buf()])?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn hidden_dirs_are_skipped() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    create_skill(tmp.path(), ".weather.install-123", "Staging copy");
+    create_skill(&tmp.path().join(".staging"), "nested", "Hidden group");
+
+    assert!(load_fs_skills(&[tmp.path().to_path_buf()])?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn flat_and_nested_mixed() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    create_skill(tmp.path(), "databend-cloud", "Databend");
+    create_skill(&tmp.path().join("lark"), "lark-im", "Lark IM");
+    create_skill(&tmp.path().join("lark"), "lark-shared", "Lark shared");
+
+    let specs = load_fs_skills(&[tmp.path().to_path_buf()])?;
+    let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, vec!["databend-cloud", "lark-im", "lark-shared"]);
+    Ok(())
+}
+
+#[test]
+fn nested_name_collision_later_dir_wins() -> Result<(), Box<dyn std::error::Error>> {
+    let dir1 = TempDir::new()?;
+    let dir2 = TempDir::new()?;
+    create_skill(dir1.path(), "lark-im", "Flat old");
+    create_skill(&dir2.path().join("lark"), "lark-im", "Grouped new");
+
+    let specs = load_fs_skills(&[dir1.path().to_path_buf(), dir2.path().to_path_buf()])?;
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].description, "Grouped new");
+    Ok(())
+}
+
+#[test]
+fn same_root_collision_resolves_by_sorted_path() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    create_skill(&tmp.path().join("a"), "dup", "From a");
+    create_skill(&tmp.path().join("b"), "dup", "From b");
+
+    for _ in 0..5 {
+        let specs = load_fs_skills(&[tmp.path().to_path_buf()])?;
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].description, "From b");
+        assert!(specs[0].base_dir.ends_with("b/dup"));
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_frontmatter_error_keeps_valid_siblings() -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = TempDir::new()?;
+    let group = tmp.path().join("lark");
+    create_skill(&group, "lark-im", "Lark IM");
+    let bad = group.join("lark-bad");
+    fs::create_dir_all(&bad)?;
+    fs::write(bad.join("SKILL.md"), "no frontmatter")?;
+
+    let specs = load_skills(&[tmp.path().to_path_buf()])?;
+    assert!(specs.iter().any(|s| s.name == "lark-im"));
+    assert!(specs.iter().any(|s| s.name == "review"));
+    assert!(specs.iter().all(|s| s.name != "lark-bad"));
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

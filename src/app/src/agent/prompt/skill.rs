@@ -37,6 +37,8 @@ const BUILTINS: &[BuiltinDef] = &[
     },
 ];
 
+const MAX_GROUP_DEPTH: usize = 1;
+
 // ---------------------------------------------------------------------------
 // SkillSpec
 // ---------------------------------------------------------------------------
@@ -266,71 +268,93 @@ fn load_skills_from_dir_lenient(
 ) -> Result<(Vec<SkillSpec>, Vec<SkillLoadError>), SkillLoadError> {
     let mut specs = Vec::new();
     let mut errors = Vec::new();
+    scan_dir(dir, 0, &mut specs, &mut errors)?;
+    specs.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok((specs, errors))
+}
 
-    let entries = fs::read_dir(dir).map_err(|e| SkillLoadError::Io {
+fn scan_dir(
+    dir: &Path,
+    depth: usize,
+    specs: &mut Vec<SkillSpec>,
+    errors: &mut Vec<SkillLoadError>,
+) -> Result<(), SkillLoadError> {
+    let read = fs::read_dir(dir).map_err(|e| SkillLoadError::Io {
         path: dir.to_path_buf(),
         source: e,
     })?;
 
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(source) => {
-                errors.push(SkillLoadError::Io {
-                    path: dir.to_path_buf(),
-                    source,
-                });
-                continue;
-            }
-        };
-        let path = entry.path();
-        if !path.is_dir() {
+    let mut paths = Vec::new();
+    for entry in read {
+        match entry {
+            Ok(entry) => paths.push(entry.path()),
+            Err(source) => errors.push(SkillLoadError::Io {
+                path: dir.to_path_buf(),
+                source,
+            }),
+        }
+    }
+    paths.sort();
+
+    for path in paths {
+        if !path.is_dir() || is_hidden(&path) {
             continue;
         }
 
         let skill_md = path.join("SKILL.md");
         if !skill_md.exists() {
+            if depth < MAX_GROUP_DEPTH {
+                if let Err(error) = scan_dir(&path, depth + 1, specs, errors) {
+                    errors.push(error);
+                }
+            }
             continue;
         }
 
-        let content = match fs::read_to_string(&skill_md) {
-            Ok(content) => content,
-            Err(source) => {
-                errors.push(SkillLoadError::Io {
-                    path: skill_md,
-                    source,
-                });
-                continue;
+        match load_skill_spec(&path, &skill_md) {
+            Ok(spec) => {
+                if let Some(previous) = specs.iter().find(|existing| existing.name == spec.name) {
+                    tracing::warn!(
+                        "duplicate skill '{}': {} overrides {}",
+                        spec.name,
+                        spec.base_dir.display(),
+                        previous.base_dir.display(),
+                    );
+                }
+                specs.retain(|existing| existing.name != spec.name);
+                specs.push(spec);
             }
-        };
-
-        let description = match parse_frontmatter(&content, &skill_md) {
-            Ok(description) => description,
-            Err(error) => {
-                errors.push(error);
-                continue;
-            }
-        };
-
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        let base_dir = fs::canonicalize(&path).unwrap_or(path);
-        let file_path = fs::canonicalize(&skill_md).unwrap_or(skill_md);
-
-        specs.push(SkillSpec {
-            name,
-            description,
-            file_path,
-            base_dir,
-        });
+            Err(error) => errors.push(error),
+        }
     }
 
-    specs.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok((specs, errors))
+    Ok(())
+}
+
+fn load_skill_spec(dir: &Path, skill_md: &Path) -> Result<SkillSpec, SkillLoadError> {
+    let content = fs::read_to_string(skill_md).map_err(|source| SkillLoadError::Io {
+        path: skill_md.to_path_buf(),
+        source,
+    })?;
+    let description = parse_frontmatter(&content, skill_md)?;
+    let name = dir
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    Ok(SkillSpec {
+        name,
+        description,
+        file_path: fs::canonicalize(skill_md).unwrap_or_else(|_| skill_md.to_path_buf()),
+        base_dir: fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()),
+    })
+}
+
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .map(|name| name.to_string_lossy().starts_with('.'))
+        .unwrap_or(false)
 }
 
 #[derive(Deserialize)]

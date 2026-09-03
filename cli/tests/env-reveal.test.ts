@@ -96,6 +96,49 @@ describe('renderRevealed', () => {
   test('the erase delay is the one the hint advertises', () => {
     expect(REVEAL_ERASE_MS).toBe(10_000)
   })
+
+  test('terminal control bytes are shown as inert text', () => {
+    // The raw forms would clear/restyle the screen or create a live OSC 8 link.
+    const dangerous = 'A\x1b[31mRED\x1b[0m\x1b[2J\x1b]8;;https://evil.example\x07click\x1b]8;;\x07Z'
+    const { text } = renderRevealed({ key: 'K', value: dangerous })
+    expect(text).not.toContain('\x1b')
+    expect(text).not.toContain('\x07')
+    expect(text).toContain('\\x1b[31mRED\\x1b[0m')
+    expect(text).toContain('\\x1b[2J')
+    expect(text).toContain('\\x1b]8;;https://evil.example\\x07click')
+    expect(text).toContain('(escaped for terminal safety)')
+  })
+
+  test('row-shaping controls stay on one physical line', () => {
+    const { text } = renderRevealed({ key: 'K', value: 'line1\nline2\rback\ttab' })
+    expect(text).not.toContain('\n')
+    expect(text).not.toContain('\r')
+    expect(text).not.toContain('\t')
+    expect(text).toContain('line1\\nline2\\rback\\ttab')
+  })
+
+  test('literal backslash escapes remain distinguishable from real controls', () => {
+    // A real newline and the literal characters `\\n` must not render the same,
+    // otherwise the escaped display is not reversible enough to inspect.
+    const real = renderRevealed({ key: 'K', value: 'a\nb' }).text
+    const literal = renderRevealed({ key: 'K', value: 'a\\nb' }).text
+    expect(real).toContain('a\\nb')
+    expect(literal).toContain('a\\\\nb')
+    expect(real).not.toBe(literal)
+  })
+
+  test('bidi and zero-width format controls cannot spoof the revealed line', () => {
+    const { text } = renderRevealed({ key: 'K', value: 'ab\u202ecdef\u200bgh' })
+    expect(text).not.toContain('\u202e')
+    expect(text).not.toContain('\u200b')
+    expect(text).toContain('ab\\u{202e}cdef\\u{200b}gh')
+  })
+
+  test('ordinary Unicode remains readable', () => {
+    const { text } = renderRevealed({ key: 'K', value: '密钥🔑value' })
+    expect(text).toBe('  K=密钥🔑value')
+    expect(text).not.toContain('escaped for terminal safety')
+  })
 })
 
 describe('Committer.commitUnlogged', () => {

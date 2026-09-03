@@ -18,7 +18,7 @@
 const STARS = '*'.repeat(6)
 const MIN_LENGTH_FOR_ENDS = 9
 
-export function maskValue(value: string): string {
+function maskValue(value: string): string {
   const text = value ?? ''
   if (text.length === 0) return '(empty)'
   if (text.length < MIN_LENGTH_FOR_ENDS) return STARS

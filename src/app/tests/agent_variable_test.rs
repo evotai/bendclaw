@@ -225,3 +225,62 @@ async fn persistence_roundtrip() -> Result {
     assert!(keys.contains(&"B"));
     Ok(())
 }
+
+#[tokio::test]
+async fn variables_file_is_private_to_the_owner() -> Result {
+    let tmp = tempfile::tempdir()?;
+    let (vars, _storage) = make_variables_with_storage(tmp.path()).await;
+
+    vars.set_global(
+        "BENDCLOUD_DSN".into(),
+        "bendcloud://org:secret@api.databend.com/default".into(),
+    )
+    .await?;
+
+    let path = tmp.path().join("variables.json");
+    assert!(path.is_file());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path)?.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "variables.json holds secrets; mode was {mode:o}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn rewriting_variables_keeps_the_file_private_and_complete() -> Result {
+    let tmp = tempfile::tempdir()?;
+    let (vars, storage) = make_variables_with_storage(tmp.path()).await;
+    let path = tmp.path().join("variables.json");
+
+    for index in 0..4 {
+        vars.set_global(format!("K{index}"), format!("v{index}"))
+            .await?;
+
+        let text = std::fs::read_to_string(&path)?;
+        serde_json::from_str::<serde_json::Value>(&text)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path)?.permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "rewrite {index} left mode {mode:o}");
+        }
+    }
+
+    assert_eq!(storage.load_variables().await?.len(), 4);
+
+    // No temporary files left beside the destination.
+    let leftovers: Vec<String> = std::fs::read_dir(tmp.path())?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| name != "variables.json")
+        .collect();
+    assert!(leftovers.is_empty(), "unexpected leftovers: {leftovers:?}");
+    Ok(())
+}

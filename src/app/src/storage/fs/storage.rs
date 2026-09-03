@@ -71,6 +71,21 @@ impl FsStorage {
         Ok(())
     }
 
+    /// Replace a state file that may hold secrets: 0600, fsynced, atomically
+    /// renamed, so a reader never sees a half-written document.
+    async fn write_private_json<T: serde::Serialize>(
+        &self,
+        path: PathBuf,
+        value: &T,
+    ) -> Result<()> {
+        let json = serde_json::to_string_pretty(value)?;
+        tokio::task::spawn_blocking(move || {
+            crate::atomic_file::write_private_atomic(&path, json.as_bytes())
+        })
+        .await
+        .map_err(|error| EvotError::Conf(format!("variables write task failed: {error}")))?
+    }
+
     async fn read_json<T: serde::de::DeserializeOwned>(&self, path: &Path) -> Result<Option<T>> {
         match fs::read_to_string(path).await {
             Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
@@ -610,7 +625,7 @@ impl Storage for FsStorage {
             version: 1,
             variables,
         };
-        self.write_json(self.variables_path(), &doc).await
+        self.write_private_json(self.variables_path(), &doc).await
     }
 
     async fn load_favorites(&self) -> Result<Vec<String>> {

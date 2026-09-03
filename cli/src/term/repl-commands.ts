@@ -12,6 +12,8 @@ export interface ReplCommandContext {
   getCompactLines: () => import('../render/output.js').OutputLine[]
   getConfigInfo: () => ConfigInfo | null
   commitSystem: (id: string, text: string, kind?: OutputLine['kind']) => void
+  /** Commit a secret shown on screen only, erased after `delayMs`. */
+  commitRevealed: (id: string, text: string, erasedText: string, delayMs: number) => void
   commitLines: (lines: OutputLine[]) => void
   requestRender: () => void
 }
@@ -27,6 +29,9 @@ function failureText(label: string, err: unknown): string {
   const message = (err as { message?: string })?.message ?? String(err)
   return chalk.red(`  ${label}: ${message}`)
 }
+
+/** Distinguishes concurrent reveals; see the comment at its use site. */
+let nextRevealId = 0
 
 async function defaultLoginCommandDeps(): Promise<LoginCommandDeps> {
   const { deviceFingerprint, openLoginBrowser } = await import('../commands/login.js')
@@ -323,23 +328,34 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
 }
 
 export async function handleEnvCommand(ctx: ReplCommandContext, args: string): Promise<void> {
-  const { runEnvCommand } = await import('../commands/env.js')
+  const { runEnvCommand, parseRevealTarget, renderRevealed, REVEAL_ERASE_MS } = await import('../commands/env.js')
+  const port = {
+    list: () => ctx.agent.listVariables(),
+    set: (key: string, value: string) => ctx.agent.setVariable(key, value),
+    del: (key: string) => ctx.agent.deleteVariable(key),
+    readFile: async (path: string) => {
+      const { readFile } = await import('fs/promises')
+      const { homedir } = await import('os')
+      const expanded = path.startsWith('~/') ? `${homedir()}${path.slice(1)}` : path
+      return readFile(expanded, 'utf8')
+    },
+  }
   try {
-    const text = await runEnvCommand(
-      {
-        list: () => ctx.agent.listVariables(),
-        set: (key, value) => ctx.agent.setVariable(key, value),
-        del: (key) => ctx.agent.deleteVariable(key),
-        readFile: async (path) => {
-          const { readFile } = await import('fs/promises')
-          const { homedir } = await import('os')
-          const expanded = path.startsWith('~/') ? `${homedir()}${path.slice(1)}` : path
-          return readFile(expanded, 'utf8')
-        },
-      },
-      args,
-    )
-    ctx.commitSystem('sys-env', text)
+    // A reveal is committed differently from every other `/env` output: shown on
+    // screen, withheld from the screen log, and erased on a timer. Everything
+    // else is ordinary history.
+    const revealKey = parseRevealTarget(args)
+    const revealRow = revealKey ? port.list().find((row) => row.key === revealKey) : undefined
+    if (revealRow) {
+      const { text, erasedText } = renderRevealed(revealRow)
+      // A fresh id per reveal. The erase finds its line by id, so a shared one
+      // made the second reveal mask the first line twice and leave its own
+      // value on screen for good.
+      ctx.commitRevealed(`sys-env-reveal-${nextRevealId++}`, text, erasedText, REVEAL_ERASE_MS)
+      ctx.requestRender()
+      return
+    }
+    ctx.commitSystem('sys-env', await runEnvCommand(port, args))
   } catch (err) {
     ctx.commitSystem('sys-env-err', failureText('env failed', err))
   }

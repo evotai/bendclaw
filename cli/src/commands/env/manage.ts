@@ -39,6 +39,24 @@ function handleGet(port: EnvPort, rest: string): string {
   )
 }
 
+/**
+ * The key a `/env` invocation wants revealed, or null if it wants anything else.
+ *
+ * Split out because a reveal is committed differently from every other `/env`
+ * output: it goes to the terminal but not the screen log, and it is erased after
+ * a delay. The parsing stays here beside the routing it mirrors, so the two
+ * cannot drift; the timer belongs to the REPL, which owns the frame.
+ */
+export function parseRevealTarget(args: string): string | null {
+  const input = args.trim()
+  const space = input.search(/\s/)
+  if (space === -1) return null
+  if (input.slice(0, space) !== 'get') return null
+  const parts = input.slice(space + 1).split(/\s+/).filter(Boolean)
+  if (!parts.includes('--reveal')) return null
+  return parts.find((part) => part !== '--reveal') ?? null
+}
+
 async function handleDel(port: EnvPort, rest: string): Promise<string> {
   const key = rest.trim()
   if (!key) return '  Usage: /env del KEY'

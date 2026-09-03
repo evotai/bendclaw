@@ -47,30 +47,51 @@ function port(
 }
 
 describe('describe', () => {
-  test('reports length without revealing any character', () => {
+  test('shows two characters at each end and hides the middle', () => {
     const secret = '855ffdca2b3d5bdf79535dc047e47fbc'
     const shown = describeValue(secret)
-    expect(shown).toBe('32 chars')
-    expect(shown).not.toContain('7fbc')
-    expect(shown).not.toContain('855f')
+    expect(shown).toBe('85******bc  32 chars')
+    // The interior is what must not travel: everything between the endpoints.
+    expect(shown).not.toContain('ffdca')
+    expect(shown).not.toContain('47e47f')
   })
 
-  test('never leaks a URL-shaped tail, which is a warehouse name not entropy', () => {
-    const a = describeValue('bendcloud://o:tokenone@api.databend.com/default')
-    const b = describeValue('bendcloud://p:tokentwo@api.databend.com/default')
-    expect(a).not.toContain('default')
-    expect(b).not.toContain('default')
-    // Same length values are indistinguishable by design; the key tells them apart.
-    expect(describeValue('aaaa'.repeat(4))).toBe(describeValue('bbbb'.repeat(4)))
+  test('the star run is fixed width, so it is not a second length readout', () => {
+    // Otherwise the mask itself would leak length, and the column would ragged
+    // out on long values. The count beside it is the length answer.
+    const short = describeValue('a'.repeat(9))
+    const long = describeValue('a'.repeat(400))
+    const stars = (text: string) => text.slice(2, text.indexOf('  ')).replace(/a+$/, '')
+    expect(stars(short)).toBe(stars(long))
+    expect(long).toContain('400 chars')
+  })
+
+  test('endpoints tell two similar values apart', () => {
+    // The point of the change: with only a length, two pasted tokens of the
+    // same shape were indistinguishable and you could not tell which was live.
+    const a = describeValue('bendcloud://o:tokenone@api.databend.com/warehouse1')
+    const b = describeValue('xendcloud://p:tokentwo@api.databend.com/warehouse2')
+    expect(a).not.toBe(b)
+    // Still no interior: the credential itself never appears.
+    expect(a).not.toContain('tokenone')
+    expect(b).not.toContain('tokentwo')
+  })
+
+  test('a value too short to mask shows no ends at all', () => {
+    // Four of eight characters is most of the secret, so short values get
+    // nothing but stars.
+    expect(describeValue('abc')).toBe('******  3 chars')
+    expect(describeValue('12345678')).toBe('******  8 chars')
+    expect(describeValue('123456789')).toBe('12******89  9 chars')
   })
 
   test('empty is labelled, not measured', () => {
     expect(describeValue('')).toBe('(empty)')
   })
 
-  test('length answers "did my paste get truncated"', () => {
-    expect(describeValue('abc')).toBe('3 chars')
-    expect(describeValue('a'.repeat(120))).toBe('120 chars')
+  test('length still answers "did my paste get truncated"', () => {
+    expect(describeValue('abc')).toContain('3 chars')
+    expect(describeValue('a'.repeat(120))).toContain('120 chars')
   })
 })
 

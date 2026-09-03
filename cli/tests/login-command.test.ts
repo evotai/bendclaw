@@ -13,6 +13,7 @@ function createContext(): { ctx: ReplCommandContext; lines: { id: string; text: 
       getCompactLines: () => [],
       getConfigInfo: () => null,
       commitSystem: (id, text) => { lines.push({ id, text }) },
+      commitRevealed: (id, text) => { lines.push({ id, text }) },
       commitLines: () => {},
       requestRender: () => {},
     },

@@ -25,7 +25,13 @@ fn internal_system_prompt_boundary_is_not_sent() {
 
 #[test]
 fn test_current_profiled_models_send_codex_default_verbosity() {
-    for id in ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] {
+    for id in [
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+    ] {
         let model_config = ModelConfig::openai(id, id);
         let config = StreamConfigBuilder::openai()
             .model(id)
@@ -137,7 +143,12 @@ fn test_gpt_5_xhigh_thinking_maps_to_xhigh_reasoning_effort() {
 
 #[test]
 fn test_gpt_5_6_max_thinking_maps_to_max_reasoning_effort() {
-    for id in ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] {
+    for id in [
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+    ] {
         let model_config = ModelConfig::openai(id, id);
         let config = StreamConfigBuilder::openai()
             .model(id)

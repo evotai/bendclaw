@@ -135,7 +135,7 @@ fn route_and_model_capabilities_are_intersected() {
 
 #[test]
 fn remote_compaction_is_allowlisted_by_model_and_route() {
-    for id in ["gpt-5.6-sol", "gpt-5.5"] {
+    for id in ["gpt-5.6-sol", "gpt-5.5", "gpt-6-astra"] {
         assert!(
             ModelConfig::openai_responses(id, id).can_remote_compact(),
             "{id}"
@@ -267,6 +267,7 @@ fn current_openai_profiles_expose_limits_and_verbosity() {
         "gpt-5.6-luna",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
+        "gpt-6-astra",
     ] {
         let config = ModelConfig::openai(id, id);
         assert_eq!(config.context_window(), 922_000, "{id}");
@@ -278,7 +279,13 @@ fn current_openai_profiles_expose_limits_and_verbosity() {
             "{id}"
         );
     }
-    for id in ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] {
+    for id in [
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+    ] {
         assert_eq!(
             ModelConfig::openai(id, id).effective_verbosity(),
             Some(Verbosity::Low),

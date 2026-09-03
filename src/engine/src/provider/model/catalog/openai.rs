@@ -73,6 +73,7 @@ const PROFILES: &[(&str, ModelProfile)] = &[
     ("gpt-5.6-luna",  GPT_5_6),
     ("gpt-5.6-sol",   GPT_5_6),
     ("gpt-5.6-terra", GPT_5_6),
+    ("gpt-6-astra",   GPT_5_6),
 ];
 
 pub(super) fn resolve(id: &str) -> Option<ModelProfile> {

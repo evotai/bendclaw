@@ -217,7 +217,13 @@ fn responses_off_uses_fallback_model_none_effort() {
 
 #[test]
 fn verbosity_is_only_sent_for_profiled_current_models() {
-    for id in ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] {
+    for id in [
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-6-astra",
+    ] {
         let config = StreamConfigBuilder::openai()
             .model(id)
             .model_config(ModelConfig::openai_responses(id, id))

@@ -31,6 +31,8 @@ function envContext(rows: Array<{ key: string; value: string }>) {
       committed.push({ id, text, erasedText, delayMs })
     },
     commitLines: () => {},
+    replaceLine: () => false,
+    columns: () => 80,
     requestRender: () => {},
   } satisfies ReplCommandContext
   return { ctx, committed }

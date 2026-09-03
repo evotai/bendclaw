@@ -384,6 +384,9 @@ export interface OutputLine {
   rawMarkdown?: string
   /** Thinking text already contains markdown ANSI; apply only the outer pi tint. */
   thinkingStyle?: boolean
+  /** System text that already carries its own ANSI styling (e.g. `/skill`).
+   *  Rendered verbatim instead of being flattened to one dim gray. */
+  preStyled?: boolean
   /** Tool line containing pre-styled source code from a streamed write call. */
   toolCodePreview?: boolean
   codeBlockId?: string

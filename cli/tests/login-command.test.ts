@@ -15,6 +15,8 @@ function createContext(): { ctx: ReplCommandContext; lines: { id: string; text: 
       commitSystem: (id, text) => { lines.push({ id, text }) },
       commitRevealed: (id, text) => { lines.push({ id, text }) },
       commitLines: () => {},
+      replaceLine: () => false,
+      columns: () => 80,
       requestRender: () => {},
     },
   }

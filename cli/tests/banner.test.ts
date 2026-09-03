@@ -34,6 +34,15 @@ function createFixture(skillCount: number) {
   return { cwd, skillsDir }
 }
 
+/** Add a group directory holding `names`, the shape `lark/` has in practice. */
+function addGroup(skillsDir: string, group: string, names: string[]): void {
+  for (const name of names) {
+    const dir = join(skillsDir, group, name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), '# Skill\n')
+  }
+}
+
 describe('renderBanner', () => {
   test('renders Pi-style context and skill name sections without metadata or paths', () => {
     const { cwd, skillsDir } = createFixture(12)
@@ -52,7 +61,7 @@ describe('renderBanner', () => {
     expect(banner).toContain('[Context]')
     expect(banner).toContain('AGENTS.md')
     expect(banner).toContain('[Skills]')
-    expect(banner).toContain('skill-00, skill-01')
+    expect(banner).toContain('skill-00 · skill-01')
     expect(banner).toContain('skill-11')
     expect(banner).not.toContain('Directory')
     expect(banner).not.toContain('Model')
@@ -89,6 +98,48 @@ describe('renderBanner', () => {
       skillsDirs: [skillsDir],
     }))
     expect(banner).not.toContain(join(skillsDir, 'skill-00'))
+  })
+
+  test('a skill group is one row carrying its member count', () => {
+    // Spelling out every member is what made the old banner cost three wrapped
+    // lines. The count is the part a glance can use.
+    const { cwd, skillsDir } = createFixture(1)
+    addGroup(skillsDir, 'lark', ['lark-im', 'lark-doc', 'lark-sheets'])
+
+    const banner = stripAnsi(renderBanner({
+      version: 'test',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns: 80,
+      rows: 40,
+      skillsDirs: [skillsDir],
+    }))
+
+    expect(banner).toContain('lark/ 3')
+    expect(banner).not.toContain('lark-im')
+    // The label matches `/skill list`, so the trailing slash marks the group.
+    expect(banner).not.toContain('lark 3')
+  })
+
+  test('the skills row stays within the terminal width when groups are many', () => {
+    const { cwd, skillsDir } = createFixture(6)
+    for (const group of ['alpha', 'beta', 'gamma']) {
+      addGroup(skillsDir, group, [`${group}-one`, `${group}-two`])
+    }
+    const columns = 40
+    const banner = renderBanner({
+      version: 'test',
+      model: 'model',
+      cwd,
+      configInfo: { provider: 'provider', hasApiKey: true },
+      columns,
+      rows: 40,
+      skillsDirs: [skillsDir],
+    })
+    for (const line of banner.split('\n')) {
+      expect(stringWidth(stripAnsi(line))).toBeLessThanOrEqual(columns)
+    }
   })
 
   test('uses EVOT primary for logo blocks and gold accent for shadows and headings', () => {

@@ -35,8 +35,13 @@ function mergeRequires(entries: SkillEntry[]): Requires {
   return merged
 }
 
+/**
+ * What a freshly installed unit still needs from the user.
+ *
+ * Returns bare requirement phrases; the caller owns how they are labelled and
+ * painted.
+ */
 export function missingRequirements(
-  unit: string,
   entries: SkillEntry[],
   env: NodeJS.ProcessEnv = process.env,
   varsFile: string = variablesFile(),
@@ -48,11 +53,11 @@ export function missingRequirements(
   for (const name of needEnv) {
     if (env[name] || variables.has(name)) continue
     const hint = envHints[name]
-    notes.push(`/env set ${name}=${hint ?? '<value>'}`)
+    notes.push(`needs /env set ${name}=${hint ?? '<value>'}`)
   }
   for (const bin of bins) {
     if (Bun.which(bin)) continue
-    notes.push(`${bin} (not found in PATH)`)
+    notes.push(`needs ${bin} (not found in PATH)`)
   }
-  return notes.map((note) => `  ${unit} needs: ${note}`)
+  return notes
 }

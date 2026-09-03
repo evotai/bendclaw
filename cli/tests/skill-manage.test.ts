@@ -11,6 +11,29 @@ import { isValidSkillName, scanSkillDir } from '../src/commands/skill/scan.js'
 import { resolveSource } from '../src/commands/skill/source.js'
 import { enumerateUnits, supersededDirs } from '../src/commands/skill/units.js'
 import type { Checkout } from '../src/commands/skill/fetch.js'
+import type { OperationView, SkillOutcome, UnitResult } from '../src/commands/skill/render.js'
+
+/** The operation report, or a failure when the call refused instead. */
+function view(outcome: SkillOutcome): OperationView {
+  if (!('view' in outcome)) throw new Error(`expected an operation, got notice: ${outcome.notice}`)
+  return outcome.view
+}
+
+/** The one-line refusal, or a failure when the call actually ran. */
+function notice(outcome: SkillOutcome): string {
+  if ('view' in outcome) throw new Error('expected a notice, got an operation report')
+  return outcome.notice
+}
+
+function unit(outcome: SkillOutcome, name: string): UnitResult {
+  const found = view(outcome).units.find((entry) => entry.name === name)
+  if (!found) throw new Error(`no unit named ${name}`)
+  return found
+}
+
+function noteTexts(result: UnitResult): string[] {
+  return result.notes.map((note) => note.text)
+}
 
 let counter = 0
 
@@ -182,8 +205,13 @@ describe('skillInstall', () => {
     const stub = stubFetch('abc1234')
     const out = await skillInstall(undefined, { root, variablesFile: vars(root), fetch: stub.fetch, env: {} })
 
-    expect(out).toContain('✓ databend-cloud')
-    expect(out).toContain('✓ lark (2 skills)')
+    expect(view(out).title).toBe('Installed')
+    expect(view(out).source).toBe('evotai/evot-skills@abc1234')
+    expect(view(out).total).toBe(3)
+    expect(view(out).units.map((entry) => [entry.name, entry.skills, entry.outcome])).toEqual([
+      ['databend-cloud', 1, 'new'],
+      ['lark', 2, 'new'],
+    ])
     expect(existsSync(join(root, 'databend-cloud', 'scripts', 'query.py'))).toBe(true)
     expect(existsSync(join(root, 'lark', 'lark-shared', 'SKILL.md'))).toBe(true)
     expect(readSourceRecord(join(root, 'lark'))).toMatchObject({
@@ -206,7 +234,8 @@ describe('skillInstall', () => {
     const stub = stubFetch('abc1234')
 
     const out = await skillInstall('lark', { root, variablesFile: vars(root), fetch: stub.fetch, env: {} })
-    expect(out).toContain('removed superseded: lark-im')
+    expect(noteTexts(unit(out, 'lark'))).toContain('replaced standalone lark-im')
+    expect(unit(out, 'lark').notes[0]!.kind).toBe('info')
     expect(existsSync(join(root, 'lark-im'))).toBe(false)
     expect(existsSync(join(root, 'diagram-design'))).toBe(true)
     expect(existsSync(join(root, 'lark', 'lark-im', 'SKILL.md'))).toBe(true)
@@ -239,7 +268,10 @@ describe('skillInstall', () => {
       fetch: async () => ({ dir: source, commit: 'abc1234' }),
       env: {},
     })
-    expect(out).toContain('databend-cloud needs: /env set BENDCLOUD_DSN=bendcloud://')
+    expect(noteTexts(unit(out, 'databend-cloud'))).toEqual([
+      'needs /env set BENDCLOUD_DSN=bendcloud://org:token@api.databend.com/default',
+    ])
+    expect(unit(out, 'databend-cloud').notes[0]!.kind).toBe('warn')
   })
 
   test('satisfied requirements produce no note', async () => {
@@ -257,7 +289,7 @@ describe('skillInstall', () => {
       fetch: async () => ({ dir: source, commit: 'abc1234' }),
       env: { BENDCLOUD_DSN: 'bendcloud://org:token@api.databend.com/default' },
     })
-    expect(out).not.toContain('needs:')
+    expect(unit(out, 'databend-cloud').notes).toEqual([])
   })
 })
 
@@ -270,8 +302,9 @@ describe('skillUpdate', () => {
     const out = await skillUpdate(undefined, { root, variablesFile: vars(root), fetch: next.fetch, env: {} })
 
     expect(next.calls).toBe(1)
-    expect(out).toContain('updated')
-    expect(out).toContain('abc1234 → def5678')
+    expect(view(out).title).toBe('Updated')
+    expect(unit(out, 'lark').outcome).toBe('updated')
+    expect(unit(out, 'lark').detail).toBe('abc1234 → def5678')
     expect(readSourceRecord(join(root, 'lark'))?.commit).toBe('def5678')
   })
 
@@ -280,8 +313,8 @@ describe('skillUpdate', () => {
     await skillInstall('lark', { root, variablesFile: vars(root), fetch: stubFetch('abc1234').fetch, env: {} })
 
     const out = await skillUpdate(undefined, { root, variablesFile: vars(root), fetch: stubFetch('abc1234').fetch, env: {} })
-    expect(out).toContain('unchanged')
-    expect(out).not.toContain('→')
+    expect(unit(out, 'lark').outcome).toBe('unchanged')
+    expect(unit(out, 'lark').detail).toBe('abc1234')
   })
 
   test('local units are skipped, not touched', async () => {
@@ -290,7 +323,7 @@ describe('skillUpdate', () => {
     await skillInstall('lark', { root, variablesFile: vars(root), fetch: stubFetch('abc1234').fetch, env: {} })
 
     const out = await skillUpdate(undefined, { root, variablesFile: vars(root), fetch: stubFetch('def5678').fetch, env: {} })
-    expect(out).toContain('skipped   zero-tech-debt  local')
+    expect(unit(out, 'zero-tech-debt')).toMatchObject({ outcome: 'skipped', detail: 'local' })
     expect(existsSync(join(root, 'zero-tech-debt', 'SKILL.md'))).toBe(true)
   })
 
@@ -298,14 +331,14 @@ describe('skillUpdate', () => {
     const root = workspace()
     writeSkill(join(root, 'zero-tech-debt'), 'zero-tech-debt')
 
-    expect(await skillUpdate('missing', { root, variablesFile: vars(root), env: {} })).toContain('not installed')
-    expect(await skillUpdate('zero-tech-debt', { root, variablesFile: vars(root), env: {} })).toContain('no install source')
-    expect(await skillUpdate('bad name', { root, variablesFile: vars(root), env: {} })).toContain('invalid skill name')
+    expect(notice(await skillUpdate('missing', { root, variablesFile: vars(root), env: {} }))).toContain('not installed')
+    expect(notice(await skillUpdate('zero-tech-debt', { root, variablesFile: vars(root), env: {} }))).toContain('no install source')
+    expect(notice(await skillUpdate('bad name', { root, variablesFile: vars(root), env: {} }))).toContain('invalid skill name')
   })
 
   test('nothing tracked yields a clear message', async () => {
     const root = workspace()
-    expect(await skillUpdate(undefined, { root, variablesFile: vars(root), env: {} })).toBe('  no updatable skills installed')
+    expect(notice(await skillUpdate(undefined, { root, variablesFile: vars(root), env: {} }))).toBe('no updatable skills installed')
   })
 
   test('third-party repo-root units stay updatable', async () => {
@@ -330,8 +363,7 @@ describe('skillUpdate', () => {
       env: {},
       fetch: rootSkillRepo('bbb2222'),
     })
-    expect(out).toContain('updated')
-    expect(out).not.toContain('skipped')
+    expect(view(out).units.map((entry) => entry.outcome)).toEqual(['updated'])
     expect(readSourceRecord(join(root, 'solo'))?.commit).toBe('bbb2222')
   })
 
@@ -347,7 +379,7 @@ describe('skillUpdate', () => {
         throw new Error('network down')
       },
     })
-    expect(out).toContain('failed    lark  network down')
+    expect(unit(out, 'lark')).toMatchObject({ outcome: 'failed', detail: 'network down' })
     expect(existsSync(join(root, 'lark', 'lark-im', 'SKILL.md'))).toBe(true)
   })
 })
@@ -357,7 +389,10 @@ describe('skillRemove', () => {
     const root = workspace()
     await skillInstall('lark', { root, variablesFile: vars(root), fetch: stubFetch('abc1234').fetch, env: {} })
 
-    expect(skillRemove('lark', root)).toContain('removed skill group: lark (2 skills)')
+    expect(skillRemove('lark', root)).toEqual({
+      notice: 'removed skill group: lark (2 skills)',
+      removed: true,
+    })
     expect(existsSync(join(root, 'lark'))).toBe(false)
   })
 
@@ -365,15 +400,20 @@ describe('skillRemove', () => {
     const root = workspace()
     await skillInstall('lark', { root, variablesFile: vars(root), fetch: stubFetch('abc1234').fetch, env: {} })
 
-    expect(skillRemove('lark-im', root)).toContain('from group lark')
+    const result = skillRemove('lark-im', root)
+    expect(result.removed).toBe(true)
+    expect(result.notice).toContain('from group lark')
     expect(existsSync(join(root, 'lark', 'lark-im'))).toBe(false)
     expect(existsSync(join(root, 'lark', 'lark-shared'))).toBe(true)
   })
 
   test('reports unknown and invalid names', () => {
     const root = workspace()
-    expect(skillRemove('nope', root)).toContain('skill not found')
-    expect(skillRemove('bad name', root)).toContain('invalid skill name')
+    expect(skillRemove('nope', root)).toEqual({ notice: 'skill not found: nope', removed: false })
+    expect(skillRemove('bad name', root)).toEqual({
+      notice: 'invalid skill name: bad name',
+      removed: false,
+    })
   })
 
   test('refuses traversal names instead of deleting the parent tree', () => {
@@ -382,7 +422,8 @@ describe('skillRemove', () => {
     writeSkill(join(root, 'keeper'), 'keeper')
 
     for (const name of ['..', '.', '.hidden', '../..']) {
-      expect(skillRemove(name, root)).toContain('invalid skill name')
+      expect(skillRemove(name, root)).toMatchObject({ removed: false })
+      expect(skillRemove(name, root).notice).toContain('invalid skill name')
     }
     expect(existsSync(root)).toBe(true)
     expect(existsSync(join(root, 'keeper', 'SKILL.md'))).toBe(true)

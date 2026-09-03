@@ -344,6 +344,23 @@ describe('buildOutputBlocks', () => {
     expect(result).toContain('\x1b[38;2;119;119;119m')
   })
 
+  test('pre-styled system lines keep their own colours', () => {
+    // `/skill` paints its own hierarchy. Re-tinting the whole line would flatten
+    // it back to the single gray this flag exists to escape.
+    const styled = `  ${chalk.hex('#b5bcf9').bold('Skills')}  ${chalk.hex('#777777')('3 units')}`
+    const result = render([{ id: 's1', kind: 'system', text: styled, preStyled: true }])
+    expect(result).toContain('\x1b[38;2;181;188;249m')
+    expect(stripAnsi(result)).toBe('  Skills  3 units')
+  })
+
+  test('pre-styled system lines still wrap to the terminal width', () => {
+    const styled = chalk.hex('#777777')(`  ${'member-name '.repeat(20)}`)
+    const rendered = renderWithColumns([{ id: 's1', kind: 'system', text: styled, preStyled: true }], 40)
+    for (const row of rendered.split('\n')) {
+      expect(stringWidth(row)).toBeLessThanOrEqual(40)
+    }
+  })
+
   test('interrupted lines are yellow and not dim', () => {
     const result = render([{ id: 'interrupted', kind: 'cancelled', text: '  Interrupted.' }])
     expect(result).toContain('\x1b[33m')

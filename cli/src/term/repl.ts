@@ -242,6 +242,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     commitSystem,
     commitRevealed,
     commitLines,
+    replaceLine: (id, text) => committer.replaceById(id, text),
+    columns: () => renderer.termCols,
     requestRender: () => renderer.requestRender(),
   }
   let destroyed = false

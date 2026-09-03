@@ -2,61 +2,75 @@ import { dirname } from 'path'
 
 import { readSourceRecord } from './install.js'
 import { builtinSkillsRoot, resolveSkillsDirs, skillsRoot } from './paths.js'
+import { renderSkillList, tildify, type SkillListView, type SkillUnitView } from './render.js'
 import { getSkillEntries, type SkillEntry } from './scan.js'
-
-interface Row {
-  label: string
-  origin: string
-  members: string[]
-  dir?: string
-}
+import { isOfficialRepo, type SourceRecord } from './source.js'
 
 function unitDirOf(entry: SkillEntry): string {
   return entry.group ? dirname(entry.dir) : entry.dir
 }
 
-export function skillListFromDirs(dirs: string[]): string {
-  const entries = getSkillEntries(dirs)
-  if (entries.length === 0) return '  no skills installed'
-
-  const builtin = builtinSkillsRoot()
-  const managed = skillsRoot()
-  const byKey = new Map<string, Row>()
-
-  for (const entry of entries) {
-    const unitDir = unitDirOf(entry)
-    const record = readSourceRecord(unitDir)
-    const isBuiltin = unitDir.startsWith(builtin)
-    const origin = isBuiltin
-      ? 'builtin'
-      : record
-        ? `${record.repo}@${record.commit}`
-        : unitDir.startsWith(managed)
-          ? 'local'
-          : 'external'
-
-    const label = isBuiltin ? 'builtin' : entry.group ? `${entry.group}/` : entry.name
-    const row = byKey.get(`${label}\u0000${origin}`) ?? {
-      label,
-      origin,
-      members: [],
-      dir: isBuiltin || record ? undefined : unitDir,
-    }
-    if (label !== entry.name) row.members.push(entry.name)
-    byKey.set(`${label}\u0000${origin}`, row)
+/**
+ * The shortest label that still identifies where a unit came from.
+ *
+ * Official installs drop the repo — every row would otherwise repeat
+ * `evotai/evot-skills@` and push the useful part off screen. Directories are
+ * tildified for the same reason.
+ */
+function originLabel(record: SourceRecord | null, unitDir: string, env: NodeJS.ProcessEnv): string {
+  if (unitDir.startsWith(builtinSkillsRoot())) return 'builtin'
+  if (record) {
+    return isOfficialRepo(record.repo, env)
+      ? `@${record.commit}`
+      : `${record.repo}@${record.commit}`
   }
-
-  const rows = [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label))
-  const width = Math.max(...rows.map((row) => row.label.length))
-  const lines = rows.map((row) => {
-    const parts = [`  ${row.label.padEnd(width)}`, row.origin]
-    if (row.members.length) parts.push(`(${row.members.length}) ${row.members.join(', ')}`)
-    if (row.dir) parts.push(row.dir)
-    return parts.join('  ')
-  })
-  return `\n  Skills:\n${lines.join('\n')}`
+  return tildify(dirname(unitDir))
 }
 
-export function skillList(dirs?: string[]): string {
-  return skillListFromDirs(dirs ?? resolveSkillsDirs())
+/**
+ * Group entries into units, preserving the group directory as the unit.
+ *
+ * `dirs` is optional for the same reason `getSkillEntries` makes it optional:
+ * callers without a live agent fall back to the resolved default set.
+ */
+export function skillListView(
+  dirs?: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): SkillListView {
+  const byKey = new Map<string, SkillUnitView>()
+  let total = 0
+
+  for (const entry of getSkillEntries(dirs)) {
+    total += 1
+    const unitDir = unitDirOf(entry)
+    const record = readSourceRecord(unitDir)
+    const origin = originLabel(record, unitDir, env)
+    // Builtins live one directory per skill but ship as one thing, so they
+    // collapse into a single unit instead of five identical rows. They are not
+    // a directory group, so the label carries no trailing slash.
+    const builtin = unitDir.startsWith(builtinSkillsRoot())
+    const name = builtin ? 'builtin' : entry.group ?? entry.name
+    const key = builtin ? 'builtin' : `${unitDir}\u0000${origin}`
+    const label = builtin ? 'builtin' : entry.group ? `${entry.group}/` : entry.name
+    const unit = byKey.get(key) ?? { name, label, origin, members: [] }
+    if (builtin || entry.group) unit.members.push(entry.name)
+    byKey.set(key, unit)
+  }
+
+  const units = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return { units, total }
+}
+
+export interface SkillListOptions {
+  columns?: number
+  env?: NodeJS.ProcessEnv
+}
+
+export function skillListFromDirs(dirs: string[], options: SkillListOptions = {}): string {
+  const view = skillListView(dirs, options.env ?? process.env)
+  return renderSkillList(view, options.columns ?? process.stdout.columns ?? 80)
+}
+
+export function skillList(dirs?: string[], options: SkillListOptions = {}): string {
+  return skillListFromDirs(dirs ?? resolveSkillsDirs(), options)
 }

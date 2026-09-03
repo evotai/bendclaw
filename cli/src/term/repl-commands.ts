@@ -5,6 +5,7 @@ import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/ass
 import { resolveSessionByPrefix } from './app/resume.js'
 import type { OutputLine } from '../render/output.js'
 import { defaultDeps, type LoginDeps } from '../commands/login-flow.js'
+import { createProgressLine, type ProgressLine } from './progress-line.js'
 
 export interface ReplCommandContext {
   agent: Agent
@@ -15,6 +16,10 @@ export interface ReplCommandContext {
   /** Commit a secret shown on screen only, erased after `delayMs`. */
   commitRevealed: (id: string, text: string, erasedText: string, delayMs: number) => void
   commitLines: (lines: OutputLine[]) => void
+  /** Rewrite an already-committed line, found by id. False when it is gone. */
+  replaceLine: (id: string, text: string) => boolean
+  /** Current terminal width, for commands that lay out their own columns. */
+  columns: () => number
   requestRender: () => void
 }
 
@@ -32,6 +37,9 @@ function failureText(label: string, err: unknown): string {
 
 /** Distinguishes concurrent reveals; see the comment at its use site. */
 let nextRevealId = 0
+
+/** One id per `/skill` operation, so two in flight never overwrite each other. */
+let nextProgressId = 0
 
 async function defaultLoginCommandDeps(): Promise<LoginCommandDeps> {
   const { deviceFingerprint, openLoginBrowser } = await import('../commands/login.js')
@@ -137,61 +145,100 @@ export async function handleShareCommand(ctx: ReplCommandContext, args: string):
   }
 }
 
+/**
+ * `/skill`.
+ *
+ * All four subcommands render through `commands/skill/render.ts` and commit as
+ * pre-styled system lines, so the block keeps its own hierarchy instead of being
+ * flattened to one gray. The fetch/extract/install phases share a single line
+ * that is rewritten in place: they are progress, not history, and stacking them
+ * buried the result that follows.
+ */
 export async function handleSkillCommand(ctx: ReplCommandContext, args: string): Promise<void> {
   const sub = args.trim()
-  const progress = (msg: string): void => {
-    ctx.commitLines([{ id: `sys-skill-${Date.now()}`, kind: 'system', text: `  ${msg}` }])
+  const skill = await import('../commands/skill.js')
+
+  const commitStyled = (id: string, text: string): void => {
+    ctx.commitLines([{ id, kind: 'system', text, preStyled: true }])
     ctx.requestRender()
   }
 
+  const notice = (text: string): void => {
+    commitStyled(`sys-skill-${Date.now()}`, skill.renderNotice(text))
+  }
+
+  /** One progress line per invocation, rewritten in place as phases advance. */
+  const progressLine = (): ProgressLine => createProgressLine(`sys-skill-progress-${nextProgressId++}`, {
+    commit: commitStyled,
+    replace: (id, text) => {
+      const replaced = ctx.replaceLine(id, text)
+      if (replaced) ctx.requestRender()
+      return replaced
+    },
+  })
+
   if (!sub || sub === 'list') {
     try {
-      const { skillList } = await import('../commands/skill.js')
-      ctx.commitSystem('sys-skill', skillList(ctx.agent.skillsDirs()))
+      commitStyled('sys-skill', skill.skillList(ctx.agent.skillsDirs(), { columns: ctx.columns() }))
     } catch {
-      ctx.commitSystem('sys-skill-err', '  skill list unavailable')
+      notice('skill list unavailable')
     }
-  } else if (sub === 'install' || sub.startsWith('install ')) {
+    return
+  }
+
+  if (sub === 'install' || sub.startsWith('install ')) {
     const source = sub.slice(7).trim()
-    ctx.commitSystem('sys-skill-inst', `  installing ${source || 'official skills'}...`)
-    ctx.requestRender()
+    const status = progressLine()
+    status.update(skill.renderProgress(`installing ${source || 'official skills'}...`))
     try {
-      const { skillInstall } = await import('../commands/skill.js')
-      const result = await skillInstall(source || undefined, { progress })
-      ctx.commitSystem('sys-skill-done', result || '  nothing to install')
+      const outcome = await skill.skillInstall(source || undefined, {
+        progress: (msg) => status.update(skill.renderProgress(msg)),
+      })
+      status.finish(
+        'view' in outcome ? skill.renderOperation(outcome.view) : skill.renderNotice(outcome.notice),
+      )
     } catch (err) {
-      ctx.commitSystem('sys-skill-err', failureText('install failed', err))
+      status.finish(failureText('install failed', err))
     }
-  } else if (sub === 'update' || sub.startsWith('update ')) {
+    return
+  }
+
+  if (sub === 'update' || sub.startsWith('update ')) {
     const name = sub.slice(6).trim()
-    ctx.commitSystem('sys-skill-up', `  updating ${name || 'installed skills'}...`)
-    ctx.requestRender()
+    const status = progressLine()
+    status.update(skill.renderProgress(`updating ${name || 'installed skills'}...`))
     try {
-      const { skillUpdate } = await import('../commands/skill.js')
-      const result = await skillUpdate(name || undefined, { progress })
-      ctx.commitSystem('sys-skill-done', result || '  nothing to update')
+      const outcome = await skill.skillUpdate(name || undefined, {
+        progress: (msg) => status.update(skill.renderProgress(msg)),
+      })
+      status.finish(
+        'view' in outcome ? skill.renderOperation(outcome.view) : skill.renderNotice(outcome.notice),
+      )
     } catch (err) {
-      ctx.commitSystem('sys-skill-err', failureText('update failed', err))
+      status.finish(failureText('update failed', err))
     }
-  } else if (sub.startsWith('remove ')) {
+    return
+  }
+
+  if (sub.startsWith('remove ')) {
     const name = sub.slice(7).trim()
     if (!name) {
-      ctx.commitSystem('sys-skill-err', '  Usage: /skill remove <name>')
-    } else {
-      try {
-        const { skillRemove } = await import('../commands/skill.js')
-        ctx.commitSystem('sys-skill-rm', skillRemove(name))
-      } catch {
-        ctx.commitSystem('sys-skill-err', '  skill remove unavailable')
-      }
+      notice('Usage: /skill remove <name>')
+      return
     }
-  } else {
-    ctx.commitSystem(
-      'sys-skill-err',
-      '  Usage: /skill [list | install [name | source] | update [name] | remove <name>]',
-    )
+    try {
+      const result = skill.skillRemove(name)
+      commitStyled(
+        'sys-skill-rm',
+        result.removed ? skill.renderRemoved(result.notice) : skill.renderNotice(result.notice),
+      )
+    } catch {
+      notice('skill remove unavailable')
+    }
+    return
   }
-  ctx.requestRender()
+
+  notice('Usage: /skill [list | install [name | source] | update [name] | remove <name>]')
 }
 
 export interface LoginCommandDeps {

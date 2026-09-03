@@ -1,6 +1,6 @@
 import type { OutputLine } from '../../render/output.js'
 import stringWidth from 'string-width'
-import { line, block, plain, dim, bold, colored, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
+import { line, block, plain, dim, bold, colored, ansi, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
 import { wrapTextByWidth } from './width.js'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
@@ -207,7 +207,9 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         const systemLines = cols
           ? wrapTextWithAnsi(ol.text, Math.max(1, cols))
           : ol.text.split(/\r\n|\r|\n/)
-        blocks.push(block(systemLines.map(l => line(dim(l)))))
+        // Pre-styled system output owns its colours (`/skill`), so it passes
+        // through untouched; everything else gets the uniform dim treatment.
+        blocks.push(block(systemLines.map(l => line(ol.preStyled ? ansi(l) : dim(l)))))
         break
       }
 

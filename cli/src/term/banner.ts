@@ -2,7 +2,7 @@ import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import chalk from 'chalk'
-import { getSkillEntries } from '../commands/skill.js'
+import { renderSkillSummary, skillListView } from '../commands/skill.js'
 import type { ConfigInfo } from '../native/index.js'
 import { getTheme } from '../render/theme.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
@@ -65,6 +65,24 @@ function renderSection(title: string, values: string[], columns: number): string
   ]
 }
 
+/**
+ * The `[Skills]` block.
+ *
+ * Pre-styled, unlike `renderSection`: the summary carries its own brand-hued
+ * unit names, and re-tinting the whole line would flatten it back to the flat
+ * gray comma list this replaced.
+ */
+function renderSkillSection(skillsDirs: string[] | undefined, columns: number): string[] {
+  const view = skillListView(skillsDirs ?? undefined)
+  if (view.units.length === 0) return []
+
+  const valueWidth = Math.max(1, columns - 4)
+  return [
+    getTheme().accent.paint('  [Skills]'),
+    ...wrapTextWithAnsi(renderSkillSummary(view, MUTED), valueWidth).map(line => `    ${line}`),
+  ]
+}
+
 function appendBlock(lines: string[], block: string[]): void {
   if (block.length === 0) return
   if (lines.length > 0) lines.push('')
@@ -110,10 +128,7 @@ export function renderBanner(opts: BannerOptions): string {
 
   const detailLines: string[] = []
   appendBlock(detailLines, renderSection('Context', getContextFiles(cwd), columns))
-  appendBlock(
-    detailLines,
-    renderSection('Skills', getSkillEntries(skillsDirs).map(entry => entry.name), columns),
-  )
+  appendBlock(detailLines, renderSkillSection(skillsDirs, columns))
   if (serverState) {
     appendBlock(detailLines, renderSection('Server', [serverState.address], columns))
   }

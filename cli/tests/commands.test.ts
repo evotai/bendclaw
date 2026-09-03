@@ -2,6 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { homedir, tmpdir } from 'os'
 import { join } from 'path'
+import stripAnsi from 'strip-ansi'
 import { resolveCommand, isSlashCommand, buildHardenPrompt } from '../src/commands/index.js'
 import { getSkillEntries, skillListFromDirs, resolveSkillsDirs, skillList } from '../src/commands/skill.js'
 
@@ -212,12 +213,11 @@ describe('skillListFromDirs', () => {
       writeFileSync(join(evotai, 'evot-skill', 'SKILL.md'), '---\ndescription: evot\n---\n')
       writeFileSync(join(claude, 'claude-skill', 'SKILL.md'), '---\ndescription: claude\n---\n')
 
-      expect(skillListFromDirs([evotai, claude])).toBe([
-        '',
-        '  Skills:',
-        `  claude-skill  external  ${join(claude, 'claude-skill')}`,
-        `  evot-skill    external  ${join(evotai, 'evot-skill')}`,
-      ].join('\n'))
+      const out = stripAnsi(skillListFromDirs([evotai, claude], { columns: 80 }))
+      expect(out).toContain('Skills  2 · 2 units')
+      // Lone skills are ○ rows carrying the directory they live in.
+      expect(out).toContain(`○ claude-skill  ${claude}`)
+      expect(out).toContain(`○ evot-skill    ${evotai}`)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -233,14 +233,67 @@ describe('skillListFromDirs', () => {
       mkdirSync(join(root, 'databend-cloud'), { recursive: true })
       writeFileSync(join(root, 'databend-cloud', 'SKILL.md'), '---\ndescription: db\n---\n')
 
-      const out = skillListFromDirs([root])
-      expect(out).toContain('  lark/')
-      expect(out).toContain('(2) lark-im, lark-shared')
-      expect(out).toContain('  databend-cloud')
-      expect(out).not.toContain('  lark  ')
+      const out = stripAnsi(skillListFromDirs([root], { columns: 80 }))
+      expect(out).toContain('● lark/')
+      // Members drop the group prefix and lay out as a grid under the group row.
+      expect(out).toContain('    im   shared')
+      expect(out).toContain('○ databend-cloud')
+      expect(out).not.toContain('● lark ')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  test('official installs show only the commit, not the repeated repo', () => {
+    const root = join(tmpdir(), `evot-skill-origin-${Date.now()}`)
+    try {
+      mkdirSync(join(root, 'lark', 'lark-im'), { recursive: true })
+      writeFileSync(join(root, 'lark', 'lark-im', 'SKILL.md'), '---\ndescription: im\n---\n')
+      writeFileSync(
+        join(root, 'lark', '.evot-source.json'),
+        JSON.stringify({
+          version: 1,
+          repo: 'evotai/evot-skills',
+          ref: 'main',
+          path: 'skills/lark',
+          commit: '40b5130',
+          installedAt: '2024-01-01T00:00:00.000Z',
+        }),
+      )
+
+      const out = stripAnsi(skillListFromDirs([root], { columns: 80, env: {} }))
+      expect(out).toContain('@40b5130')
+      expect(out).not.toContain('evotai/evot-skills')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('third-party installs keep the repo in the origin', () => {
+    const root = join(tmpdir(), `evot-skill-third-${Date.now()}`)
+    try {
+      mkdirSync(join(root, 'pack', 'one'), { recursive: true })
+      writeFileSync(join(root, 'pack', 'one', 'SKILL.md'), '---\ndescription: one\n---\n')
+      writeFileSync(
+        join(root, 'pack', '.evot-source.json'),
+        JSON.stringify({
+          version: 1,
+          repo: 'acme/pack',
+          ref: 'main',
+          path: '',
+          commit: '1a2b3c4',
+          installedAt: '2024-01-01T00:00:00.000Z',
+        }),
+      )
+
+      expect(stripAnsi(skillListFromDirs([root], { columns: 80, env: {} }))).toContain('acme/pack@1a2b3c4')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('an empty set of directories says so', () => {
+    expect(stripAnsi(skillListFromDirs(['/path/that/does/not/exist']))).toBe('  no skills installed')
   })
 })
 
@@ -308,7 +361,8 @@ describe('skill discovery', () => {
         name: 'env-skill',
         dir: join(envFileDir, 'env-skill'),
       }])
-      expect(skillList([envFileDir])).toContain(join(envFileDir, 'env-skill'))
+      // The row names the directory the skill lives in, not the skill's own dir.
+      expect(stripAnsi(skillList([envFileDir], { columns: 120 }))).toContain(`○ env-skill  ${envFileDir}`)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

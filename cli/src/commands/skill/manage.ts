@@ -5,6 +5,7 @@ import { discardCheckout, fetchRepo, type Checkout, type FetchFn, type ProgressF
 import { installUnit, readSourceRecord, removeDirs } from './install.js'
 import { skillsRoot } from './paths.js'
 import { missingRequirements } from './requires.js'
+import type { SkillOutcome, UnitNote, UnitResult } from './render.js'
 import { isValidSkillName, scanSkillDir, subdirs } from './scan.js'
 import { isOfficialRepo, resolveSource, type Source, type SourceRecord } from './source.js'
 import { enumerateUnits, supersededDirs, type Unit } from './units.js'
@@ -46,47 +47,66 @@ function record(source: Source, unit: Unit, commit: string): SourceRecord {
   }
 }
 
+/** Skills present in the managed root, for the closing count. */
+function installedSkillCount(root: string): number {
+  return scanSkillDir(root).length
+}
+
 async function applyUnit(
   ctx: Context,
   source: Source,
   unit: Unit,
   commit: string,
-): Promise<string[]> {
+): Promise<UnitNote[]> {
   const superseded = source.official ? supersededDirs(ctx.root, unit) : []
   await installUnit(unit, record(source, unit, commit), ctx.root)
 
-  const lines: string[] = []
+  const notes: UnitNote[] = []
   if (superseded.length) {
     removeDirs(superseded.map((entry) => entry.dir))
-    lines.push(`  removed superseded: ${superseded.map((entry) => entry.name).join(', ')}`)
+    notes.push({
+      kind: 'info',
+      text: `replaced standalone ${superseded.map((entry) => entry.name).join(', ')}`,
+    })
   }
 
   const installed = unit.skills.map((skill) => ({
     ...skill,
     dir: skill.group ? join(ctx.root, unit.name, skill.name) : join(ctx.root, unit.name),
   }))
-  lines.push(...missingRequirements(unit.name, installed, ctx.env, ctx.variablesFile))
-  return lines
+  for (const text of missingRequirements(installed, ctx.env, ctx.variablesFile)) {
+    notes.push({ kind: 'warn', text })
+  }
+  return notes
 }
 
-function unitSummary(unit: Unit): string {
-  return unit.skills.length > 1 ? `${unit.name} (${unit.skills.length} skills)` : unit.name
-}
-
-export async function skillInstall(arg?: string, options: ManageOptions = {}): Promise<string> {
+export async function skillInstall(arg?: string, options: ManageOptions = {}): Promise<SkillOutcome> {
   const ctx = context(options)
   const source = resolveSource(arg, ctx.env)
   const checkout = await ctx.fetch(source, ctx.progress)
 
   try {
     const units = enumerateUnits(checkout.dir, source)
-    ctx.progress?.('installing skills...', 'info')
-    const lines: string[] = []
+    ctx.progress?.('installing...', 'info')
+    const results: UnitResult[] = []
     for (const unit of units) {
       const notes = await applyUnit(ctx, source, unit, checkout.commit)
-      lines.push(`  ✓ ${unitSummary(unit)}`, ...notes)
+      results.push({
+        name: unit.name,
+        skills: unit.skills.length,
+        outcome: 'new',
+        detail: '',
+        notes,
+      })
     }
-    return lines.join('\n')
+    return {
+      view: {
+        title: 'Installed',
+        source: `${source.repo}@${checkout.commit}`,
+        units: results,
+        total: installedSkillCount(ctx.root),
+      },
+    }
   } finally {
     await discardCheckout(checkout)
   }
@@ -106,95 +126,123 @@ function installedUnits(root: string): Installed[] {
   })
 }
 
-export async function skillUpdate(arg?: string, options: ManageOptions = {}): Promise<string> {
+/** Group tracked units by the repo@ref they came from, so each is fetched once. */
+function groupBySource(
+  units: Installed[],
+  env: NodeJS.ProcessEnv,
+): Array<{ source: Source; members: Installed[] }> {
+  const groups = new Map<string, { source: Source; members: Installed[] }>()
+  for (const unit of units) {
+    const tracked = unit.record
+    if (!tracked) continue
+    const source: Source = {
+      repo: tracked.repo,
+      ref: tracked.ref,
+      official: isOfficialRepo(tracked.repo, env),
+    }
+    const key = `${source.repo}@${source.ref}`
+    const group = groups.get(key) ?? { source, members: [] }
+    group.members.push(unit)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
+async function updateOne(
+  ctx: Context,
+  source: Source,
+  checkout: Checkout,
+  installed: Installed,
+): Promise<UnitResult> {
+  const previous = installed.record!
+  const unitSource: Source = { ...source, path: previous.path }
+  let unit: Unit
+  try {
+    unit = enumerateUnits(checkout.dir, unitSource)[0]!
+  } catch (error) {
+    return {
+      name: installed.name,
+      skills: 1,
+      outcome: 'failed',
+      detail: error instanceof Error ? error.message : String(error),
+      notes: [],
+    }
+  }
+  const notes = await applyUnit(ctx, unitSource, unit, checkout.commit)
+  const same = previous.commit === checkout.commit
+  return {
+    name: unit.name,
+    skills: unit.skills.length,
+    outcome: same ? 'unchanged' : 'updated',
+    detail: same ? previous.commit : `${previous.commit} → ${checkout.commit}`,
+    notes,
+  }
+}
+
+export async function skillUpdate(arg?: string, options: ManageOptions = {}): Promise<SkillOutcome> {
   const ctx = context(options)
   const name = arg?.trim()
-  if (name && !isValidSkillName(name)) return `  invalid skill name: ${name}`
+  if (name && !isValidSkillName(name)) return { notice: `invalid skill name: ${name}` }
 
   let units = installedUnits(ctx.root)
   if (name) {
     units = units.filter((unit) => unit.name === name)
-    if (!units.length) return `  skill not installed: ${name}`
-    if (!units[0]!.record) return `  ${name} has no install source (local); nothing to update`
-  }
-
-  const tracked = units.filter((unit) => unit.record)
-  if (!tracked.length) return '  no updatable skills installed'
-
-  const groups = new Map<string, { source: Source; names: Installed[] }>()
-  for (const unit of tracked) {
-    const source: Source = {
-      repo: unit.record!.repo,
-      ref: unit.record!.ref,
-      path: unit.record!.path,
-      official: isOfficialRepo(unit.record!.repo, ctx.env),
+    if (!units.length) return { notice: `skill not installed: ${name}` }
+    if (!units[0]!.record) {
+      return { notice: `${name} has no install source (local); nothing to update` }
     }
-    const key = `${source.repo}@${source.ref}`
-    const group = groups.get(key) ?? { source: { ...source, path: undefined }, names: [] }
-    group.names.push(unit)
-    groups.set(key, group)
   }
 
-  const lines: string[] = []
-  for (const { source, names } of groups.values()) {
+  const groups = groupBySource(units, ctx.env)
+  if (!groups.length) return { notice: 'no updatable skills installed' }
+
+  const results: UnitResult[] = []
+  for (const { source, members } of groups) {
     let checkout: Checkout
     try {
       checkout = await ctx.fetch(source, ctx.progress)
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
-      for (const unit of names) lines.push(`  failed    ${unit.name}  ${detail}`)
+      for (const unit of members) {
+        results.push({ name: unit.name, skills: 1, outcome: 'failed', detail, notes: [] })
+      }
       continue
     }
-
     try {
-      for (const installedUnit of names) {
-        const previous = installedUnit.record!
-        const unitSource: Source = { ...source, path: previous.path }
-        let unit: Unit
-        try {
-          unit = enumerateUnits(checkout.dir, unitSource)[0]!
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error)
-          lines.push(`  failed    ${installedUnit.name}  ${detail}`)
-          continue
-        }
-        const notes = await applyUnit(ctx, unitSource, unit, checkout.commit)
-        const status = previous.commit === checkout.commit ? 'unchanged' : 'updated  '
-        const version =
-          previous.commit === checkout.commit
-            ? previous.commit
-            : `${previous.commit} → ${checkout.commit}`
-        lines.push(`  ${status} ${unitSummary(unit)}  ${version}`)
-        lines.push(...notes)
-      }
+      for (const unit of members) results.push(await updateOne(ctx, source, checkout, unit))
     } finally {
       await discardCheckout(checkout)
     }
   }
 
   for (const unit of units) {
-    if (!unit.record) lines.push(`  skipped   ${unit.name}  local`)
+    if (!unit.record) {
+      results.push({ name: unit.name, skills: 1, outcome: 'skipped', detail: 'local', notes: [] })
+    }
   }
-  return lines.join('\n')
+  return { view: { title: 'Updated', units: results, total: installedSkillCount(ctx.root) } }
 }
 
-export function skillRemove(name: string, root = skillsRoot()): string {
+export function skillRemove(name: string, root = skillsRoot()): { notice: string; removed: boolean } {
   const trimmed = name.trim()
-  if (!isValidSkillName(trimmed)) return `  invalid skill name: ${trimmed}`
+  if (!isValidSkillName(trimmed)) return { notice: `invalid skill name: ${trimmed}`, removed: false }
 
   const unitDir = join(root, trimmed)
   if (existsSync(unitDir)) {
     const skills = scanSkillDir(root).filter((entry) => entry.dir.startsWith(`${unitDir}/`))
     removeDirs([unitDir])
-    return skills.length
-      ? `  ✓ removed skill group: ${trimmed} (${skills.length} skills)`
-      : `  ✓ removed skill: ${trimmed}`
+    return {
+      notice: skills.length
+        ? `removed skill group: ${trimmed} (${skills.length} skills)`
+        : `removed skill: ${trimmed}`,
+      removed: true,
+    }
   }
 
   const nested = scanSkillDir(root).find((entry) => entry.name === trimmed && entry.group)
   if (nested) {
     removeDirs([nested.dir])
-    return `  ✓ removed skill: ${trimmed} (from group ${nested.group})`
+    return { notice: `removed skill: ${trimmed} (from group ${nested.group})`, removed: true }
   }
-  return `  skill not found: ${trimmed}`
+  return { notice: `skill not found: ${trimmed}`, removed: false }
 }

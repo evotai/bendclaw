@@ -214,3 +214,55 @@ describe('handleEnvCommand routing', () => {
     expect(committed[0]!.delayMs).toBeUndefined()
   })
 })
+
+describe('Committer.revealTemporarily', () => {
+  test('shows the value now and erases it when the delay elapses', async () => {
+    // The timer used to live in a REPL closure, where it could only be
+    // type-checked. This is the erase actually running.
+    const c = committer()
+    c.instance.revealTemporarily('sys-env-reveal-0', '  K=supersecretvalue', '  K=su******ue', 20)
+
+    expect(c.compactLines[0]?.text).toBe('  K=supersecretvalue')
+    // Only the masked form is logged, so /log and the file cannot recover it.
+    expect(c.logged.join('\n')).not.toContain('supersecretvalue')
+    expect(c.logged.join('\n')).toContain('su******ue')
+
+    await Bun.sleep(40)
+    expect(c.compactLines[0]?.text).toBe('  K=su******ue')
+    expect(c.expandedLines[0]?.text).toBe('  K=su******ue')
+  })
+
+  test('two reveals each erase their own line', async () => {
+    const c = committer()
+    c.instance.revealTemporarily('sys-env-reveal-0', '  A=secretAAAAAA', '  A=se******AA', 20)
+    c.instance.revealTemporarily('sys-env-reveal-1', '  B=secretBBBBBB', '  B=se******BB', 20)
+
+    await Bun.sleep(40)
+    const texts = c.compactLines.map((l) => l.text).join('\n')
+    expect(texts).not.toContain('secretAAAAAA')
+    expect(texts).not.toContain('secretBBBBBB')
+  })
+
+  test('flushReveals cancels a pending erase, leaving nothing to fire later', async () => {
+    // Shutdown path: a timer surviving the REPL would fire against discarded
+    // state. The value stays as-is because the process is going away with it.
+    const c = committer()
+    c.instance.revealTemporarily('sys-env-reveal-0', '  K=supersecretvalue', '  K=su******ue', 20)
+    c.instance.flushReveals()
+
+    await Bun.sleep(40)
+    expect(c.compactLines[0]?.text).toBe('  K=supersecretvalue')
+    expect(c.counts().invalidated).toBe(0)
+  })
+
+  test('an erase after /clear is a no-op, not a crash', async () => {
+    // /clear empties the arrays, so the line the timer targets is gone.
+    const c = committer()
+    c.instance.revealTemporarily('sys-env-reveal-0', '  K=supersecretvalue', '  K=su******ue', 20)
+    c.compactLines.length = 0
+    c.expandedLines.length = 0
+
+    await Bun.sleep(40)
+    expect(c.compactLines).toEqual([])
+  })
+})

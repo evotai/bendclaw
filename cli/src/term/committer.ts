@@ -13,6 +13,9 @@ export interface CommitterDeps {
 }
 
 export class Committer {
+  /** Reveals still waiting to be erased. Held so shutdown cannot leave one dangling. */
+  private readonly pendingReveals = new Set<ReturnType<typeof setTimeout>>()
+
   constructor(private readonly deps: CommitterDeps) {}
 
   contextFor(lines: OutputLine[]): { prevKind?: string; columns?: number } {
@@ -77,6 +80,38 @@ export class Committer {
     this.deps.invalidateHistory()
     this.deps.requestRender()
     return true
+  }
+
+  /**
+   * Show a secret, then take it back.
+   *
+   * A revealed credential should not sit in the scrollback for the rest of the
+   * session, where it survives every later screenshot, screen share and scroll
+   * back up. It stays for `delayMs`, then the line is rewritten to its masked
+   * form.
+   *
+   * The timer lives here rather than in the REPL so it is reachable by tests:
+   * the erase is the whole point of the feature, and in the REPL closure it could
+   * only be type-checked, never run. Returns the timer so callers can clear it.
+   */
+  revealTemporarily(id: string, text: string, erasedText: string, delayMs: number): ReturnType<typeof setTimeout> {
+    this.commitUnlogged([{ id, kind: 'system', text }])
+    // Only the masked form is logged; see commitUnlogged.
+    const context = this.contextFor(this.deps.compactLines.slice(0, -1))
+    this.deps.logLines(blocksToLines(buildOutputBlocks([{ id, kind: 'system', text: erasedText }], context)))
+    const timer = setTimeout(() => {
+      this.pendingReveals.delete(timer)
+      // A missing line is the normal outcome after /clear; nothing to erase.
+      this.replaceById(id, erasedText)
+    }, delayMs)
+    this.pendingReveals.add(timer)
+    return timer
+  }
+
+  /** Erase every pending reveal now, then drop its timer. For shutdown. */
+  flushReveals(): void {
+    for (const timer of this.pendingReveals) clearTimeout(timer)
+    this.pendingReveals.clear()
   }
 
   paint(lines: OutputLine[], contextLines: OutputLine[]): void {

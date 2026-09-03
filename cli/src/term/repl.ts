@@ -256,8 +256,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let logMode: import('../native/index.js').ForkedAgent | null = null
   let exitHint = false
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
-  /** Pending secret erases. Held so cleanup cannot leave one dangling. */
-  const revealTimers = new Set<ReturnType<typeof setTimeout>>()
   let overlay: OverlayState = { kind: 'none' }
   // Assigned after configInfo below, which decides the premium intake filter.
   let adSlot: AdSlotState
@@ -1013,26 +1011,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   /**
    * Show a secret on screen, then take it back.
    *
-   * A revealed credential should not sit in the scrollback for the rest of the
-   * session, where it survives every later screenshot, screen share and scroll
-   * back up. It stays for `delayMs`, then the line is rewritten to its masked
-   * form — the terminal redraws each frame from `compactLines`, so replacing the
-   * text there genuinely removes it from the screen.
-   *
-   * The screen log receives only the masked form. It is a plain file that
-   * outlives the session and feeds `/log`, so writing the value there would make
-   * the on-screen erase cosmetic.
+   * The mechanics live on the Committer, which owns the line arrays and the
+   * timer, so the erase is reachable by tests. Here this is only the wiring the
+   * command layer calls through.
    */
   function commitRevealed(id: string, text: string, erasedText: string, delayMs: number) {
-    committer.commitUnlogged([{ id, kind: 'system', text }])
-    const context = outputContextFor(compactLines.slice(0, -1))
-    screenLog.logLines(blocksToLines(buildOutputBlocks([{ id, kind: 'system', text: erasedText }], context)))
-    const timer = setTimeout(() => {
-      revealTimers.delete(timer)
-      // A missing line is the normal outcome after /clear; nothing to erase.
-      committer.replaceById(id, erasedText)
-    }, delayMs)
-    revealTimers.add(timer)
+    committer.revealTemporarily(id, text, erasedText, delayMs)
   }
 
   /** Commit a transient status line (model / thinking level). Rapid re-toggles
@@ -3330,8 +3314,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     gitInfo.dispose()
     updateMgr.cleanup()
     if (exitHintTimer) clearTimeout(exitHintTimer)
-    for (const timer of revealTimers) clearTimeout(timer)
-    revealTimers.clear()
+    committer.flushReveals()
     if (escapeFlushTimer) {
       clearTimeout(escapeFlushTimer)
       escapeFlushTimer = undefined

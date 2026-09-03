@@ -37,7 +37,7 @@ export const HIDDEN_COMMANDS: SlashCommand[] = [
   { name: '/share', description: 'Share a session or import a shared session', usage: '/share [session-id | url#password]', handler: 'builtin' },
   { name: '/compact', description: 'Compact session context', usage: '/compact [instructions]', handler: 'builtin' },
   { name: '/clear', description: 'Clear session context', handler: 'builtin' },
-  { name: '/env', description: 'Manage variables', usage: '/env [set K=V | del K | load FILE]', handler: 'builtin' },
+  { name: '/env', description: 'Manage variables', usage: '/env [list | get KEY [--reveal] | set K=V | del K | load FILE]', handler: 'builtin' },
   { name: '/log', description: 'Show or analyze session logs; shot exports markdown', usage: '/log [shot | query]', handler: 'builtin' },
   { name: '/_dump', description: 'Dump system prompt + tools + skills as JSON', usage: '/_dump [path]', handler: 'builtin' },
 ]

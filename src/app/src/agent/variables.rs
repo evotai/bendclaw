@@ -16,6 +16,7 @@ use crate::types::VariableRecord;
 pub struct VariableInfo {
     pub key: String,
     pub value: String,
+    pub updated_at: String,
 }
 
 pub struct Variables {
@@ -41,6 +42,7 @@ impl Variables {
             .map(|r| VariableInfo {
                 key: r.key.clone(),
                 value: r.value.clone(),
+                updated_at: r.updated_at.clone(),
             })
             .collect();
 
@@ -49,33 +51,19 @@ impl Variables {
     }
 
     pub async fn set_global(&self, key: String, value: String) -> Result<()> {
-        {
-            let mut recs = self.records.write();
-            let now = now_iso8601();
-            if let Some(existing) = recs.iter_mut().find(|r| r.key == key) {
-                existing.value = value;
-                existing.updated_at = now;
-            } else {
-                recs.push(VariableRecord {
-                    key,
-                    value,
-                    updated_at: now,
-                });
-            }
-        }
-        self.save().await
+        let record = VariableRecord {
+            key,
+            value,
+            updated_at: now_iso8601(),
+        };
+        let merged = self.storage.upsert_variable(record).await?;
+        *self.records.write() = merged;
+        Ok(())
     }
 
     pub async fn delete_global(&self, key: &str) -> Result<bool> {
-        let removed = {
-            let mut recs = self.records.write();
-            let before = recs.len();
-            recs.retain(|r| r.key != key);
-            recs.len() < before
-        };
-        if removed {
-            self.save().await?;
-        }
+        let (removed, merged) = self.storage.remove_variable(key.to_string()).await?;
+        *self.records.write() = merged;
         Ok(removed)
     }
 
@@ -110,13 +98,6 @@ impl Variables {
         names.sort();
         names.dedup();
         names
-    }
-
-    // -- Internal ------------------------------------------------------------
-
-    async fn save(&self) -> Result<()> {
-        let all = self.records.read().clone();
-        self.storage.save_variables(all).await
     }
 }
 

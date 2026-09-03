@@ -71,21 +71,6 @@ impl FsStorage {
         Ok(())
     }
 
-    /// Replace a state file that may hold secrets: 0600, fsynced, atomically
-    /// renamed, so a reader never sees a half-written document.
-    async fn write_private_json<T: serde::Serialize>(
-        &self,
-        path: PathBuf,
-        value: &T,
-    ) -> Result<()> {
-        let json = serde_json::to_string_pretty(value)?;
-        tokio::task::spawn_blocking(move || {
-            crate::atomic_file::write_private_atomic(&path, json.as_bytes())
-        })
-        .await
-        .map_err(|error| EvotError::Conf(format!("variables write task failed: {error}")))?
-    }
-
     async fn read_json<T: serde::de::DeserializeOwned>(&self, path: &Path) -> Result<Option<T>> {
         match fs::read_to_string(path).await {
             Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
@@ -209,6 +194,52 @@ impl FsStorage {
 }
 
 const ACTIVE_TAIL_INITIAL_BYTES: u64 = 64 * 1024;
+
+/// Apply `edit` to the persisted variable set under an exclusive lock.
+///
+/// Variables are edited by long-lived processes that each hold their own
+/// in-memory copy, so writing back a whole snapshot would silently drop keys
+/// another process added. Re-reading inside the lock keeps each edit scoped to
+/// the key it touches. Returns the edit's own verdict plus the merged set.
+fn mutate_variables(
+    path: &Path,
+    edit: impl FnOnce(&mut Vec<VariableRecord>) -> bool,
+) -> Result<(bool, Vec<VariableRecord>)> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| EvotError::Store("variables path has no parent directory".to_string()))?;
+    std::fs::create_dir_all(parent)?;
+
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(parent.join("variables.lock"))?;
+    FileExt::lock_exclusive(&lock_file)?;
+
+    let outcome = (|| -> Result<(bool, Vec<VariableRecord>)> {
+        let mut records = match std::fs::read_to_string(path) {
+            Ok(content) => serde_json::from_str::<VariablesDocument>(&content)?.variables,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(EvotError::Io(error)),
+        };
+
+        let changed = edit(&mut records);
+        if changed {
+            let doc = VariablesDocument {
+                version: 1,
+                variables: records.clone(),
+            };
+            let json = serde_json::to_string_pretty(&doc)?;
+            crate::atomic_file::write_private_atomic(path, json.as_bytes())?;
+        }
+        Ok((changed, records))
+    })();
+
+    FileExt::unlock(&lock_file)?;
+    outcome
+}
 
 fn unsupported_transcript(error: impl std::fmt::Display) -> EvotError {
     EvotError::Store(format!(
@@ -620,12 +651,36 @@ impl Storage for FsStorage {
         }
     }
 
-    async fn save_variables(&self, variables: Vec<VariableRecord>) -> Result<()> {
-        let doc = VariablesDocument {
-            version: 1,
-            variables,
-        };
-        self.write_private_json(self.variables_path(), &doc).await
+    async fn upsert_variable(&self, record: VariableRecord) -> Result<Vec<VariableRecord>> {
+        let path = self.variables_path();
+        tokio::task::spawn_blocking(move || {
+            mutate_variables(&path, |records| {
+                match records.iter_mut().find(|item| item.key == record.key) {
+                    Some(existing) => {
+                        existing.value = record.value;
+                        existing.updated_at = record.updated_at;
+                    }
+                    None => records.push(record),
+                }
+                true
+            })
+        })
+        .await
+        .map_err(|error| EvotError::Store(format!("variables writer task failed: {error}")))?
+        .map(|(_, records)| records)
+    }
+
+    async fn remove_variable(&self, key: String) -> Result<(bool, Vec<VariableRecord>)> {
+        let path = self.variables_path();
+        tokio::task::spawn_blocking(move || {
+            mutate_variables(&path, |records| {
+                let before = records.len();
+                records.retain(|item| item.key != key);
+                records.len() < before
+            })
+        })
+        .await
+        .map_err(|error| EvotError::Store(format!("variables writer task failed: {error}")))?
     }
 
     async fn load_favorites(&self) -> Result<Vec<String>> {

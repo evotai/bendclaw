@@ -227,6 +227,93 @@ async fn persistence_roundtrip() -> Result {
 }
 
 #[tokio::test]
+async fn a_stale_writer_does_not_drop_another_process_variables() -> Result {
+    let tmp = tempfile::tempdir()?;
+
+    // First process stores three credentials.
+    let (first, storage) = make_variables_with_storage(tmp.path()).await;
+    for key in ["DSN_A", "DSN_B", "DSN_C"] {
+        first
+            .set_global(key.into(), format!("secret-{key}"))
+            .await?;
+    }
+
+    // Second process started earlier and never saw them: its snapshot is empty.
+    let stale = make_variables(tmp.path()).await;
+    stale.set_global("a".into(), "1".into()).await?;
+
+    let keys: Vec<String> = storage
+        .load_variables()
+        .await?
+        .into_iter()
+        .map(|record| record.key)
+        .collect();
+    assert!(
+        keys.contains(&"DSN_A".to_string())
+            && keys.contains(&"DSN_B".to_string())
+            && keys.contains(&"DSN_C".to_string()),
+        "stale writer clobbered existing variables, kept only {keys:?}"
+    );
+    assert!(keys.contains(&"a".to_string()));
+    assert_eq!(keys.len(), 4);
+
+    // The stale writer also refreshes its own view instead of staying blind.
+    assert_eq!(stale.variable_names().len(), 4);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stale_delete_only_removes_its_target() -> Result {
+    let tmp = tempfile::tempdir()?;
+    let (first, storage) = make_variables_with_storage(tmp.path()).await;
+    first.set_global("KEEP".into(), "1".into()).await?;
+    first.set_global("DROP".into(), "2".into()).await?;
+
+    let stale = make_variables(tmp.path()).await;
+    assert!(!stale.delete_global("MISSING").await?);
+    assert!(stale.delete_global("DROP").await?);
+
+    let keys: Vec<String> = storage
+        .load_variables()
+        .await?
+        .into_iter()
+        .map(|record| record.key)
+        .collect();
+    assert_eq!(keys, vec!["KEEP".to_string()]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_writers_all_survive() -> Result {
+    let tmp = tempfile::tempdir()?;
+    let storage: std::sync::Arc<dyn evot::storage::Storage> =
+        std::sync::Arc::new(evot::storage::fs::FsStorage::new(tmp.path().to_path_buf()));
+
+    // Each writer has its own empty snapshot, as separate processes would.
+    let mut handles = Vec::new();
+    for index in 0..8 {
+        let vars = std::sync::Arc::new(evot::agent::Variables::new(storage.clone(), Vec::new()));
+        handles.push(tokio::spawn(async move {
+            vars.set_global(format!("K{index}"), format!("v{index}"))
+                .await
+        }));
+    }
+    for handle in handles {
+        handle.await??;
+    }
+
+    let mut keys: Vec<String> = storage
+        .load_variables()
+        .await?
+        .into_iter()
+        .map(|record| record.key)
+        .collect();
+    keys.sort();
+    assert_eq!(keys.len(), 8, "concurrent writers lost variables: {keys:?}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn variables_file_is_private_to_the_owner() -> Result {
     let tmp = tempfile::tempdir()?;
     let (vars, _storage) = make_variables_with_storage(tmp.path()).await;
@@ -275,11 +362,12 @@ async fn rewriting_variables_keeps_the_file_private_and_complete() -> Result {
 
     assert_eq!(storage.load_variables().await?.len(), 4);
 
-    // No temporary files left beside the destination.
+    // No temporary files left beside the destination. The lock file is
+    // deliberate and persists, like transcript.lock.
     let leftovers: Vec<String> = std::fs::read_dir(tmp.path())?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.file_name().to_string_lossy().to_string())
-        .filter(|name| name != "variables.json")
+        .filter(|name| name != "variables.json" && name != "variables.lock")
         .collect();
     assert!(leftovers.is_empty(), "unexpected leftovers: {leftovers:?}");
     Ok(())

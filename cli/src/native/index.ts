@@ -52,6 +52,7 @@ export interface SessionWithText extends SessionMeta {
 export interface VariableInfo {
   key: string
   value: string
+  updated_at?: string
 }
 
 export interface BackgroundProcess {

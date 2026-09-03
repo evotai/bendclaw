@@ -322,33 +322,26 @@ export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void
   }
 }
 
-export function handleEnvCommand(ctx: ReplCommandContext, args: string): void {
-  const sub = args.trim()
-  if (!sub) {
-    const vars = ctx.agent.listVariables()
-    if (vars.length === 0) {
-      ctx.commitSystem('sys-env', '  No variables set')
-    } else {
-      for (const v of vars) {
-        ctx.commitLines([{ id: `sys-env-${v.key}`, kind: 'system', text: `  ${v.key}=${v.value}` }])
-      }
-    }
-  } else if (sub.startsWith('set ')) {
-    const eq = sub.slice(4).trim()
-    const eqIdx = eq.indexOf('=')
-    if (eqIdx <= 0) {
-      ctx.commitSystem('sys-env-err', '  Usage: /env set KEY=VALUE')
-    } else {
-      const key = eq.slice(0, eqIdx)
-      const value = eq.slice(eqIdx + 1)
-      ctx.agent.setVariable(key, value)
-      ctx.commitSystem('sys-env-set', `  ${key}=${value}`)
-    }
-  } else if (sub.startsWith('del ')) {
-    const key = sub.slice(4).trim()
-    ctx.agent.deleteVariable(key)
-    ctx.commitSystem('sys-env-del', `  deleted: ${key}`)
-  } else {
-    ctx.commitSystem('sys-env-err', '  Usage: /env [set K=V | del K]')
+export async function handleEnvCommand(ctx: ReplCommandContext, args: string): Promise<void> {
+  const { runEnvCommand } = await import('../commands/env.js')
+  try {
+    const text = await runEnvCommand(
+      {
+        list: () => ctx.agent.listVariables(),
+        set: (key, value) => ctx.agent.setVariable(key, value),
+        del: (key) => ctx.agent.deleteVariable(key),
+        readFile: async (path) => {
+          const { readFile } = await import('fs/promises')
+          const { homedir } = await import('os')
+          const expanded = path.startsWith('~/') ? `${homedir()}${path.slice(1)}` : path
+          return readFile(expanded, 'utf8')
+        },
+      },
+      args,
+    )
+    ctx.commitSystem('sys-env', text)
+  } catch (err) {
+    ctx.commitSystem('sys-env-err', failureText('env failed', err))
   }
+  ctx.requestRender()
 }

@@ -2550,7 +2550,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (name === '/compact') {
       await runManualCompaction(args)
     } else if (name === '/env') {
-      handleEnvCommand(replCommands, args)
+      await handleEnvCommand(replCommands, args)
     } else if (name === '/harden') {
       const subject = buildHardenPrompt(args)
       commitLines(buildUserMessage(text.trim()))

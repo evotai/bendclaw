@@ -357,7 +357,7 @@ impl NapiAgent {
         Ok(NapiForkedAgent::new(forked))
     }
 
-    /// List agent variables as JSON array of {key, value}.
+    /// List agent variables as JSON array of {key, value, updated_at}.
     #[napi]
     pub fn list_variables(&self) -> Result<String> {
         match self.agent.variables() {
@@ -365,7 +365,13 @@ impl NapiAgent {
                 let items: Vec<_> = vars
                     .list_global()
                     .iter()
-                    .map(|v| serde_json::json!({ "key": v.key, "value": v.value }))
+                    .map(|v| {
+                        serde_json::json!({
+                            "key": v.key,
+                            "value": v.value,
+                            "updated_at": v.updated_at,
+                        })
+                    })
                     .collect();
                 serde_json::to_string(&items)
                     .map_err(|e| Error::from_reason(format!("serialize: {e}")))

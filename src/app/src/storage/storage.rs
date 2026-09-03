@@ -57,7 +57,13 @@ pub trait Storage: Send + Sync {
     }
 
     async fn load_variables(&self) -> Result<Vec<VariableRecord>>;
-    async fn save_variables(&self, variables: Vec<VariableRecord>) -> Result<()>;
+    /// Insert or replace one variable, merging with whatever is on disk, and
+    /// return the resulting set. A caller holding a stale snapshot must not be
+    /// able to drop variables another process added.
+    async fn upsert_variable(&self, record: VariableRecord) -> Result<Vec<VariableRecord>>;
+    /// Remove one variable, merging with whatever is on disk. Returns whether
+    /// the key existed and the resulting set.
+    async fn remove_variable(&self, key: String) -> Result<(bool, Vec<VariableRecord>)>;
 
     /// Session ids the user pinned as favorites in the dashboard. Stored
     /// independently of session metadata so toggling never rewrites a session.

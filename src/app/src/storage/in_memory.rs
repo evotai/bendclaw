@@ -170,8 +170,12 @@ impl Storage for MemoryStorage {
         Ok(vec![])
     }
 
-    async fn save_variables(&self, _variables: Vec<VariableRecord>) -> Result<()> {
-        Ok(())
+    async fn upsert_variable(&self, _record: VariableRecord) -> Result<Vec<VariableRecord>> {
+        Ok(vec![])
+    }
+
+    async fn remove_variable(&self, _key: String) -> Result<(bool, Vec<VariableRecord>)> {
+        Ok((false, vec![]))
     }
 
     async fn load_favorites(&self) -> Result<Vec<String>> {

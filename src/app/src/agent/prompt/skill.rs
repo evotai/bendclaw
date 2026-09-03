@@ -14,22 +14,13 @@ struct BuiltinDef {
     content: &'static str,
 }
 
+// A skill is builtin only when evot itself dispatches to it by name: `/harden`
+// and `/clip all` both load their instructions from here. Everything else ships
+// in the evot-skills catalog and is installed on demand.
 const BUILTINS: &[BuiltinDef] = &[
-    BuiltinDef {
-        name: "review",
-        content: include_str!("prompts/review.md"),
-    },
     BuiltinDef {
         name: "harden",
         content: include_str!("prompts/harden.md"),
-    },
-    BuiltinDef {
-        name: "opencli",
-        content: include_str!("prompts/opencli.md"),
-    },
-    BuiltinDef {
-        name: "humanize",
-        content: include_str!("prompts/humanize.md"),
     },
     BuiltinDef {
         name: "memory",
@@ -226,7 +217,51 @@ pub fn ensure_builtin_skills_dir() -> Result<PathBuf, SkillLoadError> {
         write_if_changed(&file_path, def.content)?;
         parse_frontmatter(def.content, &file_path)?;
     }
+    remove_stale_builtins(&root)?;
     Ok(root)
+}
+
+/// Drop directories left behind by a skill that is no longer builtin.
+///
+/// This directory is entirely evot-owned — `write_if_changed` already overwrites
+/// edits — so a name that left `BUILTINS` must not linger. A stale copy would
+/// keep loading from an upgraded binary and collide with the catalog version the
+/// user installs into `~/.evotai/skills`.
+fn remove_stale_builtins(root: &Path) -> Result<(), SkillLoadError> {
+    let entries = fs::read_dir(root).map_err(|source| SkillLoadError::Io {
+        path: root.to_path_buf(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| SkillLoadError::Io {
+            path: root.to_path_buf(),
+            source,
+        })?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let is_builtin = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| BUILTINS.iter().any(|def| def.name == name));
+        if is_builtin {
+            continue;
+        }
+        // A concurrent evot start may have removed it already; that is the
+        // outcome we wanted either way.
+        match fs::remove_dir_all(&path) {
+            Ok(()) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(SkillLoadError::Io {
+                    path: path.clone(),
+                    source,
+                })
+            }
+        }
+    }
+    Ok(())
 }
 
 fn builtin_skills_dir() -> Result<PathBuf, SkillLoadError> {

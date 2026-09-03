@@ -280,7 +280,7 @@ fn nested_frontmatter_error_keeps_valid_siblings() -> Result<(), Box<dyn std::er
 
     let specs = load_skills(&[tmp.path().to_path_buf()])?;
     assert!(specs.iter().any(|s| s.name == "lark-im"));
-    assert!(specs.iter().any(|s| s.name == "review"));
+    assert!(specs.iter().any(|s| s.name == "harden"));
     assert!(specs.iter().all(|s| s.name != "lark-bad"));
     Ok(())
 }
@@ -292,7 +292,7 @@ fn nested_frontmatter_error_keeps_valid_siblings() -> Result<(), Box<dyn std::er
 #[test]
 fn builtin_directory_contains_all_builtin_skills() -> Result<(), Box<dyn std::error::Error>> {
     let root = ensure_builtin_skills_dir()?;
-    for name in ["review", "harden", "opencli", "humanize", "memory"] {
+    for name in ["harden", "memory"] {
         assert!(root.join(name).join("SKILL.md").is_file());
     }
     Ok(())
@@ -304,25 +304,29 @@ fn all_builtin_skills_load() -> Result<(), Box<dyn std::error::Error>> {
     let specs = load_skills(&empty)?;
     let names: Vec<&str> = specs.iter().map(|skill| skill.name.as_str()).collect();
 
-    assert_eq!(names, vec![
-        "harden", "humanize", "memory", "opencli", "review"
-    ]);
+    assert_eq!(names, vec!["harden", "memory"]);
     assert!(specs.iter().all(|skill| !skill.description.is_empty()));
     Ok(())
 }
 
 #[test]
-fn builtin_review_skill_loaded() -> Result<(), Box<dyn std::error::Error>> {
-    // load_skills with no dirs should still return builtins
-    let empty: Vec<std::path::PathBuf> = vec![];
-    let specs = load_skills(&empty)?;
-    let review = specs
-        .iter()
-        .find(|s| s.name == "review")
-        .ok_or("builtin review skill should be present")?;
-    assert!(!review.description.is_empty());
-    assert!(std::fs::read_to_string(&review.file_path)?.contains("# Code Review"));
-    assert!(review.file_path.ends_with("review/SKILL.md"));
+fn stale_builtin_dirs_are_removed() -> Result<(), Box<dyn std::error::Error>> {
+    // `opencli` and `humanize` moved to the evot-skills catalog. An upgraded
+    // binary must clear the copies it wrote in an earlier version, or they keep
+    // loading and collide with the installed ones.
+    let root = ensure_builtin_skills_dir()?;
+    let stale = root.join("opencli");
+    fs::create_dir_all(&stale)?;
+    fs::write(
+        stale.join("SKILL.md"),
+        "---\nname: opencli\ndescription: stale\n---\n",
+    )?;
+
+    let root = ensure_builtin_skills_dir()?;
+    assert!(!stale.exists(), "stale builtin dir should be removed");
+    for name in ["harden", "memory"] {
+        assert!(root.join(name).join("SKILL.md").is_file());
+    }
     Ok(())
 }
 
@@ -337,20 +341,6 @@ fn builtin_harden_skill_loaded() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!harden.description.is_empty());
     assert!(std::fs::read_to_string(&harden.file_path)?.contains("# Harden"));
     assert!(harden.file_path.ends_with("harden/SKILL.md"));
-    Ok(())
-}
-
-#[test]
-fn builtin_humanize_skill_loaded() -> Result<(), Box<dyn std::error::Error>> {
-    let empty: Vec<std::path::PathBuf> = vec![];
-    let specs = load_skills(&empty)?;
-    let humanize = match specs.iter().find(|s| s.name == "humanize") {
-        Some(skill) => skill,
-        None => return Err("builtin humanize skill should be present".into()),
-    };
-    assert!(!humanize.description.is_empty());
-    assert!(std::fs::read_to_string(&humanize.file_path)?.contains("# Humanize"));
-    assert!(humanize.file_path.ends_with("humanize/SKILL.md"));
     Ok(())
 }
 
@@ -374,13 +364,13 @@ fn builtin_memory_skill_loaded() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn fs_skill_overrides_builtin() {
     let tmp = TempDir::new().unwrap();
-    create_skill(tmp.path(), "review", "Custom review");
+    create_skill(tmp.path(), "harden", "Custom harden");
 
     let specs = load_skills(&[tmp.path().to_path_buf()]).unwrap();
-    let review = specs.iter().find(|s| s.name == "review").unwrap();
-    assert_eq!(review.description, "Custom review");
+    let harden = specs.iter().find(|s| s.name == "harden").unwrap();
+    assert_eq!(harden.description, "Custom harden");
     assert!(
-        review.file_path.ends_with("review/SKILL.md"),
+        harden.file_path.ends_with("harden/SKILL.md"),
         "fs skill should point at SKILL.md"
     );
 }
@@ -395,8 +385,8 @@ fn filesystem_skill_error_does_not_drop_builtins_or_valid_siblings(
     create_skill(tmp.path(), "valid", "Valid sibling");
 
     let specs = load_skills(&[tmp.path().to_path_buf()])?;
-    assert!(specs.iter().any(|s| s.name == "review"));
     assert!(specs.iter().any(|s| s.name == "harden"));
+    assert!(specs.iter().any(|s| s.name == "memory"));
     assert!(specs.iter().any(|s| s.name == "valid"));
     assert!(specs.iter().all(|s| s.name != "bad"));
     Ok(())
@@ -406,11 +396,11 @@ fn filesystem_skill_error_does_not_drop_builtins_or_valid_siblings(
 fn selected_skills_can_mix_builtin_and_filesystem() -> Result<(), Box<dyn std::error::Error>> {
     let tmp = TempDir::new()?;
     create_skill(tmp.path(), "custom", "Custom skill");
-    let names = vec!["review".to_string(), "custom".to_string()];
+    let names = vec!["harden".to_string(), "custom".to_string()];
 
     let specs = load_skills_by_name(&[tmp.path().to_path_buf()], &names)?;
     let loaded: Vec<&str> = specs.iter().map(|skill| skill.name.as_str()).collect();
-    assert_eq!(loaded, vec!["custom", "review"]);
+    assert_eq!(loaded, vec!["custom", "harden"]);
     Ok(())
 }
 

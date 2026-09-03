@@ -74,16 +74,16 @@ async fn first_request_prompt(
 async fn selected_skills_filter_the_system_prompt() -> Result<(), Box<dyn std::error::Error>> {
     let tmp = TempDir::new()?;
     let agent = test_agent(&tmp)?;
-    agent.set_skill_names(vec!["review".into()])?;
+    agent.set_skill_names(vec!["harden".into()])?;
 
     let (prompt, tools) = first_request_prompt(
         &agent,
-        QueryRequest::text("review this").mode(ToolMode::Interactive),
+        QueryRequest::text("harden this").mode(ToolMode::Interactive),
     )
     .await?;
 
     assert!(prompt.contains("<available_skills>"));
-    assert!(prompt.contains("<name>review</name>"));
+    assert!(prompt.contains("<name>harden</name>"));
     assert!(!prompt.contains("<name>memory</name>"));
     assert!(!tools.iter().any(|tool| tool == "skill"));
     Ok(())

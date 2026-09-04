@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   isCommandWindowBridge,
+  isCommandWindowTypingEvent,
   resolveCommandWindowTrigger,
 } from '../src/term/app/command-window-trigger.js'
 
@@ -52,5 +53,22 @@ describe('command window trigger', () => {
     expect(resolveCommandWindowTrigger('/model ')).toBeNull()
     expect(resolveCommandWindowTrigger('/model gpt')).toBeNull()
     expect(resolveCommandWindowTrigger('explain /resume')).toBeNull()
+  })
+
+  test('only edit keystrokes may mount a command window', () => {
+    expect(isCommandWindowTypingEvent({ type: 'char', char: 'l' })).toBe(true)
+    expect(isCommandWindowTypingEvent({ type: 'shift-char', char: 'L' })).toBe(true)
+    expect(isCommandWindowTypingEvent({ type: 'backspace' })).toBe(true)
+    expect(isCommandWindowTypingEvent({ type: 'delete' })).toBe(true)
+  })
+
+  test('history recall, paste, and navigation never mount a command window', () => {
+    expect(isCommandWindowTypingEvent({ type: 'up' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'down' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'paste', text: '/model' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'paste-clipboard' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'undo' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'tab' })).toBe(false)
+    expect(isCommandWindowTypingEvent({ type: 'ctrl', key: 'u' })).toBe(false)
   })
 })

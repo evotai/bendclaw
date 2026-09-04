@@ -1,4 +1,5 @@
 import { resolveCommand } from '../../commands/index.js'
+import type { KeyEvent } from '../input.js'
 
 export type CommandWindowTrigger = 'resume' | 'model' | 'skill' | 'help'
 
@@ -13,6 +14,20 @@ const COMMAND_WINDOW_NAMES = ['/resume', '/sessions', '/model', '/skill', '/help
 export function isCommandWindowBridge(text: string): boolean {
   if (!/^\/[a-z_]*$/.test(text)) return false
   return COMMAND_WINDOW_NAMES.some(name => name.startsWith(text))
+}
+
+/**
+ * Only deliberate typing may mount a command window. History navigation,
+ * paste, undo and the like can also leave `/model` in the composer, but the
+ * user did not spell the command just now, so the window stays down until a
+ * real edit keystroke arrives. An already mounted window keeps refreshing on
+ * every event so it can bridge, update, or dismiss as before.
+ */
+export function isCommandWindowTypingEvent(event: KeyEvent): boolean {
+  return event.type === 'char'
+    || event.type === 'shift-char'
+    || event.type === 'backspace'
+    || event.type === 'delete'
 }
 
 /**

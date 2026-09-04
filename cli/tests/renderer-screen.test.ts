@@ -63,7 +63,7 @@ describe('composer placement on a real screen', () => {
     renderer.destroy()
   })
 
-  test('a command window that reaches bottom can close without lifting the composer', async () => {
+  test('a command window that reaches bottom closes without leaving a hole above the composer', async () => {
     const screen = new ScreenHarness(80, 12)
     const renderer = new TermRenderer({ stdout: screen.stdout })
     renderer.init()
@@ -73,11 +73,11 @@ describe('composer placement on a real screen', () => {
       lines: [...content, ...commandWindow, `\u276f /resume${CURSOR_MARKER}`, 'footer row'],
       bottomAnchor: true,
       bottomAnchorStart: content.length,
+      transientRows: commandWindow.length,
     }))
 
     await renderFrame(renderer)
     await screen.settle()
-    const composerRow = screen.rowOf('\u276f /resume')
     const serverRow = screen.rowOf('Server https://api.evot.ai')
     expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
 
@@ -85,12 +85,86 @@ describe('composer placement on a real screen', () => {
     await renderFrame(renderer)
     await screen.settle()
 
-    // Only the transient space between committed content and the live region
-    // is retained. History does not move and the composer does not jump up.
+    // The window only borrowed the bottom row; it did not earn the composer a
+    // place there. History stays put and the composer follows it back up, with
+    // the spare rows at the bottom of the screen rather than in the middle.
     expect(screen.rowOf('Server https://api.evot.ai')).toBe(serverRow)
-    expect(screen.rowOf('\u276f /resume')).toBe(composerRow)
-    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+    expect(screen.rowOf('\u276f /resume')).toBe(serverRow + 1)
+    expect(screen.rowOf('footer row')).toBe(serverRow + 2)
+    expect(screen.lastNonBlankRow()).toBe(serverRow + 2)
     expect(screen.viewport().some(line => line.startsWith('selector '))).toBe(false)
+    renderer.destroy()
+  })
+
+  test('a command window that scrolls a short session closes without a hole', async () => {
+    const screen = new ScreenHarness(80, 12)
+    const renderer = new TermRenderer({ stdout: screen.stdout })
+    renderer.init()
+    const content = ['evot v1', '\u276f hi', 'Hi! What can I help you with?']
+    let commandWindow = Array.from({ length: 14 }, (_, i) => `selector ${i}`)
+    renderer.setRenderCallback(() => ({
+      lines: [...content, ...commandWindow, `\u276f /mo${CURSOR_MARKER}`, 'footer row'],
+      bottomAnchor: true,
+      bottomAnchorStart: content.length,
+      transientRows: commandWindow.length,
+    }))
+
+    await renderFrame(renderer)
+    await screen.settle()
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+
+    commandWindow = []
+    await renderFrame(renderer)
+    await screen.settle()
+
+    // Whatever the terminal scrolled away stays in scrollback; on screen the
+    // composer sits directly under the last transcript row, never below a
+    // block of blank rows the closed window left behind.
+    const viewport = screen.viewport()
+    const composerRow = screen.rowOf('\u276f /mo')
+    expect(composerRow).toBeGreaterThanOrEqual(0)
+    expect(screen.rowOf('footer row')).toBe(composerRow + 1)
+    expect(screen.lastNonBlankRow()).toBe(composerRow + 1)
+    expect(viewport.slice(0, composerRow).every(line => line !== '')).toBe(true)
+    expect(viewport.some(line => line.startsWith('selector '))).toBe(false)
+    renderer.destroy()
+  })
+
+  test('a command window over a full transcript closes with the composer still on the bottom row', async () => {
+    const screen = new ScreenHarness(80, 12)
+    const renderer = new TermRenderer({ stdout: screen.stdout })
+    renderer.init()
+    const transcript = Array.from({ length: 20 }, (_, i) => `history ${i}`)
+    let commandWindow: string[] = []
+    renderer.setRenderCallback(() => ({
+      lines: [...transcript, ...commandWindow, `\u276f /mo${CURSOR_MARKER}`, 'footer row'],
+      bottomAnchor: true,
+      bottomAnchorStart: transcript.length,
+      transientRows: commandWindow.length,
+    }))
+
+    await renderFrame(renderer)
+    await screen.settle()
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+
+    commandWindow = Array.from({ length: 6 }, (_, i) => `selector ${i}`)
+    await renderFrame(renderer)
+    await screen.settle()
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+
+    commandWindow = []
+    await renderFrame(renderer)
+    await screen.settle()
+
+    // The transcript had already earned the bottom row, so closing the window
+    // neither lifts the composer nor opens a gap: the transcript tail sits
+    // directly above it again.
+    const viewport = screen.viewport()
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+    expect(viewport[screen.rows - 2]).toBe('\u276f /mo')
+    expect(viewport[screen.rows - 3]).toBe('history 19')
+    expect(viewport.every(line => line !== '')).toBe(true)
+    expect(viewport.some(line => line.startsWith('selector '))).toBe(false)
     renderer.destroy()
   })
 

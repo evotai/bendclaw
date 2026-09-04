@@ -56,6 +56,14 @@ export interface RenderFrame {
    */
   bottomAnchorStart?: number
   /**
+   * Rows in this frame that belong to a transient surface: a command window,
+   * selector, or ask prompt mounted between the transcript and the composer.
+   * They may push the frame past the viewport bottom, but they never establish
+   * the bottom anchor. When they close, the composer follows the durable rows
+   * back up instead of holding a blank hole open where the surface used to be.
+   */
+  transientRows?: number
+  /**
    * Keep an already anchored, same-height viewport in place when only the
    * logical rows above it also changed. The terminal cannot rewrite scrollback,
    * so those rows remain stale until this transient frame closes; visible rows
@@ -303,8 +311,13 @@ export class TermRenderer {
       // A resize establishes a new natural layout. Do not carry an anchor from
       // a differently-sized viewport unless the rebuilt frame reaches bottom.
       if (widthChanged || heightChanged) this.trailingEdgeAnchorLength = 0
-      if (baseLines.length >= height) {
-        this.trailingEdgeAnchorLength = Math.max(this.trailingEdgeAnchorLength, baseLines.length)
+      // Only durable rows may reach the bottom. A command window that scrolls
+      // the frame past the viewport end is not the composer earning its place
+      // there; when the window closes the composer must return to the content.
+      const transientRows = Math.max(0, Math.trunc(rendered.transientRows ?? 0))
+      const durableLength = Math.max(0, baseLines.length - transientRows)
+      if (durableLength >= height) {
+        this.trailingEdgeAnchorLength = Math.max(this.trailingEdgeAnchorLength, durableLength)
       } else if (this.trailingEdgeAnchorLength > baseLines.length) {
         // Keep committed content in place and absorb transient live-region
         // shrinkage immediately before that region. Padding the frame's top

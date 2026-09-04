@@ -142,7 +142,7 @@ import {
 } from './app/queue-manage.js'
 import { extractAtPrefix, completeAtFile } from '../commands/file-completion.js'
 import { getSkillEntries } from '../commands/skill.js'
-import { isCommandWindowBridge, resolveCommandWindowTrigger } from './app/command-window-trigger.js'
+import { isCommandWindowBridge, isCommandWindowTypingEvent, resolveCommandWindowTrigger } from './app/command-window-trigger.js'
 import { createSkillSelectorState, isSkillSelectorTitle } from './app/skill-window.js'
 import { transcriptToMessages } from '../session/transcript.js'
 import { GitInfoProvider } from './git-info.js'
@@ -799,7 +799,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }, 160)
   }
 
-  function refreshCommandWindowPreview(): void {
+  function refreshCommandWindowPreview(allowMount: boolean): void {
     if (overlay.kind !== 'none' || isLoading || editingQueuedPrompt) {
       // A promoted command window continues to own its generation so an
       // in-flight resume load can update the focused selector. Other overlays
@@ -814,6 +814,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       return
     }
+
+    // Nothing is mounted, so the only possible outcome is mounting a new
+    // window. Reserve that for typing: ↑/↓ recalling `/model` from history or
+    // pasting it must not pop the window above the composer.
+    if (commandWindowPreview === null && !allowMount) return
 
     const sourceText = getEditorText(editor)
     const trigger = resolveCommandWindowTrigger(sourceText)
@@ -1612,6 +1617,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         lines: [...contentLines, ...preEditorLines, ...selectorLines, ...promptLines],
         bottomAnchor: true,
         bottomAnchorStart: contentLines.length,
+        transientRows: selectorLines.length,
         stableViewport: true,
       }
     }
@@ -1619,28 +1625,32 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Other selectors replace only pi's editorContainer. Their preceding
     // queue/status siblings and following footer sibling remain in normal flow.
     if (overlay.kind === 'selector') {
+      const selectorLines = buildSelectorRegionLines(overlay.state, renderer.termCols, renderer.termRows)
       return {
         lines: [
           ...contentLines,
           ...blocksToLines(preEditorBlocks),
-          ...buildSelectorRegionLines(overlay.state, renderer.termCols, renderer.termRows),
+          ...selectorLines,
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
         bottomAnchor: true,
         bottomAnchorStart: contentLines.length,
+        transientRows: selectorLines.length,
       }
     }
 
     if (overlay.kind === 'ask-user') {
+      const askLines = buildAskRegionLines(overlay.state, renderer.termCols)
       return {
         lines: [
           ...contentLines,
           ...blocksToLines(preEditorBlocks),
-          ...buildAskRegionLines(overlay.state, renderer.termCols),
+          ...askLines,
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
         bottomAnchor: true,
         bottomAnchorStart: contentLines.length,
+        transientRows: askLines.length,
       }
     }
 
@@ -1660,6 +1670,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       lines: [...contentLines, ...preEditorLines, ...previewLines, ...promptLines],
       bottomAnchor: true,
       bottomAnchorStart: contentLines.length,
+      transientRows: previewLines.length,
       ...(commandWindowPreview?.kind === 'selector' ? { stableViewport: true } : {}),
       ...(modalLines.length > 0 ? { overlay: { lines: modalLines } } : {}),
     }
@@ -2348,7 +2359,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // above it. Up/down is the explicit gesture that promotes that same state.
     if (activateCommandWindow(event)) return
     handleKeyInner(event)
-    refreshCommandWindowPreview()
+    refreshCommandWindowPreview(isCommandWindowTypingEvent(event))
   }
 
   function handleKeyInner(event: KeyEvent) {

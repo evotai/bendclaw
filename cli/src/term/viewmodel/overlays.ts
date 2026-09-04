@@ -7,6 +7,7 @@ import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../sel
 import { HINT_SEPARATOR, backgroundChordLabel, formatChord, type Hint } from '../app/hint.js'
 import type { AskState } from '../ask.js'
 import { getTheme } from '../../render/theme.js'
+import { buildSelectorRow } from './selector-row.js'
 
 export type OverlayState =
   | { kind: 'none' }
@@ -84,12 +85,8 @@ function buildBackgroundOutputRegionLines(state: SelectorState, width: number, r
 
 /** Mirrors pi's ModelSelectorComponent hierarchy and line geometry. */
 function buildModelSelectorRegionLines(state: SelectorState, width: number, active: boolean): string[] {
-  // Focus is split the same way as the generic selector: while the composer
-  // still owns the keyboard the window is a preview, so neither the search
-  // caret nor the row cursor is drawn as active. Promotion moves the cursor
-  // onto the list. Without this the previewed and promoted windows rendered
-  // identically, leaving the first arrow with no visible effect.
-  const listFocused = active && state.listFocused !== false
+  // Keyboard ownership only controls the search caret. The current model row
+  // keeps the same shared selection treatment in previews and focused windows.
   const searchFocused = active && state.listFocused !== true
   const border = line(dim('─'.repeat(width)))
   const lines: StyledLine[] = [
@@ -111,7 +108,7 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number, acti
   )
   const end = Math.min(start + maxVisible, state.items.length)
 
-  const { brandHex, accentHex, selectionBgHex, selectionMutedHex } = getTheme()
+  const { accentHex } = getTheme()
   let visibleListRowSeen = false
   for (let index = start; index < end; index++) {
     const item = state.items[index]!
@@ -126,26 +123,13 @@ function buildModelSelectorRegionLines(state: SelectorState, width: number, acti
       continue
     }
 
-    const focused = listFocused && index === state.focusIndex
-    const bg = focused ? selectionBgHex : undefined
-    const prefix = focused
-      ? { text: '❯ ', hex: brandHex, bold: true, bg }
-      : plain('  ')
-    const name = focused
-      ? { text: item.label, hex: brandHex, bold: true, bg }
-      : dim(item.label)
-    const detail = item.detail
-      ? focused
-        ? { text: ` ${item.detail}`, hex: selectionMutedHex, bg }
-        : dim(` ${item.detail}`)
-      : undefined
-    const check = item.selected
-      ? { text: ' ✓', hex: brandHex, bold: true, ...(bg ? { bg } : {}) }
-      : undefined
-    lines.push({
-      spans: [prefix, name, ...(detail ? [detail] : []), ...(check ? [check] : [])],
-      ...(bg ? { bg } : {}),
-    })
+    const highlighted = index === state.focusIndex
+    lines.push(buildSelectorRow(item, {
+      highlighted,
+      query: state.query,
+      dimIdleLabel: true,
+      detailGap: ' ',
+    }))
     visibleListRowSeen = true
   }
 
@@ -353,7 +337,7 @@ function buildSelectorBlocks(state: SelectorState, columns: number, active = tru
   // stays free so a full-width row cannot wrap into the next terminal line.
   const available = Math.max(1, finiteSize(columns, 80) - 1)
   const paneWidth = selectorPaneWidth(state, available)
-  const listLines = buildSelectorListLines(state, active && state.listFocused !== false)
+  const listLines = buildSelectorListLines(state)
   if (paneWidth > 0) {
     const preview = state.items[state.focusIndex]?.preview ?? []
     const paneRows = Math.max(listLines.length, PANE_MIN_ROWS)
@@ -406,7 +390,7 @@ function buildHintLine(hints: Hint[]): StyledLine {
 }
 
 /** The list rows themselves — everything between the filter line and the hints. */
-function buildSelectorListLines(state: SelectorState, listFocused: boolean): StyledLine[] {
+function buildSelectorListLines(state: SelectorState): StyledLine[] {
   if (state.items.length === 0) {
     if (state.emptyMessage) return [line(dim(`  ${state.emptyMessage}`))]
     // A no-filter list has no query to explain an empty result, so the generic
@@ -447,18 +431,11 @@ function buildSelectorListLines(state: SelectorState, listFocused: boolean): Sty
       continue
     }
     seenRow = true
-    const focused = listFocused && i === state.focusIndex
-    const prefix: StyledSpan = focused ? colored('❯ ', 'cyan', { bold: true }) : plain('  ')
-    const labelSpans = state.query
-      ? highlightSpans(item.label, state.query, focused ? { bold: true } : {})
-      : [focused ? bold(item.label) : plain(item.label)]
-    const detailSpans = item.detail && state.query
-      ? highlightSpans(`  ${item.detail}`, state.query, { dim: true })
-      : [item.detail ? dim(`  ${item.detail}`) : plain('')]
-    const selectedSpans = item.selected
-      ? [plain(' '), colored('✓', 'green')]
-      : []
-    lines.push(line(prefix, ...labelSpans, ...detailSpans, ...selectedSpans))
+    const highlighted = i === state.focusIndex
+    lines.push(buildSelectorRow(item, {
+      highlighted,
+      query: state.query,
+    }))
   }
   if (end < state.items.length) {
     lines.push(line(dim(`  ↓ ${state.items.length - end} below`)))
@@ -639,6 +616,8 @@ function joinPaneColumns(listLines: StyledLine[], paneLines: StyledLine[], listW
     const right = paneLines[i]?.spans ?? [plain('')]
     const spans = spansWidth(left) > listWidth ? truncateSpansToWidth(left, listWidth) : left
     const padding = Math.max(0, listWidth - spansWidth(spans))
+    // Layout only supplies spacing; the shared row component exclusively owns
+    // selection styling, so pane-backed rows look exactly like model rows.
     result.push(line(...spans, plain(' '.repeat(padding)), dim(PANE_DIVIDER), ...right))
   }
   return result

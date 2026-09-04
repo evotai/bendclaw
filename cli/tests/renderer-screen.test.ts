@@ -63,6 +63,37 @@ describe('composer placement on a real screen', () => {
     renderer.destroy()
   })
 
+  test('a command window that reaches bottom can close without lifting the composer', async () => {
+    const screen = new ScreenHarness(80, 12)
+    const renderer = new TermRenderer({ stdout: screen.stdout })
+    renderer.init()
+    const content = ['evot v1', 'Server https://api.evot.ai']
+    let commandWindow = Array.from({ length: 8 }, (_, i) => `selector ${i}`)
+    renderer.setRenderCallback(() => ({
+      lines: [...content, ...commandWindow, `\u276f /resume${CURSOR_MARKER}`, 'footer row'],
+      bottomAnchor: true,
+      bottomAnchorStart: content.length,
+    }))
+
+    await renderFrame(renderer)
+    await screen.settle()
+    const composerRow = screen.rowOf('\u276f /resume')
+    const serverRow = screen.rowOf('Server https://api.evot.ai')
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+
+    commandWindow = []
+    await renderFrame(renderer)
+    await screen.settle()
+
+    // Only the transient space between committed content and the live region
+    // is retained. History does not move and the composer does not jump up.
+    expect(screen.rowOf('Server https://api.evot.ai')).toBe(serverRow)
+    expect(screen.rowOf('\u276f /resume')).toBe(composerRow)
+    expect(screen.rowOf('footer row')).toBe(screen.rows - 1)
+    expect(screen.viewport().some(line => line.startsWith('selector '))).toBe(false)
+    renderer.destroy()
+  })
+
   test('a frame taller than the viewport ends on the bottom row', async () => {
     const screen = new ScreenHarness(80, 24)
     const renderer = new TermRenderer({ stdout: screen.stdout })

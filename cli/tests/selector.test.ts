@@ -15,6 +15,7 @@ import {
 } from '../src/term/selector.js'
 import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
 import { CURSOR_MARKER } from '../src/term/renderer.js'
+import { getTheme } from '../src/render/theme.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'
@@ -181,12 +182,11 @@ describe('renderSelector via viewmodel', () => {
     const text = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
       .join('\n')
-    // Typing keeps focus in the search input, so no row cursor is drawn — the
-    // same split the generic selector uses. The match still sits under its own
-    // provider heading, named once.
-    expect(text).toContain('  droid\n  gpt-5.6-sol')
+    // Typing keeps focus in the search input, but the current row retains the
+    // same complete visual state used by every selector. The match still sits
+    // under its own provider heading, named once.
+    expect(text).toContain('  droid\n❯ gpt-5.6-sol')
     expect(text).not.toContain('[droid]')
-    expect(text).not.toContain('❯')
   })
 
   test('model selector renders one weak header per group with blank separators', () => {
@@ -375,6 +375,22 @@ describe('renderSelector via viewmodel', () => {
     const text = lines.map(l => stripAnsi(l)).join('\n')
     expect(text).toContain('gpt-4o')
   })
+  test('model command preview highlights the default row before list focus', () => {
+    const state = {
+      ...createSelectorState('Models', [{ label: 'gpt-4o', selected: true }]),
+      presentation: 'model' as const,
+      listFocused: false,
+    }
+    const preview = buildSelectorRegionLines(state, 80, 24, false).join('\n')
+    const [red, green, blue] = getTheme().selectionBgHex
+      .slice(1)
+      .match(/.{2}/g)!
+      .map(part => Number.parseInt(part, 16))
+
+    expect(preview).toContain(`\x1b[48;2;${red};${green};${blue}m`)
+    expect(stripAnsi(preview)).toContain('❯ gpt-4o ✓')
+  })
+
   test('model preview omits the selector cursor while the composer is focused', () => {
     const state = {
       ...createSelectorState('Models', [{ label: 'gpt-4o', selected: true }]),
@@ -411,6 +427,29 @@ describe('renderSelector via viewmodel', () => {
     expect(active.join('\n')).toContain(CURSOR_MARKER)
     expect(preview.join('\n')).not.toContain(CURSOR_MARKER)
     expect(active.map(stripAnsi).join('\n')).toContain('type to search')
+  })
+
+  test('resume preview and focused selector share the complete current-row style', () => {
+    const state = {
+      ...createSelectorState('Resume session', [{
+        label: '01a06b6f',
+        detail: 'repl  current session',
+        preview: ['current session', 'gpt-5.6-sol · 21 turns · just now'],
+      }]),
+      listFocused: false,
+    }
+    const preview = buildSelectorRegionLines(state, 120, 24, false).join('\n')
+    const focused = buildSelectorRegionLines({ ...state, listFocused: true }, 120, 24, true).join('\n')
+    const [red, green, blue] = getTheme().selectionBgHex
+      .slice(1)
+      .match(/.{2}/g)!
+      .map(part => Number.parseInt(part, 16))
+    const background = `\x1b[48;2;${red};${green};${blue}m`
+
+    expect(preview).toContain(background)
+    expect(focused).toContain(background)
+    expect(stripAnsi(preview)).toContain('❯ 01a06b6f  repl  current session')
+    expect(stripAnsi(focused)).toContain('❯ 01a06b6f  repl  current session')
   })
 })
 

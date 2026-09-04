@@ -1611,6 +1611,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       return {
         lines: [...contentLines, ...preEditorLines, ...selectorLines, ...promptLines],
         bottomAnchor: true,
+        bottomAnchorStart: contentLines.length,
         stableViewport: true,
       }
     }
@@ -1626,6 +1627,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
         bottomAnchor: true,
+        bottomAnchorStart: contentLines.length,
       }
     }
 
@@ -1638,6 +1640,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
         ],
         bottomAnchor: true,
+        bottomAnchorStart: contentLines.length,
       }
     }
 
@@ -1656,6 +1659,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     return {
       lines: [...contentLines, ...preEditorLines, ...previewLines, ...promptLines],
       bottomAnchor: true,
+      bottomAnchorStart: contentLines.length,
       ...(commandWindowPreview?.kind === 'selector' ? { stableViewport: true } : {}),
       ...(modalLines.length > 0 ? { overlay: { lines: modalLines } } : {}),
     }

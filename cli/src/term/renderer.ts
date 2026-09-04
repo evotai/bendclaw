@@ -42,13 +42,19 @@ export interface RenderFrame {
    * Let a frame that fills the viewport keep its trailing edge on the bottom
    * row, even after the frame shrinks.
    *
-   * This is not a bottom pin: content decides where the composer sits. A short
-   * frame is never padded, so a fresh session draws the composer just below the
-   * banner and it stays there. Once output has grown past the viewport the
-   * bottom row is the only correct place for the trailing edge, and a shrink
-   * (an interrupt discarding streamed rows) must not lift it away from there.
+   * This is not an initial bottom pin: content decides where the composer sits
+   * until the frame first reaches the bottom. After that point, shrinkage gets
+   * leading physical space so the trailing edge stays on the row it already
+   * reached instead of jumping back to the logical frame's natural position.
    */
   bottomAnchor?: boolean
+  /**
+   * Start of the repaintable tail that should retain its screen position after
+   * a naturally laid-out frame first reaches the viewport bottom. Shrinkage is
+   * absorbed here, between committed content and the live region, rather than
+   * above the whole frame. Ignored until the frame has actually reached bottom.
+   */
+  bottomAnchorStart?: number
   /**
    * Keep an already anchored, same-height viewport in place when only the
    * logical rows above it also changed. The terminal cannot rewrite scrollback,
@@ -119,6 +125,8 @@ export class TermRenderer {
   private hardwareCursorRow = 0
   private maxLinesRendered = 0
   private previousViewportTop = 0
+  /** Logical frame length retained after a bottom-anchored tail first reaches the viewport end. */
+  private trailingEdgeAnchorLength = 0
   private invalidatedRows = new Set<number>()
 
   // Render scheduling
@@ -206,6 +214,7 @@ export class TermRenderer {
       this.hardwareCursorRow = 0
       this.maxLinesRendered = 0
       this.previousViewportTop = 0
+      this.trailingEdgeAnchorLength = 0
       this.invalidatedRows.clear()
       if (this.renderTimer) {
         clearTimeout(this.renderTimer)
@@ -234,6 +243,7 @@ export class TermRenderer {
     this.hardwareCursorRow = 0
     this.maxLinesRendered = 0
     this.previousViewportTop = 0
+    this.trailingEdgeAnchorLength = 0
     this.invalidatedRows.clear()
     this.previousWidth = this.termCols
     this.previousHeight = this.termRows
@@ -284,11 +294,38 @@ export class TermRenderer {
     // Get new frame from callback
     const raw = this.renderCallback()
     const rendered = Array.isArray(raw) ? { lines: raw } : raw
-    // No short-frame padding: a frame that does not fill the viewport keeps its
-    // natural position, so the composer sits wherever the content above it ends.
+    let baseLines = rendered.lines
+    const anchorStart = rendered.bottomAnchorStart
+    const hasTailAnchor = rendered.bottomAnchor
+      && anchorStart !== undefined
+      && Number.isFinite(anchorStart)
+    if (hasTailAnchor) {
+      // A resize establishes a new natural layout. Do not carry an anchor from
+      // a differently-sized viewport unless the rebuilt frame reaches bottom.
+      if (widthChanged || heightChanged) this.trailingEdgeAnchorLength = 0
+      if (baseLines.length >= height) {
+        this.trailingEdgeAnchorLength = Math.max(this.trailingEdgeAnchorLength, baseLines.length)
+      } else if (this.trailingEdgeAnchorLength > baseLines.length) {
+        // Keep committed content in place and absorb transient live-region
+        // shrinkage immediately before that region. Padding the frame's top
+        // would move history; padding its end would leave the composer high.
+        const insertion = Math.max(0, Math.min(Math.trunc(anchorStart), baseLines.length))
+        const padding = Array.from(
+          { length: this.trailingEdgeAnchorLength - baseLines.length },
+          () => '',
+        )
+        baseLines = [
+          ...baseLines.slice(0, insertion),
+          ...padding,
+          ...baseLines.slice(insertion),
+        ]
+      }
+    }
+    // Before the first natural bottom contact, short frames retain their normal
+    // flow position. Screen overlays still do their own temporary composition.
     let newLines = rendered.overlay
-      ? this.compositeOverlay(rendered.lines, rendered.overlay, width, height)
-      : rendered.lines
+      ? this.compositeOverlay(baseLines, rendered.overlay, width, height)
+      : baseLines
     const cursorPos = this.extractCursorPosition(newLines, height)
     newLines = this.applyLineResets(newLines)
 

@@ -172,18 +172,40 @@ async fn search_text_keeps_both_ends_of_long_conversations() -> TestResult {
 }
 
 #[tokio::test]
-async fn list_sessions_with_text_respects_limit() -> TestResult {
+async fn list_sessions_with_text_respects_limit_after_draft_filtering() -> TestResult {
     let storage: Arc<dyn evot::storage::Storage> = Arc::new(MemoryStorage::new());
 
     for i in 0..5 {
-        let s = Session::new(
+        let mut meta = SessionMeta::new(
             format!("limit-sess-{i:03}"),
             "/tmp".into(),
             "test-model".into(),
-            storage.clone(),
-        )
-        .await?;
-        s.write_items(vec![assistant("hello")]).await?;
+        );
+        meta.created_at = format!("2026-01-01T00:00:0{i}Z");
+        meta.updated_at = meta.created_at.clone();
+        storage.save_session(meta).await?;
+        storage
+            .append_entry(TranscriptEntry::new(
+                format!("limit-sess-{i:03}"),
+                None,
+                1,
+                1,
+                assistant("hello"),
+            ))
+            .await?;
+    }
+
+    // Newer metadata-only drafts sort ahead of every real session. They must
+    // be filtered before the limit is applied, not consume the two slots.
+    for i in 0..3 {
+        let mut draft = SessionMeta::new(
+            format!("draft-sess-{i:03}"),
+            "/tmp".into(),
+            "test-model".into(),
+        );
+        draft.created_at = format!("2026-01-02T00:00:0{i}Z");
+        draft.updated_at = draft.created_at.clone();
+        storage.save_session(draft).await?;
     }
 
     let total = storage
@@ -192,10 +214,13 @@ async fn list_sessions_with_text_respects_limit() -> TestResult {
             offset: 0,
         })
         .await?;
-    assert_eq!(total.len(), 5);
+    assert_eq!(total.len(), 8);
 
     let limited = storage.list_sessions_with_text(2).await?;
     assert_eq!(limited.len(), 2);
+    assert!(limited
+        .iter()
+        .all(|row| row.session.session_id.starts_with("limit-sess-")));
     Ok(())
 }
 

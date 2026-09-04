@@ -14,6 +14,19 @@ pub trait Storage: Send + Sync {
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMeta>>;
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>>;
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>>;
+    /// Whether a session has any persisted transcript activity. Empty drafts
+    /// have metadata only and must not consume slots in user-facing listings.
+    async fn session_has_entries(&self, session_id: &str) -> Result<bool> {
+        Ok(!self
+            .list_entries(ListTranscriptEntries {
+                session_id: session_id.to_string(),
+                run_id: None,
+                after_seq: None,
+                limit: Some(1),
+            })
+            .await?
+            .is_empty())
+    }
 
     async fn delete_session(&self, session_id: &str) -> Result<bool>;
 

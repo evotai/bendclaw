@@ -50,11 +50,17 @@ export class UpdateManager extends EventEmitter {
   private stopped = false
   private status: UpdateStatus = { kind: 'idle' }
   private stagingAbort: AbortController | null = null
+  private stage: typeof stageUpdate
 
-  constructor(currentVersion: string, now: () => number = Date.now) {
+  constructor(
+    currentVersion: string,
+    now: () => number = Date.now,
+    stage: typeof stageUpdate = stageUpdate,
+  ) {
     super()
     this.currentVersion = currentVersion
     this.now = now
+    this.stage = stage
     // A previous session may have left a verified download behind. Surface it
     // immediately instead of waiting for the first check to re-discover it.
     // Only for a managed install: a source checkout will never apply it, so
@@ -164,7 +170,7 @@ export class UpdateManager extends EventEmitter {
     const controller = new AbortController()
     this.stagingAbort = controller
 
-    stageUpdate(release, controller.signal)
+    this.stage(release, controller.signal)
       .then(() => {
         this.setStatus({ kind: 'staged', version: release.version })
       })

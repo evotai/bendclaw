@@ -63,6 +63,14 @@ impl Storage for MemoryStorage {
         Ok(result)
     }
 
+    async fn session_has_entries(&self, session_id: &str) -> Result<bool> {
+        Ok(self
+            .entries
+            .lock()
+            .ok()
+            .is_some_and(|entries| entries.iter().any(|entry| entry.session_id == session_id)))
+    }
+
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>> {
         let result = self
             .sessions
@@ -196,7 +204,10 @@ impl Storage for MemoryStorage {
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
         let sessions = self
-            .list_sessions(ListSessions { limit, offset: 0 })
+            .list_sessions(ListSessions {
+                limit: 0,
+                offset: 0,
+            })
             .await?;
 
         let entries: Vec<TranscriptEntry> = self
@@ -206,19 +217,25 @@ impl Storage for MemoryStorage {
             .map(|e| e.clone())
             .unwrap_or_default();
 
-        let mut result = Vec::with_capacity(sessions.len());
-        for session in &sessions {
+        let mut result = Vec::new();
+        for session in sessions {
             let session_entries: Vec<_> = entries
                 .iter()
-                .filter(|e| e.session_id == session.session_id)
+                .filter(|entry| entry.session_id == session.session_id)
                 .cloned()
                 .collect();
-            let search_text = collect_search_text(session, &session_entries);
+            if session.turns == 0 && session.title.is_none() && session_entries.is_empty() {
+                continue;
+            }
+            let search_text = collect_search_text(&session, &session_entries);
             result.push(SessionWithText {
-                session: session.clone(),
+                session,
                 search_text,
                 user_prompts: collect_user_prompts(&session_entries),
             });
+            if limit > 0 && result.len() == limit {
+                break;
+            }
         }
 
         Ok(result)

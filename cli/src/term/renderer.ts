@@ -49,6 +49,14 @@ export interface RenderFrame {
    * (an interrupt discarding streamed rows) must not lift it away from there.
    */
   bottomAnchor?: boolean
+  /**
+   * Keep an already anchored, same-height viewport in place when only the
+   * logical rows above it also changed. The terminal cannot rewrite scrollback,
+   * so those rows remain stale until this transient frame closes; visible rows
+   * are still patched normally. Reserved for stable command-window swaps —
+   * streaming/history frames must preserve the default full-redraw behavior.
+   */
+  stableViewport?: boolean
   /** Screen-relative modal content composited over the visible viewport. */
   overlay?: RenderOverlay
 }
@@ -515,11 +523,38 @@ export class TermRenderer {
       return
     }
 
-    // Differential rendering can only touch rows that were visible in the
-    // previous viewport. Match pi: any earlier change requires a full redraw.
+    // Differential rendering normally cannot touch rows that were visible only
+    // in scrollback, so pi redraws the whole frame. A stable transient viewport
+    // is the narrow exception: its logical height and bottom anchor are fixed,
+    // and the off-screen rows are deliberately frozen for the lifetime of the
+    // surface. Recompute the diff over addressable rows and patch only those.
     if (firstChanged < prevViewportTop) {
-      fullRender(true, 'off_viewport_redraw')
-      return
+      if (
+        rendered.stableViewport
+        && rendered.bottomAnchor
+        && newLines.length === this.previousLines.length
+      ) {
+        firstChanged = -1
+        lastChanged = -1
+        for (let i = prevViewportTop; i < newLines.length; i++) {
+          if (this.previousLines[i] !== newLines[i]) {
+            if (firstChanged === -1) firstChanged = i
+            lastChanged = i
+          }
+        }
+        if (firstChanged === -1) {
+          this.positionHardwareCursor(cursorPos, newLines.length)
+          this.previousLines = newLines
+          this.previousWidth = width
+          this.previousHeight = height
+          this.previousViewportTop = prevViewportTop
+          traceFrame('no_change')
+          return
+        }
+      } else {
+        fullRender(true, 'off_viewport_redraw')
+        return
+      }
     }
 
     // --- Build differential update buffer ---

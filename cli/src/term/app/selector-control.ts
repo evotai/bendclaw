@@ -2,6 +2,7 @@ import type { KeyEvent } from '../input.js'
 import {
   selectorBackspace,
   selectorDown,
+  selectorFocusList,
   selectorRemoveItem,
   selectorSelect,
   selectorType,
@@ -11,6 +12,7 @@ import {
 import { decideQueueSelectorAction, isQueueSelectorTitle, type ManagedQueuedPrompt } from './queue-manage.js'
 import { isBackgroundPanelTitle } from './background-panel.js'
 import { isResumeSelectorTitle } from './resume.js'
+import { isSkillSelectorTitle } from './skill-window.js'
 
 export type SelectorControlAction =
   | { kind: 'update'; state: SelectorState }
@@ -34,11 +36,25 @@ function disarmDelete(state: SelectorState): SelectorState {
 export function handleSelectorControl(state: SelectorState, event: KeyEvent): SelectorControlAction {
   switch (event.type) {
     case 'up':
-    case 'shift-tab':
-      return { kind: 'update', state: selectorUp(disarmDelete(state)) }
+    case 'shift-tab': {
+      const ready = disarmDelete(state)
+      // Every command window behaves the same way: the composer keeps focus
+      // while the window previews, and the first arrow hands focus to the list.
+      // Keying this off `listFocused` rather than a per-selector title keeps
+      // `/model`, `/skill`, and `/resume` from each inventing their own rule.
+      if (ready.listFocused === false) {
+        return { kind: 'update', state: selectorFocusList(ready) }
+      }
+      return { kind: 'update', state: selectorUp(ready) }
+    }
     case 'down':
-    case 'tab':
-      return { kind: 'update', state: selectorDown(disarmDelete(state)) }
+    case 'tab': {
+      const ready = disarmDelete(state)
+      if (ready.listFocused === false) {
+        return { kind: 'update', state: selectorFocusList(ready) }
+      }
+      return { kind: 'update', state: selectorDown(ready) }
+    }
     case 'char':
       // Lists that reserve bare letters for their own gestures never build a
       // filter query: doing so would silently drop rows with no filter line on
@@ -62,6 +78,11 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
 }
 
 function selectAction(state: SelectorState): SelectorControlAction {
+  // The live skill inventory is informational. Management remains explicit via
+  // `/skill list|install|update|remove`, so Enter must never reinterpret a
+  // skill name as a model spec or execute a destructive action.
+  if (isSkillSelectorTitle(state.title)) return { kind: 'none' }
+
   const selected = selectorSelect(state)
   if (!selected) return { kind: 'close' }
 
@@ -112,6 +133,11 @@ function deleteAction(state: SelectorState): SelectorControlAction {
 
   return {
     kind: 'update',
-    state: { ...state, pendingDeleteId: target.id, subtitle: RESUME_DELETE_CONFIRM },
+    state: {
+      ...state,
+      listFocused: true,
+      pendingDeleteId: target.id,
+      subtitle: RESUME_DELETE_CONFIRM,
+    },
   }
 }

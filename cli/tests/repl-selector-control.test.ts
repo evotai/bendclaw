@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { handleSelectorControl } from '../src/term/app/selector-control.js'
 import { RESUME_SELECTOR_TITLE } from '../src/term/app/resume.js'
-import { createSelectorState, selectorExpandItems, type SelectorItem } from '../src/term/selector.js'
+import { SKILL_SELECTOR_TITLE } from '../src/term/app/skill-window.js'
+import { createSelectorState, selectorExpandItems, selectorType, type SelectorItem } from '../src/term/selector.js'
 
 const char = (value: string) => ({ type: 'char' as const, char: value })
 const key = (type: 'up' | 'down' | 'tab' | 'shift-tab' | 'backspace' | 'enter' | 'escape' | 'delete') => ({ type })
@@ -57,6 +58,61 @@ describe('repl selector control', () => {
     expect(handleSelectorControl(createSelectorState('T', items), key('escape')).kind).toBe('close')
   })
 
+  test('resume first arrow focuses the first session before navigation', () => {
+    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: false }
+
+    const down = handleSelectorControl(state, key('down'))
+    expect(down.kind).toBe('update')
+    if (down.kind !== 'update') return
+    expect(down.state.listFocused).toBe(true)
+    expect(down.state.focusIndex).toBe(0)
+
+    const next = handleSelectorControl(down.state, key('down'))
+    expect(next.kind).toBe('update')
+    if (next.kind === 'update') expect(next.state.focusIndex).toBe(1)
+  })
+
+  test('every command window promotes focus on the first arrow, not just resume', () => {
+    // The model and skill windows previously navigated on the first arrow while
+    // the composer still owned the caret, so `/mo` + ↓ typed into the composer
+    // instead of moving to a model. Focus promotion is now shared.
+    for (const title of ['Models', SKILL_SELECTOR_TITLE]) {
+      const state = { ...createSelectorState(title, items), listFocused: false }
+
+      const first = handleSelectorControl(state, key('down'))
+      expect(first.kind).toBe('update')
+      if (first.kind !== 'update') return
+      expect(first.state.listFocused).toBe(true)
+      expect(first.state.focusIndex).toBe(0)
+
+      const second = handleSelectorControl(first.state, key('down'))
+      expect(second.kind).toBe('update')
+      if (second.kind === 'update') expect(second.state.focusIndex).toBe(1)
+    }
+  })
+
+  test('promotion keeps the row the preview already highlighted', () => {
+    // `/model` opens focused on the active model. The first arrow must hand
+    // focus to the list without snapping the selection back to the first row.
+    const state = { ...createSelectorState('Models', items), focusIndex: 1, listFocused: false }
+
+    const promoted = handleSelectorControl(state, key('down'))
+    expect(promoted.kind).toBe('update')
+    if (promoted.kind !== 'update') return
+    expect(promoted.state.listFocused).toBe(true)
+    expect(promoted.state.focusIndex).toBe(1)
+  })
+
+  test('typing returns resume focus to the filter', () => {
+    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: true }
+    const next = handleSelectorControl(state, char('o'))
+    expect(next.kind).toBe('update')
+    if (next.kind === 'update') {
+      expect(next.state.listFocused).toBe(false)
+      expect(next.state.query).toBe('o')
+    }
+  })
+
   test('resume enter returns selected session id', () => {
     const action = handleSelectorControl(createSelectorState(RESUME_SELECTOR_TITLE, items), key('enter'))
     expect(action).toEqual({ kind: 'resume', sessionId: 'session-one' })
@@ -65,6 +121,11 @@ describe('repl selector control', () => {
   test('model enter returns provider-qualified select-model action', () => {
     const state = createSelectorState('Select model', [{ label: 'claude', id: 'anthropic:claude', detail: 'anthropic' }])
     expect(handleSelectorControl(state, key('enter'))).toEqual({ kind: 'select-model', spec: 'anthropic:claude' })
+  })
+
+  test('skill inventory enter is read-only', () => {
+    const state = createSelectorState(SKILL_SELECTOR_TITLE, [{ label: 'review', id: 'review' }])
+    expect(handleSelectorControl(state, key('enter'))).toEqual({ kind: 'none' })
   })
 
   test('delete requires a second press before removing resume session', () => {

@@ -1127,9 +1127,28 @@ impl Agent {
 
     pub async fn list_sessions(&self, limit: usize) -> Result<Vec<SessionMeta>> {
         let storage = self.storage.read().clone();
-        storage
-            .list_sessions(ListSessions { limit, offset: 0 })
-            .await
+        let sessions = storage
+            .list_sessions(ListSessions {
+                // Apply the public limit after draft filtering. Otherwise a run
+                // of abandoned `/new` drafts can fill the page and hide real
+                // conversations below it.
+                limit: 0,
+                offset: 0,
+            })
+            .await?;
+        let mut visible = Vec::new();
+        for session in sessions {
+            let is_draft = session.turns == 0
+                && session.title.is_none()
+                && !storage.session_has_entries(&session.session_id).await?;
+            if !is_draft {
+                visible.push(session);
+                if limit > 0 && visible.len() == limit {
+                    break;
+                }
+            }
+        }
+        Ok(visible)
     }
 
     pub async fn list_sessions_with_text(

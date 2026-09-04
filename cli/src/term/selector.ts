@@ -11,6 +11,9 @@ export interface SelectorItem {
   id?: string
   /** Extra text searched but not displayed (e.g. full session id, cwd). */
   searchText?: string
+  /** Hidden from the unfiltered list but included when its searchable text
+   * matches a query. Resume uses this for sessions from another cwd. */
+  searchOnly?: boolean
   /** When false, up/down navigation skips this item. Defaults to true. */
   focusable?: boolean
   /** Associates an item with a non-focusable group header. Filtering keeps the
@@ -56,6 +59,9 @@ export interface SelectorState {
    *  letters for actions opt out, so typing can never build a hidden query
    *  against a list with no visible filter. */
   noFilter?: boolean
+  /** The list, rather than the filter input, owns keyboard focus. Command
+   *  previews set this when an arrow promotes them into an active selector. */
+  listFocused?: boolean
   /** Body text shown in place of the list when there are no rows. Replaces the
    *  generic "No matching items", which would describe a filter some lists
    *  do not have. */
@@ -89,13 +95,41 @@ function lastFocusable(items: SelectorItem[]): number {
   return 0
 }
 
+function defaultVisibleItems(items: SelectorItem[]): SelectorItem[] {
+  if (!items.some(item => item.searchOnly)) return items
+  return pruneEmptyGroups(items.filter(item => !item.searchOnly))
+}
+
 export function createSelectorState(title: string, items: SelectorItem[], allItems?: SelectorItem[], initialQuery?: string): SelectorState {
   const all = allItems ?? items
   if (initialQuery) {
-    return applyFilter({ items: all, allItems: all, focusIndex: 0, scrollOffset: 0, title, query: '' }, initialQuery)
+    return applyFilter({ items: defaultVisibleItems(items), allItems: all, focusIndex: 0, scrollOffset: 0, title, query: '' }, initialQuery)
   }
-  const focusIndex = firstFocusable(items)
-  return { items, allItems: all, focusIndex, scrollOffset: ensureVisible(0, focusIndex, items.length), title, query: '' }
+  const visible = defaultVisibleItems(items)
+  const focusIndex = firstFocusable(visible)
+  return { items: visible, allItems: all, focusIndex, scrollOffset: ensureVisible(0, focusIndex, visible.length), title, query: '' }
+}
+
+/**
+ * Transfer keyboard focus from the filter input to the list.
+ *
+ * The row the preview already highlights is kept, so promotion never makes the
+ * selection jump: `/model` opens on the active model and the first arrow moves
+ * from there, while lists that open at their first row stay there. Only a
+ * focusIndex that is no longer selectable (an async refresh dropped or
+ * reordered rows) falls back to the first selectable row.
+ */
+export function selectorFocusList(state: SelectorState): SelectorState {
+  const current = state.items[state.focusIndex]
+  const focusIndex = current && current.focusable !== false
+    ? state.focusIndex
+    : firstFocusable(state.items)
+  return {
+    ...state,
+    listFocused: true,
+    focusIndex,
+    scrollOffset: ensureVisible(state.scrollOffset, focusIndex, state.items.length),
+  }
 }
 
 /** Move focus to the first item matching `predicate`, keeping it visible. */
@@ -145,13 +179,13 @@ export function selectorSelect(state: SelectorState): SelectorItem | null {
 
 export function selectorType(state: SelectorState, char: string): SelectorState {
   const query = state.query + char
-  return applyFilter(state, query)
+  return applyFilter({ ...state, listFocused: false }, query)
 }
 
 export function selectorBackspace(state: SelectorState): SelectorState {
   if (state.query.length === 0) return state
   const query = state.query.slice(0, -1)
-  return applyFilter(state, query)
+  return applyFilter({ ...state, listFocused: false }, query)
 }
 
 export function selectorExpandItems(state: SelectorState, allItems: SelectorItem[]): SelectorState {
@@ -159,13 +193,14 @@ export function selectorExpandItems(state: SelectorState, allItems: SelectorItem
   // dropped: the confirming keypress must never land on a different session.
   const focused = state.items[state.focusIndex]
   const updated = { ...state, allItems, pendingDeleteId: undefined, subtitle: undefined }
+  const visible = defaultVisibleItems(allItems)
   const next = state.query
     ? applyFilter(updated, state.query)
     : {
         ...updated,
-        items: allItems,
-        focusIndex: firstFocusable(allItems),
-        scrollOffset: ensureVisible(updated.scrollOffset, firstFocusable(allItems), allItems.length),
+        items: visible,
+        focusIndex: firstFocusable(visible),
+        scrollOffset: ensureVisible(updated.scrollOffset, firstFocusable(visible), visible.length),
       }
   if (!focused || focused.header) return next
   // Keep the row the user was looking at across an async catalog refresh.
@@ -186,7 +221,7 @@ export function selectorRemoveItem(state: SelectorState, index: number): Selecto
   const cleared = { ...state, pendingDeleteId: undefined }
   if (cleared.query) return applyFilter({ ...cleared, allItems }, cleared.query)
 
-  const items = allItems
+  const items = defaultVisibleItems(allItems)
   let focusIndex = Math.min(index, Math.max(0, items.length - 1))
   while (focusIndex < items.length && items[focusIndex]?.focusable === false) focusIndex++
   if (focusIndex >= items.length) focusIndex = lastFocusable(items)
@@ -198,9 +233,64 @@ function pruneEmptyGroups(items: SelectorItem[]): SelectorItem[] {
   return items.filter(item => !item.header || !item.group || populatedGroups.has(item.group))
 }
 
+/**
+ * Lowercased searchable text, cached per item.
+ *
+ * Resume rows carry whole transcripts in `searchText`. Lowercasing all of them
+ * on every keystroke is what made typing in the filter feel sluggish once a
+ * project had a large history, so the conversion is done once per item and
+ * reused for later keystrokes. Keyed weakly, so cached strings are released
+ * with the items themselves.
+ */
+const searchableTextCache = new WeakMap<SelectorItem, string>()
+
 function searchableText(item: SelectorItem): string {
-  if (item.searchText) return item.searchText.toLowerCase()
-  return `${item.label} ${item.detail ?? ''}`.toLowerCase()
+  const cached = searchableTextCache.get(item)
+  if (cached !== undefined) return cached
+  const text = item.searchText
+    ? item.searchText.toLowerCase()
+    : `${item.label} ${item.detail ?? ''}`.toLowerCase()
+  searchableTextCache.set(item, text)
+  return text
+}
+
+/** Characters converted per slice while warming. Sized so one slice stays well
+ *  inside a frame even on a slow machine. */
+const WARM_CHARS_PER_SLICE = 400_000
+
+/**
+ * Pre-populate the search cache in background slices.
+ *
+ * Warming is not required for correctness — `searchableText` fills the cache on
+ * demand — but doing it lazily put the whole conversion on whichever keystroke
+ * happened to be first, which read as a stall right after the list loaded.
+ * Slices yield to the event loop between batches so no single task blocks input.
+ *
+ * Returns a cancel function; call it when the list is closed or replaced.
+ */
+export function warmSearchableText(items: SelectorItem[]): () => void {
+  let index = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const runSlice = () => {
+    timer = undefined
+    let converted = 0
+    while (index < items.length && converted < WARM_CHARS_PER_SLICE) {
+      const item = items[index++]!
+      if (item.header) continue
+      if (searchableTextCache.has(item)) continue
+      converted += item.searchText?.length ?? 0
+      searchableText(item)
+    }
+    if (index < items.length) timer = setTimeout(runSlice, 0)
+  }
+
+  timer = setTimeout(runSlice, 0)
+  return () => {
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    index = items.length
+  }
 }
 
 function isSubsequence(text: string, query: string): boolean {
@@ -222,8 +312,7 @@ function matchesAllTokens(text: string, tokens: string[]): boolean {
   return tokens.every(token => text.includes(token))
 }
 
-function extractContext(source: string, query: string, width: number): string | null {
-  const lower = source.toLowerCase()
+function extractContext(source: string, lower: string, query: string, width: number): string | null {
   const tokens = queryTokens(query)
   if (tokens.length === 0) return null
 
@@ -319,8 +408,15 @@ function applyFilter(state: SelectorState, query: string): SelectorState {
   // Filtering reorders and hides rows, so an armed delete is always dropped.
   state = { ...state, pendingDeleteId: undefined }
   if (!query) {
-    const focusIndex = firstFocusable(state.allItems)
-    return { ...state, query, items: state.allItems, focusIndex, scrollOffset: ensureVisible(0, focusIndex, state.allItems.length) }
+    const items = defaultVisibleItems(state.allItems)
+    const focusIndex = firstFocusable(items)
+    return {
+      ...state,
+      query,
+      items,
+      focusIndex,
+      scrollOffset: ensureVisible(0, focusIndex, items.length),
+    }
   }
 
   if (state.presentation === 'model') {
@@ -370,12 +466,15 @@ function applyFilter(state: SelectorState, query: string): SelectorState {
 function restoreGroupHeaders(allItems: SelectorItem[], matched: SelectorItem[]): SelectorItem[] {
   if (!matched.some(item => item.group)) return matched
 
-  const matchedIds = new Set(matched.map(item => item.id ?? item.label))
+  // Keyed lookup rather than a scan per row: `matched` holds thousands of rows
+  // on a large history, and a nested find made restoring headers quadratic.
+  const matchedByKey = new Map<string, SelectorItem>()
+  for (const item of matched) matchedByKey.set(item.id ?? item.label, item)
   const matchedGroups = new Set(matched.flatMap(item => item.group ? [item.group] : []))
   return allItems.flatMap(item => {
     if (item.header) return item.group && matchedGroups.has(item.group) ? [item] : []
-    if (!matchedIds.has(item.id ?? item.label)) return []
-    return [matched.find(candidate => (candidate.id ?? candidate.label) === (item.id ?? item.label)) ?? item]
+    const hit = matchedByKey.get(item.id ?? item.label)
+    return hit ? [hit] : []
   })
 }
 
@@ -402,9 +501,36 @@ function insertGroupHeaders(allItems: SelectorItem[], matched: SelectorItem[]): 
   return withHeaders
 }
 
+/**
+ * Attach the match snippet without building it up front.
+ *
+ * A filter can match thousands of rows while only about ten are ever drawn, so
+ * cutting a snippet out of every matched transcript was pure waste on the
+ * keystroke path. `detail` stays an ordinary readable property — computed on
+ * first access and memoized — so callers and the renderer are unchanged.
+ */
 function withContext(item: SelectorItem, query: string): SelectorItem {
   if (!item.searchText) return item
-  const ctx = extractContext(item.searchText, query, 80)
-  if (!ctx) return item
-  return { ...item, detail: `${item.contextPrefix ?? ''}${ctx}` }
+  const clone: SelectorItem = { ...item }
+  let resolved = false
+  let value = item.detail
+  Object.defineProperty(clone, 'detail', {
+    enumerable: true,
+    configurable: true,
+    get(): string | undefined {
+      if (!resolved) {
+        resolved = true
+        // The lowercased form was already built to match this row, so reuse it
+        // rather than lowercasing a whole transcript again.
+        const ctx = extractContext(item.searchText!, searchableText(item), query, 80)
+        if (ctx) value = `${item.contextPrefix ?? ''}${ctx}`
+      }
+      return value
+    },
+    set(next: string | undefined) {
+      resolved = true
+      value = next
+    },
+  })
+  return clone
 }

@@ -161,11 +161,6 @@ struct PendingLogin {
 /// Snapshot freshness window; new/delete also invalidate explicitly.
 const RECENT_CACHE_TTL: std::time::Duration = std::time::Duration::from_millis(750);
 
-/// Empty New-chat drafts never appear in listings; resume-by-id still works.
-fn not_draft(meta: &SessionMeta) -> bool {
-    meta.turns > 0 || meta.title.is_some()
-}
-
 /// Stable per-device id for the login handshake, mirroring the CLI recipe.
 fn device_fingerprint() -> String {
     let host = hostname::get()
@@ -483,15 +478,7 @@ impl Server {
                 return Ok(rows.clone());
             }
         }
-        let all = self
-            .agent
-            .storage()
-            .list_sessions(ListSessions {
-                limit: 0,
-                offset: 0,
-            })
-            .await?;
-        let rows: Vec<SessionMeta> = all.into_iter().filter(not_draft).collect();
+        let rows = self.agent.list_sessions(0).await?;
         *self.recent_cache.lock() = Some((std::time::Instant::now(), rows.clone()));
         Ok(rows)
     }
@@ -517,12 +504,14 @@ impl Server {
         };
         if params.full {
             // Search pays for transcript text; the sidebar never does.
-            return match self.agent.list_sessions_with_text(SESSION_SEARCH_LIMIT).await
+            return match self
+                .agent
+                .list_sessions_with_text(SESSION_SEARCH_LIMIT)
+                .await
             {
-                Ok(rows) => Json(serde_json::json!({
-                    "items": rows.into_iter().filter(|row| not_draft(&row.session)).collect::<Vec<_>>()
-                }))
-                .into_response(),
+                // Agent/storage filtering is transcript-aware: a run can have
+                // durable entries before its final turns/title metadata save.
+                Ok(rows) => Json(serde_json::json!({ "items": rows })).into_response(),
                 Err(e) => failed(e),
             };
         }

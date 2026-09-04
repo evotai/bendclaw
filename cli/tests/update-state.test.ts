@@ -10,7 +10,7 @@ import {
 } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { checkInstallHealth, readInstallState } from '../src/update/state.js'
+import { checkInstallHealth, isManagedInstall, readInstallState } from '../src/update/state.js'
 import {
   bindingFilenameForTarget,
   currentTarget,
@@ -122,6 +122,15 @@ describe('paths', () => {
 
   test('resolves a release target for supported platforms', () => {
     expect(currentTarget()).toMatch(/-(apple-darwin|unknown-linux-gnu)$/)
+  })
+})
+
+describe('managed install detection', () => {
+  test('requires install.sh bookkeeping, not only an install-shaped path', () => {
+    expect(isManagedInstall(env)).toBe(false)
+
+    writeInstallerState()
+    expect(isManagedInstall(env)).toBe(true)
   })
 })
 

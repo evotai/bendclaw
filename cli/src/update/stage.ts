@@ -114,10 +114,13 @@ export function clearStaged(): void {
   } catch { /* best effort */ }
 }
 
+type UpdateFetch = typeof globalThis.fetch
+
 async function fetchWithResume(
   url: string,
   dest: string,
   signal: AbortSignal,
+  fetchImpl: UpdateFetch,
 ): Promise<void> {
   const { fetchProxy } = await resolveUpdateProxy()
   let offset = 0
@@ -128,7 +131,7 @@ async function fetchWithResume(
   const headers: Record<string, string> = {}
   if (offset >= MIN_RESUME_SIZE) headers['Range'] = `bytes=${offset}-`
 
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     headers,
     signal,
     redirect: 'follow',
@@ -169,13 +172,14 @@ async function downloadAsset(
   target: string,
   dest: string,
   signal: AbortSignal,
+  fetchImpl: UpdateFetch,
 ): Promise<void> {
   const url = `https://github.com/evotai/evot/releases/download/${release.tag}/${assetName(release.version, target)}`
   let lastError = ''
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (signal.aborted) throw new StageAborted('download aborted')
     try {
-      await fetchWithResume(url, dest, signal)
+      await fetchWithResume(url, dest, signal, fetchImpl)
       return
     } catch (err) {
       if (err instanceof StageAborted) throw err
@@ -213,6 +217,7 @@ function verifyChecksum(assetPath: string, sidecarPath: string): void {
 export async function stageUpdate(
   release: ReleaseInfo,
   signal: AbortSignal,
+  fetchImpl: UpdateFetch = globalThis.fetch,
 ): Promise<StagedUpdate> {
   const target = currentTarget()
   if (!target) throw new Error('unsupported platform for auto-update')
@@ -227,7 +232,7 @@ export async function stageUpdate(
 
   try {
     const { fetchProxy } = await resolveUpdateProxy()
-    const sidecarResponse = await fetch(shaUrl, {
+    const sidecarResponse = await fetchImpl(shaUrl, {
       signal,
       ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
     })
@@ -235,7 +240,7 @@ export async function stageUpdate(
       writeFileSync(sidecarPath, await sidecarResponse.text())
     }
 
-    await downloadAsset(release, target, assetPath, signal)
+    await downloadAsset(release, target, assetPath, signal, fetchImpl)
 
     // A complete-but-corrupt archive must not survive to be resumed forever.
     try {

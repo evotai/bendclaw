@@ -152,7 +152,7 @@ async fn model_selection_update_is_persisted_immediately() -> TestResult {
 }
 
 #[tokio::test]
-async fn agent_create_session_persists_empty_repl_session() -> TestResult {
+async fn agent_create_session_keeps_empty_draft_out_of_lists() -> TestResult {
     let dir = TempDir::new()?;
     let mut config = evot::conf::Config::new(dir.path().to_path_buf());
     config.providers.insert("test".into(), ProviderProfile {
@@ -187,6 +187,22 @@ async fn agent_create_session_persists_empty_repl_session() -> TestResult {
     let transcript = agent.load_transcript(&meta.session_id).await?;
     assert!(transcript.is_empty());
 
+    let sessions = agent.list_sessions(0).await?;
+    assert!(!sessions.iter().any(|s| s.session_id == meta.session_id));
+
+    // A run can persist transcript activity before its final metadata save.
+    // Such a session is real and must become visible immediately even while
+    // turns/title still carry their draft values.
+    let session = agent
+        .load_session(&meta.session_id)
+        .await?
+        .ok_or_else(|| missing_error("missing created session"))?;
+    session
+        .write_items(vec![TranscriptItem::User {
+            text: "first prompt".into(),
+            content: vec![],
+        }])
+        .await?;
     let sessions = agent.list_sessions(0).await?;
     assert!(sessions.iter().any(|s| s.session_id == meta.session_id));
     Ok(())

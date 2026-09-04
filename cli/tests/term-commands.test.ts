@@ -65,7 +65,7 @@ describe('term commands', () => {
     expect(result.systemLines.length).toBe(0)
   })
 
-  test('/new starts a new persisted session', () => {
+  test('/new starts an unbound session that persists on first prompt', () => {
     const result = handleSlashCommand('/new', mkCtx())
     expect(result.newSession).toBe(true)
     expect(result.clearContext).toBeUndefined()

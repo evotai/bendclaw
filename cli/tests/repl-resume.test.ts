@@ -11,6 +11,7 @@ import {
   sanitizeSessionTitle,
   sessionPreviewLines,
 } from '../src/term/app/resume.js'
+import { createSelectorState, selectorExpandItems, selectorType } from '../src/term/selector.js'
 import type { SessionMeta, SessionWithText } from '../src/native/index.js'
 
 describe('repl resume helpers', () => {
@@ -71,10 +72,49 @@ describe('repl resume helpers', () => {
     expect(items[3]!.detail).toContain('/other')
   })
 
-  test('formatSessionItems shows other cwd when current cwd has no sessions', () => {
+  test('formatSessionItems marks other cwd as search-only when current cwd has sessions', () => {
+    const items = formatSessionItems(sessions, '/work')
+    expect(items[0]!.searchOnly).toBeFalsy()
+    expect(items[1]!.searchOnly).toBeFalsy()
+    expect(items[2]).toMatchObject({ label: 'Other cwd', searchOnly: true })
+    expect(items[3]).toMatchObject({ id: sessions[1]!.session_id, searchOnly: true })
+  })
+
+  test('resume defaults to current cwd but searches other cwd', () => {
+    const items = formatSessionItems(sessions, '/work')
+    let state = createSelectorState(RESUME_SELECTOR_TITLE, items, items)
+
+    expect(state.items.map(item => item.label)).toEqual([
+      'Current cwd · /work',
+      'aaaaaaaa',
+    ])
+    for (const char of 'other session') state = selectorType(state, char)
+    expect(state.items.map(item => item.label)).toEqual(['Other cwd', 'bbbbbbbb'])
+  })
+
+  test('formatSessionItems extends colliding UUIDv7 prefixes', () => {
+    const colliding = [
+      { ...sessions[0]!, session_id: '01a069e9-4c86-77c0-8578-0f959cb03b53' },
+      { ...sessions[0]!, session_id: '01a069e9-4d40-7883-a488-480d11386234' },
+      { ...sessions[0]!, session_id: '01a069f0-1234-7000-8000-000000000000' },
+    ]
+    const labels = formatSessionItems(colliding, '/work')
+      .filter(item => !item.header)
+      .map(item => item.label)
+
+    expect(labels).toEqual(['01a069e9-4c', '01a069e9-4d', '01a069f0'])
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  test('formatSessionItems keeps other cwd searchable when current cwd has no sessions', () => {
     const items = formatSessionItems(sessions, '/missing')
-    expect(items[0]).toMatchObject({ label: 'Other cwd', header: true })
+    expect(items[0]).toMatchObject({ label: 'Other cwd', header: true, searchOnly: true })
     expect(items.filter(item => !item.header)).toHaveLength(2)
+
+    let state = createSelectorState(RESUME_SELECTOR_TITLE, items, items)
+    expect(state.items).toHaveLength(0)
+    for (const char of 'cwd session') state = selectorType(state, char)
+    expect(state.items.map(item => item.label)).toEqual(['Other cwd', 'aaaaaaaa'])
   })
 
   test('formatSessionWithTextItems uses full search text and matching groups', () => {

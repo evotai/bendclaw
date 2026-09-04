@@ -35,7 +35,14 @@ function statePath(env: Record<string, string | undefined> = process.env): strin
 export function isManagedInstall(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  return !!env.EVOT_INSTALL_DIR || !!runningInstallDir()
+  const runsFromInstall = !!env.EVOT_INSTALL_DIR || !!runningInstallDir()
+  // A compiled binary can also be installed locally by `make install`. That
+  // target deliberately removes install-state.json because the binary reports
+  // the workspace version (0.1.0), not a published release. Treating its path
+  // alone as a managed release lets a previously staged archive overwrite the
+  // local build on its next startup. Only install.sh writes the state record,
+  // so it is the authoritative marker for automatic staging and apply.
+  return runsFromInstall && readInstallState(env) !== null
 }
 
 export function readInstallState(

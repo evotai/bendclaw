@@ -463,6 +463,31 @@ describe('TermRenderer', () => {
       renderer.destroy()
     })
 
+    test('stable viewport patches visible rows without redrawing off-screen changes', async () => {
+      const { renderer, stdout } = createRenderer()
+      stdout.rows = 10
+      renderer.init()
+      let header = 'resume header'
+      let visible = 'composer /'
+      const history = Array.from({ length: 20 }, (_, i) => `history ${i}`)
+      renderer.setRenderCallback(() => ({
+        lines: [header, ...history, visible],
+        bottomAnchor: true,
+        stableViewport: true,
+      }))
+      await renderFrame(renderer)
+
+      stdout.clear()
+      header = 'model header'
+      visible = 'composer /m'
+      await renderFrame(renderer)
+
+      expect(stdout.output).not.toContain(CLEAR_SCREEN)
+      expect(stdout.output).toContain('composer /m')
+      expect(stdout.output).not.toContain('model header')
+      renderer.destroy()
+    })
+
     test('off-viewport early reflow (count unchanged) triggers full redraw', async () => {
       const { renderer, stdout } = createRenderer()
       stdout.rows = 10

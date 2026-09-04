@@ -11,12 +11,12 @@ import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
 import { getTheme, setDetectedThemeScheme } from '../render/theme.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
-import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn } from './selector.js'
+import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusList, selectorFocusOn, warmSearchableText, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
 import { formatCompactionCompleted } from '../render/verbose.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
-import { Agent, QueryStream, fastExit, authNotices, type CompactionTask, type ManualCompactionOutcome, type SessionMeta, type ConfigInfo, type QueuedPrompt } from '../native/index.js'
+import { Agent, QueryStream, fastExit, authNotices, type CompactionTask, type ManualCompactionOutcome, type SessionMeta, type SessionWithText, type ConfigInfo, type QueuedPrompt } from '../native/index.js'
 import { createInitialState, type AppState } from './app/state.js'
 import { assistantToolCalls } from './app/assistant-content.js'
 import type { UIAssistantBlock } from './app/types.js'
@@ -141,6 +141,9 @@ import {
   type ManagedQueuedPrompt,
 } from './app/queue-manage.js'
 import { extractAtPrefix, completeAtFile } from '../commands/file-completion.js'
+import { getSkillEntries } from '../commands/skill.js'
+import { isCommandWindowBridge, resolveCommandWindowTrigger } from './app/command-window-trigger.js'
+import { createSkillSelectorState, isSkillSelectorTitle } from './app/skill-window.js'
 import { transcriptToMessages } from '../session/transcript.js'
 import { GitInfoProvider } from './git-info.js'
 import { CaretBlink } from './caret-blink.js'
@@ -164,6 +167,9 @@ const SPINNER_INTERVAL_MS = 100
 
 type QueuedUserMessage = QueuedPrompt & { text: string; queue: 'steering' | 'follow_up' }
 type QueuedCompactionSubmission = { displayText: string; expandedText: string; contentJson?: string }
+type CommandWindowPreview =
+  | { kind: 'selector'; trigger: 'model' | 'resume' | 'skill'; sourceText: string; generation: number; state: SelectorState }
+  | { kind: 'help'; trigger: 'help'; sourceText: string; generation: number }
 
 
 export interface ReplOptions {
@@ -259,6 +265,28 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let exitHint = false
   let exitHintTimer: ReturnType<typeof setTimeout> | null = null
   let overlay: OverlayState = { kind: 'none' }
+  let commandWindowPreview: CommandWindowPreview | null = null
+  let commandWindowPreviewGeneration = 0
+  let focusedCommandWindowGeneration: number | null = null
+  let commandWindowContentLines: string[] | null = null
+  let commandWindowContentWidth: number | null = null
+  let deferredCloudModelNotice: string | null = null
+  let deferredCloudCampaignId: string | null = null
+  let enrichedResumeMetadataGeneration: number | null = null
+  let enrichedResumeTextGeneration: number | null = null
+  let resumeCommandLoadTimer: ReturnType<typeof setTimeout> | undefined
+  let resumeSearchEnrichmentTimer: ReturnType<typeof setTimeout> | undefined
+  /** Cancels the in-progress search-text warm-up, if one is running. */
+  let cancelSearchTextWarmup: (() => void) | null = null
+  let resumeSessionsCache: SessionMeta[] | null = null
+  let resumeSessionsCacheComplete = false
+  let resumeSessionsCacheGeneration = 0
+  let resumeSessionsPreviewLoad: Promise<SessionMeta[]> | null = null
+  let resumeSessionsLoad: Promise<SessionMeta[]> | null = null
+  let resumeSessionsWithTextCache: SessionWithText[] | null = null
+  let resumeSessionsWithTextLoad: Promise<SessionWithText[]> | null = null
+  /** Invalidates callbacks belonging to an explicitly submitted `/resume`. */
+  let explicitResumeSelectorGeneration = 0
   // Assigned after configInfo below, which decides the premium intake filter.
   let adSlot: AdSlotState
   // Promise-based bridge for the ask-user overlay. Both the `ask_user` host
@@ -394,6 +422,494 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   function resetHistoryCache() {
     compactHistoryCache.reset()
     expandedHistoryCache.reset()
+  }
+
+  function nextCommandWindowGeneration(): number {
+    commandWindowPreviewGeneration++
+    return commandWindowPreviewGeneration
+  }
+
+  function commandWindowMounted(): boolean {
+    return commandWindowPreview !== null || focusedCommandWindowGeneration !== null
+  }
+
+  function showCloudCampaign(campaignId: string): void {
+    if (!queueAdSlotTransition(adSlot, campaignId)) {
+      triggerAdSlot(adSlot, Date.now())
+    }
+  }
+
+  function flushDeferredCloudUpdates(): void {
+    if (commandWindowMounted()) return
+    const modelNotice = deferredCloudModelNotice
+    const campaignId = deferredCloudCampaignId
+    deferredCloudModelNotice = null
+    deferredCloudCampaignId = null
+    if (modelNotice) commitSystem('sys-cloud-models', chalk.dim(modelNotice))
+    if (campaignId) showCloudCampaign(campaignId)
+  }
+
+  function releaseCommandWindowLayout(): void {
+    commandWindowContentLines = null
+    commandWindowContentWidth = null
+    // The window is gone, so its search-text warm-up has nothing left to serve.
+    // Cancelling here rather than per keystroke keeps warming alive across
+    // typing inside an open window, which is exactly when it is needed.
+    cancelSearchTextWarm()
+    flushDeferredCloudUpdates()
+  }
+
+  function modelSelectorState(): SelectorState {
+    const models = modelOptions(configInfo, agent.model)
+    const activeSpec = currentModelSpec(configInfo, agent.model)
+    return selectorFocusOn(
+      {
+        ...createSelectorState('Models', modelSelectorItems(models, activeSpec)),
+        presentation: 'model',
+        circularNavigation: true,
+        // Same contract as every other command window: the composer keeps
+        // focus while this previews, so the search input must not claim the
+        // caret before an arrow promotes the list.
+        listFocused: false,
+      },
+      item => item.id === activeSpec,
+    )
+  }
+
+  function skillSelectorState(): SelectorState {
+    return { ...createSkillSelectorState(getSkillEntries(agent.skillsDirs())), listFocused: false }
+  }
+
+  function resumeSelectorState(items: SelectorItem[], initialQuery?: string): SelectorState {
+    const state = createSelectorState(RESUME_SELECTOR_TITLE, items, items, initialQuery)
+    return {
+      ...state,
+      // The slash-command composer owns focus until the first arrow. Keeping
+      // this explicit prevents the filter caret and a session pointer from
+      // appearing active at the same time.
+      listFocused: false,
+      ...(state.query.length === 0 && state.items.length === 0 && state.allItems.some(item => !item.header)
+        ? { emptyMessage: 'No sessions in current cwd · type to search all sessions' }
+        : {}),
+    }
+  }
+
+  function isStableCommandSelector(state: SelectorState): boolean {
+    return isResumeSelectorTitle(state.title)
+      || state.presentation === 'model'
+      || isSkillSelectorTitle(state.title)
+  }
+
+  function fullResumeSelectorSlotState(): SelectorState {
+    const items = Array.from({ length: SELECTOR_VIEWPORT + 2 }, (_, index) => ({
+      id: `command-window-slot-${index}`,
+      label: `session-${index}`,
+      detail: 'source title [1 turn] now',
+      preview: ['Session title', 'model · 1 turn · now'],
+    }))
+    return {
+      ...createSelectorState(RESUME_SELECTOR_TITLE, items),
+      subtitle: 'Recent sessions',
+      focusIndex: 1,
+      scrollOffset: 1,
+    }
+  }
+
+  function fullModelSelectorSlotState(): SelectorState {
+    const items = Array.from({ length: 7 }, (_, groupIndex) => {
+      const group = `Provider ${groupIndex}`
+      return [
+        { label: group, header: true, focusable: false, group },
+        { id: `provider-${groupIndex}:model`, label: `Model ${groupIndex}`, group },
+      ]
+    }).flat()
+    return {
+      ...createSelectorState('Models', items),
+      presentation: 'model',
+      circularNavigation: true,
+      // Center a model row in an overflowing viewport. Alternating one-model
+      // groups exercise every separator row the model renderer can insert.
+      focusIndex: 7,
+    }
+  }
+
+  function commandSelectorRegionLines(state: SelectorState, active: boolean): string[] {
+    const lines = buildSelectorRegionLines(
+      state,
+      renderer.termCols,
+      renderer.termRows,
+      active,
+    )
+    const fullResumeHeight = buildSelectorRegionLines(
+      fullResumeSelectorSlotState(),
+      renderer.termCols,
+      renderer.termRows,
+      false,
+    ).length
+    const fullModelHeight = buildSelectorRegionLines(
+      fullModelSelectorSlotState(),
+      renderer.termCols,
+      renderer.termRows,
+      false,
+    ).length
+    const slotHeight = Math.max(fullResumeHeight, fullModelHeight)
+    // Reserve the fully populated selector geometry from the first loading
+    // frame. Session rows can then arrive asynchronously without growing the
+    // live region, and bridge/model transitions replace content in place.
+    return [
+      ...Array(Math.max(0, slotHeight - lines.length)).fill(''),
+      ...lines,
+    ]
+  }
+
+  function currentResumeCommandWindowState(generation: number): SelectorState | null {
+    if (generation !== commandWindowPreviewGeneration) return null
+    if (
+      commandWindowPreview?.kind === 'selector'
+      && commandWindowPreview.trigger === 'resume'
+      && commandWindowPreview.generation === generation
+      && resolveCommandWindowTrigger(commandWindowPreview.sourceText) === 'resume'
+    ) {
+      return commandWindowPreview.state
+    }
+    if (
+      focusedCommandWindowGeneration === generation
+      && overlay.kind === 'selector'
+      && isResumeSelectorTitle(overlay.state.title)
+    ) {
+      return overlay.state
+    }
+    return null
+  }
+
+  function updateResumeCommandWindow(generation: number, state: SelectorState): boolean {
+    if (generation !== commandWindowPreviewGeneration) return false
+    if (
+      commandWindowPreview?.kind === 'selector'
+      && commandWindowPreview.trigger === 'resume'
+      && commandWindowPreview.generation === generation
+    ) {
+      commandWindowPreview = { ...commandWindowPreview, state }
+      renderer.requestRender()
+      return true
+    }
+    if (
+      focusedCommandWindowGeneration === generation
+      && overlay.kind === 'selector'
+      && isResumeSelectorTitle(overlay.state.title)
+    ) {
+      overlay = { kind: 'selector', state }
+      renderer.requestRender()
+      return true
+    }
+    return false
+  }
+
+  function resumeSelectorStateFromCache(): SelectorState {
+    // Keep every keystroke bounded: the composer preview is recognition aid,
+    // not the full search surface. Never format transcript text here, and cap
+    // metadata work to the same recent-session budget used at startup.
+    const recent = (resumeSessionsCache ?? []).slice(0, 20)
+    if (recent.length > 0) {
+      const items = formatSessionItems(recent, agent.cwd)
+      return resumeSelectorState(items)
+    }
+    if (resumeSessionsCacheComplete) {
+      return {
+        ...createSelectorState(RESUME_SELECTOR_TITLE, []),
+        emptyMessage: 'No sessions found',
+      }
+    }
+    return {
+      ...createSelectorState(RESUME_SELECTOR_TITLE, []),
+      emptyMessage: 'Loading sessions…',
+    }
+  }
+
+  function applyResumeSessions(
+    generation: number,
+    sessions: SessionMeta[],
+    limit?: number,
+  ): boolean {
+    const current = currentResumeCommandWindowState(generation)
+    if (!current) return false
+    const visibleSessions = limit === undefined ? sessions : sessions.slice(0, limit)
+    const items = formatSessionItems(visibleSessions, agent.cwd)
+    const {
+      emptyMessage: _loadingMessage,
+      subtitle: _loadingSubtitle,
+      ...readyState
+    } = current
+    const expanded = selectorExpandItems(readyState, items)
+    const hasAnySession = items.some(item => !item.header)
+    const next = expanded.items.length > 0
+      ? expanded
+      : {
+          ...expanded,
+          emptyMessage: hasAnySession
+            ? 'No sessions in current cwd · type to search all sessions'
+            : 'No sessions found',
+        }
+    return updateResumeCommandWindow(generation, next)
+  }
+
+  function cancelResumeCommandLoad(): void {
+    if (!resumeCommandLoadTimer) return
+    clearTimeout(resumeCommandLoadTimer)
+    resumeCommandLoadTimer = undefined
+  }
+
+  function isActiveResumePreview(generation: number): boolean {
+    return generation === commandWindowPreviewGeneration
+      && commandWindowPreview?.kind === 'selector'
+      && commandWindowPreview.trigger === 'resume'
+      && commandWindowPreview.generation === generation
+      && resolveCommandWindowTrigger(commandWindowPreview.sourceText) === 'resume'
+  }
+
+  function scheduleResumeCommandLoad(generation: number): void {
+    cancelResumeCommandLoad()
+    if (!isActiveResumePreview(generation)) return
+
+    const current = currentResumeCommandWindowState(generation)
+    if (current && resumeSessionsCache === null) {
+      updateResumeCommandWindow(
+        generation,
+        current.items.length === 0
+          ? { ...current, emptyMessage: 'Loading sessions…' }
+          : { ...current, subtitle: 'Loading sessions…' },
+      )
+    }
+
+    // The loading frame is requested above. Start native work only after a
+    // short keyboard-idle window. Every edit rekeys the mounted preview, so an
+    // older native result cannot repaint a newer `/re` → `/` transition.
+    //
+    // Paint the bounded cache first, then expand metadata from the complete
+    // catalog in place. The startup cache is global-recency based: after cwd
+    // filtering it may contain only a couple of rows even though this project
+    // has much more history. Stopping at that cache made the live command
+    // window disagree with the selector opened by Enter.
+    resumeCommandLoadTimer = setTimeout(() => {
+      resumeCommandLoadTimer = undefined
+      if (!isActiveResumePreview(generation)) return
+      void loadResumeSessionPreview().then(sessions => {
+        if (!isActiveResumePreview(generation)) return
+        applyResumeSessions(generation, sessions, 20)
+
+        void loadResumeSessions().then(allSessions => {
+          if (!isActiveResumePreview(generation)) return
+          if (applyResumeSessions(generation, allSessions)) {
+            enrichedResumeMetadataGeneration = generation
+          }
+        }).catch(() => {
+          // The bounded preview is already usable. A failed enrichment should
+          // not replace real rows with an error; only clear its loading label.
+          if (!isActiveResumePreview(generation)) return
+          const state = currentResumeCommandWindowState(generation)
+          if (!state) return
+          updateResumeCommandWindow(generation, { ...state, subtitle: undefined })
+        })
+      }).catch(() => {
+        if (!isActiveResumePreview(generation)) return
+        const state = currentResumeCommandWindowState(generation)
+        if (!state) return
+        updateResumeCommandWindow(generation, {
+          ...state,
+          emptyMessage: 'Failed to list sessions',
+          subtitle: undefined,
+        })
+      })
+    }, 160)
+  }
+
+  function cancelSearchTextWarm(): void {
+    if (!cancelSearchTextWarmup) return
+    cancelSearchTextWarmup()
+    cancelSearchTextWarmup = null
+  }
+
+  /**
+   * Convert transcript search text to lowercase ahead of the first keystroke.
+   *
+   * Filtering needs a lowercased copy of every row. Building it on demand put
+   * the whole 14M-character conversion on whichever keystroke came first, which
+   * read as a stall right after the list finished loading. Warming in idle
+   * slices moves that off the typing path entirely.
+   */
+  function startSearchTextWarm(items: SelectorItem[]): void {
+    cancelSearchTextWarm()
+    cancelSearchTextWarmup = warmSearchableText(items)
+  }
+
+  function cancelResumeSearchEnrichment(): void {
+    if (!resumeSearchEnrichmentTimer) return
+    clearTimeout(resumeSearchEnrichmentTimer)
+    resumeSearchEnrichmentTimer = undefined
+  }
+
+  function scheduleFocusedResumeEnrichment(generation: number, includeText = false): void {
+    cancelResumeCommandLoad()
+    cancelResumeSearchEnrichment()
+    if (
+      includeText
+        ? enrichedResumeTextGeneration === generation
+        : enrichedResumeMetadataGeneration === generation
+    ) return
+
+    // Keep keyboard response ahead of storage work. The bounded 20-row preview
+    // is already usable; only after a short input idle do we expand metadata.
+    // Complete caches still pass through this idle boundary: reopening `/re`
+    // starts compact, then expands from memory without native I/O. Transcript
+    // parsing is deferred until a typed filter can benefit from full text.
+    resumeSearchEnrichmentTimer = setTimeout(() => {
+      resumeSearchEnrichmentTimer = undefined
+      if (!currentResumeCommandWindowState(generation)) return
+
+      const metadata = resumeSessionsCacheComplete && resumeSessionsCache !== null
+        ? Promise.resolve(resumeSessionsCache)
+        : loadResumeSessions()
+      void metadata.then(sessions => {
+        if (!applyResumeSessions(generation, sessions)) return
+        enrichedResumeMetadataGeneration = generation
+        if (!includeText) return
+
+        const withText = resumeSessionsWithTextCache !== null
+          ? Promise.resolve(resumeSessionsWithTextCache)
+          : loadResumeSessionsWithText()
+        return withText.then(sessionsWithText => {
+          const current = currentResumeCommandWindowState(generation)
+          if (!current) return
+          const fullItems = formatSessionWithTextItems(sessionsWithText, agent.cwd)
+          if (updateResumeCommandWindow(generation, selectorExpandItems(current, fullItems))) {
+            enrichedResumeTextGeneration = generation
+            // Transcript text just became searchable. Lowercase it in idle
+            // slices so the first keystroke does not pay for the whole pool.
+            startSearchTextWarm(fullItems)
+          }
+        })
+      }).catch(() => {
+        const current = currentResumeCommandWindowState(generation)
+        if (!current) return
+        updateResumeCommandWindow(generation, {
+          ...current,
+          emptyMessage: 'Failed to list sessions',
+        })
+      })
+    }, 160)
+  }
+
+  function refreshCommandWindowPreview(): void {
+    if (overlay.kind !== 'none' || isLoading || editingQueuedPrompt) {
+      // A promoted command window continues to own its generation so an
+      // in-flight resume load can update the focused selector. Other overlays
+      // invalidate any stale preview request.
+      if (commandWindowPreview) {
+        commandWindowPreview = null
+        cancelResumeCommandLoad()
+        nextCommandWindowGeneration()
+        releaseCommandWindowLayout()
+      } else if (focusedCommandWindowGeneration === null) {
+        nextCommandWindowGeneration()
+      }
+      return
+    }
+
+    const sourceText = getEditorText(editor)
+    const trigger = resolveCommandWindowTrigger(sourceText)
+    if (!trigger) {
+      if (commandWindowPreview && isCommandWindowBridge(sourceText)) {
+        // Keep the mounted window through an ambiguous slash prefix. Rekey it
+        // so any session request started for the previous spelling may fill
+        // caches but can no longer repaint this bridge frame.
+        const preview = commandWindowPreview
+        const generation = nextCommandWindowGeneration()
+        commandWindowPreview = { ...preview, sourceText, generation }
+        cancelResumeCommandLoad()
+        renderer.requestRender()
+        return
+      }
+      if (commandWindowPreview) {
+        commandWindowPreview = null
+        cancelResumeCommandLoad()
+        nextCommandWindowGeneration()
+        releaseCommandWindowLayout()
+        renderer.requestRender()
+      }
+      return
+    }
+    if (commandWindowPreview?.trigger === trigger) {
+      const preview = commandWindowPreview
+      if (preview.sourceText === sourceText) return
+      const generation = nextCommandWindowGeneration()
+      commandWindowPreview = { ...preview, sourceText, generation }
+      renderer.requestRender()
+      if (trigger === 'resume') scheduleResumeCommandLoad(generation)
+      return
+    }
+
+    cancelResumeCommandLoad()
+    const generation = nextCommandWindowGeneration()
+    if (trigger === 'help') {
+      commandWindowPreview = { kind: 'help', trigger, sourceText, generation }
+      renderer.requestRender()
+      return
+    }
+    if (trigger === 'model') {
+      commandWindowPreview = {
+        kind: 'selector',
+        trigger,
+        sourceText,
+        generation,
+        state: modelSelectorState(),
+      }
+      renderer.requestRender()
+      return
+    }
+    if (trigger === 'skill') {
+      commandWindowPreview = {
+        kind: 'selector',
+        trigger,
+        sourceText,
+        generation,
+        state: skillSelectorState(),
+      }
+      renderer.requestRender()
+      return
+    }
+
+    commandWindowPreview = {
+      kind: 'selector',
+      trigger,
+      sourceText,
+      generation,
+      state: resumeSelectorStateFromCache(),
+    }
+    renderer.requestRender()
+    scheduleResumeCommandLoad(generation)
+  }
+
+  function activateCommandWindow(event: KeyEvent): boolean {
+    if (event.type !== 'up' && event.type !== 'down') return false
+    if (!commandWindowPreview) return false
+
+    const preview = commandWindowPreview
+    focusedCommandWindowGeneration = preview.generation
+    if (preview.kind === 'selector') {
+      // The first arrow promotes any command window the same way: focus moves
+      // to the list, keeping whichever row the preview already highlighted.
+      overlay = { kind: 'selector', state: selectorFocusList(preview.state) }
+    } else {
+      overlay = { kind: 'help' }
+    }
+    commandWindowPreview = null
+    // Help remains a modal rather than participating in the stable
+    // selector/composer layout. Consume its command on activation so closing
+    // the modal cannot immediately recreate the same preview from `/help`.
+    if (preview.kind === 'help') clearAll()
+    renderer.requestRender()
+    if (preview.trigger === 'resume') scheduleFocusedResumeEnrichment(preview.generation)
+    return true
   }
 
   function mutateEditor(mutator: (state: EditorState) => EditorState): void {
@@ -608,7 +1124,117 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   let preloadedSessions: SessionMeta[] = []
   if (shouldPreloadStartupSessions(opts)) {
-    try { preloadedSessions = await agent.listSessions(opts.continueLatest ? 0 : 20) } catch {}
+    try {
+      preloadedSessions = await agent.listSessions(opts.continueLatest ? 0 : 20)
+      resumeSessionsCache = preloadedSessions
+      resumeSessionsCacheComplete = Boolean(opts.continueLatest)
+    } catch {}
+  }
+
+  function loadResumeSessionPreview(): Promise<SessionMeta[]> {
+    // A non-empty bounded cache is immediately useful. An empty cache is only
+    // authoritative when a full listing completed; otherwise it means “not
+    // loaded yet” and the prefix must still trigger a native lookup.
+    if (
+      resumeSessionsCache !== null
+      && (resumeSessionsCacheComplete || resumeSessionsCache.length > 0)
+    ) {
+      return Promise.resolve(resumeSessionsCache.slice(0, 20))
+    }
+    if (resumeSessionsPreviewLoad) return resumeSessionsPreviewLoad
+
+    const cacheGeneration = resumeSessionsCacheGeneration
+    const load = agent.listSessions(20).then(sessions => {
+      if (cacheGeneration !== resumeSessionsCacheGeneration) {
+        return (resumeSessionsCache ?? []).slice(0, 20)
+      }
+      // A full-list request may have completed while this bounded request was
+      // in flight. Never replace that complete cache with only 20 rows.
+      if (!resumeSessionsCacheComplete) {
+        resumeSessionsCache = sessions
+        preloadedSessions = sessions
+        return sessions
+      }
+      return (resumeSessionsCache ?? sessions).slice(0, 20)
+    })
+    resumeSessionsPreviewLoad = load
+    void load.finally(() => {
+      if (resumeSessionsPreviewLoad === load) resumeSessionsPreviewLoad = null
+    }).catch(() => {})
+    return load
+  }
+
+  function loadResumeSessions(): Promise<SessionMeta[]> {
+    if (resumeSessionsCacheComplete && resumeSessionsCache !== null) {
+      return Promise.resolve(resumeSessionsCache)
+    }
+    if (resumeSessionsLoad) return resumeSessionsLoad
+
+    const cacheGeneration = resumeSessionsCacheGeneration
+    const load = agent.listSessions(0).then(sessions => {
+      if (cacheGeneration !== resumeSessionsCacheGeneration) {
+        return resumeSessionsCache ?? []
+      }
+      resumeSessionsCache = sessions
+      resumeSessionsCacheComplete = true
+      preloadedSessions = sessions
+      return sessions
+    })
+    resumeSessionsLoad = load
+    void load.finally(() => {
+      if (resumeSessionsLoad === load) resumeSessionsLoad = null
+    }).catch(() => {})
+    return load
+  }
+
+  function loadResumeSessionsWithText(): Promise<SessionWithText[]> {
+    if (resumeSessionsWithTextCache !== null) return Promise.resolve(resumeSessionsWithTextCache)
+    if (resumeSessionsWithTextLoad) return resumeSessionsWithTextLoad
+
+    const cacheGeneration = resumeSessionsCacheGeneration
+    const load = agent.listSessionsWithText(0).then(sessions => {
+      if (cacheGeneration !== resumeSessionsCacheGeneration) {
+        return resumeSessionsWithTextCache ?? []
+      }
+      resumeSessionsWithTextCache = sessions
+      resumeSessionsCache = sessions
+      resumeSessionsCacheComplete = true
+      preloadedSessions = sessions
+      return sessions
+    })
+    resumeSessionsWithTextLoad = load
+    void load.finally(() => {
+      if (resumeSessionsWithTextLoad === load) resumeSessionsWithTextLoad = null
+    }).catch(() => {})
+    return load
+  }
+
+  function replaceResumeSessionCache(sessions: SessionMeta[], complete = false): void {
+    resumeSessionsCacheGeneration++
+    resumeSessionsCache = sessions
+    resumeSessionsCacheComplete = complete
+    resumeSessionsPreviewLoad = null
+    resumeSessionsWithTextCache = null
+    resumeSessionsLoad = null
+    resumeSessionsWithTextLoad = null
+  }
+
+  /** Drop snapshots after a run changes session visibility, title, or recency. */
+  function invalidateResumeSessionCache(): void {
+    resumeSessionsCacheGeneration++
+    resumeSessionsCache = null
+    resumeSessionsCacheComplete = false
+    resumeSessionsPreviewLoad = null
+    resumeSessionsLoad = null
+    resumeSessionsWithTextCache = null
+    resumeSessionsWithTextLoad = null
+    enrichedResumeMetadataGeneration = null
+    enrichedResumeTextGeneration = null
+    cancelSearchTextWarm()
+  }
+
+  function invalidateExplicitResumeSelector(): void {
+    explicitResumeSelectorGeneration++
   }
 
   // Git info is watched so the footer follows external `git switch` / checkout
@@ -810,9 +1436,24 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       })
     }
 
-    const contentLines = blocksToLines(blocks)
+    const latestContentLines = blocksToLines(blocks)
+    const commandWindowIsMounted = commandWindowMounted()
+    if (
+      commandWindowIsMounted
+      && (commandWindowContentLines === null || commandWindowContentWidth !== cols)
+    ) {
+      // Background commits stay frozen while the command window is mounted,
+      // but a resize must rebuild wrapping before the renderer performs its
+      // unavoidable width-change redraw.
+      commandWindowContentLines = latestContentLines
+      commandWindowContentWidth = cols
+    }
+    const contentLines = commandWindowIsMounted
+      ? commandWindowContentLines ?? latestContentLines
+      : latestContentLines
     // Everything below the committed transcript is repaintable, whichever
-    // branch below builds it. Recorded here so overlays are covered too.
+    // branch below builds it. A mounted command window freezes this boundary,
+    // so late history/status commits cannot move its selector or composer.
     liveRegionStartRow = contentLines.length
     const toolCalls = assistantToolCalls(streamMachine?.appState.currentAssistantContent ?? [])
     let spinnerBlock: ViewBlock | null = null
@@ -908,7 +1549,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // and manual-only-available are dim background noise. Failures stay
     // silent; the manual /update reports them with full context.
     let updateNotice: ViewBlock['lines'][number]['spans'] | null = null
-    if (overlay.kind === 'none') {
+    if (overlay.kind === 'none' && !commandWindowIsMounted) {
       if (updateStatus === 'staged' && updateVersion) {
         updateNotice = [
           { text: '✔ ', hex: getTheme().brandHex },
@@ -939,7 +1580,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
-    if (adSlotTick.content && !isLoading && !spinnerBlock) {
+    if (adSlotTick.content && !isLoading && !spinnerBlock && !commandWindowIsMounted) {
       preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols))
     }
     if (updateNotice) {
@@ -952,8 +1593,30 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       })
     }
 
-    // A selector replaces only pi's editorContainer. Its preceding queue/status
-    // siblings and following footer sibling remain in normal document flow.
+    // A promoted command window keeps the exact preview geometry: selector
+    // above, composer below. Focus only changes active styling/cursor ownership,
+    // so the first arrow never shrinks the frame or makes the terminal erase
+    // and re-anchor the composer before the list can respond.
+    if (
+      overlay.kind === 'selector'
+      && focusedCommandWindowGeneration !== null
+      && isStableCommandSelector(overlay.state)
+    ) {
+      const preEditorLines = blocksToLines(preEditorBlocks)
+      const selectorLines = commandSelectorRegionLines(overlay.state, true)
+      const promptLines = blocksToLines(buildPromptBlocks(getPromptVM(), {
+        attachedAbove: true,
+        reservedAboveRows: preEditorLines.length + selectorLines.length,
+      }))
+      return {
+        lines: [...contentLines, ...preEditorLines, ...selectorLines, ...promptLines],
+        bottomAnchor: true,
+        stableViewport: true,
+      }
+    }
+
+    // Other selectors replace only pi's editorContainer. Their preceding
+    // queue/status siblings and following footer sibling remain in normal flow.
     if (overlay.kind === 'selector') {
       return {
         lines: [
@@ -979,15 +1642,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
 
     const modalLines = blocksToLines(buildOverlayBlocks(overlay, renderer.termCols))
-    const footerBlocks = [...preEditorBlocks]
-    footerBlocks.push(...buildPromptBlocks(getPromptVM(), {
-      attachedAbove: spinnerBlock !== null || queueLines.length > 0 || updateNotice !== null,
-      reservedAboveRows: blocksToLines(preEditorBlocks).length,
+    const previewLines = commandWindowPreview
+      ? commandWindowPreview.kind === 'selector'
+        ? commandSelectorRegionLines(commandWindowPreview.state, false)
+        : blocksToLines(buildOverlayBlocks({ kind: 'help' }, renderer.termCols))
+      : []
+    const preEditorLines = blocksToLines(preEditorBlocks)
+    const promptLines = blocksToLines(buildPromptBlocks(getPromptVM(), {
+      attachedAbove: preEditorLines.length > 0 || previewLines.length > 0,
+      reservedAboveRows: preEditorLines.length + previewLines.length,
     }))
 
     return {
-      lines: [...contentLines, ...blocksToLines(footerBlocks)],
+      lines: [...contentLines, ...preEditorLines, ...previewLines, ...promptLines],
       bottomAnchor: true,
+      ...(commandWindowPreview?.kind === 'selector' ? { stableViewport: true } : {}),
       ...(modalLines.length > 0 ? { overlay: { lines: modalLines } } : {}),
     }
   }
@@ -1343,6 +2012,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   /** Clear editor and paste state. */
   function clearAll() {
+    cancelResumeCommandLoad()
+    cancelResumeSearchEnrichment()
     editor = clearEditor(editor)
     editorUndo.clear()
     pastedChunks.clear()
@@ -1515,7 +2186,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       streamRef = stream
       sessionId = stream.sessionId ?? sessionId
-      if (sessionId) sessionHook.startSession(sessionId, agent.cwd)
+      if (sessionId) {
+        sessionHook.startSession(sessionId, agent.cwd)
+        // The query may have just persisted a formerly unbound first session,
+        // and every run can change its title, turn count, and recency.
+        invalidateResumeSessionCache()
+      }
       appState = { ...appState, sessionId: sessionId }
       screenLog.bind(stream.sessionId)
       rendererTrace.bind(stream.sessionId)
@@ -1656,18 +2332,45 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     if (!ownsRun(generation) || !completed) return
 
+    // Final metadata is saved as the stream settles. Force the next /resume to
+    // observe those values even if some background consumer repopulated a
+    // snapshot while the run was active.
+    invalidateResumeSessionCache()
     await maybeReviewPlanAfterTurn()
   }
 
   function handleKey(event: KeyEvent) {
+    // Typing keeps focus in the composer while refreshing the formal window
+    // above it. Up/down is the explicit gesture that promotes that same state.
+    if (activateCommandWindow(event)) return
+    handleKeyInner(event)
+    refreshCommandWindowPreview()
+  }
+
+  function handleKeyInner(event: KeyEvent) {
     caretBlink.bump()
 
     // Mouse dragging creates a native terminal selection outside our editor
-    // state. A drag covers a range of rows, so repaint the whole live region on
-    // the next frame: a following keypress then releases the entire stale
-    // highlight instead of only the row the caret happens to sit on. Committed
-    // transcript above stays untouched, so scrollback is undisturbed.
-    renderer.invalidateRowsFrom(liveRegionStartRow)
+    // state. Most keypresses repaint the whole live region to release it. A
+    // selector navigation key is the latency-sensitive exception: repainting
+    // every selector, preview-pane and composer row made ↑/↓ feel sticky even
+    // though only two choice rows changed. Let the renderer diff those rows.
+    const commandSelectorNavigation = overlay.kind === 'selector'
+      && focusedCommandWindowGeneration !== null
+      && isStableCommandSelector(overlay.state)
+      && (event.type === 'up' || event.type === 'down' || event.type === 'tab' || event.type === 'shift-tab')
+    // While the composer owns a mounted command window, ordinary text edits
+    // should likewise remain differential. Invalidating from the live-region
+    // start reaches above the viewport for a tall session pane, forcing a
+    // clear-and-repaint even when `/re` merely becomes `/`.
+    const commandWindowEditing = commandWindowPreview !== null
+      && (event.type === 'char'
+        || event.type === 'shift-char'
+        || event.type === 'backspace'
+        || event.type === 'delete')
+    if (!commandSelectorNavigation && !commandWindowEditing) {
+      renderer.invalidateRowsFrom(liveRegionStartRow)
+    }
 
     if (editingQueuedPrompt) {
       if (event.type === 'escape' || (event.type === 'ctrl' && event.key === 'c')) {
@@ -1783,12 +2486,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         renderer.requestRender()
         return true
       case 'close-overlay': {
-        // The selector is part of the normal frame. Match pi's overlay lifecycle:
-        // removing it is a regular differential render, not a forced reset.
-        // An ask overlay can be closed without a stream (e.g. leftover overlay);
-        // resolve its awaiting promise so nothing stays suspended.
+        // Closing a promoted command window also consumes its slash command,
+        // matching the previous one-Esc lifecycle. The hot focus/navigation
+        // path remains stable; only this explicit close is allowed to shrink.
+        const closesCommandWindow = focusedCommandWindowGeneration !== null
+          && overlay.kind === 'selector'
+          && isStableCommandSelector(overlay.state)
         if (overlay.kind === 'ask-user') resolvePendingAsk()
+        invalidateExplicitResumeSelector()
         overlay = { kind: 'none' }
+        focusedCommandWindowGeneration = null
+        cancelResumeSearchEnrichment()
+        nextCommandWindowGeneration()
+        if (closesCommandWindow) clearAll()
+        releaseCommandWindowLayout()
         renderer.requestRender()
         return true
       }
@@ -2508,9 +3219,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       expandedLines.length = 0
       resetHistoryCache()
       try { preloadedSessions = await agent.listSessions(20) } catch {}
+      replaceResumeSessionCache(preloadedSessions)
     }
     if (result.newSession) {
-      // Abort any in-flight streaming
+      // Abort any in-flight streaming.
       if (isLoading && streamRef) {
         revokeRun()
         const interruptedStream = streamRef
@@ -2523,20 +3235,18 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       planModeItems = []
       lastReviewedPlanMarkdown = ''
-      // Start and bind a fresh empty session so /resume can see it immediately.
-      const newSession = await agent.createSession()
-      sessionId = newSession.session_id
-      sessionHook.startSession(newSession.session_id, agent.cwd)
-      sessionHook.state('idle')
-      rendererTrace.bind(newSession.session_id)
-      appState = { ...createInitialState(newSession.model || appState.model, agent.cwd), sessionId }
+      // Leave the session unbound until the first real prompt. The query path
+      // creates and returns the session id, so abandoning /new no longer leaves
+      // an empty, untitled session in persistent storage or /resume.
+      sessionHook.endSession('new_session')
+      sessionId = null
+      appState = { ...createInitialState(appState.model, agent.cwd) }
       gitInfo.setCwd(agent.cwd)
       renderer.clearScreen()
       compactLines.length = 0
       expandedLines.length = 0
       resetHistoryCache()
-      try { preloadedSessions = await agent.listSessions(20) } catch { preloadedSessions = [newSession] }
-      commitSystem('sys-new-session', chalk.dim(`  new session ${sessionId.slice(0, 8)}`))
+      commitSystem('sys-new-session', chalk.dim('  new session'))
     }
     if (result.exit) { exitAfterCleanup(0); return }
     if (result.restart) { restartAfterCleanup(); return }
@@ -2682,7 +3392,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const query = normalizeResumeQuery(args)
       try {
         if (query && isSessionIdPrefix(query)) {
-          const allSessions: SessionMeta[] = await agent.listSessions(0)
+          const allSessions = await loadResumeSessions()
           const resolved = resolveSessionByPrefix(allSessions, query)
           if (resolved.kind === 'matched') {
             await resumeSession(resolved.session)
@@ -2833,16 +3543,22 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           .map(m => formatModelOptionLabel(m))
           .join(', ')
         const more = addedModels.length > 3 ? ` and ${addedModels.length - 3} more` : ''
-        commitSystem('sys-cloud-models', chalk.dim(`  ✓ New models available: ${names}${more} — /model to switch`))
+        const notice = `  ✓ New models available: ${names}${more} — /model to switch`
+        if (commandWindowMounted()) deferredCloudModelNotice = notice
+        else commitSystem('sys-cloud-models', chalk.dim(notice))
       }
       if (addedCampaigns.length > 0) {
-        // The slot itself announces it: erase what's showing, type the new one.
-        if (!queueAdSlotTransition(adSlot, addedCampaigns[0]!.id)) {
-          triggerAdSlot(adSlot, Date.now())
-        }
+        // A command window owns stable geometry. Defer the idle campaign
+        // transition until it closes rather than inserting rows above it.
+        const campaignId = addedCampaigns[0]!.id
+        if (commandWindowMounted()) deferredCloudCampaignId = campaignId
+        else showCloudCampaign(campaignId)
       }
       const refreshedOpenPicker = modelsSynced && refreshOpenModelSelector()
-      if (addedModels.length > 0 || addedCampaigns.length > 0 || copyChanged || refreshedOpenPicker) {
+      if (
+        refreshedOpenPicker
+        || (!commandWindowMounted() && (addedModels.length > 0 || addedCampaigns.length > 0 || copyChanged))
+      ) {
         renderer.requestRender()
       }
     })()
@@ -2866,23 +3582,36 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...createSelectorState('Models', modelSelectorItems(models, activeSpec)),
           presentation: 'model',
           circularNavigation: true,
+          // An explicitly opened window starts on the list, not in its search
+          // box: arrows move between models immediately and typing still moves
+          // focus to the filter. Same contract as the previewed window.
+          listFocused: true,
         },
         item => item.id === activeSpec,
       ),
     }
   }
 
-  /** Swap the open /model list in place after a catalog refresh. Keeps the
-   *  current query and focused row so typing isn't yanked around. */
+  /** Swap the open or previewed /model list in place after a catalog refresh.
+   *  Keeps the current query and focused row so typing isn't yanked around. */
   function refreshOpenModelSelector(): boolean {
-    if (overlay.kind !== 'selector' || overlay.state.presentation !== 'model') return false
     const models = modelOptions(configInfo, agent.model)
     const activeSpec = currentModelSpec(configInfo, agent.model)
-    overlay = {
-      kind: 'selector',
-      state: selectorExpandItems(overlay.state, modelSelectorItems(models, activeSpec)),
+    if (overlay.kind === 'selector' && overlay.state.presentation === 'model') {
+      overlay = {
+        kind: 'selector',
+        state: selectorExpandItems(overlay.state, modelSelectorItems(models, activeSpec)),
+      }
+      return true
     }
-    return true
+    if (commandWindowPreview?.kind === 'selector' && commandWindowPreview.trigger === 'model') {
+      commandWindowPreview = {
+        ...commandWindowPreview,
+        state: selectorExpandItems(commandWindowPreview.state, modelSelectorItems(models, activeSpec)),
+      }
+      return true
+    }
+    return false
   }
 
   async function handleSemanticResume(query: string) {
@@ -2904,15 +3633,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (m) ids.push(m[1]!)
       }
       if (ids.length === 0) return
-      const allSessions: SessionMeta[] = await agent.listSessions(0)
+      const allSessions = await loadResumeSessions()
       const ranked = ids
         .map(id => allSessions.find(s => s.session_id === id))
         .filter((s): s is SessionMeta => Boolean(s))
       if (ranked.length === 0) return
       const items = formatSessionItems(ranked, agent.cwd)
+      invalidateExplicitResumeSelector()
       overlay = {
         kind: 'selector',
-        state: createSelectorState(RESUME_SELECTOR_TITLE, items, items),
+        state: resumeSelectorState(items),
       }
       renderer.requestRender()
     } catch (err) {
@@ -2922,27 +3652,59 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function openResumeSelector(initialQuery?: string) {
-    agent.listSessions(0).then(allSessions => {
+    const generation = ++explicitResumeSelectorGeneration
+    const cached = resumeSessionsWithTextCache ?? resumeSessionsCache
+    const items = cached === null
+      ? []
+      : resumeSessionsWithTextCache !== null
+        ? formatSessionWithTextItems(resumeSessionsWithTextCache, agent.cwd)
+        : formatSessionItems(cached, agent.cwd)
+    overlay = {
+      kind: 'selector',
+      state: {
+        ...resumeSelectorState(items, initialQuery),
+        ...(cached === null ? { emptyMessage: 'Loading sessions…' } : {}),
+      },
+    }
+    renderer.requestRender()
+
+    const activeState = (): SelectorState | null => {
+      if (generation !== explicitResumeSelectorGeneration) return null
+      if (overlay.kind !== 'selector' || !isResumeSelectorTitle(overlay.state.title)) return null
+      return overlay.state
+    }
+
+    loadResumeSessions().then(allSessions => {
+      const current = activeState()
+      if (!current) return
       if (allSessions.length === 0) {
+        invalidateExplicitResumeSelector()
+        overlay = { kind: 'none' }
         commitSystem('sys-r', '  No sessions found')
+        renderer.requestRender()
         return
       }
       const metaItems = formatSessionItems(allSessions, agent.cwd)
       overlay = {
         kind: 'selector',
-        state: createSelectorState(RESUME_SELECTOR_TITLE, metaItems, metaItems, initialQuery),
+        state: selectorExpandItems(current, metaItems),
       }
       renderer.requestRender()
-      agent.listSessionsWithText(0).then(allWithText => {
-        if (overlay.kind !== 'selector' || !isResumeSelectorTitle(overlay.state.title)) return
+      loadResumeSessionsWithText().then(allWithText => {
+        const enriched = activeState()
+        if (!enriched) return
         const fullItems = formatSessionWithTextItems(allWithText, agent.cwd)
         overlay = {
           kind: 'selector',
-          state: selectorExpandItems(overlay.state, fullItems),
+          state: selectorExpandItems(enriched, fullItems),
         }
+        // Same reason as the command-window path: warm the lowercased search
+        // text in idle slices instead of on the first keystroke.
+        startSearchTextWarm(fullItems)
         renderer.requestRender()
       }).catch(() => {})
     }).catch((err: unknown) => {
+      if (!activeState()) return
       commitSystem('sys-r-err', chalk.red(`  Failed to list sessions: ${errorText(err)}`))
     })
   }
@@ -3131,18 +3893,41 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'update':
         overlay = { kind: 'selector', state: action.state }
         renderer.requestRender()
+        if (
+          focusedCommandWindowGeneration !== null
+          && isResumeSelectorTitle(action.state.title)
+        ) {
+          scheduleFocusedResumeEnrichment(
+            focusedCommandWindowGeneration,
+            action.state.query.length > 0,
+          )
+        }
         return
       case 'close':
+        invalidateExplicitResumeSelector()
         overlay = { kind: 'none' }
+        focusedCommandWindowGeneration = null
+        cancelResumeSearchEnrichment()
+        nextCommandWindowGeneration()
+        releaseCommandWindowLayout()
         renderer.requestRender()
         return
       case 'resume':
+        invalidateExplicitResumeSelector()
         overlay = { kind: 'none' }
+        focusedCommandWindowGeneration = null
+        nextCommandWindowGeneration()
+        clearAll()
+        releaseCommandWindowLayout()
         resumeSession({ session_id: action.sessionId } as SessionMeta).then(() => renderer.requestRender())
         renderer.requestRender()
         return
       case 'select-model': {
         overlay = { kind: 'none' }
+        focusedCommandWindowGeneration = null
+        nextCommandWindowGeneration()
+        clearAll()
+        releaseCommandWindowLayout()
         try {
           agent.setProvider(action.spec)
           refreshConfigInfo()
@@ -3161,6 +3946,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         overlay = { kind: 'selector', state: action.state }
         agent.deleteSession(action.sessionId).then(ok => {
           if (ok) {
+            preloadedSessions = preloadedSessions.filter(session => session.session_id !== action.sessionId)
+            const cached = (resumeSessionsCache ?? preloadedSessions)
+              .filter(session => session.session_id !== action.sessionId)
+            const cachedWithText = resumeSessionsWithTextCache
+              ?.filter(session => session.session_id !== action.sessionId) ?? null
+            const cacheWasComplete = resumeSessionsCacheComplete
+            replaceResumeSessionCache(cached, cacheWasComplete)
+            resumeSessionsWithTextCache = cachedWithText
             commitSystem('sys-del', `  Deleted session ${action.label}`)
             // Also surface it on the overlay: resuming another session clears
             // the screen, which would otherwise wipe the only confirmation.
@@ -3316,6 +4109,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     gitInfo.dispose()
     updateMgr.cleanup()
     if (exitHintTimer) clearTimeout(exitHintTimer)
+    cancelResumeCommandLoad()
+    cancelResumeSearchEnrichment()
+    invalidateExplicitResumeSelector()
+    cancelSearchTextWarm()
     committer.flushReveals()
     if (escapeFlushTimer) {
       clearTimeout(escapeFlushTimer)

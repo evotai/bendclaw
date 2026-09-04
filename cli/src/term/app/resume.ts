@@ -35,8 +35,8 @@ export function shortenSessionCwd(cwd: string): string {
   return cwd.startsWith(`${home}/`) ? `~${cwd.slice(home.length)}` : cwd
 }
 
-function sessionHeader(label: string, group: string): SelectorItem {
-  return { label, header: true, focusable: false, group }
+function sessionHeader(label: string, group: string, searchOnly = false): SelectorItem {
+  return { label, header: true, focusable: false, group, searchOnly }
 }
 
 function groupedSessionItems<T extends SessionMeta>(
@@ -53,8 +53,15 @@ function groupedSessionItems<T extends SessionMeta>(
     items.push(...current.map(session => ({ ...format(session, false), group: 'current-cwd' })))
   }
   if (other.length > 0) {
-    items.push(sessionHeader('Other cwd', 'other-cwd'))
-    items.push(...other.map(session => ({ ...format(session, true), group: 'other-cwd' })))
+    // Resume defaults to the project the user is in. Cross-project history
+    // remains in the search pool, but never expands the initial picker into a
+    // noisy global recents list — including when this cwd has no history yet.
+    items.push(sessionHeader('Other cwd', 'other-cwd', true))
+    items.push(...other.map(session => ({
+      ...format(session, true),
+      group: 'other-cwd',
+      searchOnly: true,
+    })))
   }
   return items
 }
@@ -129,14 +136,49 @@ function shortModel(session: SessionMeta): string {
  */
 const TITLE_COLUMN_WIDTH = 44
 
-function formatSessionItem(s: SessionMeta, otherCwd: boolean, searchText: string, preview: string[]): SelectorItem {
+function commonPrefixLength(left: string, right: string): number {
+  const end = Math.min(left.length, right.length)
+  let index = 0
+  while (index < end && left[index] === right[index]) index++
+  return index
+}
+
+/**
+ * UUIDv7 ids created close together often share their first eight characters.
+ * Keep the familiar short label when it is unique, and extend only colliding
+ * labels far enough to make every visible row distinguishable and resumable.
+ */
+function sessionIdLabels(sessions: SessionMeta[]): Map<string, string> {
+  const sorted = sessions.map(session => session.session_id).sort()
+  const labels = new Map<string, string>()
+  for (let index = 0; index < sorted.length; index++) {
+    const id = sorted[index]!
+    const previous = sorted[index - 1] ?? ''
+    const next = sorted[index + 1] ?? ''
+    const uniqueLength = Math.max(
+      8,
+      commonPrefixLength(id, previous) + 1,
+      commonPrefixLength(id, next) + 1,
+    )
+    labels.set(id, id.slice(0, uniqueLength))
+  }
+  return labels
+}
+
+function formatSessionItem(
+  s: SessionMeta,
+  label: string,
+  otherCwd: boolean,
+  searchText: string,
+  preview: string[],
+): SelectorItem {
   const source = padRight(s.source || '', 6)
   const title = padRight(sanitizeSessionTitle(s.title), TITLE_COLUMN_WIDTH)
   const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
   const time = relativeTime(s.updated_at)
   const cwd = otherCwd ? `  ${shortenSessionCwd(s.cwd)}` : ''
   return {
-    label: s.session_id.slice(0, 8),
+    label,
     id: s.session_id,
     detail: `${source} ${title} ${turns} ${time}${cwd}`,
     searchText,
@@ -146,9 +188,11 @@ function formatSessionItem(s: SessionMeta, otherCwd: boolean, searchText: string
 }
 
 export function formatSessionItems(sessions: SessionMeta[], currentCwd: string): SelectorItem[] {
+  const labels = sessionIdLabels(sessions)
   return groupedSessionItems(sessions, currentCwd, (session, otherCwd) =>
     formatSessionItem(
       session,
+      labels.get(session.session_id) ?? session.session_id,
       otherCwd,
       `${session.session_id} ${session.title ?? ''} ${session.cwd} ${session.source} ${session.provider ?? ''} ${session.model}`,
       sessionPreviewLines(session, { showCwd: otherCwd }),
@@ -157,9 +201,11 @@ export function formatSessionItems(sessions: SessionMeta[], currentCwd: string):
 }
 
 export function formatSessionWithTextItems(items: SessionWithText[], currentCwd: string): SelectorItem[] {
+  const labels = sessionIdLabels(items)
   return groupedSessionItems(items, currentCwd, (session, otherCwd) =>
     formatSessionItem(
       session,
+      labels.get(session.session_id) ?? session.session_id,
       otherCwd,
       session.search_text,
       sessionPreviewLines(session, { userPrompts: session.user_prompts, showCwd: otherCwd }),

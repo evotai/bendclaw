@@ -14,21 +14,33 @@ function repeatCount(n: number): number {
   return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0
 }
 
+/** Standards-backed grapheme segmentation for safe Unicode truncation. */
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 export function padRight(s: string, n: number): string {
   n = repeatCount(n)
-  const w = stringWidth(s)
-  if (w > n) {
-    let truncated = ''
-    let tw = 0
-    for (const ch of s) {
-      const cw = stringWidth(ch)
-      if (tw + cw > n - 1) break
-      truncated += ch
-      tw += cw
-    }
-    return truncated + '…'
+
+  // Session rows are overwhelmingly ASCII. Keep that path allocation-free,
+  // and delegate every other script to string-width rather than maintaining a
+  // partial Unicode table that mismeasures Indic and decomposed Hangul text.
+  if (/^[\x20-\x7e]*$/.test(s)) {
+    if (s.length <= n) return s + ' '.repeat(n - s.length)
+    return s.slice(0, Math.max(0, n - 1)) + '…'
   }
-  return s + ' '.repeat(Math.max(0, n - w))
+
+  const width = stringWidth(s)
+  if (width <= n) return s + ' '.repeat(n - width)
+
+  const budget = n - 1
+  let truncated = ''
+  let truncatedWidth = 0
+  for (const { segment } of graphemeSegmenter.segment(s)) {
+    const segmentWidth = stringWidth(segment)
+    if (truncatedWidth + segmentWidth > budget) break
+    truncated += segment
+    truncatedWidth += segmentWidth
+  }
+  return truncated + '…'
 }
 
 export function relativeTime(iso: string): string {

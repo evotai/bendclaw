@@ -1211,7 +1211,8 @@ async fn sessions_api_pages_lightweight_rows() -> TestResult {
     let empty: serde_json::Value = serde_json::from_str(&body)?;
     assert_eq!(empty["items"].as_array().map(Vec::len), Some(0));
 
-    // A conversation with a real turn shows up without transcript text.
+    // A conversation with durable transcript activity shows up without
+    // waiting for the final turns/title metadata save.
     let session = evot::agent::session::Session::new(
         "seed-visible".into(),
         "/work".into(),
@@ -1225,10 +1226,11 @@ async fn sessions_api_pages_lightweight_rows() -> TestResult {
             content: vec![],
         }])
         .await?;
-    let mut meta = session.meta().await;
-    meta.turns = 1;
-    meta.title = Some("Seeded chat".into());
-    storage.save_session(meta).await?;
+    // Transcript persistence can win the race with the final metadata save.
+    // The row must already be visible while turns/title retain draft values.
+    let meta = session.meta().await;
+    assert_eq!(meta.turns, 0);
+    assert!(meta.title.is_none());
 
     // A later New-chat click invalidates the snapshot cache, exactly what a
     // real session finishing does for the running console.
@@ -1247,6 +1249,8 @@ async fn sessions_api_pages_lightweight_rows() -> TestResult {
     let items = page["items"].as_array().ok_or("missing items")?;
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["session_id"], "seed-visible");
+    assert_eq!(items[0]["turns"], 0);
+    assert!(items[0]["title"].is_null());
     assert!(items[0].get("search_text").is_none());
 
     // The full index carries text for the visible row only.
@@ -1261,6 +1265,7 @@ async fn sessions_api_pages_lightweight_rows() -> TestResult {
     let full: serde_json::Value = serde_json::from_str(&body)?;
     let items = full["items"].as_array().ok_or("missing full items")?;
     assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["session_id"], "seed-visible");
     assert!(items[0].get("search_text").is_some());
     Ok(())
 }

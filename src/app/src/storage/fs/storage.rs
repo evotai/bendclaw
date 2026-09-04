@@ -514,6 +514,15 @@ impl Storage for FsStorage {
         self.read_json(&self.session_meta_path(session_id)?).await
     }
 
+    async fn session_has_entries(&self, session_id: &str) -> Result<bool> {
+        let path = self.transcript_path(session_id)?;
+        match fs::metadata(path).await {
+            Ok(metadata) => Ok(metadata.len() > 0),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(EvotError::Io(error)),
+        }
+    }
+
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>> {
         let mut entries = match fs::read_dir(self.sessions_dir()).await {
             Ok(entries) => entries,
@@ -699,12 +708,23 @@ impl Storage for FsStorage {
     }
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {
+        // Filter drafts before applying the caller's limit. Otherwise recent
+        // abandoned drafts can consume the whole page and hide real sessions.
         let sessions = self
-            .list_sessions(ListSessions { limit, offset: 0 })
+            .list_sessions(ListSessions {
+                limit: 0,
+                offset: 0,
+            })
             .await?;
-        let mut result = Vec::with_capacity(sessions.len());
+        let mut result = Vec::new();
 
-        for session in &sessions {
+        for session in sessions {
+            if session.turns == 0
+                && session.title.is_none()
+                && !self.session_has_entries(&session.session_id).await?
+            {
+                continue;
+            }
             let entries: Vec<TranscriptEntry> = match self.transcript_path(&session.session_id) {
                 Ok(path) => match self.read_transcript(path).await {
                     Ok(e) => e,
@@ -724,12 +744,15 @@ impl Storage for FsStorage {
                     vec![]
                 }
             };
-            let search_text = collect_search_text(session, &entries);
+            let search_text = collect_search_text(&session, &entries);
             result.push(SessionWithText {
-                session: session.clone(),
+                session,
                 search_text,
                 user_prompts: collect_user_prompts(&entries),
             });
+            if limit > 0 && result.len() == limit {
+                break;
+            }
         }
 
         Ok(result)

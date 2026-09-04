@@ -3,15 +3,18 @@ import {
   createSelectorState,
   selectorUp,
   selectorDown,
+  selectorFocusList,
   selectorSelect,
   selectorType,
   selectorBackspace,
   selectorExpandItems,
   selectorFocusOn,
   selectorRemoveItem,
+  warmSearchableText,
   type SelectorState,
 } from '../src/term/selector.js'
 import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
+import { CURSOR_MARKER } from '../src/term/renderer.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'
@@ -178,8 +181,12 @@ describe('renderSelector via viewmodel', () => {
     const text = buildSelectorRegionLines(state, 80)
       .map(line => stripAnsi(line).replaceAll('\x1b_pi:c\x07', ''))
       .join('\n')
-    expect(text).toContain('  droid\n❯ gpt-5.6-sol')
+    // Typing keeps focus in the search input, so no row cursor is drawn — the
+    // same split the generic selector uses. The match still sits under its own
+    // provider heading, named once.
+    expect(text).toContain('  droid\n  gpt-5.6-sol')
     expect(text).not.toContain('[droid]')
+    expect(text).not.toContain('❯')
   })
 
   test('model selector renders one weak header per group with blank separators', () => {
@@ -367,6 +374,43 @@ describe('renderSelector via viewmodel', () => {
     // Plain text should still have the label
     const text = lines.map(l => stripAnsi(l)).join('\n')
     expect(text).toContain('gpt-4o')
+  })
+  test('model preview omits the selector cursor while the composer is focused', () => {
+    const state = {
+      ...createSelectorState('Models', [{ label: 'gpt-4o', selected: true }]),
+      presentation: 'model' as const,
+    }
+    const active = buildSelectorRegionLines(state, 80, 24, true).join('\n')
+    const preview = buildSelectorRegionLines(state, 80, 24, false).join('\n')
+
+    expect(active).toContain(CURSOR_MARKER)
+    expect(preview).not.toContain(CURSOR_MARKER)
+    expect(stripAnsi(preview)).toContain('Model Name:')
+  })
+
+  test('a promoted model window drops its search caret, leaving one cursor', () => {
+    // `/mo` + ↓ hands focus to the list. Leaving the search input's caret drawn
+    // would show two active cursors and imply typing still went to the composer.
+    const state = {
+      ...createSelectorState('Models', [{ label: 'gpt-4o', selected: true }]),
+      presentation: 'model' as const,
+      listFocused: true,
+    }
+    const promoted = buildSelectorRegionLines(state, 80, 24, true).join('\n')
+
+    expect(promoted).not.toContain(CURSOR_MARKER)
+    expect(stripAnsi(promoted)).toContain('Model Name:')
+  })
+
+  test('generic selector transfers its cursor without changing row geometry', () => {
+    const state = createSelectorState('Resume session', items)
+    const active = buildSelectorRegionLines(state, 100, 24, true)
+    const preview = buildSelectorRegionLines(state, 100, 24, false)
+
+    expect(active).toHaveLength(preview.length)
+    expect(active.join('\n')).toContain(CURSOR_MARKER)
+    expect(preview.join('\n')).not.toContain(CURSOR_MARKER)
+    expect(active.map(stripAnsi).join('\n')).toContain('type to search')
   })
 })
 
@@ -757,6 +801,95 @@ describe('searchText field', () => {
     state = selectorType(state, 'e')
     state = selectorType(state, 'y')
     expect(state.items.map(i => i.label)).toEqual(['with-search', 'no-search'])
+  })
+
+  test('typing stays responsive when rows carry whole transcripts', () => {
+    // Resume rows put full transcript text in searchText. Lowercasing every row
+    // on every keystroke is what made the filter feel laggy on a large history,
+    // so the conversion is cached per item. This asserts the budget rather than
+    // the mechanism: a regression to per-keystroke lowercasing blows past it.
+    const bulk = Array.from({ length: 400 }, (_, index) => ({
+      label: `session-${index}`,
+      detail: 'title',
+      searchText: `session-${index} ${'Payment Timeout On Checkout '.repeat(400)}${index === 7 ? 'NEEDLE' : ''}`,
+    }))
+    let state = createSelectorState('Resume session', bulk)
+
+    const started = performance.now()
+    for (const char of 'needle') state = selectorType(state, char)
+    const elapsed = performance.now() - started
+
+    expect(state.items.map(i => i.label)).toEqual(['session-7'])
+    expect(elapsed).toBeLessThan(400)
+  })
+
+  test('snippets are built for rows that are read, not for every match', () => {
+    // A one-letter query matches thousands of rows while only ~10 are drawn.
+    // Cutting a snippet out of every matched transcript up front is what made
+    // the first keystroke stall, so `detail` resolves on access instead.
+    const bulk = Array.from({ length: 3000 }, (_, index) => ({
+      label: `session-${index}`,
+      detail: 'title',
+      searchText: `session-${index} ${'Payment timeout on checkout '.repeat(300)}`,
+    }))
+    let state = createSelectorState('Resume session', bulk)
+    // Warm the lowercase cache so this measures snippet work alone.
+    const cancel = warmSearchableText(bulk)
+    for (const item of bulk) void item.searchText.toLowerCase()
+    cancel()
+
+    const started = performance.now()
+    state = selectorType(state, 'p')
+    const elapsed = performance.now() - started
+
+    expect(state.items.length).toBe(3000)
+    expect(elapsed).toBeLessThan(60)
+
+    // Reading a row still yields its snippet, in the original casing, and
+    // reading is idempotent.
+    const first = state.items[0]!
+    expect(first.detail).toContain('Payment')
+    expect(first.detail).toBe(first.detail)
+    // Snippets are enumerable properties, so spreading a row keeps its detail.
+    expect({ ...first }.detail).toBe(first.detail)
+  })
+
+  test('warmSearchableText yields between slices and is cancellable', async () => {
+    const bulk = Array.from({ length: 600 }, (_, index) => ({
+      label: `session-${index}`,
+      searchText: `session-${index} ${'Payment Timeout '.repeat(500)}`,
+    }))
+
+    // Warming must not monopolise the loop: a timer scheduled alongside it
+    // still fires promptly, which is what keeps keystrokes responsive.
+    const cancel = warmSearchableText(bulk)
+    const started = performance.now()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const firstTurnaround = performance.now() - started
+    cancel()
+    expect(firstTurnaround).toBeLessThan(60)
+
+    // Cancelling stops further slices, and filtering still works afterwards
+    // because the cache is only ever an optimisation.
+    let state = createSelectorState('Resume session', bulk)
+    state = selectorType(state, 'p')
+    expect(state.items.length).toBe(600)
+  })
+
+  test('caching preserves case-insensitive matching and snippets', () => {
+    const mixedCase = [
+      { label: 'abc12345', detail: 'Original Title', searchText: 'abc12345 Databend Documentation' },
+    ]
+    let state = createSelectorState('Resume session', mixedCase)
+    for (const char of 'DATABEND') state = selectorType(state, char)
+    expect(state.items.map(i => i.label)).toEqual(['abc12345'])
+    expect(state.items[0]!.detail).toContain('Databend')
+
+    // A second pass over the same items reads the cache; results must not drift.
+    for (let i = 0; i < 'DATABEND'.length; i++) state = selectorBackspace(state)
+    for (const char of 'documentation') state = selectorType(state, char)
+    expect(state.items.map(i => i.label)).toEqual(['abc12345'])
+    expect(state.items[0]!.detail).toContain('Documentation')
   })
 })
 

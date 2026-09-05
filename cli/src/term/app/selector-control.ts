@@ -37,23 +37,13 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
   switch (event.type) {
     case 'up':
     case 'shift-tab': {
-      const ready = disarmDelete(state)
-      // Every command window behaves the same way: the composer keeps focus
-      // while the window previews, and the first arrow hands focus to the list.
-      // Keying this off `listFocused` rather than a per-selector title keeps
-      // `/model`, `/skill`, and `/resume` from each inventing their own rule.
-      if (ready.listFocused === false) {
-        return { kind: 'update', state: selectorFocusList(ready) }
-      }
-      return { kind: 'update', state: selectorUp(ready) }
+      // Focus transfer and movement are one gesture: never consume the first
+      // navigation key just to blur the composer/filter.
+      return { kind: 'update', state: selectorUp(selectorFocusList(disarmDelete(state))) }
     }
     case 'down':
     case 'tab': {
-      const ready = disarmDelete(state)
-      if (ready.listFocused === false) {
-        return { kind: 'update', state: selectorFocusList(ready) }
-      }
-      return { kind: 'update', state: selectorDown(ready) }
+      return { kind: 'update', state: selectorDown(selectorFocusList(disarmDelete(state))) }
     }
     case 'char':
       // Lists that reserve bare letters for their own gestures never build a

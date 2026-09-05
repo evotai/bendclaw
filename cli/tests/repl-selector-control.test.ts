@@ -58,49 +58,76 @@ describe('repl selector control', () => {
     expect(handleSelectorControl(createSelectorState('T', items), key('escape')).kind).toBe('close')
   })
 
-  test('resume first arrow focuses the first session before navigation', () => {
-    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: false }
-
-    const down = handleSelectorControl(state, key('down'))
-    expect(down.kind).toBe('update')
-    if (down.kind !== 'update') return
-    expect(down.state.listFocused).toBe(true)
-    expect(down.state.focusIndex).toBe(0)
-
-    const next = handleSelectorControl(down.state, key('down'))
-    expect(next.kind).toBe('update')
-    if (next.kind === 'update') expect(next.state.focusIndex).toBe(1)
-  })
-
-  test('every command window promotes focus on the first arrow, not just resume', () => {
-    // The model and skill windows previously navigated on the first arrow while
-    // the composer still owned the caret, so `/mo` + ↓ typed into the composer
-    // instead of moving to a model. Focus promotion is now shared.
-    for (const title of ['Models', SKILL_SELECTOR_TITLE]) {
-      const state = { ...createSelectorState(title, items), listFocused: false }
-
-      const first = handleSelectorControl(state, key('down'))
-      expect(first.kind).toBe('update')
-      if (first.kind !== 'update') return
-      expect(first.state.listFocused).toBe(true)
-      expect(first.state.focusIndex).toBe(0)
-
-      const second = handleSelectorControl(first.state, key('down'))
-      expect(second.kind).toBe('update')
-      if (second.kind === 'update') expect(second.state.focusIndex).toBe(1)
+  test('first navigation key focuses and moves in every command window', () => {
+    for (const title of ['Models', SKILL_SELECTOR_TITLE, RESUME_SELECTOR_TITLE]) {
+      for (const direction of ['up', 'down', 'tab', 'shift-tab'] as const) {
+        const backwards = direction === 'up' || direction === 'shift-tab'
+        const state = {
+          ...createSelectorState(title, items),
+          focusIndex: backwards ? 1 : 0,
+          listFocused: false,
+        }
+        const action = handleSelectorControl(state, key(direction))
+        expect(action.kind).toBe('update')
+        if (action.kind !== 'update') continue
+        expect(action.state.listFocused).toBe(true)
+        expect(action.state.focusIndex).toBe(backwards ? 0 : 1)
+        expect(state.listFocused).toBe(false)
+      }
     }
   })
 
-  test('promotion keeps the row the preview already highlighted', () => {
-    // `/model` opens focused on the active model. The first arrow must hand
-    // focus to the list without snapping the selection back to the first row.
-    const state = { ...createSelectorState('Models', items), focusIndex: 1, listFocused: false }
+  test('first model arrow wraps and skips provider headers', () => {
+    const state = {
+      ...createSelectorState('Models', [
+        { label: 'Provider A', header: true, focusable: false },
+        { label: 'one', id: 'one' },
+        { label: 'Provider B', header: true, focusable: false },
+        { label: 'two', id: 'two' },
+      ]),
+      circularNavigation: true,
+      listFocused: false,
+    }
+    for (const direction of ['up', 'down'] as const) {
+      const action = handleSelectorControl(state, key(direction))
+      expect(action.kind).toBe('update')
+      if (action.kind !== 'update') continue
+      expect(action.state.listFocused).toBe(true)
+      expect(action.state.focusIndex).toBe(3)
+      const next = handleSelectorControl(action.state, key(direction))
+      expect(next.kind).toBe('update')
+      if (next.kind === 'update') expect(next.state.focusIndex).toBe(1)
+    }
+  })
 
-    const promoted = handleSelectorControl(state, key('down'))
-    expect(promoted.kind).toBe('update')
-    if (promoted.kind !== 'update') return
-    expect(promoted.state.listFocused).toBe(true)
-    expect(promoted.state.focusIndex).toBe(1)
+  test('first arrow at a non-circular boundary still focuses the list', () => {
+    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: false }
+    const action = handleSelectorControl(state, key('up'))
+    expect(action.kind).toBe('update')
+    if (action.kind !== 'update') return
+    expect(action.state.listFocused).toBe(true)
+    expect(action.state.focusIndex).toBe(0)
+  })
+
+  test('navigation after filtering moves immediately and preserves the query', () => {
+    const state = selectorType(createSelectorState('Models', items), 'o')
+    const action = handleSelectorControl(state, key('down'))
+    expect(action.kind).toBe('update')
+    if (action.kind !== 'update') return
+    expect(action.state.listFocused).toBe(true)
+    expect(action.state.focusIndex).toBe(1)
+    expect(action.state.query).toBe('o')
+  })
+
+  test('first arrow handles an empty preview', () => {
+    const state = { ...createSelectorState('Models', []), listFocused: false, circularNavigation: true }
+    for (const direction of ['up', 'down'] as const) {
+      const action = handleSelectorControl(state, key(direction))
+      expect(action.kind).toBe('update')
+      if (action.kind !== 'update') continue
+      expect(action.state.listFocused).toBe(true)
+      expect(action.state.focusIndex).toBe(0)
+    }
   })
 
   test('typing returns resume focus to the filter', () => {

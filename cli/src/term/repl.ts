@@ -11,7 +11,7 @@ import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
 import { getTheme, setDetectedThemeScheme } from '../render/theme/index.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
-import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusList, selectorFocusOn, warmSearchableText, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from './selector.js'
+import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn, warmSearchableText, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
 import { formatCompactionCompleted } from '../render/verbose.js'
@@ -901,9 +901,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const preview = commandWindowPreview
     focusedCommandWindowGeneration = preview.generation
     if (preview.kind === 'selector') {
-      // The first arrow promotes any command window the same way: focus moves
-      // to the list, keeping whichever row the preview already highlighted.
-      overlay = { kind: 'selector', state: selectorFocusList(preview.state) }
+      // Use the same navigation path as an open selector so the first arrow
+      // both focuses the list and moves from the preview's highlighted row.
+      const action = handleSelectorControl(preview.state, event)
+      if (action.kind !== 'update') return false
+      overlay = { kind: 'selector', state: action.state }
     } else {
       overlay = { kind: 'help' }
     }

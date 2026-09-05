@@ -256,26 +256,28 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
     }
   }, 60_000)
 
-  test('a command window previews live, then arrows transfer focus', async () => {
+  test('a command window previews live, then the first arrow focuses and navigates', async () => {
     const session = await startEvot()
     try {
       // A unique prefix immediately renders the formal model window above the
       // composer, but the highlighted row already uses the selector's complete
       // current-row treatment while keyboard focus remains in the composer.
       session.checkpoint()
-      session.write('/mo')
+      session.write('/m')
       const preview = await session.waitFor('Only showing models from configured providers')
       expect(preview).toContain('Model Name:')
-      expect(preview).toContain('/mo')
-      expect(preview).toMatch(/❯\s+GPT[ -]5\.6 Sol/)
+      expect(preview).toContain('/m')
+      const activeModel = preview.match(/Model Name: ([^\r\n]+)/)?.[1]?.trim()
+      expect(activeModel).toBeTruthy()
+      expect(preview).toContain(`❯ ${activeModel}`)
       expect(session.outputSince()).toContain(selectionBackgroundAnsi())
 
       // Continued typing still belongs to the composer, not the model filter.
       session.checkpoint()
-      session.write('del')
+      session.write('odel')
       const continued = await session.waitFor('/model')
       expect(continued).toContain('/model')
-      expect(continued).not.toContain('> del')
+      expect(continued).not.toContain('> odel')
 
       // Argument entry hides the no-argument command window immediately. When
       // the command becomes argument-free again, the same preview returns.
@@ -287,20 +289,35 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       const restored = await session.waitFor('Only showing models from configured providers')
       expect(restored).toContain('/model')
 
-      // The first arrow transfers focus without replacing the layout. The
-      // blurred composer stays in the same frame below the active selector.
-      // Promotion lands on the model the preview already highlighted, so its
-      // unified current-row appearance does not need to be repainted.
-      session.checkpoint()
-      session.write('\x1b[B')
-      await Bun.sleep(100)
-      expect(session.outputSince()).not.toContain('\x1b[2J')
-
-      // Once promoted, subsequent arrows belong to the formal selector.
+      // The first arrow both focuses and navigates, without replacing the
+      // selector/composer layout or requiring a focus-only keypress.
       session.checkpoint()
       session.write('\x1b[B')
       const navigated = await session.waitFor('Model Name:')
-      expect(navigated).toContain('Model Name: Claude Opus 5')
+      expect(navigated).not.toContain(`Model Name: ${activeModel}`)
+      expect(session.outputSince()).not.toContain('\x1b[2J')
+
+      session.checkpoint()
+      session.write('\x1b[A')
+      await session.waitFor(`Model Name: ${activeModel}`)
+
+      session.checkpoint()
+      session.write('\x1b')
+      await session.waitFor('Enter a coding task')
+
+      // Up must also navigate on its first press. Down then returns to the
+      // original active model; this does not depend on the catalog's ordering.
+      session.checkpoint()
+      session.write('/m')
+      await session.waitFor(`Model Name: ${activeModel}`)
+      session.checkpoint()
+      session.write('\x1b[A')
+      const navigatedUp = await session.waitFor('Model Name:')
+      expect(navigatedUp).not.toContain(`Model Name: ${activeModel}`)
+      expect(session.outputSince()).not.toContain('\x1b[2J')
+      session.checkpoint()
+      session.write('\x1b[B')
+      await session.waitFor(`Model Name: ${activeModel}`)
 
       session.checkpoint()
       session.write('\x1b')
@@ -330,10 +347,9 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       expect(preview).toContain('/ski')
       expect(preview).not.toContain('\x1b[2J')
 
-      // The first arrow transfers focus without replacing or clearing the
-      // selector/composer frame. The current-row marker is already present;
-      // promotion changes keyboard ownership only. Enter is intentionally inert
-      // in this read-only inventory; management stays explicit via `/skill ...`.
+      // The first arrow focuses and navigates without replacing or clearing
+      // the selector/composer frame. Enter is intentionally inert in this
+      // read-only inventory; management stays explicit via `/skill ...`.
       session.checkpoint()
       session.write('\x1b[B')
       await Bun.sleep(100)
@@ -486,8 +502,8 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       expect(current).not.toContain('Other cwd')
       expect(current).not.toContain('other cwd fixture')
 
-      // The first arrow lands on the first current-project session instead of
-      // stopping in the filter input or skipping to the second row.
+      // With only one current-project session, the first arrow focuses that
+      // row without stopping in the filter input.
       session.checkpoint()
       session.write('\x1b[B')
       await Bun.sleep(100)

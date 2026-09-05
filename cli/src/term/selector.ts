@@ -113,11 +113,11 @@ export function createSelectorState(title: string, items: SelectorItem[], allIte
 /**
  * Transfer keyboard focus from the filter input to the list.
  *
- * The row the preview already highlights is kept, so promotion never makes the
- * selection jump: `/model` opens on the active model and the first arrow moves
- * from there, while lists that open at their first row stay there. Only a
- * focusIndex that is no longer selectable (an async refresh dropped or
- * reordered rows) falls back to the first selectable row.
+ * Preserve the preview's highlighted row as the starting point for navigation.
+ * Callers apply the same key's movement after this focus transfer, so the first
+ * arrow moves immediately from the active model rather than only blurring the
+ * input. Only a focusIndex that is no longer selectable (an async refresh
+ * dropped or reordered rows) falls back to the first selectable row.
  */
 export function selectorFocusList(state: SelectorState): SelectorState {
   const current = state.items[state.focusIndex]

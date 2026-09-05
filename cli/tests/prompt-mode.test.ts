@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { promptMode, promptModeLabels, promptModeStyle } from '../src/term/viewmodel/prompt-mode.js'
-import { getTheme } from '../src/render/theme.js'
+import { getTheme } from '../src/render/theme/index.js'
 
 describe('promptMode', () => {
   test('defaults when no mode is active', () => {

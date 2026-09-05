@@ -9,7 +9,7 @@ import {
 } from './input.js'
 import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
-import { getTheme, setDetectedThemeScheme } from '../render/theme.js'
+import { getTheme, setDetectedThemeScheme } from '../render/theme/index.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
 import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusList, selectorFocusOn, warmSearchableText, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'

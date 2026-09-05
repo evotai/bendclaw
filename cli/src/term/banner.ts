@@ -4,7 +4,7 @@ import { join } from 'path'
 import chalk from 'chalk'
 import { renderSkillInventoryLines, skillListView } from '../commands/skill.js'
 import type { ConfigInfo } from '../native/index.js'
-import { getTheme } from '../render/theme.js'
+import { getTheme } from '../render/theme/index.js'
 import { inlineItemLines, sectionHeaderLines, SECTION_MUTED } from '../render/section.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
 

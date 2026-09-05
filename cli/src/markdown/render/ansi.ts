@@ -13,7 +13,7 @@ import {
 } from '../primitives.js'
 import { createHyperlink, isWarpTerminal, supportsHyperlinks, wrapHyperlink } from '../../render/hyperlink.js'
 import { linkifyIssueRefs } from '../../render/linkify.js'
-import { getTheme, type Theme } from '../../render/theme.js'
+import { getTheme, type Theme } from '../../render/theme/index.js'
 import { renderLatexMath } from '../math/ansi.js'
 import type { MathToken } from '../math/marked.js'
 

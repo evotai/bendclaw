@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { buildOutputBlocks } from '../src/term/viewmodel/output.js'
-import { blocksToLines, styledLineToAnsi, line, colored, dim } from '../src/term/viewmodel/types.js'
-import { buildUserMessage, buildAssistantLines, type OutputLine } from '../src/render/output.js'
+import { blocksToLines, styledLineToAnsi, paintBackground, line, colored, dim } from '../src/term/viewmodel/types.js'
+import { buildUserMessage, buildAssistantLines, buildToolCard, type OutputLine } from '../src/render/output.js'
+import { getTheme } from '../src/render/theme/index.js'
 import { assistantMessageToOutputLines } from '../src/render/assistant.js'
 import { colorizeUnifiedDiff } from '../src/render/diff.js'
 import stripAnsi from 'strip-ansi'
@@ -31,40 +32,69 @@ function renderPlainWithColumns(lines: OutputLine[], columns: number): string {
   return stripAnsi(renderWithColumns(lines, columns))
 }
 
+/** SGR that opens a truecolor background for `hex`. */
+function bgOpen(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `\x1b[48;2;${r};${g};${b}m`
+}
+
+/** Visible rows of a filled block, trimmed; drops margin and rail-only padding rows. */
+function contentRows(plain: string): string[] {
+  return plain.split('\n').map(l => l.trimEnd()).filter(l => l.trim() !== '' && l.trim() !== '┃')
+}
+
 describe('buildOutputBlocks', () => {
-  test('user message has marginTop=1 and a brand left rail', () => {
-    const result = renderPlain([{ id: 'u1', kind: 'user', text: 'hello' }])
-    expect(result).toContain('▍ hello')
-    expect(result.startsWith('\n')).toBe(true)
-    // Painted in the brand hue, matching the frame rather than the text.
-    expect(render([{ id: 'u1', kind: 'user', text: 'hello' }])).toContain('\x1b[38;2;181;188;249m')
+  test('user message has marginTop=1 and sits on the panel behind a brand rail', () => {
+    const lines: OutputLine[] = [{ id: 'u1', kind: 'user', text: 'hello' }]
+    const plain = renderPlain(lines)
+    expect(plain.startsWith('\n')).toBe(true)
+    // opencode's UserMessage: border-left, then the text. No glyph, no bold.
+    expect(contentRows(plain)).toEqual(['┃ hello'])
+    const ansi = render(lines)
+    expect(ansi).toContain(bgOpen(getTheme().panelBg))
+    expect(ansi).toContain(chalk.hex(getTheme().brandHex)('┃'))
+    expect(ansi).not.toContain('\u258d')
+  })
+
+  test('user block is padded with a blank filled row above and below', () => {
+    const rows = renderWithColumns([{ id: 'u1', kind: 'user', text: 'hello' }], 12).split('\n')
+    // margin, top pad, text, bottom pad
+    expect(rows.length).toBe(4)
+    expect(rows[0]).toBe('')
+    const fill = bgOpen(getTheme().panelBg)
+    for (const row of rows.slice(1)) {
+      expect(row.startsWith(fill)).toBe(true)
+      expect(row.endsWith('\x1b[49m')).toBe(true)
+      // Every row spans the full terminal width so the slab reaches the margin.
+      expect(stringWidth(stripAnsi(row))).toBe(12)
+    }
   })
 
   test('a timestamped user message shows the clock above the text', () => {
     const at = new Date(2026, 7, 31, 18, 11).getTime()
-    const lines = renderPlain([{ id: 'u1', kind: 'user', text: 'hello', timestamp: at }])
-      .split('\n')
-      .filter(l => l.trim() !== '')
-    expect(lines[0]).toBe('▍ [06:11 PM]')
-    expect(lines[1]).toBe('▍ hello')
+    const rows = contentRows(renderPlain([{ id: 'u1', kind: 'user', text: 'hello', timestamp: at }]))
+    expect(rows[0]).toBe('┃ [06:11 PM]')
+    expect(rows[1]).toBe('┃ hello')
   })
 
-  test('every rendered row of a user message carries the rail', () => {
+  test('every rendered row of a user message is a full-width filled row', () => {
     const at = new Date(2026, 7, 31, 6, 5).getTime()
-    const rows = renderPlainWithColumns(
+    const rendered = renderWithColumns(
       [{ id: 'u1', kind: 'user', text: 'a'.repeat(40), timestamp: at }],
       20,
-    ).split('\n').filter(l => l.trim() !== '')
-    expect(rows[0]).toBe('▍ [06:05 AM]')
-    for (const row of rows) expect(row.startsWith('▍')).toBe(true)
+    ).split('\n').slice(1)
+    expect(stripAnsi(rendered[1]!).trimEnd()).toBe('┃ [06:05 AM]')
+    for (const row of rendered) expect(stringWidth(stripAnsi(row))).toBe(20)
   })
 
-  test('hard newlines keep the rail instead of splitting the row after the prefix', () => {
-    const rows = renderPlainWithColumns(
+  test('hard newlines keep each logical line as its own filled row', () => {
+    const rows = contentRows(renderPlainWithColumns(
       [{ id: 'u1', kind: 'user', text: 'first\nsecond\nthird' }],
       40,
-    ).split('\n').filter(l => l.trim() !== '')
-    expect(rows).toEqual(['▍ first', '▍ second', '▍ third'])
+    ))
+    expect(rows).toEqual(['┃ first', '┃ second', '┃ third'])
   })
 
   test('assistant block starts with marginTop=1', () => {
@@ -93,20 +123,30 @@ describe('buildOutputBlocks', () => {
     expect(emptyBetween.length).toBe(0)
   })
 
-  test('thinking markdown receives the pi-style italic tint', () => {
-    const blocks = buildOutputBlocks([{
-      id: 'thinking-1',
-      kind: 'thinking',
-      text: '\x1b[1mPlanning\x1b[22m',
-      thinkingStyle: true,
-    }])
-    const rendered = blocksToLines(blocks).join('\n')
-    expect(rendered).toContain('\x1b[3m')
-    expect(stripAnsi(rendered)).toContain('Planning')
+  test('thinking body is muted, not dim-italic, and sits on the text column', () => {
+    const output = assistantMessageToOutputLines([
+      { type: 'thinking', contentIndex: 0, text: 'Planning the change' },
+    ])
+    const rendered = blocksToLines(buildOutputBlocks(output)).join('\n')
+    expect(rendered).not.toContain('\x1b[3m')
+    expect(rendered).toContain(getTheme().thinkText.paint('Planning the change'))
+    expect(stripAnsi(rendered)).toContain('✻ Planning the change')
   })
 
-  test('thinking block leads with a ✻ marker and indents continuations', () => {
-    const plain = renderPlain([{
+  test('reasoning is shown in full, never collapsed behind a summary row', () => {
+    const plain = renderPlainWithColumns(assistantMessageToOutputLines([
+      { type: 'thinking', contentIndex: 0, text: 'line one\n\nline two' },
+    ]), 40)
+    expect(plain).toContain('line one')
+    expect(plain).toContain('line two')
+    // No `Thought`/`Thinking…` header row: a sub-second reasoning block reported
+    // a meaningless duration, and the summary row hid the useful part.
+    expect(plain).not.toContain('Thought')
+    expect(plain).not.toContain('Thinking')
+  })
+
+  test('reasoning leads with an accent ✻ and indents continuations', () => {
+    const lines = renderPlain([{
       id: 'thinking-1',
       kind: 'thinking',
       text: 'first line',
@@ -116,10 +156,11 @@ describe('buildOutputBlocks', () => {
       kind: 'thinking',
       text: 'second line',
       thinkingStyle: true,
-    }])
-    const lines = plain.split('\n').filter(l => l.length > 0)
-    expect(lines[0]).toBe('✻ first line')
-    expect(lines[1]).toBe('  second line')
+    }]).split('\n').filter(l => l.length > 0)
+    expect(lines).toEqual(['✻ first line', '  second line'])
+    // The marker is the accent hue, not the old dim magenta.
+    expect(render([{ id: 't', kind: 'thinking', text: 'x', thinkingStyle: true }]))
+      .toContain(getTheme().thinkHeader.paint('✻ '))
   })
 
   test('long thinking lines wrap within terminal width', () => {
@@ -142,6 +183,15 @@ describe('buildOutputBlocks', () => {
     const plain = stripAnsi(blocksToLines(buildOutputBlocks(output)).join('\n'))
 
     expect(plain).toContain('✻ Investigating config\n\n⏺ Visible answer')
+  })
+
+  test('a streaming block renders the same as a finished one', () => {
+    const blocks = [{ type: 'thinking' as const, contentIndex: 0, text: 'line one\n\nline two' }]
+    const live = renderPlainWithColumns(assistantMessageToOutputLines(blocks, false, { streaming: true }), 40)
+    const done = renderPlainWithColumns(assistantMessageToOutputLines(blocks), 40)
+    expect(live).toBe(done)
+    expect(done).toContain('✻ line one')
+    expect(done).toContain('line two')
   })
 
   test('ordered renderer preserves thinking tool text positions', () => {
@@ -384,28 +434,143 @@ describe('buildOutputBlocks', () => {
   })
 
   test('user message wraps when columns is provided', () => {
-    // 20 columns minus 2 for prefix = 18 chars per line
+    // 20 columns minus rail+gap (2) and right pad (1) = 17 chars per line
     const longText = 'a'.repeat(40)
     const result = renderPlainWithColumns([{ id: 'u1', kind: 'user', text: longText }], 20)
-    const lines = result.split('\n').filter(l => l.trim() !== '')
-    // Should wrap into 3 lines: 18 + 18 + 4
+    const lines = contentRows(result)
+    // Should wrap into 3 lines: 17 + 17 + 6
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('▍ ' + 'a'.repeat(18))
-    expect(lines[1]).toContain('▍ ' + 'a'.repeat(18))
-    expect(lines[2]).toContain('▍ ' + 'a'.repeat(4))
+    expect(lines[0]).toBe('┃ ' + 'a'.repeat(17))
+    expect(lines[1]).toBe('┃ ' + 'a'.repeat(17))
+    expect(lines[2]).toBe('┃ ' + 'a'.repeat(6))
   })
 
   test('user message wraps CJK characters correctly', () => {
-    // Each CJK char is 2 columns wide. With 22 columns, avail = 20.
+    // Each CJK char is 2 columns wide. With 23 columns, avail = 20.
     // Each char takes 2 cols, so 10 chars per line.
     const cjkText = '你'.repeat(25)
-    const result = renderPlainWithColumns([{ id: 'u1', kind: 'user', text: cjkText }], 22)
-    const lines = result.split('\n').filter(l => l.trim() !== '')
+    const result = renderPlainWithColumns([{ id: 'u1', kind: 'user', text: cjkText }], 23)
+    const lines = contentRows(result)
     // 25 chars at 2-width each = 50 cols, avail = 20, so 10 chars/line => 3 lines
     expect(lines.length).toBe(3)
-    expect(lines[0]).toContain('▍ ' + '你'.repeat(10))
-    expect(lines[1]).toContain('▍ ' + '你'.repeat(10))
-    expect(lines[2]).toContain('▍ ' + '你'.repeat(5))
+    expect(lines[0]).toBe('┃ ' + '你'.repeat(10))
+    expect(lines[1]).toBe('┃ ' + '你'.repeat(10))
+    expect(lines[2]).toBe('┃ ' + '你'.repeat(5))
+  })
+})
+
+describe('tool cards: lifecycle-tinted slabs', () => {
+  const call = (status: 'queued' | 'running' | 'done' | 'error', extra: Record<string, unknown> = {}) => ({
+    id: 't1',
+    name: 'bash',
+    args: { command: 'ls' },
+    status,
+    ...extra,
+  }) as Parameters<typeof buildToolCard>[0]
+
+  test('every card is one full-width slab with blank padded rows top and bottom', () => {
+    const rows = renderWithColumns(buildToolCard(call('done', { result: 'a\nb\nc', durationMs: 3 })), 40).split('\n')
+    expect(rows[0]).toBe('')
+    const body = rows.slice(1)
+    const fill = bgOpen(getTheme().toolSuccessBg)
+    expect(stripAnsi(body[0]!).trim()).toBe('')
+    expect(stripAnsi(body[body.length - 1]!).trim()).toBe('')
+    for (const row of body) {
+      expect(row.startsWith(fill)).toBe(true)
+      expect(stringWidth(stripAnsi(row))).toBe(40)
+    }
+    // pi's Box: the border cell stays blank so card content sits on the same
+    // column as the rail-led user text. No rail glyph on tool cards.
+    expect(stripAnsi(body[1]!).startsWith('  ⌘ bash')).toBe(true)
+    expect(stripAnsi(body[3]!)).toContain('ctrl+o to expand')
+    expect(stripAnsi(rows.join('\n'))).not.toContain('┃')
+  })
+
+  test('the fill follows the lifecycle: pending → success / error', () => {
+    const theme = getTheme()
+    expect(render(buildToolCard(call('queued')))).toContain(bgOpen(theme.toolPendingBg))
+    expect(render(buildToolCard(call('running')))).toContain(bgOpen(theme.toolPendingBg))
+    expect(render(buildToolCard(call('done', { result: 'ok' })))).toContain(bgOpen(theme.toolSuccessBg))
+    expect(render(buildToolCard(call('error', { result: 'boom' })))).toContain(bgOpen(theme.toolErrorBg))
+    // A non-zero exit code is a failure even when the call itself settled.
+    expect(render(buildToolCard(call('done', { result: 'x', details: { exit_code: 1 } }))))
+      .toContain(bgOpen(theme.toolErrorBg))
+  })
+
+  test('the three fills are distinct and none is the user panel', () => {
+    const theme = getTheme()
+    const fills = new Set([theme.toolPendingBg, theme.toolSuccessBg, theme.toolErrorBg, theme.panelBg])
+    expect(fills.size).toBe(4)
+  })
+
+  test('the fill survives a failed body whose rows are red', () => {
+    const rows = renderWithColumns(buildToolCard(call('error', { result: 'not found' })), 40).split('\n').slice(1)
+    const fill = bgOpen(getTheme().toolErrorBg)
+    const bodyRow = rows.find(r => stripAnsi(r).includes('not found'))!
+    expect(bodyRow.startsWith(fill)).toBe(true)
+    expect(bodyRow).toContain('\x1b[31m')
+    // Padding rows share the card fill, so the slab has no seam.
+    expect(rows[0]!.startsWith(fill)).toBe(true)
+    expect(rows[rows.length - 1]!.startsWith(fill)).toBe(true)
+  })
+
+  test('diff rows inside a card swap the fill for the add/remove tints', () => {
+    const theme = getTheme()
+    const rows = renderWithColumns(buildToolCard({
+      id: 'e1',
+      name: 'edit',
+      args: { path: 'a.ts' },
+      status: 'done',
+      result: 'ok',
+      details: { diff: '@@ -1,3 +1,3 @@\n ctx\n-old\n+new' },
+    } as Parameters<typeof buildToolCard>[0]), 40).split('\n')
+    const added = rows.find(r => stripAnsi(r).includes('+new'))!
+    const removed = rows.find(r => stripAnsi(r).includes('-old'))!
+    const context = rows.find(r => stripAnsi(r).includes(' ctx'))!
+    expect(added.startsWith(bgOpen(theme.diffAddedBg))).toBe(true)
+    expect(removed.startsWith(bgOpen(theme.diffRemovedBg))).toBe(true)
+    expect(context.startsWith(bgOpen(theme.toolSuccessBg))).toBe(true)
+    for (const row of [added, removed, context]) expect(stringWidth(stripAnsi(row))).toBe(40)
+  })
+
+  test('expanding keeps the card on the same fill, only the body grows', () => {
+    const c = call('done', { result: 'a\nb\nc', durationMs: 3 })
+    const fill = bgOpen(getTheme().toolSuccessBg)
+    const collapsed = renderWithColumns(buildToolCard(c, false), 40)
+    const expandedView = renderWithColumns(buildToolCard(c, true), 40)
+    expect(collapsed).toContain(fill)
+    expect(expandedView).toContain(fill)
+    expect(expandedView.split('\n').length).toBeGreaterThan(collapsed.split('\n').length)
+  })
+
+  test('consecutive cards stay separate slabs with a margin between them', () => {
+    const rows = renderPlainWithColumns([
+      ...buildToolCard(call('done', { result: 'ok' })),
+      ...buildToolCard({ ...call('done', { result: 'ok' }), id: 't2' } as Parameters<typeof buildToolCard>[0]),
+    ], 30).split('\n')
+    // margin, pad, head, status, body, pad, margin, pad, ...
+    const margins = rows.map((r, i) => (r === '' ? i : -1)).filter(i => i >= 0)
+    expect(margins.length).toBe(2)
+  })
+
+  test('bare tool lines without card membership keep the unfilled layout', () => {
+    const ansi = renderWithColumns([{ id: 't1', kind: 'tool', text: '⌘ bash  ls -la' }], 40)
+    expect(ansi).not.toContain('\x1b[48;2;')
+    expect(stripAnsi(ansi)).toContain('⌘ bash  ls -la')
+  })
+})
+
+describe('paintBackground', () => {
+  test('wraps the row and re-arms the fill after an embedded full reset', () => {
+    const open = bgOpen('#2a2d44')
+    const painted = paintBackground('a\x1b[0mb', '#2a2d44')
+    expect(painted).toBe(`${open}a\x1b[0m${open}b\x1b[49m`)
+  })
+
+  test('an inner background close hands back to the row fill', () => {
+    const open = bgOpen('#2a2d44')
+    const painted = paintBackground(`x${bgOpen('#000000')}y\x1b[49mz`, '#2a2d44')
+    expect(painted).toBe(`${open}x${bgOpen('#000000')}y${open}z\x1b[49m`)
   })
 })
 
@@ -417,8 +582,8 @@ describe('OSC 133 semantic zone markers', () => {
     // Exactly one zone (one start, one end) for a single message.
     expect(raw.split(OSC133_ZONE_START).length - 1).toBe(1)
     expect(raw.split(OSC133_ZONE_END).length - 1).toBe(1)
-    // The start marker precedes the visible left rail.
-    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('▍'))
+    // The start marker precedes the visible text.
+    expect(raw.indexOf(OSC133_ZONE_START)).toBeLessThan(raw.indexOf('hello there'))
   })
 
   test('a multi-line assistant message has exactly one zone spanning all lines', () => {
@@ -434,7 +599,7 @@ describe('OSC 133 semantic zone markers', () => {
     const withMarkers = render(buildUserMessage('hello'))
     const plain = stripAnsi(withMarkers)
     expect(plain).not.toContain('133')
-    expect(plain).toContain('▍ hello')
+    expect(plain).toContain('┃ hello')
   })
 
   test('non-message kinds (tool, system) get no zone markers', () => {

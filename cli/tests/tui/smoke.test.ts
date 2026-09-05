@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getTheme } from '../../src/render/theme.js'
+import { getTheme } from '../../src/render/theme/index.js'
 
 const EVOT_BIN = process.env.EVOT_TEST_BIN || join(import.meta.dirname, '..', '..', 'dist', 'evot')
 const canRun = process.platform !== 'win32' && existsSync(EVOT_BIN) && !!spawnSync('python3', ['--version']).stdout
@@ -267,7 +267,7 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       const preview = await session.waitFor('Only showing models from configured providers')
       expect(preview).toContain('Model Name:')
       expect(preview).toContain('/mo')
-      expect(preview).toMatch(/❯\s+GPT 5\.6 Sol/)
+      expect(preview).toMatch(/❯\s+GPT[ -]5\.6 Sol/)
       expect(session.outputSince()).toContain(selectionBackgroundAnsi())
 
       // Continued typing still belongs to the composer, not the model filter.
@@ -452,7 +452,7 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       await session.waitFor('No sessions found')
       session.checkpoint()
       session.write('cache refresh smoke\x0d')
-      await session.waitFor('▍ cache refresh smoke')
+      await session.waitFor('┃ cache refresh smoke')
       for (let i = 0; i < 100 && session.persistedSessionCount() !== 1; i++) {
         await Bun.sleep(20)
       }
@@ -531,7 +531,7 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
     const session = await startEvot()
     try {
       session.write('echo smoke test\x0d')
-      await session.waitFor('▍ echo smoke test')
+      await session.waitFor('┃ echo smoke test')
     } finally {
       await session.kill()
     }

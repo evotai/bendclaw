@@ -6,7 +6,7 @@ import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from '.
 import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import { HINT_SEPARATOR, backgroundChordLabel, formatChord, type Hint } from '../app/hint.js'
 import type { AskState } from '../ask.js'
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 import { buildSelectorRow } from './selector-row.js'
 
 export type OverlayState =

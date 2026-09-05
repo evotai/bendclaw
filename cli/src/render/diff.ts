@@ -70,9 +70,26 @@ export function formatDiff(oldText: string, newText: string, filename = ''): Dif
  * Colorize a pre-computed unified diff string (from the Rust engine).
  */
 export function colorizeUnifiedDiff(diff: string): string {
+  return colorizeUnifiedDiffRows(diff).map(row => row.text).join('\n')
+}
+
+export type DiffRowKind = 'add' | 'remove' | 'context' | 'ellipsis'
+
+export interface DiffRow {
+  /** Foreground-styled row text (gutter + sigil + code). */
+  text: string
+  kind: DiffRowKind
+}
+
+/**
+ * Colorize a unified diff one row at a time. Callers that lay rows out on a
+ * filled block use `kind` to give added/removed rows their own fill, the way
+ * opencode tints diff rows inside a tool block.
+ */
+export function colorizeUnifiedDiffRows(diff: string): DiffRow[] {
   const raw = diff.split('\n')
   const body = raw.filter(l => !l.startsWith('---') && !l.startsWith('+++'))
-  const output: string[] = []
+  const output: DiffRow[] = []
 
   // Group lines by hunk
   const hunks: { header: string; lines: string[] }[] = []
@@ -95,17 +112,17 @@ export function colorizeUnifiedDiff(diff: string): string {
   }
 
   for (let hi = 0; hi < hunks.length; hi++) {
-    if (hi > 0) output.push(style.ellipsis('  …'))
+    if (hi > 0) output.push({ text: style.ellipsis('  …'), kind: 'ellipsis' })
     const hunk = hunks[hi]!
     const startLine = parseHunkStart(hunk.header)
     const lines = buildDiffLines(hunk.lines, startLine)
     const numW = gutterWidth(lines)
     for (const line of lines) {
-      output.push(renderLine(line, numW))
+      output.push({ text: renderLine(line, numW), kind: line.type })
     }
   }
 
-  return output.join('\n')
+  return output
 }
 
 // ---------------------------------------------------------------------------

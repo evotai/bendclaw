@@ -1,7 +1,7 @@
 import { line, plain, type StyledSpan, type ViewBlock } from './types.js'
 import { renderMarkdown } from '../../render/markdown.js'
 import { sliceVisibleAnsi, splitAnsiIntoCells, truncateAnsiToWidth, visibleGraphemeCount, visibleWidth } from '../../render/wrap.js'
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 
 export interface AdContent {
   id: string

@@ -10,7 +10,7 @@
 
 import stringWidth from 'string-width'
 import { COMMANDS, HIDDEN_COMMANDS } from '../../commands/index.js'
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 import type { CompletionMenu } from '../input/editor.js'
 import { nextGraphemeBoundary } from '../input/grapheme.js'
 import { CURSOR_MARKER } from '../renderer.js'

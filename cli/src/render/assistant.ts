@@ -55,9 +55,13 @@ export function assistantContentToOutputLines(
   expandedTools = false,
   options: { streaming?: boolean } = {},
 ): OutputLine[] {
-  return [...content]
-    .sort((a, b) => a.contentIndex - b.contentIndex)
-    .flatMap(block => renderBlockCached(block, expandedTools, options.streaming ?? false))
+  const ordered = [...content].sort((a, b) => a.contentIndex - b.contentIndex)
+  // Only the block still receiving deltas is streaming. Earlier blocks are
+  // complete, so they render exactly as they will once committed — a finished
+  // reasoning block reads `Thought` while the model is still typing after it.
+  return ordered.flatMap((block, index) =>
+    renderBlockCached(block, expandedTools, (options.streaming ?? false) && index === ordered.length - 1),
+  )
 }
 
 /** Visible text blocks used by non-interactive clients and overflow handling. */

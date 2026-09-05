@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { renderBanner } from '../src/term/banner.js'
-import { resetThemeCache } from '../src/render/theme.js'
+import { resetThemeCache } from '../src/render/theme/index.js'
 
 beforeAll(() => {
   chalk.level = 3

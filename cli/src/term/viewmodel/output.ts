@@ -1,10 +1,10 @@
-import type { OutputLine } from '../../render/output.js'
+import type { OutputLine, ToolCardMembership, ToolCardState } from '../../render/output.js'
 import stringWidth from 'string-width'
 import { line, block, plain, dim, bold, colored, ansi, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
-import { wrapTextByWidth } from './width.js'
+import { spansWidth, wrapTextByWidth } from './width.js'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 import stripAnsi from 'strip-ansi'
 
 export interface OutputContext {
@@ -12,15 +12,57 @@ export interface OutputContext {
   columns?: number
 }
 
-// A committed user message is marked by a left rail rather than a prompt glyph:
-// it spans every rendered row, so a wrapped or multi-line message reads as one
-// block instead of a first line plus loose continuations.
-//
-// U+258D (left five-eighths block) matches freebuff's rail. It paints most of
-// the cell, so the rail still reads as continuous down the message, while a
-// fully background-filled cell was wide enough to look like a selection
-// highlight rather than a margin marker.
-const USER_BAR = '\u258d'
+// Transcript panels: a full-width filled slab with a blank padded row above
+// and below — pi's Box(paddingY=1, bg). The fill is what separates "input and
+// tool activity" from the model's prose, which stays on the bare page. The
+// user message carries opencode's border-left (`┃`) in the brand colour; tool
+// cards keep the border cell blank, so their content sits on the same column,
+// and say their state through the fill instead (pi's pending/success/error).
+const PANEL_RAIL = '\u2503'
+// Rail (or blank) + gap on the left, one cell of fill on the right.
+const PANEL_PAD_LEFT = 2
+const PANEL_PAD_RIGHT = 1
+
+/**
+ * Lay a row out as part of a panel filled with `bg`. `rail` paints the
+ * border-left cell. Without a known width the fill covers only the content
+ * (the renderer still gets a well-formed line — it just cannot reach the
+ * margin).
+ */
+function panelRow(
+  spans: StyledSpan[],
+  columns: number | undefined,
+  bg: string,
+  rail?: string,
+): StyledLine {
+  const used = PANEL_PAD_LEFT + spansWidth(spans)
+  const fill = ' '.repeat(columns ? Math.max(PANEL_PAD_RIGHT, columns - used) : PANEL_PAD_RIGHT)
+  const lead: StyledSpan = rail ? { text: PANEL_RAIL, hex: rail } : plain(' ')
+  return { spans: [lead, plain(' '), ...spans, plain(fill)], bg }
+}
+
+/** Content width inside a panel. 0 means "unknown, do not wrap". */
+function panelInnerWidth(columns: number | undefined): number {
+  return columns ? Math.max(1, columns - PANEL_PAD_LEFT - PANEL_PAD_RIGHT) : 0
+}
+
+/** Card fill for a tool call in the given lifecycle state. */
+function toolCardBg(state: ToolCardState): string {
+  const theme = getTheme()
+  switch (state) {
+    case 'pending': return theme.toolPendingBg
+    case 'success': return theme.toolSuccessBg
+    case 'error': return theme.toolErrorBg
+  }
+}
+
+/** Row fill for a diff row inside a card; context rows keep the card fill. */
+function diffRowBg(kind: OutputLine['diffRow']): string | undefined {
+  const theme = getTheme()
+  if (kind === 'add') return theme.diffAddedBg
+  if (kind === 'remove') return theme.diffRemovedBg
+  return undefined
+}
 
 /**
  * Wall-clock header shown above a user message, e.g. `[06:11 PM]`.
@@ -74,36 +116,43 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
     // first/last rendered line without disturbing the rest.
     const blockStart = blocks.length
     let nextPrevKind: string | undefined = ol.kind
+    // Lines inside a panel wrap to its inner width so the side padding
+    // survives; everything else wraps to the full terminal.
+    const wrapColumns = ol.toolCard
+      ? (initialContext.columns ? panelInnerWidth(initialContext.columns) : undefined)
+      : initialContext.columns
     switch (ol.kind) {
       case 'user': {
+        // opencode's UserMessage: border-left in the brand colour, the message
+        // on the panel fill, a blank padded row above and below. The panel is
+        // what says "you said this" — no glyph, no bold — so a wrapped or
+        // multi-line message reads as one slab.
         const cols = initialContext.columns
-        // The bar occupies one cell plus a separating space, matching the
-        // 2-column prefix every other kind uses so wrapped text stays aligned.
-        const availWidth = cols ? Math.max(1, cols - 2) : 0
-        const barHex = getTheme().brandHex
-        const bar = (): StyledSpan => ({ text: USER_BAR, hex: barHex })
-        const userLines: StyledLine[] = []
+        const { panelBg, brandHex } = getTheme()
+        const availWidth = panelInnerWidth(cols)
+        const row = (...spans: StyledSpan[]): StyledLine => panelRow(spans, cols, panelBg, brandHex)
+        const userLines: StyledLine[] = [row()]
         if (ol.timestamp !== undefined) {
-          userLines.push(line(bar(), plain(' '), dim(formatClock(ol.timestamp))))
+          userLines.push(row(dim(formatClock(ol.timestamp))))
         }
         // Shift+Enter and pasted input carry hard newlines. Each logical line is
-        // wrapped on its own so every rendered row keeps the bar: letting a raw
-        // newline reach the renderer splits the row *after* the prefix, which is
-        // what dropped the bar on continuation lines.
+        // wrapped on its own so every rendered row is a complete panel row:
+        // letting a raw newline reach the renderer would split the row *after*
+        // the padding and leave the continuation unfilled.
         for (const segment of ol.text.split('\n')) {
           if (!segment) {
-            userLines.push(line(bar()))
+            userLines.push(row())
             continue
           }
           if (availWidth > 0) {
             for (const c of wrapTextByWidth(segment, availWidth)) {
-              userLines.push(line(bar(), plain(' '), bold(segment.slice(c.start, c.end))))
+              userLines.push(row(plain(segment.slice(c.start, c.end))))
             }
           } else {
-            userLines.push(line(bar(), plain(' '), bold(segment)))
+            userLines.push(row(plain(segment)))
           }
         }
-        if (userLines.length === 0) userLines.push(line(bar()))
+        userLines.push(row())
         blocks.push(block(userLines, 1))
         break
       }
@@ -143,18 +192,20 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
       }
 
       case 'thinking': {
-        // Keep reasoning rows within the terminal width just like pi's Text /
-        // Markdown components. A long unwrapped thinking line violates the
-        // renderer's one-logical-line-per-terminal-row invariant.
+        // Reasoning stays visible and readable: `✻` in the accent hue marks the
+        // block (assistant prose uses `⏺`), and the body is muted grey rather
+        // than dim italic — dim italic on a dark terminal was barely legible,
+        // especially for CJK. Continuations indent under the marker.
+        const theme = getTheme()
         const isBlockStart = prevKind !== 'thinking'
-        const prefix = isBlockStart ? colored('✻ ', 'magenta', { dim: true }) : plain('  ')
+        const prefix = isBlockStart
+          ? ansi(theme.thinkHeader.paint('✻ '))
+          : plain('  ')
         const cols = initialContext.columns
         const avail = cols ? Math.max(1, cols - 2) : 0
         const wrapped = avail > 0 ? wrapTextWithAnsi(ol.text, avail) : [ol.text]
         const thinkingLines = wrapped.map((text, index) => {
-          const body = ol.thinkingStyle
-            ? { text, italic: true, dim: true }
-            : dim(text)
+          const body = ol.thinkingStyle ? ansi(theme.thinkText.paint(text)) : dim(text)
           return line(index === 0 ? prefix : plain('  '), body)
         })
         blocks.push(block(thinkingLines, isBlockStart ? 1 : 0))
@@ -162,9 +213,15 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
       }
 
       case 'tool':
+        if (ol.diffRow) {
+          // Diff rows are fully styled by the diff renderer; bypass the
+          // headline/status heuristics so a `  5 + code` row is not re-dimmed.
+          blocks.push(block(wrapToolLines(ol.text, wrapColumns).map(part => line(ansi(part)))))
+          break
+        }
         blocks.push(ol.toolCodePreview
-          ? buildToolCodePreviewBlock(ol.text, initialContext.columns)
-          : buildToolBlock(ol.text, initialContext.columns))
+          ? buildToolCodePreviewBlock(ol.text, wrapColumns)
+          : buildToolBlock(ol.text, wrapColumns))
         break
 
       case 'tool_result':
@@ -176,7 +233,7 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         break
 
       case 'error': {
-        const cols = initialContext.columns
+        const cols = wrapColumns
         // Preserve the 2-space indent used by LLM-error body lines so wrapped
         // continuations align under the first line.
         const indentMatch = ol.text.match(/^(\s*)/)
@@ -218,6 +275,13 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
     }
     prevKind = nextPrevKind
 
+    // A tool card lays every row it produced on its lifecycle fill and adds
+    // the padded rows at its edges. Done per line from the line's own stamp,
+    // so the incremental history cache stays byte-identical.
+    if (ol.toolCard && blocks.length > blockStart) {
+      paintToolCard(blocks, blockStart, ol.toolCard, initialContext.columns, diffRowBg(ol.diffRow))
+    }
+
     // Attach OSC 133 zone markers from this line's own flags. Purely local, so
     // it is invariant to how the history is sliced across cache appends.
     if (blocks.length > blockStart) {
@@ -227,6 +291,31 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
   }
 
   return blocks
+}
+
+/**
+ * Lay the blocks a tool-card line produced onto the card's lifecycle fill,
+ * pi's ToolExecutionComponent: a Spacer above, then a Box whose background is
+ * pending / success / error. The card's first line keeps its top margin and
+ * gains the blank padded row that opens the slab; the last line gains the one
+ * that closes it. `rowBg` swaps the fill for this line's rows only (diff
+ * add/remove rows); the padding rows always use the card fill.
+ */
+function paintToolCard(
+  blocks: ViewBlock[],
+  from: number,
+  card: ToolCardMembership,
+  columns: number | undefined,
+  rowBg?: string,
+): void {
+  const bg = toolCardBg(card.state)
+  for (let index = from; index < blocks.length; index++) {
+    const b = blocks[index]!
+    b.lines = b.lines.map(l => panelRow(l.spans, columns, rowBg ?? bg))
+    b.marginTop = index === from && card.first ? 1 : 0
+  }
+  if (card.first) blocks[from]!.lines.unshift(panelRow([], columns, bg))
+  if (card.last) blocks[blocks.length - 1]!.lines.push(panelRow([], columns, bg))
 }
 
 function buildToolCodePreviewBlock(text: string, columns?: number): ViewBlock {

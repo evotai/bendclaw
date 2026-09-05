@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import chalk from 'chalk'
-import { getTheme } from '../src/render/theme.js'
+import { getTheme } from '../src/render/theme/index.js'
 import { buildSelectorRow } from '../src/term/viewmodel/selector-row.js'
 import { styledLineToAnsi } from '../src/term/viewmodel/types.js'
 

@@ -14,7 +14,7 @@ import chalk from 'chalk'
 import { homedir } from 'os'
 import stringWidth from 'string-width'
 
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 import { sectionHeaderLines, SECTION_MUTED } from '../../render/section.js'
 import { OFFICIAL_URL } from './source.js'
 

@@ -15,7 +15,7 @@ import {
 } from '../src/term/selector.js'
 import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
 import { CURSOR_MARKER } from '../src/term/renderer.js'
-import { getTheme } from '../src/render/theme.js'
+import { getTheme } from '../src/render/theme/index.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import stripAnsi from 'strip-ansi'
 import stringWidth from 'string-width'

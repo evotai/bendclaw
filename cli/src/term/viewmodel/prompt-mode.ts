@@ -11,7 +11,7 @@
  * All three cost zero extra rows.
  */
 
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 
 export type PromptMode = 'default' | 'plan' | 'log'
 

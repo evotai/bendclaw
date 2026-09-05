@@ -1,0 +1,81 @@
+/**
+ * Light palette. Same structure as `dark.ts`; every hue is deepened so it
+ * holds contrast on white (the dark theme's gold and lime wash out there).
+ * See dark.ts for why chalk.hex() is called lazily at paint time.
+ */
+
+import chalk from 'chalk'
+import { plain, style, type Theme } from './types.js'
+
+const brandHex = '#5769f7'
+const accentHex = '#b8860b'
+// A slightly deeper teal reads better on a light background than #8abeb7.
+const tealHex = '#5a8080'
+
+export function lightTheme(): Theme {
+  return {
+    brand: style(s => chalk.hex(brandHex)(s)),
+    brandBold: style(s => chalk.hex(brandHex).bold(s)),
+    brandHex,
+    accent: style(s => chalk.hex(accentHex)(s)),
+    accentBold: style(s => chalk.hex(accentHex).bold(s)),
+    accentHex,
+
+    // Light counterpart of the dark selection fill: a pale periwinkle wash that
+    // keeps the brand-hued label readable on a white background.
+    selectionBgHex: '#dfe3fd',
+    selectionMutedHex: '#5b6070',
+
+    // Darker, more saturated green: the dark theme's lime disappears on white.
+    // The block flips to white text against it.
+    cursorHex: '#3f9142',
+    cursorFgHex: '#ffffff',
+
+    // Pale periwinkle panel, a few points off white; diff rows a shade deeper.
+    panelBg: '#eceef8',
+    // Pale washes of the same three families as the dark tool fills.
+    toolPendingBg: '#eceef5',
+    toolSuccessBg: '#e4f0eb',
+    toolErrorBg: '#f5e6e9',
+    diffAddedBg: '#d3ecdc',
+    diffRemovedBg: '#f6d8dc',
+
+    text: plain,
+    // See darkTheme: emphasis needs a hue, darker gold to hold contrast on white.
+    bold: style(s => chalk.hex(accentHex).bold(s)),
+    italic: style(s => chalk.italic(s)),
+    boldItalic: style(s => chalk.hex(accentHex).bold.italic(s)),
+    strikethrough: style(s => chalk.dim.strikethrough(s)),
+    underline: style(s => chalk.underline(s)),
+    // See darkTheme: link stays neutral and relies on OSC 8 for clickability.
+    link: plain,
+    // Inline code colour mirrors claudecode's `permission` hex exactly:
+    // rgb(87,105,247) = #5769f7 (medium blue).
+    codeInline: style(s => chalk.hex('#5769f7')(s)),
+    mathInline: style(s => chalk.hex('#327878')(s)),
+    mathBlock: style(s => chalk.hex('#327878')(s)),
+
+    // Darker gold than the dark-theme accent so headings stay legible on a
+    // light background. Same warm family as evot's brand accent.
+    h1: style(s => chalk.hex(accentHex).bold.italic.underline(s)),
+    h2: style(s => chalk.hex(accentHex).bold(s)),
+    h3: style(s => chalk.hex(accentHex).bold(s)),
+    h4: style(s => chalk.hex(accentHex).bold(s)),
+    h5: style(s => chalk.hex(accentHex).bold(s)),
+    h6: style(s => chalk.hex(accentHex).bold(s)),
+
+    bullet: style(s => chalk.hex(tealHex)(s)),
+    listNumber: style(s => chalk.hex(tealHex)(s)),
+
+    blockquoteBorder: style(s => chalk.hex('#6a6a6a')(s)),
+    blockquoteText: style(s => chalk.italic(s)),
+
+    tableBorder: style(s => chalk.hex('#8a8a8a')(s)),
+    tableHeader: style(s => chalk.bold(s)),
+
+    hr: style(s => chalk.hex('#6a6a6a')(s)),
+    codeBlockBorder: style(s => chalk.hex('#8a8a8a')(s)),
+    thinkHeader: style(s => chalk.hex(accentHex)(s)),
+    thinkText: style(s => chalk.hex('#6c6c6c')(s)),
+  }
+}

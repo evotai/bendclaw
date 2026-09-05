@@ -4,7 +4,7 @@ import {
   getThemeScheme,
   resetDetectedThemeScheme,
   setDetectedThemeScheme,
-} from '../src/render/theme.js'
+} from '../src/render/theme/index.js'
 
 const prevTheme = process.env.EVOT_THEME
 const prevColorfgbg = process.env.COLORFGBG

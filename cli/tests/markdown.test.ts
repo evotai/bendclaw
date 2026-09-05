@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { renderMarkdown, renderThinkingMarkdown } from '../src/render/markdown.js'
 import { formatToken } from '../src/markdown/render/ansi.js'
-import { getTheme, resetThemeCache } from '../src/render/theme.js'
+import { getTheme, resetThemeCache } from '../src/render/theme/index.js'
 import chalk from 'chalk'
 import { marked, type Token } from 'marked'
 import stripAnsi from 'strip-ansi'

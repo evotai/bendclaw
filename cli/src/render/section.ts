@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import stringWidth from 'string-width'
 
-import { getTheme } from './theme.js'
+import { getTheme } from './theme/index.js'
 
 export const SECTION_INDENT = 2
 export const SECTION_CONTENT_INDENT = 4

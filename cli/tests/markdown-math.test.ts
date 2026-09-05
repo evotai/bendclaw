@@ -4,7 +4,7 @@ import chalk from 'chalk'
 import { lexRawMarkdownTokens } from '../src/markdown/parse/marked.js'
 import { renderLatexMath } from '../src/markdown/math/ansi.js'
 import { renderMarkdown } from '../src/render/markdown.js'
-import { getTheme, resetThemeCache } from '../src/render/theme.js'
+import { getTheme, resetThemeCache } from '../src/render/theme/index.js'
 import {
   findStreamingCommitPoint,
   isInsideOpenMathBlock,

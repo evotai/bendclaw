@@ -19,7 +19,13 @@ export interface StyledSpan {
 
 export interface StyledLine {
   spans: StyledSpan[]
-  /** Fill applied to padding added when a line is laid out to a fixed width. */
+  /**
+   * Row fill. `styledLineToAnsi` paints it under every span and re-arms it
+   * after any embedded SGR reset, so a line that carries pre-styled ANSI
+   * (markdown, syntax highlight, wrapped text ending in `\x1b[0m`) still reads
+   * as one continuous band. Layout code that pads to a fixed width (frame rows,
+   * transcript blocks) extends the fill across the padding too.
+   */
   bg?: string
 }
 
@@ -28,8 +34,35 @@ export interface ViewBlock {
   marginTop?: number
 }
 
+/**
+ * Paint `hex` behind `text`, surviving inner resets.
+ *
+ * chalk closes a background with `49` and every foreground style with its
+ * own close code, so nested spans are safe. What is not safe is a bare
+ * `\x1b[0m` (the wrap primitive emits one when it has to cut an open style at
+ * a line break, and pre-rendered tool output may carry them): it drops the
+ * fill for the rest of the row. Re-arm the fill after each such reset so the
+ * band never has a hole. Honours chalk's colour level — at level 0 the text
+ * comes back untouched.
+ */
+export function paintBackground(text: string, hex: string): string {
+  const probe = chalk.bgHex(hex)('\u0000')
+  const marker = probe.indexOf('\u0000')
+  if (marker < 0) return text
+  const open = probe.slice(0, marker)
+  const close = probe.slice(marker + 1)
+  if (!open) return text
+  const rearmed = text.replace(/\x1b\[0m/g, `\x1b[0m${open}`).replace(/\x1b\[49m/g, open)
+  return `${open}${rearmed}${close}`
+}
+
 export function styledLineToAnsi(line: StyledLine): string {
-  return line.spans.map(span => {
+  const rendered = spansToAnsi(line.spans)
+  return line.bg ? paintBackground(rendered, line.bg) : rendered
+}
+
+function spansToAnsi(spans: StyledSpan[]): string {
+  return spans.map(span => {
     let s = span.text
     if (!s) return ''
 

@@ -12,7 +12,7 @@
  */
 
 import stringWidth from 'string-width'
-import { getTheme } from '../../render/theme.js'
+import { getTheme } from '../../render/theme/index.js'
 import { atLeastHeight, atLeastWidth, heightTier, widthTier } from './breakpoints.js'
 import { line, plain, type StyledLine, type StyledSpan } from './types.js'
 import { spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'

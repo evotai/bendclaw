@@ -77,14 +77,31 @@ describe('buildAssistantLines', () => {
 })
 
 describe('buildThinkingLines', () => {
-  test('renders thinking as markdown like pi assistant content', () => {
+  test('renders reasoning as markdown, one OutputLine per row', () => {
     const lines = buildThinkingLines('**Planning**\n\nnext')
     expect(lines).toHaveLength(2)
     expect(lines.every(line => line.kind === 'thinking')).toBe(true)
     expect(lines.every(line => line.thinkingStyle)).toBe(true)
-    expect(lines.map(line => line.text).join('\n')).not.toContain('**')
-    expect(lines.map(line => line.text).join('\n')).toContain('Planning')
-    expect(lines.map(line => line.text).join('\n')).toContain('next')
+    const text = lines.map(line => line.text).join('\n')
+    expect(text).not.toContain('**')
+    expect(text).toContain('Planning')
+    expect(text).toContain('next')
+  })
+
+  test('blank reasoning produces nothing', () => {
+    expect(buildThinkingLines('   ')).toEqual([])
+  })
+
+  test('an ellipsis-only reasoning placeholder renders nothing', () => {
+    // Observed on the evot-pro-anthropic wire: a bare `...` after a tool
+    // call. This is not a claim about the model's reasoning duration.
+    expect(buildThinkingLines('...')).toEqual([])
+    expect(buildThinkingLines('…')).toEqual([])
+    expect(buildThinkingLines('  ...  \n\n')).toEqual([])
+  })
+
+  test('reasoning that merely contains dots still renders', () => {
+    expect(buildThinkingLines('checking ... now').map(line => line.text)).toEqual(['checking ... now'])
   })
 })
 

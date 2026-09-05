@@ -9,7 +9,7 @@
  */
 
 import { renderMarkdown, renderThinkingMarkdown } from './markdown.js'
-import { colorizeUnifiedDiff } from './diff.js'
+import { colorizeUnifiedDiffRows, type DiffRowKind } from './diff.js'
 import { highlightCode, highlightCodeLine } from '../markdown/render/ansi.js'
 import { truncate, formatDuration, formatElapsed, toolResultLines, formatBashCommandDisplay, expandLinesHint, COLLAPSE_HINT, summarizeInline } from './format.js'
 import { formatCompactionCompleted } from './verbose.js'
@@ -335,13 +335,9 @@ function appendWriteContentPreview(lines: OutputLine[], call: UIToolCall, expand
 
   const remaining = total - shown.length
   if (remaining > 0) {
-    lines.push({
-      id: genId('tool-hint'),
-      kind: 'tool_result',
-      text: `  ... (${remaining} more ${remaining === 1 ? 'line' : 'lines'}, ${total} total, ctrl+o to expand)`,
-    })
+    lines.push(toolHintLine(`  ... (${remaining} more ${remaining === 1 ? 'line' : 'lines'}, ${total} total, ctrl+o to expand)`))
   } else if (expanded && total > 1) {
-    lines.push({ id: genId('tool-hint'), kind: 'tool_result', text: `  ${COLLAPSE_HINT}` })
+    lines.push(toolHintLine(`  ${COLLAPSE_HINT}`))
   }
 }
 
@@ -368,9 +364,24 @@ function toolStatusLine(mark: '○' | '●' | '✓' | '✗', parts: string[]): O
   }
 }
 
+/** A collapsed/expand hint row under a card. */
+function toolHintLine(text: string): OutputLine {
+  return { id: genId('tool-hint'), kind: 'tool_result', text }
+}
+
 function insertToolStatus(lines: OutputLine[], status: OutputLine): void {
   const callIndex = lines.findIndex(line => line.kind === 'tool' && !line.text.startsWith('  '))
   lines.splice(callIndex < 0 ? 0 : callIndex + 1, 0, status)
+}
+
+/** One OutputLine per diff row, so the viewmodel can tint added/removed rows. */
+function diffOutputLines(diff: string): OutputLine[] {
+  return colorizeUnifiedDiffRows(diff).map(row => ({
+    id: genId('tool-diff'),
+    kind: 'tool' as const,
+    text: row.text,
+    diffRow: row.kind,
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -382,13 +393,16 @@ export interface OutputLine {
   kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'tool_result' | 'verbose' | 'error' | 'system' | 'cancelled'
   text: string
   rawMarkdown?: string
-  /** Thinking text already contains markdown ANSI; apply only the outer pi tint. */
+  /** Thinking text already contains markdown ANSI; apply only the outer tint. */
   thinkingStyle?: boolean
   /** System text that already carries its own ANSI styling (e.g. `/skill`).
    *  Rendered verbatim instead of being flattened to one dim gray. */
   preStyled?: boolean
   /** Tool line containing pre-styled source code from a streamed write call. */
   toolCodePreview?: boolean
+  /** Tool line that is one row of a rendered diff; added/removed rows get
+   *  their own fill inside the card. */
+  diffRow?: DiffRowKind
   codeBlockId?: string
   codeLanguage?: string
   /** Visual spacer inserted between streamed markdown chunks. It creates a
@@ -404,6 +418,29 @@ export interface OutputLine {
    *  build time (not render time) so a re-render — and the incremental history
    *  cache — reproduces the same header a full rebuild would. */
   timestamp?: number
+  /**
+   * Membership in a tool card. Every line of one call carries the same state
+   * so the viewmodel can lay the whole card on the panel; `first`/`last` mark
+   * the card's edges, where the padded rows go.
+   */
+  toolCard?: ToolCardMembership
+}
+
+export type ToolCardState = 'pending' | 'success' | 'error'
+
+export interface ToolCardMembership {
+  state: ToolCardState
+  first: boolean
+  last: boolean
+}
+
+/** Stamp a finished card's lines with their shared state and edges. */
+function stampToolCard(lines: OutputLine[], state: ToolCardState): OutputLine[] {
+  const last = lines.length - 1
+  return lines.map((line, index) => ({
+    ...line,
+    toolCard: { state, first: index === 0, last: index === last },
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -451,11 +488,32 @@ export function buildAssistantLines(
   }))
 }
 
+/**
+ * True when reasoning text carries something to read.
+ *
+ * An evot-pro-anthropic diagnostic request returned a thinking_delta whose
+ * entire text was `...`, after its tool call. This placeholder is already in
+ * the gateway's wire response; it is not evidence of a short reasoning turn
+ * or of any particular OpenAI summary policy. Suppress it only in the view,
+ * retaining the original signed thinking block for replay. Real text that
+ * merely contains dots ("checking ... now") must still render.
+ */
+function hasReasoningContent(text: string): boolean {
+  return text.replace(/[.\u2026\s]/g, '').length > 0
+}
+
+/**
+ * Reasoning rows, rendered as markdown and tinted muted by the viewmodel.
+ *
+ * Shown in full: reasoning is the most useful thing on screen while a long
+ * turn runs, so it is never collapsed behind a summary row. `streaming` only
+ * affects fence handling in the markdown pipeline.
+ */
 export function buildThinkingLines(
   text: string,
   options: { streaming?: boolean } = {},
 ): OutputLine[] {
-  if (!text.trim()) return []
+  if (!text.trim() || !hasReasoningContent(text)) return []
   const rendered = renderThinkingMarkdown(text, { streaming: options.streaming })
   if (!rendered || !rendered.trim()) return []
   const cleaned = rendered.replace(/^\n+/, '').replace(/\n+$/, '')
@@ -501,11 +559,7 @@ export function buildToolCall(
       lines.push({ id: genId('tool'), kind: 'tool', text: detail })
     }
     if (details.length > 0) {
-      lines.push({
-        id: genId('tool-hint'),
-        kind: 'tool_result',
-        text: `  [2m${COLLAPSE_HINT}[0m`,
-      })
+      lines.push(toolHintLine(`  [2m${COLLAPSE_HINT}[0m`))
     }
   }
   return lines
@@ -563,7 +617,7 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     const summary = call.argsComplete ? 'ready' : toolDraftSummary(call)
     insertToolStatus(lines, toolStatusLine('○', [summary]))
     appendWriteContentPreview(lines, call, expanded)
-    return lines
+    return stampToolCard(lines, 'pending')
   }
 
   if (call.status !== 'running') {
@@ -582,12 +636,12 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     )
     insertToolStatus(lines, resultLines.shift() ?? toolStatusLine(settledFailed ? '✗' : '✓', []))
     lines.push(...resultLines)
-    return lines
+    return stampToolCard(lines, settledFailed ? 'error' : 'success')
   }
 
   insertToolStatus(lines, toolStatusLine('●', runningStatusParts(call.name, args)))
   if (diff) {
-    lines.push({ id: genId('tool-diff'), kind: 'tool', text: colorizeUnifiedDiff(diff) })
+    lines.push(...diffOutputLines(diff))
   } else {
     // Keep the streamed content visible between tool_started and the engine's
     // preview diff so the card never blanks out mid-transition (pi behavior).
@@ -600,7 +654,7 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     }
   }
 
-  return lines
+  return stampToolCard(lines, 'pending')
 }
 
 /** Failed tool bodies auto-preview at most this many tail lines. */
@@ -668,11 +722,7 @@ export function buildToolResult(
   // summarized on the headline and the error body is what matters.
   const diff = args?.diff as string | undefined
   if (!isError && diff && typeof diff === 'string' && diff.length > 0) {
-    lines.push({
-      id: genId('tool-diff'),
-      kind: 'tool',
-      text: colorizeUnifiedDiff(diff),
-    })
+    lines.push(...diffOutputLines(diff))
   }
 
   // Tool result content. Collapsed success is a single `... (+N lines, ctrl+o
@@ -685,11 +735,7 @@ export function buildToolResult(
       const all = toolResultLines(formattedResult, true, name, true)
       const hidden = all.length - ERROR_PREVIEW_LINES
       if (hidden > 0) {
-        lines.push({
-          id: genId('tool-hint'),
-          kind: 'tool_result',
-          text: `  [2m... ${expandLinesHint(hidden)}[0m`,
-        })
+        lines.push(toolHintLine(`  [2m... ${expandLinesHint(hidden)}[0m`))
       }
       for (const rl of hidden > 0 ? all.slice(-ERROR_PREVIEW_LINES) : all) {
         lines.push({ id: genId('tool-res'), kind: 'error', text: `  ${rl}` })
@@ -697,20 +743,12 @@ export function buildToolResult(
     } else {
       const resultLines = toolResultLines(formattedResult, isError, name, expanded)
       for (const rl of resultLines) {
-        lines.push({
-          id: genId('tool-res'),
-          kind: isError ? 'error' : 'tool_result',
-          text: `  ${rl}`,
-        })
+        lines.push({ id: genId('tool-res'), kind: isError ? 'error' : 'tool_result', text: `  ${rl}` })
       }
       // Collapse hint under any user-expanded multiline body (success or
       // failure) — ctrl+o collapses back to the default view.
       if (expanded && resultLines.length > 1) {
-        lines.push({
-          id: genId('tool-hint'),
-          kind: 'tool_result',
-          text: `  [2m${COLLAPSE_HINT}[0m`,
-        })
+        lines.push(toolHintLine(`  [2m${COLLAPSE_HINT}[0m`))
       }
     }
   }
@@ -729,14 +767,14 @@ export function buildToolProgress(name: string, text: string, expanded?: boolean
       lines.push({ id: genId('tool-res'), kind: 'tool_result', text: `  ${l}` })
     }
     if (progressLines.length > 1) {
-      lines.push({ id: genId('tool-hint'), kind: 'tool_result', text: `  [2m${COLLAPSE_HINT}[0m` })
+      lines.push(toolHintLine(`  [2m${COLLAPSE_HINT}[0m`))
     }
     return lines
   }
   // Collapsed: no content preview — the header already carries the line count,
   // so a multiline body just adds a single expand hint (matching tool results).
   if (total > 1) {
-    lines.push({ id: genId('tool-hint'), kind: 'tool_result', text: `  [2m... ${expandLinesHint(total)}[0m` })
+    lines.push(toolHintLine(`  [2m... ${expandLinesHint(total)}[0m`))
   } else {
     lines.push({ id: genId('tool-res'), kind: 'tool_result', text: `  ${progressLines[0] ?? ''}` })
   }
@@ -848,7 +886,7 @@ function buildCompactionLines(compaction: UICompaction, expanded: boolean): Outp
   if (expanded) return [...lines, ...buildAssistantLines(compaction.summary)]
   return [
     ...lines,
-    { id: genId('tool-hint'), kind: 'tool_result', text: '  ... summary hidden (ctrl+o to expand)' },
+    toolHintLine('  ... summary hidden (ctrl+o to expand)'),
   ]
 }
 
@@ -914,7 +952,9 @@ export function messagesToOutputLines(messages: UIMessage[], expanded: boolean =
 
     if (msg.content) {
       for (const block of [...msg.content].sort((a, b) => a.contentIndex - b.contentIndex)) {
-        if (block.type === 'thinking') lines.push(...buildThinkingLines(block.text))
+        if (block.type === 'thinking') {
+          lines.push(...buildThinkingLines(block.text))
+        }
         else if (block.type === 'text') lines.push(...buildAssistantLines(block.text))
         else lines.push(...buildToolCard(block.toolCall))
       }

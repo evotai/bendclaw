@@ -389,6 +389,47 @@ describe('buildOutputBlocks', () => {
     }
   })
 
+  test('system notices have a blank row after conversation output', () => {
+    for (const prevKind of ['assistant', 'thinking', 'tool', 'tool_result', 'user', 'error']) {
+      const blocks = buildOutputBlocks([
+        { id: 'sys-upd', kind: 'system', text: '  checking for updates...' },
+      ], { prevKind, columns: 80 })
+      expect(blocksToLines(blocks).map(stripAnsi)).toEqual(['', '  checking for updates...'])
+    }
+  })
+
+  test('consecutive system notices stay compact, including incremental renders', () => {
+    const assistant: OutputLine = { id: 'a1', kind: 'assistant', text: 'The release is published after a successful build.' }
+    const notices: OutputLine[] = [
+      { id: 'sys-upd', kind: 'system', text: '  checking for updates...' },
+      { id: 'sys-upd-ok', kind: 'system', text: '  ✓ evot is up to date.' },
+    ]
+    const whole = blocksToLines(buildOutputBlocks([assistant, ...notices], { columns: 80 }))
+    const incremental = [
+      ...blocksToLines(buildOutputBlocks([assistant], { columns: 80 })),
+      ...blocksToLines(buildOutputBlocks(notices.slice(0, 1), { prevKind: 'assistant', columns: 80 })),
+      ...blocksToLines(buildOutputBlocks(notices.slice(1), { prevKind: 'system', columns: 80 })),
+    ]
+    expect(incremental).toEqual(whole)
+    expect(whole.map(stripAnsi)).toEqual([
+      '', '⏺ The release is published after a successful build.', '',
+      '  checking for updates...', '  ✓ evot is up to date.',
+    ])
+  })
+
+  test('system output does not gain redundant leading whitespace', () => {
+    const notice: OutputLine = { id: 's1', kind: 'system', text: '  some info' }
+    expect(renderPlain([notice])).toBe('  some info')
+    for (const columns of [undefined, 40]) {
+      for (const text of ['', '\n  Skills', chalk.gray('  ') + '\n  Skills']) {
+        const blocks = buildOutputBlocks([
+          { ...notice, text, preStyled: true },
+        ], { prevKind: 'assistant', columns })
+        expect(blocks[0]?.marginTop ?? 0).toBe(0)
+      }
+    }
+  })
+
   test('system lines are dim', () => {
     const result = render([{ id: 's1', kind: 'system', text: '  some info' }])
     expect(result).toContain('\x1b[38;2;119;119;119m')

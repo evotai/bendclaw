@@ -1,8 +1,9 @@
 import { describe, test, expect } from 'bun:test'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { smokeEnvironment, seedSmokeHome } from '../helpers/smoke-home.js'
 import { getTheme } from '../../src/render/theme/index.js'
 
 const EVOT_BIN = process.env.EVOT_TEST_BIN || join(import.meta.dirname, '..', '..', 'dist', 'evot')
@@ -66,6 +67,7 @@ type Session = {
   waitFor: (match: string | RegExp, timeoutMs?: number) => Promise<string>
   checkpoint: () => void
   persistedSessionCount: () => number
+  historyEntries: () => string[]
   kill: () => Promise<void>
 }
 
@@ -156,28 +158,22 @@ async function startEvot(
   seedOtherCwd = false,
   seedPreviewCacheMiss = false,
 ): Promise<Session> {
-  // Isolated EVOT_HOME: a dev machine may hold a staged release newer than this binary.
+  // Isolate HOME as well as EVOT_HOME: some TS and Rust stores use ~/.evotai.
+  // This must also protect developer state when testing an older compiled binary.
   const isolatedHome = mkdtempSync(join(tmpdir(), 'evot-smoke-home-'))
-  if (seedSession) seedResumeSession(isolatedHome)
+  const stateHome = seedSmokeHome(isolatedHome)
+  if (seedSession) seedResumeSession(stateHome)
   if (seedOtherCwd) {
-    seedResumeSession(isolatedHome, {
+    seedResumeSession(stateHome, {
       id: OTHER_CWD_SESSION_ID,
       cwd: '/tmp/other-project',
       title: 'other cwd fixture',
     })
   }
-  if (seedPreviewCacheMiss) seedResumePreviewCacheMiss(isolatedHome)
+  if (seedPreviewCacheMiss) seedResumePreviewCacheMiss(stateHome)
   const child = spawn('python3', ['-c', PTY_RELAY, EVOT_BIN], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      EVOT_THEME: 'dark',
-      EVOT_MOUSE: '0',
-      EVOT_HOME: isolatedHome,
-      EVOT_STORAGE_FS_ROOT_DIR: isolatedHome,
-    },
+    env: smokeEnvironment(isolatedHome),
   })
   let all = ''
   let seen = 0
@@ -205,27 +201,40 @@ async function startEvot(
     }
   }
 
-  // The composer prompt is the readiness signal, so boot time is waited out
-  // rather than guessed at.
-  await waitFor('Enter a coding task')
+  const kill = async (): Promise<void> => {
+    seen = all.length
+    child.stdin!.write('\x03')
+    await wait(300)
+    child.stdin!.write('\x03')
+    await wait(500)
+    child.kill('SIGKILL')
+    rmSync(isolatedHome, { recursive: true, force: true })
+  }
+  // Readiness failures must not leave a subprocess or its temporary home behind.
+  try {
+    await waitFor('Enter a coding task')
+  } catch (err) {
+    await kill()
+    throw err
+  }
   return {
     write: data => { child.stdin!.write(data) },
     outputSince,
     waitFor,
     checkpoint: () => { seen = all.length },
     persistedSessionCount: () => {
-      const sessionsDir = join(isolatedHome, 'sessions')
+      const sessionsDir = join(stateHome, 'sessions')
       return existsSync(sessionsDir) ? readdirSync(sessionsDir).length : 0
     },
-    kill: async () => {
-      seen = all.length
-      child.stdin!.write('\x03')
-      await wait(300)
-      child.stdin!.write('\x03')
-      await wait(500)
-      child.kill('SIGKILL')
-      rmSync(isolatedHome, { recursive: true, force: true })
+    historyEntries: () => {
+      const projects = join(stateHome, 'projects')
+      if (!existsSync(projects)) return []
+      return readdirSync(projects).flatMap(slug => {
+        const path = join(projects, slug, 'evot_history')
+        return existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter(Boolean) : []
+      })
     },
+    kill,
   }
 }
 
@@ -485,7 +494,9 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       const reopened = await session.waitFor('Resume session')
       expect(reopened).toMatch(/Resume session.*\s1(?:\r|\n)/)
       expect(reopened).toContain('Current cwd')
-      expect(reopened).toContain('(untitled)')
+      // The local provider fails promptly, so the fallback title can already
+      // be set. Assert the actual prompt rather than racing title generation.
+      expect(reopened).toContain('cache refresh smoke')
     } finally {
       await session.kill()
     }
@@ -546,8 +557,10 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
   test('submitting a prompt commits it to the transcript', async () => {
     const session = await startEvot()
     try {
+      expect(session.historyEntries()).toEqual([])
       session.write('echo smoke test\x0d')
       await session.waitFor('┃ echo smoke test')
+      expect(session.historyEntries()).toEqual(['echo smoke test'])
     } finally {
       await session.kill()
     }

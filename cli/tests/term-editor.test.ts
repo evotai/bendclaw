@@ -177,6 +177,20 @@ describe('term input editor', () => {
     expect(typeof state.ghostHint).toBe('string')
   })
 
+  test('history submission deduplicates consecutive entries and resets navigation', () => {
+    const history = createHistoryState(['one', 'two'])
+    const recalled = historyPrev(history, createEditorState())
+    const submitted = pushHistory(recalled.history, '  two  ')
+    expect(submitted.entries).toEqual(['one', 'two'])
+    expect(submitted.index).toBe(2)
+    expect(submitted.savedInput).toBe('')
+    expect(pushHistory(submitted, ' ').entries).toEqual(['one', 'two'])
+    expect(pushHistory(submitted, 'one').entries).toEqual(['one', 'two', 'one'])
+    const latest = historyPrev(submitted, createEditorState())
+    expect(getEditorText(latest.editor)).toBe('two')
+    expect(getEditorText(historyPrev(latest.history, latest.editor).editor)).toBe('one')
+  })
+
   test('history prev/next restore input', () => {
     let editor = createEditorState()
     let history = createHistoryState([])

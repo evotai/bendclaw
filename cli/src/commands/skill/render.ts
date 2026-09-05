@@ -16,6 +16,7 @@ import stringWidth from 'string-width'
 
 import { getTheme } from '../../render/theme/index.js'
 import { sectionHeaderLines, SECTION_MUTED } from '../../render/section.js'
+import { renderCommandNotice } from '../../render/command-notice.js'
 import { OFFICIAL_URL } from './source.js'
 
 const INDENT = 2
@@ -233,14 +234,14 @@ export function renderOperation(view: OperationView): string {
 
 /** A single-line result, for `/skill remove` and every refusal path. */
 export function renderNotice(text: string): string {
-  return `${' '.repeat(INDENT)}${muted(text)}`
+  return renderCommandNotice({ message: text })
 }
 
 export function renderRemoved(text: string): string {
-  return `${' '.repeat(INDENT)}${chalk.green('✓')} ${muted(text)}`
+  return renderCommandNotice({ state: 'success', message: text })
 }
 
 /** The in-progress status line, replaced in place as the phases advance. */
 export function renderProgress(phase: string): string {
-  return `${' '.repeat(INDENT)}${muted('⋯')} ${getTheme().brandBold.paint('skill')}  ${muted(phase)}`
+  return renderCommandNotice({ state: 'progress', label: 'skill', message: phase })
 }

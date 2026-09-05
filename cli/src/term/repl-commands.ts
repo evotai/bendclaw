@@ -5,7 +5,9 @@ import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/ass
 import { resolveSessionByPrefix } from './app/resume.js'
 import type { OutputLine } from '../render/output.js'
 import { defaultDeps, type LoginDeps } from '../commands/login-flow.js'
-import { createProgressLine, type ProgressLine } from './progress-line.js'
+import { createCommandOutput } from './command-output.js'
+import { renderCommandNotice } from '../render/command-notice.js'
+import type { RunResult } from '../update/types.js'
 
 export interface ReplCommandContext {
   agent: Agent
@@ -37,9 +39,6 @@ function failureText(label: string, err: unknown): string {
 
 /** Distinguishes concurrent reveals; see the comment at its use site. */
 let nextRevealId = 0
-
-/** One id per `/skill` operation, so two in flight never overwrite each other. */
-let nextProgressId = 0
 
 async function defaultLoginCommandDeps(): Promise<LoginCommandDeps> {
   const { deviceFingerprint, openLoginBrowser } = await import('../commands/login.js')
@@ -158,24 +157,11 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
   const sub = args.trim()
   const skill = await import('../commands/skill.js')
 
-  const commitStyled = (id: string, text: string): void => {
-    ctx.commitLines([{ id, kind: 'system', text, preStyled: true }])
-    ctx.requestRender()
-  }
+  const { commit: commitStyled, progress: progressLine } = createCommandOutput(ctx, 'skill')
 
   const notice = (text: string): void => {
     commitStyled(`sys-skill-${Date.now()}`, skill.renderNotice(text))
   }
-
-  /** One progress line per invocation, rewritten in place as phases advance. */
-  const progressLine = (): ProgressLine => createProgressLine(`sys-skill-progress-${nextProgressId++}`, {
-    commit: commitStyled,
-    replace: (id, text) => {
-      const replaced = ctx.replaceLine(id, text)
-      if (replaced) ctx.requestRender()
-      return replaced
-    },
-  })
 
   if (!sub || sub === 'list') {
     try {
@@ -198,7 +184,7 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
         'view' in outcome ? skill.renderOperation(outcome.view) : skill.renderNotice(outcome.notice),
       )
     } catch (err) {
-      status.finish(failureText('install failed', err))
+      status.finish(renderCommandNotice({ state: 'error', message: `install failed: ${(err as { message?: string })?.message ?? err}` }))
     }
     return
   }
@@ -215,7 +201,7 @@ export async function handleSkillCommand(ctx: ReplCommandContext, args: string):
         'view' in outcome ? skill.renderOperation(outcome.view) : skill.renderNotice(outcome.notice),
       )
     } catch (err) {
-      status.finish(failureText('update failed', err))
+      status.finish(renderCommandNotice({ state: 'error', message: `update failed: ${(err as { message?: string })?.message ?? err}` }))
     }
     return
   }
@@ -330,47 +316,48 @@ export async function handleVersionCommand(ctx: ReplCommandContext): Promise<voi
   ctx.commitSystem('sys-version', `  evot v${version()}`)
 }
 
-export async function handleUpdateCommand(ctx: ReplCommandContext): Promise<void> {
-  ctx.commitSystem('sys-upd', '  checking for updates...')
-  ctx.requestRender()
+export async function handleUpdateCommand(
+  ctx: ReplCommandContext,
+  run?: () => Promise<RunResult>,
+): Promise<void> {
+  const status = createCommandOutput(ctx, 'update').progress()
+  status.update(renderCommandNotice({ state: 'progress', label: 'update', message: 'checking for updates...' }))
   try {
-    const { runUpdate } = await import('../update/index.js')
-    const { version } = await import('../native/index.js')
-    const result = await runUpdate(version())
+    const result = await (run ?? (async () => {
+      const { runUpdate } = await import('../update/index.js')
+      const { version } = await import('../native/index.js')
+      return runUpdate(version())
+    }))()
     switch (result.kind) {
       case 'up_to_date':
-        ctx.commitSystem(
-          'sys-upd-ok',
-          [
-            result.staleReason
-              ? `  ✓ evot is up to date, per the last successful check (${result.staleReason}).`
-              : '  ✓ evot is up to date.',
-            // Only present alongside a stale answer, where the route explains it.
-            ...(result.proxy ? [`    ${result.proxy}`] : []),
-          ].join('\n'),
-        )
+        status.finish(renderCommandNotice({
+          state: 'success',
+          message: result.staleReason
+            ? `evot is up to date, per the last successful check (${result.staleReason}).`
+            : 'evot is up to date.',
+          details: result.proxy ? [result.proxy] : [],
+        }))
         break
-      case 'updated': {
-        const lines: string[] = [`  ✓ updated ${result.from} → ${result.to}. /restart to apply.`]
-        if (result.notes && result.notes.length > 0) {
-          lines.push('')
-          lines.push(`  What's new in ${result.to}:`)
-          for (const note of result.notes) {
-            lines.push(`    • ${note}`)
-          }
-        }
-        ctx.commitSystem('sys-upd-ok', lines.join('\n'))
+      case 'updated':
+        status.finish(renderCommandNotice({
+          state: 'success',
+          message: `updated ${result.from} → ${result.to}. /restart to apply.`,
+          details: result.notes?.length
+            ? ['', `What's new in ${result.to}:`, ...result.notes.map(note => `• ${note}`)]
+            : [],
+        }))
         break
-      }
       case 'error':
-        ctx.commitSystem(
-          'sys-upd-err',
-          chalk.red([`  ✗ ${result.message}`, ...(result.proxy ? [`    ${result.proxy}`] : [])].join('\n')),
-        )
+        status.finish(renderCommandNotice({
+          state: 'error', message: result.message,
+          details: result.proxy ? [result.proxy] : [],
+        }))
         break
     }
   } catch (err) {
-    ctx.commitSystem('sys-upd-err', chalk.red(`  ✗ update failed: ${(err as { message?: string })?.message ?? err}`))
+    status.finish(renderCommandNotice({
+      state: 'error', message: `update failed: ${(err as { message?: string })?.message ?? err}`,
+    }))
   }
 }
 

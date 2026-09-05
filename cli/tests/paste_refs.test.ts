@@ -411,10 +411,14 @@ describe('resolveHistoryText', () => {
       .toBe('prefix line one\nline two\nline three suffix')
   })
 
-  test('strips image refs because binary image data is persisted separately', () => {
+  test('keeps image refs alongside expanded text for history recall', () => {
     const chunks = new Map([[1, 'pasted content']])
     expect(resolveHistoryText('[Pasted text #1] [Image #2]', chunks))
-      .toBe('pasted content')
+      .toBe('pasted content [Image #2]')
+  })
+
+  test('keeps image-only history entries', () => {
+    expect(resolveHistoryText('[Image #1]', new Map())).toBe('[Image #1]')
   })
 })
 

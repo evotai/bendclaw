@@ -201,6 +201,32 @@ export function tickAdSlot(state: AdSlotState, now: number): { content: AdConten
   return { content, phase: 'steady', progress: Math.min(1, age / AD_STEADY_MS) }
 }
 
+/**
+ * Called after tickAdSlot. Animate only while text changes; otherwise sleep
+ * until rotation/preemption. Hidden slots have no timer and resume on the next
+ * state-driven frame (overlay close, task completion, resize or catalog sync).
+ */
+export function nextAdSlotRenderDelay(
+  state: AdSlotState,
+  tick: ReturnType<typeof tickAdSlot>,
+  now: number,
+  visible: boolean,
+): number | null {
+  if (!visible || !tick.content || tick.phase === 'gone') return null
+  const total = visibleGraphemeCount(tickerText(tick.content))
+  const age = now - state.shownAt
+  if (tick.phase === 'erasing') {
+    const eraseEnd = Math.max(1, total) * ERASE_STEP_MS
+    return age < eraseEnd ? Math.min(80, eraseEnd - age) : Math.max(1, eraseEnd + AD_GAP_MS - age)
+  }
+  let delay = Math.max(1, state.rotationDueAt - now)
+  if (age < total * TYPE_STEP_MS) delay = Math.min(delay, 80, total * TYPE_STEP_MS - age)
+  if (tick.content.kind === 'ad' && nextNotice(state)) {
+    delay = Math.min(delay, Math.max(1, AD_ENTER_MS * 3 + 1 - age))
+  }
+  return delay
+}
+
 function enterFrame(state: AdSlotState, content: AdContent, now: number) {
   const age = now - state.shownAt
   if (age >= AD_ENTER_MS) return { content, phase: 'steady' as const, progress: age / AD_STEADY_MS }

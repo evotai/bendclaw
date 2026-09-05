@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import chalk from 'chalk'
 import { renderSkillInventoryLines, skillListView } from '../commands/skill.js'
+import type { SkillListView } from '../commands/skill/render.js'
 import type { ConfigInfo } from '../native/index.js'
 import { getTheme } from '../render/theme/index.js'
 import { inlineItemLines, sectionHeaderLines, SECTION_MUTED } from '../render/section.js'
@@ -70,8 +71,7 @@ function renderSection(title: string, values: string[], columns: number): string
  * unit names, and re-tinting the whole line would flatten it back to the flat
  * gray comma list this replaced.
  */
-function renderSkillSection(skillsDirs: string[] | undefined, columns: number): string[] {
-  const view = skillListView(skillsDirs ?? undefined)
+function renderSkillSection(view: SkillListView, columns: number): string[] {
   if (view.units.length === 0) return []
 
   return renderSkillInventoryLines(view, columns)
@@ -105,7 +105,17 @@ export interface BannerOptions {
   skillsDirs?: string[]
 }
 
-export function renderBanner(opts: BannerOptions): string {
+export interface BannerData {
+  contextFiles: string[]
+  skills: SkillListView
+}
+
+/** Disk discovery belongs to refresh events, not the frame-building path. */
+export function loadBannerData(cwd: string, skillsDirs?: string[]): BannerData {
+  return { contextFiles: getContextFiles(cwd), skills: skillListView(skillsDirs) }
+}
+
+export function renderBanner(opts: BannerOptions, data?: BannerData): string {
   if (opts.quiet) return ''
 
   const {
@@ -120,9 +130,10 @@ export function renderBanner(opts: BannerOptions): string {
     skillsDirs,
   } = opts
 
+  const snapshot = data ?? loadBannerData(cwd, skillsDirs)
   const detailLines: string[] = []
-  appendBlock(detailLines, renderSection('Context', getContextFiles(cwd), columns))
-  appendBlock(detailLines, renderSkillSection(skillsDirs, columns))
+  appendBlock(detailLines, renderSection('Context', snapshot.contextFiles, columns))
+  appendBlock(detailLines, renderSkillSection(snapshot.skills, columns))
   if (serverState) {
     appendBlock(detailLines, renderSection('Server', [serverState.address], columns))
   }

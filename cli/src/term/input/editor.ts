@@ -306,9 +306,11 @@ export function createHistoryState(entries: string[]): HistoryState {
 }
 
 export function pushHistory(state: HistoryState, entry: string): HistoryState {
+  const text = entry.trim()
+  const entries = !text || state.entries.at(-1) === text ? state.entries : [...state.entries, text]
   return {
-    entries: [...state.entries, entry],
-    index: state.entries.length + 1,
+    entries,
+    index: entries.length,
     savedInput: '',
   }
 }

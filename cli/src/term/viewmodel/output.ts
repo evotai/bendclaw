@@ -6,6 +6,7 @@ import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
 import { getTheme } from '../../render/theme/index.js'
 import stripAnsi from 'strip-ansi'
+import { buildSystemBlock } from './system.js'
 
 export interface OutputContext {
   prevKind?: string
@@ -259,16 +260,11 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         break
       }
 
-      case 'system': {
-        const cols = initialContext.columns
-        const systemLines = cols
-          ? wrapTextWithAnsi(ol.text, Math.max(1, cols))
-          : ol.text.split(/\r\n|\r|\n/)
-        // Pre-styled system output owns its colours (`/skill`), so it passes
-        // through untouched; everything else gets the uniform dim treatment.
-        blocks.push(block(systemLines.map(l => line(ol.preStyled ? ansi(l) : dim(l)))))
+      case 'system':
+        blocks.push(buildSystemBlock(ol.text, {
+          columns: initialContext.columns, prevKind, preStyled: ol.preStyled,
+        }))
         break
-      }
 
       default:
         break

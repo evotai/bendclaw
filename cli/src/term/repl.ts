@@ -27,7 +27,7 @@ import { SessionHook } from '../session/hook.js'
 import { RendererTrace } from '../session/renderer-trace.js'
 import { findLastAssistantMarkdown, findLastAssistantTurn } from '../session/assistant-markdown.js'
 import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/index.js'
-import { renderBanner } from './banner.js'
+import { BannerCache } from './banner-cache.js'
 import {
   buildOutputBlocks,
   buildPromptBlocks,
@@ -43,7 +43,7 @@ import {
   type ViewBlock,
 } from './viewmodel/index.js'
 import { joinLeftRight, spansWidth } from './viewmodel/width.js'
-import { createAdSlotState, tickAdSlot, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, campaignFingerprint, type AdSlotState } from './viewmodel/ad-slot.js'
+import { createAdSlotState, tickAdSlot, nextAdSlotRenderDelay, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, campaignFingerprint, type AdSlotState } from './viewmodel/ad-slot.js'
 import { HistoryRenderCache } from './viewmodel/history-cache.js'
 import { Committer } from './committer.js'
 import {
@@ -113,6 +113,7 @@ import {
 } from './input/paste_refs.js'
 import { getImageFromClipboard } from './input/clipboard_image.js'
 import { getTextFromClipboard } from './input/clipboard_text.js'
+import { InputImageHistory } from './input/image-history.js'
 import { storeImage, formatImageSourceText } from './input/image_store.js'
 import type { ContentBlock } from '../native/index.js'
 import { tryStartServer, type ServerState } from './app/server.js'
@@ -194,13 +195,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   // The composer paints its own caret, so the idle blink is ours to drive.
   const caretBlink = new CaretBlink({ onChange: () => renderer.requestRender() })
-  // Ad slot ticker: repaints at the scroll step so the marquee moves even
-  // when the user is idle. Skipped while an overlay owns the screen.
-  const adSlotTimer = setInterval(() => {
-    if (overlay.kind !== 'none') return
-    renderer.requestRender()
-  }, 80)
-  ;(adSlotTimer as unknown as { unref?: () => void }).unref?.()
+  // Armed by buildFrame only while visible text or its lifecycle needs a wakeup.
+  let adSlotTimer: ReturnType<typeof setTimeout> | undefined
 
   let appState: AppState = {
     ...createInitialState(agent.model, agent.cwd),
@@ -1015,7 +1011,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   } catch { /* best effort */ }
 
   const historyMgr = new HistoryManager(agent.cwd)
-  const entries = historyMgr.load()
+  const inputImageHistory = new InputImageHistory()
+  const entries = historyMgr.load().map(text => inputImageHistory.deserialize(text, () => nextPasteId++))
   historyState = createHistoryState(entries)
 
   let configInfo: ConfigInfo | undefined
@@ -1330,8 +1327,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   } catch { /* best effort */ }
 
+  const bannerCache = new BannerCache(agent.cwd, agent.skillsDirs())
+  function refreshBannerData(): void {
+    if (bannerCache.refresh(agent.cwd, agent.skillsDirs())) renderer.requestRender()
+  }
+  // Catch edits made by other sessions without filesystem work in buildFrame.
+  const bannerRefreshTimer = setInterval(refreshBannerData, 15_000)
+  bannerRefreshTimer.unref?.()
+
   function currentBannerText(): string {
-    return renderBanner({
+    return bannerCache.render({
       version: appVersion,
       model: agent.model,
       cwd: agent.cwd,
@@ -1341,7 +1346,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       serverState,
       releaseNotes,
       installDrift,
-      skillsDirs: agent.skillsDirs(),
     })
   }
 
@@ -1531,9 +1535,22 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Match pi's sibling order before editorContainer: pending messages, then
     // status. The queue manager suppresses the duplicate pending-message copy
     // because the selector itself is displaying those same entries.
-    // Ad slot lifecycle: one tick per frame drives enter/steady/exit phases;
-    // the dedicated timer repaints while idle so animations play.
-    const adSlotTick = tickAdSlot(adSlot, Date.now())
+    // One lifecycle tick and one optional wakeup per frame. Static text sleeps
+    // until its rotation deadline instead of repainting at animation cadence.
+    const adSlotNow = Date.now()
+    const adSlotTick = tickAdSlot(adSlot, adSlotNow)
+    if (adSlotTimer !== undefined) clearTimeout(adSlotTimer)
+    adSlotTimer = undefined
+    const adSlotDelay = nextAdSlotRenderDelay(adSlot, adSlotTick, adSlotNow,
+      overlay.kind === 'none' && !isLoading && !spinnerBlock
+      && !commandWindowIsMounted && renderer.termCols >= 30)
+    if (adSlotDelay !== null) {
+      adSlotTimer = setTimeout(() => {
+        adSlotTimer = undefined
+        renderer.requestRender()
+      }, adSlotDelay)
+      adSlotTimer.unref?.()
+    }
     const preEditorBlocks: ViewBlock[] = []
     const queueManagerOpen = overlay.kind === 'selector' && overlay.state.title === 'Prompt queue'
     const queueLines = queueManagerOpen
@@ -1588,7 +1605,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // The ad slot is an idle-time surface: hidden while a task is running
     // (spinner visible) so it never competes with live output.
     if (adSlotTick.content && !isLoading && !spinnerBlock && !commandWindowIsMounted) {
-      preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols))
+      preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols, adSlotNow))
     }
     if (updateNotice) {
       const pad = Math.max(0, renderer.termCols - spansWidth(updateNotice))
@@ -2024,7 +2041,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   /** Get history text: expand text pastes before their in-memory store is cleared. */
   function getHistoryText(): string {
-    return resolveHistoryText(getEditorText(editor), pastedChunks)
+    const text = resolveHistoryText(getEditorText(editor), pastedChunks)
+    inputImageHistory.capture(text, pastedImages)
+    return text
+  }
+
+  function saveInputHistory(text: string): void {
+    historyMgr.append(inputImageHistory.serialize(text))
+    historyState = pushHistory(historyState, text)
   }
 
   /** Clear editor and paste state. */
@@ -2745,8 +2769,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ...(imageBlocks ? { contentJson: JSON.stringify(imageBlocks) } : {}),
         })
         if (historyText) {
-          historyMgr.append(historyText)
-          historyState = pushHistory(historyState, historyText)
+          saveInputHistory(historyText)
         }
         clearAll()
         renderer.requestRender()
@@ -2795,8 +2818,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // Save expanded text to input history before clearAll() drops the
       // in-memory paste registry. Keep displayText only for compact rendering.
       if (historyText) {
-        historyMgr.append(historyText)
-        historyState = pushHistory(historyState, historyText)
+        saveInputHistory(historyText)
       }
       // Queue instead of committing now: history renders above the streaming
       // block, so an immediate commit lands above the incoming reply.
@@ -2986,28 +3008,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           : getExpandedText()
         // Allow image-only or text-only submissions
         if (!expandedText && !imageBlocks) return
+        if (historyText) saveInputHistory(historyText)
         clearAll()
         renderer.requestRender()
         if (isSlashCommand(expandedText || rawText)) {
-          if (historyText) {
-            historyMgr.append(historyText)
-            historyState = pushHistory(historyState, historyText)
-          }
           handleSlashInput(expandedText || rawText)
         } else if (logMode) {
           // In log mode, send to forked agent
-          if (historyText) {
-            historyMgr.append(historyText)
-            historyState = pushHistory(historyState, historyText)
-          }
           runLogQuery(logMode, expandedText)
         } else {
-          // Save expanded text rather than an ephemeral [Pasted text #N]
-          // marker so Up and process restarts restore a usable prompt.
-          if (historyText) {
-            historyMgr.append(historyText)
-            historyState = pushHistory(historyState, historyText)
-          }
           commitLines(buildUserMessage(displayText))
           if (imageBlocks) {
             const contentJson = JSON.stringify(imageBlocks)
@@ -3137,7 +3146,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const result = historyPrev(historyState, editor)
         if (result.changed) {
           historyState = result.history
+          inputImageHistory.capture(getEditorText(editor), pastedImages)
           editor = result.editor
+          inputImageHistory.restore(getEditorText(editor), pastedImages)
           renderer.requestRender()
         }
         break
@@ -3153,7 +3164,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         const result = historyNext(historyState, editor)
         if (result.changed) {
           historyState = result.history
+          inputImageHistory.capture(getEditorText(editor), pastedImages)
           editor = result.editor
+          inputImageHistory.restore(getEditorText(editor), pastedImages)
           renderer.requestRender()
           break
         }
@@ -3312,7 +3325,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     } else if (name === '/share') {
       await handleShareCommand(replCommands, args)
     } else if (name === '/skill') {
-      await handleSkillCommand(replCommands, args)
+      try {
+        await handleSkillCommand(replCommands, args)
+      } finally {
+        refreshBannerData()
+      }
     } else if (name === '/copy') {
       await handleCopyCommand(replCommands)
     } else if (name === '/update') {
@@ -4116,7 +4133,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     compactionTask?.abort()
     streamRef?.abort()
     stopSpinner()
-    clearInterval(adSlotTimer)
+    if (adSlotTimer !== undefined) clearTimeout(adSlotTimer)
+    clearInterval(bannerRefreshTimer)
     clearInterval(syncTimer)
     clearInterval(backgroundProcessTimer)
     clearInterval(backgroundWaitTimer)

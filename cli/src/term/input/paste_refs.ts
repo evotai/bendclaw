@@ -88,7 +88,7 @@ export function stripResolvedImageRefs(text: string, resolvedIds: Set<number>): 
 
 /**
  * Strip image refs from text, returning only the text portion.
- * Used when storing to history (images are not persisted).
+ * Used for text-only previews; input history must keep image references.
  */
 export function stripImageRefs(text: string): string {
   const refs = parsePasteRefs(text)
@@ -177,7 +177,7 @@ export function resolveHistoryText(
   rawText: string,
   pastedChunks: Map<number, string>,
 ): string {
-  return stripImageRefs(expandPasteRefs(rawText, pastedChunks)).trim()
+  return expandPasteRefs(rawText, pastedChunks).trim()
 }
 
 /**

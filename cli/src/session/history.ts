@@ -8,7 +8,9 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { spawnSync } from 'child_process'
 
-const STATE_DIR = join(homedir(), '.evotai')
+function stateDir(): string {
+  return process.env.EVOT_HOME || join(homedir(), '.evotai')
+}
 const DEFAULT_LIMIT = 200
 const MAX_SLUG_LENGTH = 200
 
@@ -42,7 +44,7 @@ function sanitizeForPath(name: string): string {
 function resolveHistoryPath(cwd: string): string {
   const root = findGitRoot(cwd)
   const slug = sanitizeForPath(root)
-  return join(STATE_DIR, 'projects', slug, 'evot_history')
+  return join(stateDir(), 'projects', slug, 'evot_history')
 }
 
 function escape(s: string): string {
@@ -70,7 +72,7 @@ export class HistoryManager {
     if (opts?.explicitPath) {
       this.filePath = cwdOrPath!
     } else {
-      this.filePath = cwdOrPath ? resolveHistoryPath(cwdOrPath) : join(STATE_DIR, 'evot_history')
+      this.filePath = cwdOrPath ? resolveHistoryPath(cwdOrPath) : join(stateDir(), 'evot_history')
     }
   }
 

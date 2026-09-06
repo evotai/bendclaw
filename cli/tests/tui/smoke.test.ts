@@ -509,10 +509,13 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       expect(session.persistedSessionCount()).toBe(1)
 
       // Persistence happens before the provider necessarily finishes. Return
-      // to an idle composer so the next command is executed, not queued.
+      // to an idle composer so the next command is executed, not queued. Esc
+      // arms first and interrupts on the confirming press.
       session.checkpoint()
       session.write('\x1b')
-      await session.waitFor('Enter a coding task')
+      await session.waitFor('esc again to interrupt')
+      session.write('\x1b')
+      await session.waitFor('Interrupted.')
 
       session.checkpoint()
       session.write('/resume\x0d')

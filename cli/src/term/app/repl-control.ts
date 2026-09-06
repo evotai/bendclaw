@@ -46,12 +46,14 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
   const { event, overlay, isLoading, hasStream, editor, exitHint, logMode, hasQueuedPrompt, isCompacting, canReclaimTurn } = input
   const actions: ReplControlAction[] = []
 
-  if (isCompacting && (event.type === 'escape' || (event.type === 'ctrl' && event.key === 'c'))) {
+  // Esc owns interrupt (confirmed by a second press in the REPL, opencode
+  // style). Ctrl+C never interrupts: it clears the editor or exits the app.
+  if (isCompacting && event.type === 'escape') {
     return [{ kind: 'interrupt' }]
   }
 
   if (event.type === 'ctrl' && event.key === 'c') {
-    if (isLoading && hasStream) return [{ kind: 'interrupt' }]
+    if (overlay.kind === 'ask-user' && hasStream) return [{ kind: 'cancel-ask' }]
     if (isEditorEmpty(editor)) return [{ kind: exitHint ? 'exit' : 'show-exit-hint' }]
     return [{ kind: 'clear-editor' }]
   }
@@ -75,8 +77,9 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
     }
     if (editor.completion) return actions.concat({ kind: 'close-completion' })
     if (isLoading && hasStream && hasQueuedPrompt) return actions.concat({ kind: 'restore-queued' })
-    // Esc always interrupts. Backgrounding lives on ctrl+b, so neither key's
-    // meaning depends on state the user cannot see.
+    // Esc is the interrupt key; the REPL asks for a second press within a
+    // short window. Backgrounding lives on ctrl+b, so neither key's meaning
+    // depends on state the user cannot see.
     if (isLoading && hasStream) return actions.concat({ kind: 'interrupt' })
     if (!isEditorEmpty(editor)) return actions.concat({ kind: 'clear-editor' })
     if (logMode) return actions.concat({ kind: 'exit-log-mode' })

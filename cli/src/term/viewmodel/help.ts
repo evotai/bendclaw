@@ -11,7 +11,7 @@ export function buildHelpBlocks(_columns: number): ViewBlock[] {
     ['Enter', 'Submit message'],
     ['Alt+Enter', 'Insert newline'],
     ['Ctrl+C', 'Clear / Exit (×2)'],
-    ['Esc', 'Clear input / Dismiss / Interrupt'],
+    ['Esc', 'Clear input / Dismiss / Interrupt (×2)'],
     [backgroundChordLabel(), 'Run in background, keeping the work alive'],
     ['Ctrl+G', 'Focus queued prompts when non-empty'],
     ['↓ / Ctrl+T', 'Background task panel when shells are running'],

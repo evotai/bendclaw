@@ -324,6 +324,14 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('esc to interrupt')
   })
 
+  test('an armed interrupt asks for the confirming esc in place', () => {
+    const state = createSpinnerState()
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interruptPending: true, backgroundable: true }))
+    expect(line).toContain('esc again to interrupt')
+    expect(line).toContain('to background')
+    expect(line).not.toContain('esc to interrupt')
+  })
+
   test('names ctrl+b while work can be detached', () => {
     // The hint used to advertise a timer instead of the key. With nothing
     // yielding on a timer, ctrl+b is the only non-destructive way out of a

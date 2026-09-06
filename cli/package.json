@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build:napi": "napi build --manifest-path addon/Cargo.toml --output-dir . --release --platform --js src/native/binding.js --dts src/native/binding.d.ts",
-    "build:cli": "bun build src/index.ts --compile --define process.env.DEV='\"false\"' --define process.env.NODE_ENV='\"production\"' --outfile dist/evot",
+    "build:cli": "bun build src/index.ts --compile --define process.env.DEV='\"false\"' --define process.env.NODE_ENV='\"production\"' --outfile dist/evot && mkdir -p dist/lib && cp evot-napi.*.node dist/lib/",
     "dev": "bun run src/index.ts",
     "test": "bun test tests/ --path-ignore-patterns 'tests/tui/**'",
     "test:tui": "bun test tests/tui/",

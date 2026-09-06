@@ -1141,9 +1141,10 @@ async fn models_api_groups_cloud_by_tier_and_chip_pins_a_model() -> TestResult {
     // HOME stays pointed at the hermetic home until every assertion lands:
     // GET /api/models reloads config from disk and would otherwise re-read
     // the real account cache and overwrite the cloud providers.
+    // Keep the env file inside the hermetic home: settings writes are a
+    // transaction against the revision loaded from disk, so pointing the path
+    // elsewhere makes the first POST look like a concurrent edit and fail.
     let config = Config::load()?;
-    let mut config = config;
-    config.env_file_path = std::env::temp_dir().join("models-tier-grouping.env");
 
     let agent = Agent::new(&config, "/work")?;
     let app = Server::new(agent, config).router();

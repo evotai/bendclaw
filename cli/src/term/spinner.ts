@@ -265,6 +265,8 @@ export interface SpinnerFormatOptions {
   backgroundable?: boolean
   /** A task is already backgrounded; Ctrl+B releases only task_output's wait. */
   releaseWait?: boolean
+  /** Esc was pressed once; the hint asks for the confirming press. */
+  interruptPending?: boolean
 }
 
 export function formatSpinnerLine(
@@ -335,13 +337,14 @@ export function formatSpinnerLine(
     : formatSpinnerTokenSuffix(state, now, stats)
   // Advertise the current action: detach a foreground shell, or release an
   // existing background task's blocking wait without stopping its process.
+  const escHint = options.interruptPending ? 'esc again to interrupt' : 'esc to interrupt'
   const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
     : options.releaseWait
-      ? ` · esc to interrupt · ${backgroundChord()} to stop waiting`
+      ? ` · ${escHint} · ${backgroundChord()} to stop waiting`
     : options.backgroundable
-      ? ` · esc to interrupt · ${backgroundChord()} to background`
-      : ' · esc to interrupt'
+      ? ` · ${escHint} · ${backgroundChord()} to background`
+      : ` · ${escHint}`
 
   if (slow) {
     return `\x1b[31m${char}\x1b[0m \x1b[31m${label}\x1b[0m\x1b[2m (${status}${tokenSuffix})${interruptHint}\x1b[0m`

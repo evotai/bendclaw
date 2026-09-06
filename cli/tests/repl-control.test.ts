@@ -24,16 +24,17 @@ const kinds = (input: Parameters<typeof decideReplControl>[0]) => decideReplCont
 const base = { overlay: none, isLoading: false, hasStream: false, editor, exitHint: false, logMode: false, hasQueuedPrompt: false }
 
 describe('repl control', () => {
-  test('ctrl-c interrupts loading stream', () => {
-    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, isLoading: true, hasStream: true })).toEqual(['interrupt'])
+  test('ctrl-c never interrupts a loading stream; esc owns interrupt', () => {
+    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, isLoading: true, hasStream: true })).toEqual(['show-exit-hint'])
+    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, isLoading: true, hasStream: true, editor: textEditor })).toEqual(['clear-editor'])
   })
 
   test('escape cancels manual compaction without requiring a query stream', () => {
     expect(kinds({ ...base, event: { type: 'escape' }, isLoading: true, isCompacting: true })).toEqual(['interrupt'])
   })
 
-  test('ctrl-c cancels manual compaction before exit handling', () => {
-    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, isLoading: true, isCompacting: true })).toEqual(['interrupt'])
+  test('ctrl-c during manual compaction follows the normal exit path', () => {
+    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, isLoading: true, isCompacting: true })).toEqual(['show-exit-hint'])
   })
 
   test('ctrl-c shows exit hint on empty editor', () => {
@@ -56,12 +57,10 @@ describe('repl control', () => {
     expect(kinds({ ...base, event: { type: 'escape' }, overlay: askUser, hasStream: true })).toEqual(['cancel-ask'])
   })
 
-  test('ctrl-c during an ask overlay routes to interrupt, not cancel-ask', () => {
-    // Regression guard: an ask/plan-review overlay is only shown while a run is
-    // loading, so Ctrl+C hits the loading-stream interrupt branch before the
-    // overlay checks. Both `interrupt` and `cancel-ask` must resolve the
-    // pending ask promise or the suspended host-tool dispatch hangs the loop.
-    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, overlay: askUser, isLoading: true, hasStream: true })).toEqual(['interrupt'])
+  test('ctrl-c during an ask overlay cancels the ask like escape does', () => {
+    // Regression guard: the pending ask promise must be resolved by whichever
+    // key dismisses it, or the suspended host-tool dispatch hangs the loop.
+    expect(kinds({ ...base, event: { type: 'ctrl', key: 'c' }, overlay: askUser, isLoading: true, hasStream: true })).toEqual(['cancel-ask'])
   })
 
   test('escape clears selector query before closing overlay', () => {
@@ -141,15 +140,15 @@ describe('repl control', () => {
     })).toEqual(['restore-queued'])
   })
 
-  test('ctrl-c still interrupts immediately while work is backgroundable', () => {
-    // Both stop gestures stay unambiguous; only ctrl+b is the soft one.
+  test('ctrl-c does not become a stop gesture while work is backgroundable', () => {
+    // Esc stops, ctrl+b detaches, ctrl+c stays out of the run entirely.
     expect(kinds({
       ...base,
       event: { type: 'ctrl', key: 'c' },
       isLoading: true,
       hasStream: true,
       canReclaimTurn: true,
-    })).toEqual(['interrupt'])
+    })).toEqual(['show-exit-hint'])
   })
 
   test('compaction escape interrupts regardless of waited-on work', () => {

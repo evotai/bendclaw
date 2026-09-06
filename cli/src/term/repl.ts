@@ -237,6 +237,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // Native abort settles asynchronously. Ownership is revoked before aborting
   // so an old Promise cannot report twice or clear a newer run's state.
   const interruptConfirmation = new InterruptConfirmation()
+  /** The operation an interrupt would stop; a new run never inherits an armed window. */
+  const interruptOwner = (): unknown => manualCompaction.active ? manualCompaction : streamRef
   const runOwnership = new RunOwnership()
   const beginRun = (): number => runOwnership.begin()
   const ownsRun = (generation: number): boolean => runOwnership.owns(generation)
@@ -1301,6 +1303,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           // advertises that key alongside esc. Esc itself always interrupts.
           backgroundable: backgroundTerminals.foregroundCount() > 0,
           releaseWait: backgroundTerminals.foregroundCount() === 0 && backgroundTerminals.blockingWaitCount() > 0,
+          interruptPending: interruptConfirmation.pending(interruptOwner()),
         },
       )
       spinnerBlock = {
@@ -2120,13 +2123,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         return true
       }
       case 'interrupt':
-        if (event.type === 'ctrl' && event.key === 'c'
-          && !interruptConfirmation.press(manualCompaction.active ? manualCompaction : streamRef)) {
-          commitStatusLine({ id: 'sys-interrupt-confirm', kind: 'system', text: '  Press Ctrl+C again within 5s to interrupt · Esc interrupts immediately' })
+        // Same gesture as opencode: the first Esc arms a short window and the
+        // spinner switches to "esc again to interrupt"; only the second press
+        // within that window stops the work.
+        if (!interruptConfirmation.press(interruptOwner())) {
           renderer.requestRender()
           return true
         }
-        interruptConfirmation.clear()
         if (manualCompaction.active) {
           manualCompaction.abort()
           return true

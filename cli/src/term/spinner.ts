@@ -335,13 +335,12 @@ export function formatSpinnerLine(
   const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
     ? ''
     : formatSpinnerTokenSuffix(state, now, stats)
-  // Advertise the current action: detach a foreground shell, or release an
-  // existing background task's blocking wait without stopping its process.
+  // Advertise foreground detach only; releasing an existing wait stays quiet.
   const escHint = options.interruptPending ? 'esc again to interrupt' : 'esc to interrupt'
   const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
     : options.releaseWait
-      ? ` · ${escHint} · ${backgroundChord()} to stop waiting`
+      ? ` · ${escHint}`
     : options.backgroundable
       ? ` · ${escHint} · ${backgroundChord()} to background`
       : ` · ${escHint}`

@@ -5,11 +5,12 @@ import { createBackgroundOutputState } from '../src/term/app/background-panel.js
 import stringWidth from 'string-width'
 import { clipDisplayText } from '../src/render/format.js'
 
-test('background task wait advertises release, not another background transition or slowness', () => {
+test('background task wait shows its status without a release-wait hint or slowness', () => {
   const state = setSpinnerPhase(createSpinnerState(), 'executing', 'task_output')
   const text = stripAnsi(formatSpinnerLine(state, state.phaseStartedAt + 120000, undefined, { releaseWait: true }))
   expect(text).toContain('Waiting for background task')
-  expect(text).toContain('to stop waiting')
+  expect(text).not.toContain('to stop waiting')
+  expect(text).toContain('esc to interrupt')
   expect(text).not.toContain('to background')
   expect(text).not.toContain('slow')
 })

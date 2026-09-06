@@ -2113,12 +2113,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           renderer.requestRender()
           return true
         }
-        commitSystem(
-          'sys-reclaim-turn',
-          wasForeground
-            ? '  ● Shell moved to background; it keeps running.'
-            : '  ● Stopped waiting; the background task keeps running.',
-        )
+        if (wasForeground) {
+          commitSystem('sys-reclaim-turn', '  ● Shell moved to background; it keeps running.')
+        }
         renderer.requestRender()
         return true
       }

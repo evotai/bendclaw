@@ -214,7 +214,8 @@ describe('buildToolResult', () => {
     expect(lines[0]!.text).toMatch(/^ {2}✗/)
     expect(lines[0]!.text).toContain('failed')
     expect(lines[0]!.text).toContain('10ms')
-    expect(lines.slice(1).some((line) => line.kind === 'error')).toBe(true)
+    expect(lines[0]!.text).toContain('command not found')
+    expect(lines.slice(1).some((line) => line.kind === 'error')).toBe(false)
   })
 
   test('failed edit with missing/dot path surfaces the attempted target', () => {
@@ -230,9 +231,9 @@ describe('buildToolResult', () => {
     expect(missing[0]!.text).toBe('✎ edit  (missing path)')
     expect(missing[1]!.text).toMatch(/^ {2}✗ · failed/)
     expect(missing[1]!.text).toContain('invalid path')
-    // Error body is auto-expanded — no "ctrl+o to expand" for failures.
+    // The reason rides on the status row; a one-line body has nothing to fold.
     const missingBody = missing.map(l => l.text).join('\n')
-    expect(missingBody).toContain('Cannot read')
+    expect(missing[1]!.text).toContain('Cannot read')
     expect(missingBody).not.toContain('ctrl+o to expand')
     // Byte size is not the primary failure signal.
     expect(missing[1]!.text).not.toContain('74 B')
@@ -278,7 +279,7 @@ describe('buildToolResult', () => {
     expect(all).toContain('oldText not found')
   })
 
-  test('failed bash keeps the command on the headline and expands the error', () => {
+  test('failed bash keeps the command on the headline and folds the error body', () => {
     const lines = buildToolCard({
       id: 'bash-fail',
       name: 'bash',
@@ -290,13 +291,14 @@ describe('buildToolResult', () => {
     })
     expect(lines[0]!.text).toContain('⌘ bash')
     expect(lines[0]!.text).toContain('cargo test -p db0_runtime planning')
-    expect(lines[1]!.text).toBe('  ✗ · failed · exit 101 · 2.3s')
+    expect(lines[1]!.text).toBe('  ✗ · failed · exit 101 · 2.3s · error: no matching package named `db0_runtime` found')
     const all = lines.map(l => l.text).join('\n')
-    expect(all).toContain('no matching package')
-    expect(all).not.toContain('ctrl+o to expand')
+    expect(all).not.toContain('Caused by')
+    expect(all).toContain('ctrl+o to expand')
+    expect(lines.some(l => l.kind === 'error')).toBe(false)
   })
 
-  test('long failed output auto-previews only the tail, expandable via ctrl+o', () => {
+  test('long failed output folds entirely, expandable via ctrl+o', () => {
     const body = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n')
     const collapsed = buildToolCard({
       id: 'bash-long-fail',
@@ -307,11 +309,9 @@ describe('buildToolResult', () => {
       details: { exit_code: 2 },
     })
     const collapsedText = collapsed.map(l => l.text).join('\n')
-    // Tail preview: last lines visible, earlier lines behind an expand hint.
-    expect(collapsedText).toContain('line 60')
-    expect(collapsedText).toContain('line 41')
-    expect(collapsedText).not.toContain('line 40\n')
-    expect(collapsedText).toContain('(+40 lines, ctrl+o to expand)')
+    expect(collapsedText).not.toContain('line 60')
+    expect(collapsedText).toContain('failed · exit 2 · line 1')
+    expect(collapsedText).toContain('(+60 lines, ctrl+o to expand)')
 
     const expandedCard = buildToolCard({
       id: 'bash-long-fail',

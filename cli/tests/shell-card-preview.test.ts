@@ -42,9 +42,13 @@ test('bash hides all successful output, including a single line, until expanded'
   }
 })
 
-test('failed background tasks still expose the error without expanding', () => {
-  const card = buildToolCard({ id: 't', name: 'task_output', args: { task_id: 'id' }, status: 'done', details: { status: 'failed', exit_code: 1 }, result: 'Task ID: id\nStatus: failed\nOutput:\ncompilation failed' })
-  expect(card.some(row => row.kind === 'error' && row.text.includes('compilation failed'))).toBe(true)
+test('failed background tasks name the error on the status row and fold the body', () => {
+  const card = buildToolCard({ id: 't', name: 'task_output', args: { task_id: 'id' }, status: 'done', details: { status: 'failed', exit_code: 1 }, result: 'Task ID: id\nStatus: failed\nOutput:\ncompilation failed\nsecond line' })
+  const status = card.find(row => row.text.startsWith('  ✗'))
+  expect(status?.text).toContain('compilation failed')
+  expect(card.some(row => row.kind === 'error')).toBe(false)
+  expect(card.map(row => row.text).join('\n')).toContain('+2 lines')
+  expect(card.map(row => row.text).join('\n')).not.toContain('second line')
 })
 
 test('empty task output adds no body or folding hint', () => {

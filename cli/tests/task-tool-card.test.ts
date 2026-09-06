@@ -118,7 +118,7 @@ describe('task tool settled status', () => {
 
   test('a failed task is marked failed, not as a successful poll', () => {
     // The poll succeeded but the build did not. Marking this ✓ would report a
-    // broken build as a success.
+    // broken build as a success. The `body` fixture is not process output.
     const lines = render(settled({
       retrieval_status: 'success',
       status: 'failed',
@@ -127,6 +127,7 @@ describe('task tool settled status', () => {
       total_lines: 30,
     }))
     expect(statusLine(lines)).toBe('  ✗ · failed · exit 1 · 8s · 30 lines')
+    expect(lines.some(line => line.includes('body'))).toBe(false)
   })
 
   test('a stopped task reads as stopped and stays non-failing', () => {

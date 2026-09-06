@@ -662,8 +662,24 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
   return stampToolCard(lines, 'pending')
 }
 
-/** Failed tool bodies auto-preview at most this many tail lines. */
-const ERROR_PREVIEW_LINES = 20
+/** Failed tool bodies stay folded; the status row carries a short reason. */
+function errorReason(result: string, summary: string): string {
+  const first = result.replace(/\r\n/g, '\n').split('\n').map(line => line.trim()).find(Boolean) ?? ''
+  // `Exit code: 7` or `HTTP 404 error` restate the summary; add only new facts.
+  const normalize = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const known = normalize(summary)
+  const candidate = normalize(first).replace(/^exitcode/, 'exit')
+  if (!first || !known || candidate === known || candidate.startsWith(known) && candidate.length - known.length <= 6) return ''
+  return summarizeInline(first, 96)
+}
+
+/** Process output from a `task_output` result, without the protocol envelope. */
+function taskOutputBody(result: string): string {
+  if (!result.startsWith('Task ID:')) return result
+  const marker = '\nOutput:\n'
+  const at = result.indexOf(marker)
+  return at === -1 ? '' : result.slice(at + marker.length)
+}
 
 /**
  * Status parts for a card that is still executing.
@@ -716,9 +732,11 @@ export function buildToolResult(
   // still being waited on in the foreground.
   const stillRunning = taskStatus === 'running' || taskStatus === 'running_foreground'
   const statusParts = isError
-    ? ['failed', summary, duration].filter(Boolean)
+    ? ['failed', summary, duration, result && !expanded ? errorReason(result, summary || 'failed') : ''].filter(Boolean)
     : taskParts.length > 0
-      ? taskParts
+      ? taskFailed && result && !expanded && result.startsWith('Task ID:') && taskOutputBody(result)
+        ? [...taskParts, errorReason(taskOutputBody(result), taskParts.join(' '))].filter(Boolean)
+        : taskParts
       : [summary, duration].filter(Boolean)
   const mark = isError || taskFailed ? '✗' : backgrounded || stillRunning ? '●' : '✓'
   const lines: OutputLine[] = [toolStatusLine(mark, statusParts)]
@@ -730,16 +748,14 @@ export function buildToolResult(
     lines.push(...diffOutputLines(diff))
   }
 
-  // Tool result content. Collapsed success is a single `... (+N lines, ctrl+o
-  // to expand)` hint. Failures auto-preview the tail of the body (errors live
-  // at the end) capped at ERROR_PREVIEW_LINES; ctrl+o expands the rest and
-  // collapses back to the preview.
+  // Tool result content. Success and failure both fold to a single `(+N
+  // lines, ctrl+o to expand)` hint; a failure's status row names the reason.
   if (result) {
     const shell = name.toLowerCase() === 'bash' || isTaskTool(name)
     // Only strip the known task envelope in compact mode. Expanded mode keeps
     // the task id, output path and full result for diagnostics.
-    const body = !expanded && !isError && !taskFailed && isTaskTool(name) && result.startsWith('Task ID:')
-      ? result.includes('\nOutput:\n') ? result.slice(result.indexOf('\nOutput:\n') + 9) : ''
+    const body = !expanded && !isError && isTaskTool(name)
+      ? taskOutputBody(result)
       : !expanded && !isError && details.backgrounded === true ? '' : result
     const formattedResult = formatToolResultContent(body)
     if (shell && !expanded && !isError && !taskFailed) {
@@ -747,14 +763,10 @@ export function buildToolResult(
       const rows = output.trim() ? output.split('\n') : []
       if (rows.length > 0) lines.push(toolHintLine(`  … ${expandLinesHint(rows.length)}`))
     } else if ((isError || taskFailed) && !expanded) {
-      const all = toolResultLines(formattedResult, true, name, true)
-      const hidden = all.length - ERROR_PREVIEW_LINES
-      if (hidden > 0) {
-        lines.push(toolHintLine(`  [2m... ${expandLinesHint(hidden)}[0m`))
-      }
-      for (const rl of hidden > 0 ? all.slice(-ERROR_PREVIEW_LINES) : all) {
-        lines.push({ id: genId('tool-res'), kind: 'error', text: `  ${rl}` })
-      }
+      // A single-line error is already on the status row; only a longer body
+      // needs the fold hint. Task envelopes without output have nothing to show.
+      const all = body.trim() ? toolResultLines(formattedResult, true, name, true) : []
+      if (all.length > 1) lines.push(toolHintLine(`  … ${expandLinesHint(all.length)}`))
     } else {
       const resultLines = toolResultLines(formattedResult, isError, name, expanded)
       for (const rl of resultLines) {

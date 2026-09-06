@@ -2,9 +2,9 @@
   <strong>Evot</strong>
 </p>
 
-<p align="center"><strong>High-quality AI work, at low or even zero cost.</strong></p>
+<p align="center"><strong>The lightest harness for agentic work.</strong></p>
 
-<p align="center">We pick great models — including free stealth ones like <code>stealth/ox-alpha</code> (free this week) — so everyone can run long tasks affordably.</p>
+<p align="center">An open-source coding agent for your terminal. A short prompt, four core tools, and the model does the thinking.</p>
 
 <p align="center">
   <a href=".github/assets/demo.gif"><img src=".github/assets/demo.gif" alt="evot demo" width="960" /></a>
@@ -18,9 +18,15 @@
 - **2026-08-27** `GPT-5.6 Luna` is free through Aug 31 🎉 — just `evot login`.
 - **2026-08-24** Free model of the week: [`stealth/ox-alpha`](https://openrouter.ai/stealth/ox-alpha) — free on OpenRouter for a week.
 
+## Less harness. More model.
+
+- **Lightweight.** ~1k tokens, four core tools: read, bash, edit, write. You set the goal and constraints; the model chooses the path.
+- **Coordinated execution.** Shells run in the background while the model advances independent work, waits for required results, and picks up completion notifications. Less idle time between thinking and doing.
+- **Affordable.** Free and low-cost hosted models, or bring your own keys.
+
 ## Performance
 
-Same task, same eval environment, three agents × three models — cost and tool calls, lower is better.
+Same task and environment, three agents × three models. Cost and tool calls—not wall-clock speed.
 
 <p align="center">
   <a href=".github/assets/benchmark-agent-model-comparison.png"><img src=".github/assets/benchmark-agent-model-comparison.png" alt="Benchmark comparing evot, Claude Code, and pi" width="960" /></a>
@@ -28,7 +34,7 @@ Same task, same eval environment, three agents × three models — cost and tool
 
 > Task: fix a real bug in serde_json ([issue #979](https://github.com/serde-rs/json/issues/979)) end to end.
 
-All nine runs produce correct, passing code — but evot costs **72–78% less** than Claude Code with **fewer tool calls** on every model.
+All nine runs pass. In this eval, evot costs **72–78% less** than Claude Code, with **fewer tool calls** on every model.
 
 ## Installation
 

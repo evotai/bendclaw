@@ -84,7 +84,7 @@ DOWNLOAD_RETRY_BASE_DELAY="${EVOT_DOWNLOAD_RETRY_BASE_DELAY:-1}"
 # time remaining, not just percentage. wget only shows a meter under `-q` when
 # --show-progress is passed, and that flag landed in wget 1.16, so it is probed
 # rather than assumed.
-if [ -t 2 ]; then
+if [ -t 2 ] || [ "${EVOT_INSTALL_PROGRESS:-}" = 1 ]; then
   CURL_QUIET=""
   WGET_PROGRESS="--show-progress"
   if [ "$DOWNLOADER" = "wget" ] \
@@ -433,6 +433,24 @@ CANDIDATE_VERSION="$(EVOT_HOME="$PACKAGE_DIR" "$PACKAGE_DIR/bin/$BINARY" --versi
   || error "Downloaded evot failed to start: $CANDIDATE_VERSION"
 [ "$CANDIDATE_VERSION" = "evot v$VERSION" ] \
   || error "Downloaded version mismatch (expected evot v$VERSION, got $CANDIDATE_VERSION)"
+
+# Stage-only API marker checked by hosts before executing an old release script.
+# EVOT_INSTALLER_STAGE_API=1
+
+# Stage-only uses the identical download, checksum and candidate validation
+# path above, but never touches the live installation.
+if [ -n "${EVOT_STAGE_DIR:-}" ]; then
+  mkdir -p "$EVOT_STAGE_DIR"
+  cp "$TMP/$ASSET" "$EVOT_STAGE_DIR/.$ASSET.new.$$"
+  mv -f "$EVOT_STAGE_DIR/.$ASSET.new.$$" "$EVOT_STAGE_DIR/$ASSET"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$EVOT_STAGE_DIR/$ASSET" > "$EVOT_STAGE_DIR/$ASSET.sha256"
+  else
+    shasum -a 256 "$EVOT_STAGE_DIR/$ASSET" > "$EVOT_STAGE_DIR/$ASSET.sha256"
+  fi
+  log "staged v$VERSION"
+  exit 0
+fi
 
 # --- Install ---
 

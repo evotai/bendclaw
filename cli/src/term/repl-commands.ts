@@ -326,7 +326,7 @@ export async function handleUpdateCommand(
     const result = await (run ?? (async () => {
       const { runUpdate } = await import('../update/index.js')
       const { version } = await import('../native/index.js')
-      return runUpdate(version())
+      return runUpdate(version(), { onProgress: message => status.update(renderCommandNotice({ state: 'progress', label: 'update', message })) })
     }))()
     switch (result.kind) {
       case 'up_to_date':

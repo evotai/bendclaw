@@ -36,6 +36,14 @@ chmod +x "$EVOT_INSTALL_DIR/evot"
 }
 
 describe('executeInstall', () => {
+  test('older release scripts cannot accidentally install during staging', async () => {
+    globalThis.fetch = async () => new Response(installScript('2026.7.19'))
+    const result = await executeInstall('v2026.7.19', { EVOT_STAGE_DIR: join(root, 'stage') })
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('does not support staging')
+    expect(existsSync(join(root, 'bin', 'evot'))).toBe(false)
+  })
+
   test('reports install-script download failures', async () => {
     globalThis.fetch = async () => new Response('unavailable', { status: 503 })
 
@@ -174,6 +182,45 @@ exit 22
     ])
     return { stdout, stderr, exitCode }
   }
+
+  test('stage-only validates the archive without changing the live install', async () => {
+    const installDir = join(root, 'installed', 'bin')
+    mkdirSync(installDir, { recursive: true })
+    writeFileSync(join(installDir, 'evot'), 'old binary')
+    const stageDir = join(root, 'staged')
+    const result = await runInstallSh({
+      FAKE_BIN: fakeBin(CURL_SERVES_ARCHIVE), TEST_ARCHIVE: packArchive('2026.7.19'),
+      EVOT_INSTALL_DIR: installDir, EVOT_INSTALL_VERSION: 'v2026.7.19', EVOT_STAGE_DIR: stageDir,
+    })
+    expect(result.exitCode).toBe(0)
+    expect(readFileSync(join(installDir, 'evot'), 'utf8')).toBe('old binary')
+    expect(existsSync(join(stageDir, 'evot-v2026.7.19-x86_64-unknown-linux-gnu.tar.gz.sha256'))).toBe(true)
+    expect(existsSync(join(root, 'installed', 'install-state.json'))).toBe(false)
+  })
+
+  test('the current installer advertises the stage API the host checks for', async () => {
+    // The host refuses to stage through a script without this marker, so the
+    // TypeScript check and the shell script must name the same token.
+    const script = readFileSync(installShPath, 'utf8')
+    expect(script).toContain('EVOT_INSTALLER_STAGE_API=1')
+    const originalPath = process.env.PATH
+    process.env.PATH = `${fakeBin(CURL_SERVES_ARCHIVE)}:/usr/bin:/bin`
+    process.env.TEST_ARCHIVE = packArchive('2026.7.19')
+    process.env.EVOT_DOWNLOAD_RETRY_BASE_DELAY = '0.01'
+    globalThis.fetch = async () => new Response(script)
+    try {
+      const stageDir = join(root, 'host-staged')
+      const result = await executeInstall('v2026.7.19', { EVOT_STAGE_DIR: stageDir })
+      expect(result.success).toBe(true)
+      expect(existsSync(join(stageDir, 'evot-v2026.7.19-x86_64-unknown-linux-gnu.tar.gz'))).toBe(true)
+      // Stage-only never verifies an installed binary: there is none.
+      expect(existsSync(join(root, 'bin', 'evot'))).toBe(false)
+    } finally {
+      process.env.PATH = originalPath
+      delete process.env.TEST_ARCHIVE
+      delete process.env.EVOT_DOWNLOAD_RETRY_BASE_DELAY
+    }
+  })
 
   test('validates the candidate before replacing the installed binary', async () => {
     const installDir = join(root, 'installed', 'bin')
@@ -596,7 +643,7 @@ printf 'evot v2026.7.19\\n'
 
     // stderr, not stdout: the meter is written to stderr, and stdout is piped
     // for the `curl | sh` invocation that is the documented entry point.
-    expect(script).toContain('if [ -t 2 ]; then')
+    expect(script).toContain('if [ -t 2 ] || [ "${EVOT_INSTALL_PROGRESS:-}" = 1 ]; then')
     expect(script).toContain('CURL_QUIET="-s"')
 
     // -S must survive in both branches so a hard failure is still reported when

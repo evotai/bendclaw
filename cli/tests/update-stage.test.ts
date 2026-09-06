@@ -16,8 +16,9 @@ import { UpdateManager, type UpdateStatus } from '../src/update/manager.js'
 import { bindingFilenameForTarget, currentTarget } from '../src/update/paths.js'
 import { clearStaged, readStaged, stageUpdate } from '../src/update/stage.js'
 
-const originalFetch = globalThis.fetch
-let fixtureFetch: typeof globalThis.fetch = originalFetch
+import { runInstallerScript } from '../src/update/installer-process.js'
+import type { StageInstaller } from '../src/update/stage.js'
+let fixtureInstall: StageInstaller = async () => { throw new Error('fixture not initialized') }
 let home = ''
 
 /**
@@ -47,32 +48,27 @@ async function makeArchive(version: string): Promise<Buffer> {
 
 function startFixtureServer(archive: Buffer, opts: { omitSha?: boolean } = {}) {
   const checksum = createHash('sha256').update(archive).digest('hex')
-  fixtureFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    const prefix = 'https://github.com/evotai/evot/releases/download/'
-    if (!rawUrl.startsWith(prefix)) {
-      throw new Error(`unexpected external fixture request: ${rawUrl}`)
-    }
-
+  const folder = require('fs').mkdtempSync(join(home, 'download-fixture-'))
+  writeFileSync(join(folder, 'archive'), archive)
+  writeFileSync(join(folder, 'checksum'), checksum)
+  writeFileSync(join(folder, 'curl'), `#!/bin/sh
+output=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = '-o' ]; then output="$2"; shift 2; continue; fi
+  shift
+done
+if [ -n "$output" ]; then cp "$FIXTURE/archive" "$output"; exit 0; fi
+if [ "$OMIT_SHA" = 1 ]; then exit 22; fi
+cat "$FIXTURE/checksum"
+`, { mode: 0o755 })
+  fixtureInstall = async (tag, extraEnv, options) => {
     requestCount++
-    const url = new URL(rawUrl)
-    if (url.pathname.endsWith('.sha256')) {
-      if (opts.omitSha) return new Response('not found', { status: 404 })
-      return new Response(`${checksum}  ${url.pathname.slice(1)}\n`, { status: 200 })
-    }
-
-    const headers = new Headers(init?.headers)
-    if (headers.has('range')) {
-      // Range support is not asserted here; answer with the whole body so
-      // resume falls back to restart, which must also work.
-      return new Response(archive)
-    }
-    return new Response(archive)
-  }) as typeof globalThis.fetch
-
-  // Preserve the existing try/finally shape without opening a socket. Bun's
-  // fetch forces localhost through inherited proxy variables on some machines,
-  // so an in-memory transport is the only deterministic fixture.
+    return runInstallerScript(readFileSync(join(import.meta.dir, '../../install.sh'), 'utf8'), {
+      ...process.env as Record<string, string>, ...extraEnv,
+      EVOT_INSTALL_VERSION: tag ?? '', EVOT_DOWNLOAD_RETRY_BASE_DELAY: '0.01',
+      FIXTURE: folder, OMIT_SHA: opts.omitSha ? '1' : '0', PATH: `${folder}:/usr/bin:/bin`,
+    }, options)
+  }
   return { stop(_force?: boolean) {} }
 }
 
@@ -80,7 +76,7 @@ function stageFixtureUpdate(
   release: Parameters<typeof stageUpdate>[0],
   signal: Parameters<typeof stageUpdate>[1],
 ) {
-  return stageUpdate(release, signal, fixtureFetch)
+  return stageUpdate(release, signal, fixtureInstall)
 }
 
 let requestCount = 0
@@ -117,7 +113,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  fixtureFetch = originalFetch
+  fixtureInstall = async () => { throw new Error('fixture not initialized') }
   delete process.env.EVOT_HOME
   delete process.env.EVOT_INSTALL_DIR
   rmSync(home, { recursive: true, force: true })
@@ -136,7 +132,7 @@ describe('staging', () => {
       const staged = await stageUpdate(
         { tag: 'v2026.5.1', version: '2026.5.1', body: undefined },
         new AbortController().signal,
-        fixtureFetch,
+        fixtureInstall,
       )
 
       expect(staged.version).toBe('2026.5.1')
@@ -162,7 +158,7 @@ describe('staging', () => {
       // Direct approach: stage once, tamper, re-verify through install-side
       // contract by clearing and staging against a mismatched sidecar.
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
 
       // Tamper with the archive in place, then ask staging to re-run: it wipes
       // the directory first, so instead simulate corruption at read time.
@@ -228,7 +224,7 @@ describe('staging', () => {
       mgr.on('update-status', (status: UpdateStatus) => statuses.push(status))
 
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
       await mgr.check()
 
       expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.5.1' })
@@ -274,7 +270,7 @@ describe('staging', () => {
     const server = startFixtureServer(archive)
     try {
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
       writeInstalledVersion('2026.5.1')
 
       // No install.sh is served, so any install attempt would fail outright.
@@ -294,7 +290,7 @@ describe('staging', () => {
     const server = startFixtureServer(archive)
     try {
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
       // `make install` deliberately removes this release-only marker while the
       // executable still lives under an install-shaped bin directory.
       rmSync(join(home, 'install-state.json'), { force: true })
@@ -337,7 +333,7 @@ describe('staging', () => {
     const server = startFixtureServer(archive)
     try {
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
       // Drop the managed-install marker: this is now indistinguishable from
       // `bun run src/index.ts` against a real ~/.evotai.
       delete process.env.EVOT_INSTALL_DIR
@@ -388,7 +384,7 @@ describe('staging', () => {
     const server = startFixtureServer(archive)
     try {
       const { stageUpdate } = await import('../src/update/stage.js')
-      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureFetch)
+      await stageUpdate({ tag: 'v2026.5.1', version: '2026.5.1' }, new AbortController().signal, fixtureInstall)
       const before = requestCount
 
       require('fs').writeFileSync(join(home, 'update-check.json'), JSON.stringify({
@@ -414,7 +410,7 @@ describe('staging', () => {
       const server = startFixtureServer(archive)
       try {
         const { stageUpdate } = await import('../src/update/stage.js')
-        await stageUpdate({ tag: 'v2026.9.30', version: '2026.9.30' }, new AbortController().signal, fixtureFetch)
+        await stageUpdate({ tag: 'v2026.9.30', version: '2026.9.30' }, new AbortController().signal, fixtureInstall)
         expect(readStaged()?.version).toBe('2026.9.30')
         expect(existsSync(join(home, 'staging', '2026.9.30'))).toBe(true)
       } finally {

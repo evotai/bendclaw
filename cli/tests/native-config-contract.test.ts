@@ -70,6 +70,30 @@ integration('live NAPI ConfigInfo contract', () => {
     }
   }, 15_000)
 
+  test('headless authentication failure returns nonzero without exposing credentials', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'evot-headless-failure-'))
+    const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => Response.json({ error: { type: 'invalid_key', message: 'invalid API key' } }, { status: 401 }) })
+    let child: ReturnType<typeof Bun.spawn> | undefined
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    try {
+      const root = seedSmokeHome(home)
+      const path = join(root, 'evot.env')
+      await Bun.write(path, (await Bun.file(path).text()).replace('http://127.0.0.1:1/v1', `http://127.0.0.1:${server.port}/v1`))
+      child = Bun.spawn([join(import.meta.dir, '../dist/evot'), '-p', 'fixture'], { env: smokeEnvironment(home), stdout: 'pipe', stderr: 'pipe' })
+      const handle = child
+      deadline = setTimeout(() => handle.kill(), 10000)
+      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+      expect(code).toBe(1)
+      expect(stderr).toContain('invalid API key')
+      expect(stdout + stderr).not.toContain('smoke-test-key')
+    } finally {
+      if (deadline) clearTimeout(deadline)
+      if (child) { child.kill(); await child.exited }
+      await server.stop(true)
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 15000)
+
   async function hostCancellationFixture() {
     const home = mkdtempSync(join(tmpdir(), 'evot-host-cancel-'))
     const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => {

@@ -41,10 +41,16 @@ fn build_bash_tool(
     envs: Vec<(String, String)>,
     sandbox_dirs: Option<Vec<PathBuf>>,
     process_manager: Option<std::sync::Arc<ProcessManager>>,
+    interactive: bool,
 ) -> Box<dyn evot_engine::AgentTool> {
     let mut bash = BashTool::default().with_envs(envs);
     if let Some(process_manager) = process_manager {
         bash = bash.with_process_manager(process_manager);
+        // Only an interactive host can see the yield and detach earlier via
+        // Ctrl+B; channel runs keep the timeout as their sole bound.
+        if interactive {
+            bash = bash.with_foreground_wait(std::time::Duration::from_secs(30));
+        }
     }
     if let Some(dirs) = sandbox_dirs {
         bash = bash.with_sandbox_dirs(dirs);
@@ -88,6 +94,7 @@ pub(crate) fn build_tools(
             envs,
             sandbox_dirs,
             process_manager.clone().filter(|_| background_enabled),
+            policy.host_tools && host_tools.is_some(),
         ));
         if let Some(process_manager) = process_manager.filter(|_| background_enabled) {
             t.push(Box::new(TaskOutputTool::new(process_manager.clone())));

@@ -66,7 +66,7 @@ export async function runPrompt(opts: CliOptions) {
   } finally {
     await sessionHook.close(closeReason)
   }
-  process.exit(0)
+  process.exit(closeReason === 'failed' ? 1 : 0)
 }
 
 function printEventText(event: RunEvent) {

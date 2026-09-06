@@ -35,12 +35,18 @@ pub(super) fn build_engine(
     let model_config = options.model_config;
     let context_config =
         evot_engine::context::ContextConfig::from_model(&model_config, options.thinking_level);
-    let provider_agent = match (options.provider_override, &options.protocol) {
-        (Some(provider), _) => evot_engine::Agent::new(provider),
-        (None, Protocol::Anthropic) => evot_engine::Agent::new(AnthropicProvider),
-        (None, Protocol::OpenAiResponses) => evot_engine::Agent::new(OpenAiResponsesProvider),
-        (None, Protocol::OpenAi) => evot_engine::Agent::new(OpenAiCompatProvider),
-    };
+    let provider: Arc<dyn evot_engine::provider::StreamProvider> =
+        match (options.provider_override, &options.protocol) {
+            (Some(provider), _) => provider,
+            (None, Protocol::Anthropic) => Arc::new(AnthropicProvider),
+            (None, Protocol::OpenAiResponses) => Arc::new(OpenAiResponsesProvider),
+            (None, Protocol::OpenAi) => Arc::new(OpenAiCompatProvider),
+        };
+    let provider_agent = evot_engine::Agent::new(crate::auth::recovery::with_recovery(
+        provider,
+        &options.provider,
+        &model_config,
+    ));
     let limits = options
         .limits
         .map(|limits| evot_engine::context::ExecutionLimits {

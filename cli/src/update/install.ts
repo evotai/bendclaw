@@ -4,6 +4,7 @@
 
 import { join } from 'path'
 import { installBinDir, installRoot, runningInstallDir } from './paths.js'
+import { runInstallerScript, type InstallerExecution } from './installer-process.js'
 import { applyProxyToEnv, resolveUpdateProxy } from './proxy.js'
 
 const INSTALL_SCRIPT_BASE = 'https://raw.githubusercontent.com/evotai/evot'
@@ -38,17 +39,18 @@ function sleep(ms: number): Promise<void> {
  * that failed for a non-transient reason. Only the script fetch, which is
  * cheap and idempotent, gets attempts.
  */
-async function fetchInstallScript(tag?: string): Promise<{ script: string } | { error: string }> {
+async function fetchInstallScript(tag?: string, signal?: AbortSignal): Promise<{ script: string } | { error: string }> {
   // An update must use the installer committed with the release it selected.
   // Fetching main could apply newer install semantics to an older release asset.
   const ref = tag ? encodeURIComponent(tag) : 'main'
   const installScript = `${INSTALL_SCRIPT_BASE}/${ref}/install.sh`
   let lastError = ''
   for (let attempt = 1; attempt <= SCRIPT_FETCH_ATTEMPTS; attempt++) {
+    if (signal?.aborted) return { error: 'Installation cancelled' }
     try {
       const { fetchProxy } = await resolveUpdateProxy()
       const response = await fetch(installScript, {
-        signal: AbortSignal.timeout(SCRIPT_FETCH_TIMEOUT),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(SCRIPT_FETCH_TIMEOUT)]) : AbortSignal.timeout(SCRIPT_FETCH_TIMEOUT),
         ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
       })
       if (!response.ok) {
@@ -110,6 +112,7 @@ async function verifyInstalledVersion(
 export async function executeInstall(
   tag?: string,
   extraEnv?: Record<string, string>,
+  options: InstallerExecution = {},
 ): Promise<{ success: boolean; output: string }> {
   try {
     // The 37 MB release asset is downloaded by curl inside install.sh, so the
@@ -132,33 +135,23 @@ export async function executeInstall(
 
     // Fetch first, then pass the complete script to sh. A `curl | sh` pipeline
     // can return success when curl fails because POSIX sh has no pipefail.
-    const fetched = await fetchInstallScript(tag)
+    const fetched = await fetchInstallScript(tag, options.signal)
     if ('error' in fetched) {
       return { success: false, output: fetched.error }
     }
 
-    const proc = Bun.spawn(['sh'], {
-      stdin: new Blob([fetched.script]),
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env,
-    })
-
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-
-    if (exitCode !== 0) {
-      return { success: false, output: stderr || stdout || `exit code ${exitCode}` }
+    if (env.EVOT_STAGE_DIR && !fetched.script.includes('EVOT_INSTALLER_STAGE_API=1')) {
+      return { success: false, output: 'This release installer does not support staging; use /update to install it.' }
     }
+    if (options.onProgress) env.EVOT_INSTALL_PROGRESS = '1'
+    const result = await runInstallerScript(fetched.script, env, options)
+    if (!result.success) return result
 
-    if (tag) {
+    if (tag && !env.EVOT_STAGE_DIR) {
       const verification = await verifyInstalledVersion(tag.replace(/^v/, ''), env)
       if (!verification.success) return verification
     }
-    return { success: true, output: stdout }
+    return result
   } catch (err: unknown) {
     return { success: false, output: errorMessage(err) || 'failed to run install script' }
   }

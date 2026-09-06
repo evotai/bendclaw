@@ -4,25 +4,20 @@
  * The goal is that `/update` and the next startup never wait on a 37 MB
  * transfer: by the time the user acts, the archive is already on disk,
  * checksum-verified, and its binary proven runnable. Staging is deliberately
- * side-effect-free with respect to the running install — the swap itself stays
- * in install.sh, which owns backup/rollback.
+ * side-effect-free with respect to the running install — download, validation
+ * and backup/rollback all belong to install.sh. This module only publishes the
+ * compatible staging manifest after the installer succeeds.
  *
  * Layout under stateDir()/staging/<version>/:
  *   evot-v<version>-<target>.tar.gz       verified archive
  *   evot-v<version>-<target>.tar.gz.sha256  sidecar used by install.sh
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
-import { createWriteStream } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, openSync, closeSync, fsyncSync } from 'fs'
 import { join } from 'path'
 import type { ReleaseInfo } from './types.js'
 import { currentTarget, stateDir } from './paths.js'
-import { resolveUpdateProxy } from './proxy.js'
-
-const DOWNLOAD_TIMEOUT_MS = 120_000
-const MAX_ATTEMPTS = 3
-/** Range requests only pay off when a partial actually exists. */
-const MIN_RESUME_SIZE = 1024
+import { executeInstall } from './install.js'
 
 export interface StagedUpdate {
   tag: string
@@ -46,15 +41,22 @@ function stagingRoot(): string {
   return join(stateDir(), 'staging')
 }
 
-/** Prune staging entries superseded by the currently staged version. */
+/** Prune staging entries superseded by the currently staged version, plus
+ * download scratch left behind by a process that died mid-stage. */
 function pruneSupersededVersions(current: string): void {
   try {
     for (const entry of readdirSync(stagingRoot())) {
       if (entry === current || entry.endsWith('.json')) continue
-      rmSync(join(stagingRoot(), entry), { recursive: true, force: true })
+      const path = join(stagingRoot(), entry)
+      if (entry.startsWith('.download-') && Date.now() - statSync(path).mtimeMs < STALE_SCRATCH_MS) continue
+      if (entry.startsWith('.') && !entry.startsWith('.download-')) continue
+      rmSync(path, { recursive: true, force: true })
     }
   } catch { /* best effort */ }
 }
+
+/** A live stage-only install finishes well inside this; older scratch is dead. */
+const STALE_SCRATCH_MS = 6 * 60 * 60_000
 
 /** Drop whatever readStaged would not consider current, siblings included. */
 export function pruneStaleStaging(): void {
@@ -114,194 +116,39 @@ export function clearStaged(): void {
   } catch { /* best effort */ }
 }
 
-type UpdateFetch = typeof globalThis.fetch
+/** Installer port: tests can supply an offline shell runner. Asset handling
+ * remains exclusively in install.sh, never in the TypeScript host. */
+export type StageInstaller = typeof executeInstall
 
-async function fetchWithResume(
-  url: string,
-  dest: string,
-  signal: AbortSignal,
-  fetchImpl: UpdateFetch,
-): Promise<void> {
-  const { fetchProxy } = await resolveUpdateProxy()
-  let offset = 0
-  try {
-    offset = statSync(dest).size
-  } catch { /* no partial yet */ }
-
-  const headers: Record<string, string> = {}
-  if (offset >= MIN_RESUME_SIZE) headers['Range'] = `bytes=${offset}-`
-
-  const response = await fetchImpl(url, {
-    headers,
-    signal,
-    redirect: 'follow',
-    ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
-  })
-
-  // A server that ignores Range answers 200 with the whole body; appending
-  // would produce a corrupt hybrid, so restart from zero instead.
-  const append = response.status === 206 && offset >= MIN_RESUME_SIZE
-  if (!response.ok && response.status !== 206) {
-    throw new Error(`HTTP ${response.status} fetching ${url}`)
-  }
-
-  if (!response.body) throw new Error('empty response body')
-  const reader = response.body.getReader()
-  const file = createWriteStream(dest, {
-    // A server that ignored Range answered 200 with the whole body; appending
-    // would produce a corrupt hybrid.
-    flags: response.status === 206 && offset >= MIN_RESUME_SIZE ? 'a' : 'w',
-  })
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (signal.aborted) throw new StageAborted('download aborted')
-      if (!value) continue
-      await new Promise<void>((resolve, reject) => {
-        file.write(value, err => err ? reject(err) : resolve())
-      })
-    }
-  } finally {
-    await new Promise<void>(resolve => file.end(() => resolve()))
-  }
-}
-
-async function downloadAsset(
-  release: ReleaseInfo,
-  target: string,
-  dest: string,
-  signal: AbortSignal,
-  fetchImpl: UpdateFetch,
-): Promise<void> {
-  const url = `https://github.com/evotai/evot/releases/download/${release.tag}/${assetName(release.version, target)}`
-  let lastError = ''
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    if (signal.aborted) throw new StageAborted('download aborted')
-    try {
-      await fetchWithResume(url, dest, signal, fetchImpl)
-      return
-    } catch (err) {
-      if (err instanceof StageAborted) throw err
-      lastError = err instanceof Error ? err.message : String(err)
-      // AbortSignal.timeout fires inside fetch and lands here as a plain error;
-      // a partial from a timed-out attempt is still resumable, keep it.
-    }
-    if (attempt < MAX_ATTEMPTS) {
-      await new Promise(resolve => setTimeout(resolve, attempt * 1000))
-    }
-  }
-  throw new Error(`failed after ${MAX_ATTEMPTS} attempts: ${lastError}`)
-}
-
-function verifyChecksum(assetPath: string, sidecarPath: string): void {
-  // Older releases published no checksum; skipping mirrors install.sh.
-  if (!existsSync(sidecarPath)) return
-  const expected = readFileSync(sidecarPath, 'utf-8').trim().split(/\s+/)[0]
-  if (!expected) return
-  const actual = new Bun.CryptoHasher('sha256')
-    .update(readFileSync(assetPath))
-    .digest('hex')
-  if (actual !== expected) {
-    throw new Error(`checksum mismatch (expected ${expected}, got ${actual})`)
-  }
-}
-
-/**
- * Download, verify, and validate a release into staging.
- *
- * Resolves once the archive is proven installable; rejects (or throws
- * StageAborted) otherwise, leaving the previous staging contents untouched
- * unless they were themselves the problem.
- */
 export async function stageUpdate(
   release: ReleaseInfo,
   signal: AbortSignal,
-  fetchImpl: UpdateFetch = globalThis.fetch,
+  install: StageInstaller = executeInstall,
 ): Promise<StagedUpdate> {
   const target = currentTarget()
   if (!target) throw new Error('unsupported platform for auto-update')
-
+  if (!/^[0-9][0-9A-Za-z.-]*$/.test(release.version) || release.tag !== `v${release.version}`) throw new Error('invalid release identity')
+  if (signal.aborted) throw new StageAborted('download aborted')
+  mkdirSync(stagingRoot(), { recursive: true })
+  const temporary = mkdtempSync(join(stagingRoot(), '.download-'))
   const dir = versionDir(release.version)
-  const assetPath = join(dir, assetName(release.version, target))
-  const sidecarPath = `${assetPath}.sha256`
-  const shaUrl = `https://github.com/evotai/evot/releases/download/${release.tag}/${assetName(release.version, target)}.sha256`
-
-  rmSync(dir, { recursive: true, force: true })
-  mkdirSync(dir, { recursive: true })
-
   try {
-    const { fetchProxy } = await resolveUpdateProxy()
-    const sidecarResponse = await fetchImpl(shaUrl, {
-      signal,
-      ...(fetchProxy ? { proxy: fetchProxy.url } : {}),
-    })
-    if (sidecarResponse.ok) {
-      writeFileSync(sidecarPath, await sidecarResponse.text())
-    }
-
-    await downloadAsset(release, target, assetPath, signal, fetchImpl)
-
-    // A complete-but-corrupt archive must not survive to be resumed forever.
-    try {
-      verifyChecksum(assetPath, sidecarPath)
-    } catch (err) {
-      rmSync(assetPath, { force: true })
-      throw err
-    }
-
-    const extracted = join(dir, 'package')
-    rmSync(extracted, { recursive: true, force: true })
-    mkdirSync(extracted, { recursive: true })
-    const proc = Bun.spawn(['tar', '-xzf', assetPath, '-C', extracted], {
-      stdout: 'ignore',
-      stderr: 'pipe',
-      env: { ...process.env },
-    })
-    await proc.exited
-    if (proc.exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text()
-      throw new Error(`archive extraction failed: ${stderr.trim() || `exit ${proc.exitCode}`}`)
-    }
-
-    // Mirror install.sh's candidate check: the binary must run from inside the
-    // extraction and report exactly this release's version.
-    const binary = join(extracted, 'bin', 'evot')
-    if (!existsSync(binary)) throw new Error('archive does not contain bin/evot')
-    const check = Bun.spawn([binary, '--version'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      cwd: extracted,
-      env: { ...process.env, EVOT_HOME: extracted },
-    })
-    const [stdout] = await Promise.all([new Response(check.stdout).text(), check.exited])
-    if (check.exitCode !== 0 || stdout.trim() !== `evot v${release.version}`) {
-      throw new Error(`staged binary failed verification (${stdout.trim() || `exit ${check.exitCode}`})`)
-    }
-
-    const manifest: Manifest = {
-      tag: release.tag,
-      version: release.version,
-      target,
-      staged_at: Date.now(),
-    }
-    writeFileSync(join(stagingRoot(), 'staged.json'), JSON.stringify(manifest))
+    const result = await install(release.tag, { EVOT_STAGE_DIR: temporary, TMPDIR: temporary }, { signal })
+    if (signal.aborted) throw new StageAborted('download aborted')
+    if (!result.success) throw new Error(result.output)
+    const asset = assetName(release.version, target)
+    if (!existsSync(join(temporary, asset)) || !existsSync(join(temporary, `${asset}.sha256`))) throw new Error('installer did not publish a staged archive')
+    rmSync(dir, { recursive: true, force: true })
+    renameSync(temporary, dir)
+    const manifest: Manifest = { tag: release.tag, version: release.version, target, staged_at: Date.now() }
+    const manifestPath = join(stagingRoot(), `.staged-${process.pid}-${Date.now()}.json`)
+    const fd = openSync(manifestPath, 'wx', 0o600)
+    try { writeFileSync(fd, JSON.stringify(manifest)); fsyncSync(fd) } finally { closeSync(fd) }
+    try { renameSync(manifestPath, join(stagingRoot(), 'staged.json')) } finally { rmSync(manifestPath, { force: true }) }
     pruneSupersededVersions(release.version)
-
-    return {
-      tag: release.tag,
-      version: release.version,
-      target,
-      assetPath,
-      stagedAt: manifest.staged_at,
-    }
-  } catch (err) {
-    // An aborted download keeps its partial for resume; anything else failed
-    // validation and should not be found by the next startup.
-    if (!(err instanceof StageAborted)) {
-      rmSync(dir, { recursive: true, force: true })
-    }
-    throw err
+    return { tag: release.tag, version: release.version, target, assetPath: join(dir, asset), stagedAt: manifest.staged_at }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
   }
 }
 

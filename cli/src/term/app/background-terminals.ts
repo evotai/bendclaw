@@ -8,6 +8,7 @@
  * in tests without a terminal or a live agent.
  */
 
+import { BackgroundVisibility } from './background-visibility.js'
 import { SELECTOR_OWNER, isBackgroundSelector } from './selector-identity.js'
 import type { BackgroundProcess } from '../../native/index.js'
 import type { KeyEvent } from '../input.js'
@@ -89,6 +90,22 @@ export interface BackgroundTerminalsDeps {
 
 export class BackgroundTerminals {
   private processes: BackgroundProcess[] = []
+  private readonly visibility = new BackgroundVisibility()
+  private visibleSession: string | null = null
+
+  /** Called before starting a user run; existing live work remains visible. */
+  beginRun(): void {
+    // Read without invoking refresh(): its completion wake can re-enter runQuery
+    // before the host marks this run loading.
+    const id = this.deps.sessionId()
+    if (id) {
+      try { this.processes = this.deps.client.backgroundProcesses(id) } catch { /* Keep last snapshot. */ }
+      this.visibleSession = id
+    }
+    this.visibility.begin(this.processes)
+  }
+
+  private panelProcesses(): BackgroundProcess[] { return this.visibility.visible(this.processes) }
   /**
    * Blocking waits as of the last poll.
    *
@@ -273,6 +290,11 @@ export class BackgroundTerminals {
     }
     try {
       const next = this.deps.client.backgroundProcesses(sessionId)
+      if (this.visibleSession !== sessionId) {
+        this.visibleSession = sessionId
+        this.visibility.begin(next)
+        this.announced.clear()
+      }
       this.processes = next
       // Read in the same poll as the list so both halves of `canReclaimTurn()`
       // describe one moment. A live read per frame would cross the native
@@ -294,7 +316,7 @@ export class BackgroundTerminals {
           if (state.owner === SELECTOR_OWNER.backgroundOutput) {
             this.refreshOutputView(state, next)
           } else {
-            this.deps.updatePanel(refreshBackgroundPanelState(state, next))
+            this.deps.updatePanel(refreshBackgroundPanelState(state, this.panelProcesses()))
           }
         }
       }
@@ -327,7 +349,7 @@ export class BackgroundTerminals {
       return
     }
     this.refresh()
-    this.deps.openPanel(createBackgroundPanelState(this.processes))
+    this.deps.openPanel(createBackgroundPanelState(this.panelProcesses()))
   }
 
   /**
@@ -361,7 +383,7 @@ export class BackgroundTerminals {
     if (state.owner === SELECTOR_OWNER.backgroundOutput) {
       if (event.type === 'escape') {
         const taskId = state.items[0]?.id
-        const panel = createBackgroundPanelState(this.processes)
+        const panel = createBackgroundPanelState(this.panelProcesses())
         this.deps.updatePanel(taskId ? selectorFocusOn(panel, item => item.id === taskId) : panel)
         return true
       }
@@ -408,7 +430,7 @@ export class BackgroundTerminals {
     const taskId = state.items[0]?.id
     const process = processes.find(candidate => candidate.task_id === taskId)
     if (!process) {
-      this.deps.updatePanel(createBackgroundPanelState(processes))
+      this.deps.updatePanel(createBackgroundPanelState(this.panelProcesses()))
       return
     }
     const next = refreshBackgroundOutputState(state, process, this.readOutput(process))

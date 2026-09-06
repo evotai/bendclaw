@@ -161,7 +161,9 @@ impl AgentTool for BashTool {
     }
 
     fn description(&self) -> &str {
-        if self.background_enabled {
+        if self.background_enabled && self.foreground_wait.is_some() {
+            "Execute a bash command. Commands start in the foreground and move to the background when the host's foreground-wait limit or timeout elapses, or the user requests it. They keep running. Use run_in_background only for intentionally independent work. Use {{task_stop}} to actually stop a task."
+        } else if self.background_enabled {
             // `{{task_stop}}` resolves here because descriptions pass through
             // `resolve_tool_refs`. The schema below and BACKGROUND_GUIDANCE do
             // not, so those must keep literal names or the model would be shown
@@ -191,7 +193,7 @@ impl AgentTool for BashTool {
             // Code's stance that blocking is a misuse; it is not, it is what the
             // tool exists for.
             vec![
-                "For long-running commands that can continue independently, use `run_in_background: true`; read the returned output path to check progress, or call {{task_output}} once to wait when a later step needs the result. Never poll a task with sleep loops or repeated {{task_output}} calls.",
+                "Start ordinary commands in the foreground. Reserve `run_in_background: true` for explicitly independent work, not merely commands expected to take time. Read the returned output path to check progress, or call {{task_output}} once to wait when a later step needs the result. Never poll a task with sleep loops or repeated {{task_output}} calls.",
             ]
         } else {
             Vec::new()

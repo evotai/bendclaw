@@ -130,6 +130,7 @@ import { handleSelectorControl } from './app/selector-control.js'
 import { decideReplControl, type ReplControlAction } from './app/repl-control.js'
 import { replaceOrPushStatusLine } from './app/status-line.js'
 import { AuthWatcher } from './app/auth-watch.js'
+import { InterruptConfirmation } from './app/interrupt-confirmation.js'
 import { ManualCompaction } from './app/manual-compaction.js'
 import { busySubmissionAction } from './app/busy-submission.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
@@ -235,6 +236,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let streamRef: QueryStream | null = null
   // Native abort settles asynchronously. Ownership is revoked before aborting
   // so an old Promise cannot report twice or clear a newer run's state.
+  const interruptConfirmation = new InterruptConfirmation()
   const runOwnership = new RunOwnership()
   const beginRun = (): number => runOwnership.begin()
   const ownsRun = (generation: number): boolean => runOwnership.owns(generation)
@@ -1297,7 +1299,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           model: appState.model,
           // Ctrl+B can move this work aside without killing it, so the hint
           // advertises that key alongside esc. Esc itself always interrupts.
-          backgroundable: backgroundTerminals.canReclaimTurn(),
+          backgroundable: backgroundTerminals.foregroundCount() > 0,
+          releaseWait: backgroundTerminals.foregroundCount() === 0 && backgroundTerminals.blockingWaitCount() > 0,
         },
       )
       spinnerBlock = {
@@ -1520,6 +1523,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function stopSpinner() {
+    interruptConfirmation.clear()
     if (spinnerTimer) {
       clearInterval(spinnerTimer)
       spinnerTimer = null
@@ -1527,7 +1531,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Always replace the final animated glyph. An ask overlay can keep the
     // title frozen while the run settles; normal title writes are correctly
     // blocked then, but the completed state must not remain stuck on ·/⠂/⠐.
-    setTerminalTitle('✳', true)
+    setTerminalTitle(backgroundWaitSince !== null ? '◌ bg' : '✳', true)
   }
 
   async function resumeSession(session: SessionMeta) {
@@ -1749,6 +1753,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       renderer.requestRender()
     } else if (!waiting && backgroundWaitSince !== null) {
       backgroundWaitSince = null
+      if (!isLoading) setTerminalTitle('✳')
       renderer.requestRender()
     }
   }
@@ -1759,6 +1764,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const backgroundWaitTimer = setInterval(() => {
     if (isLoading || backgroundWaitSince === null) return
     backgroundWaitSpinner = advanceSpinner(backgroundWaitSpinner)
+    if (backgroundWaitSpinner.frame % TITLE_INTERVAL_FRAMES === 0) {
+      setTerminalTitle(`${['⠂', '⠐'][titleFrame++ % 2]} bg ${backgroundTerminals.runningCount()}`)
+    }
     renderer.requestRender()
   }, SPINNER_INTERVAL_MS)
   ;(backgroundWaitTimer as unknown as { unref?: () => void }).unref?.()
@@ -1844,6 +1852,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   async function runQuery(text: string, contentJson?: string, prebuiltStream?: QueryStream) {
     if (queryBlockedByCloudLogin()) return
+    // Notification-only wakeups continue the same user task; don't hide its
+    // newly completed background work when the engine reads the result.
+    if (text || contentJson || prebuiltStream) backgroundTerminals.beginRun()
     const generation = beginRun()
     liveContentMaxHeight = 0
     isLoading = true
@@ -2092,6 +2103,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // actually released (it all finished in the same tick) say so rather
         // than falling through to an interrupt — this key must never be the one
         // that ends a run.
+        const wasForeground = backgroundTerminals.foregroundCount() > 0
         const freed = backgroundTerminals.reclaimTurn()
         if (freed === 0) {
           commitSystem('sys-reclaim-turn', '  Nothing to move to the background.')
@@ -2100,12 +2112,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         }
         commitSystem(
           'sys-reclaim-turn',
-          '  ■ Running in the background; use esc to interrupt.',
+          wasForeground
+            ? '  ● Shell moved to background; it keeps running.'
+            : '  ● Stopped waiting; the background task keeps running.',
         )
         renderer.requestRender()
         return true
       }
       case 'interrupt':
+        if (event.type === 'ctrl' && event.key === 'c'
+          && !interruptConfirmation.press(manualCompaction.active ? manualCompaction : streamRef)) {
+          commitStatusLine({ id: 'sys-interrupt-confirm', kind: 'system', text: '  Press Ctrl+C again within 5s to interrupt · Esc interrupts immediately' })
+          renderer.requestRender()
+          return true
+        }
+        interruptConfirmation.clear()
         if (manualCompaction.active) {
           manualCompaction.abort()
           return true

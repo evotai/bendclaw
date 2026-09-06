@@ -9,13 +9,14 @@
  * terminal: the controller in `background-terminals.ts` owns the side effects.
  */
 
+import { buildToolCall } from '../../render/output.js'
 import stripAnsi from 'strip-ansi'
 import type { KeyEvent } from '../input.js'
 import type { BackgroundProcess } from '../../native/index.js'
 import type { Hint } from '../design/key-hints.js'
 import type { SelectorItem, SelectorState } from '../selector.js'
 import { createAppSelectorState } from './selector-identity.js'
-import { formatElapsed } from '../../render/format.js'
+import { clipDisplayText, formatElapsed } from '../../render/format.js'
 
 export const BACKGROUND_PANEL_TITLE = 'Background'
 export const BACKGROUND_OUTPUT_TITLE = 'Background output'
@@ -70,8 +71,7 @@ export function formatCommandLabel(command: string, maxChars = 96): string {
   const extra = lines.length - 1
   const suffix = extra > 0 ? ` (+${extra} ${extra === 1 ? 'line' : 'lines'})` : ''
   const available = Math.max(1, maxChars - suffix.length)
-  if (first.length <= available) return `${first}${suffix}`
-  return `${first.slice(0, Math.max(1, available - 1))}…${suffix}`
+  return `${clipDisplayText(first, available)}${suffix}`
 }
 
 /** Parenthesised status shown after a row's command. */
@@ -322,7 +322,8 @@ export function formatLiveOutputView(process: BackgroundProcess, output: string)
   const hidden = all.length - visible.length
   const body = visible.length === 0 ? ['  (no output yet)'] : visible
   return [
-    `  ${formatCommandLabel(process.command)}`,
+    ...buildToolCall('bash', { command: process.command }, undefined, true).map(line => line.text),
+    `  ${STATUS_MARK[process.status]} · ${formatStatusDetail(process)}`,
     `  ${process.output_path}`,
     ...(process.output_file_truncated
       ? ['  ⚠ output file was capped; earlier output was dropped']

@@ -1,5 +1,6 @@
 pub mod client;
 pub mod logout;
+pub mod recovery;
 pub mod store;
 pub mod types;
 

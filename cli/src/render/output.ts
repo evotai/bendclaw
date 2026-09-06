@@ -104,14 +104,14 @@ function toolPrimaryArg(
 ): string {
   const n = name.toLowerCase()
   if (n === 'bash') {
-    const command = previewCommand ?? (args?.command as string) ?? ''
+    const command = toolDraftText({ previewCommand, command: args?.command }, ['previewCommand', 'command'])
     return formatBashCommandDisplay(command, expanded).headline
   }
   if (isTaskTool(name)) {
     // The engine resolves the task id to its command via preview_command, so
     // concurrent cards name different shells instead of all reading
     // `task_output`. Falls back to the raw id when the task is already gone.
-    const command = previewCommand ?? (args?.task_id as string) ?? ''
+    const command = toolDraftText({ previewCommand, task_id: args?.task_id }, ['previewCommand', 'task_id'])
     if (!command) return ''
     return formatBashCommandDisplay(command, expanded).headline
   }
@@ -553,7 +553,7 @@ export function buildToolCall(
   // Collapse hint matches expanded tool results / progress cards — but only
   // when the user explicitly expanded (not auto-expanded failures).
   if (name.toLowerCase() === 'bash' && expanded) {
-    const command = previewCommand ?? (args?.command as string) ?? ''
+    const command = toolDraftText({ previewCommand, command: args?.command }, ['previewCommand', 'command'])
     const details = formatBashCommandDisplay(command, true).detailLines
     for (const detail of details) {
       lines.push({ id: genId('tool'), kind: 'tool', text: detail })

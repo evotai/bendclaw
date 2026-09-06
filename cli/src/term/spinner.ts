@@ -263,6 +263,8 @@ export interface SpinnerFormatOptions {
    * when a user might want it. Both keys are shown because both apply.
    */
   backgroundable?: boolean
+  /** A task is already backgrounded; Ctrl+B releases only task_output's wait. */
+  releaseWait?: boolean
 }
 
 export function formatSpinnerLine(
@@ -272,14 +274,14 @@ export function formatSpinnerLine(
   options: SpinnerFormatOptions = {},
 ): string {
   const elapsed = now - state.phaseStartedAt
-  const slow = isSlow(state, now)
+  const slow = !options.releaseWait && isSlow(state, now)
   const char = SPINNER_FRAMES[state.frame]!
 
   const action = state.toolName ? toolActionLabel(state.toolName) : 'Working'
   let label: string
   switch (state.phase) {
     case 'executing':
-      label = slow ? `${action} slow…` : `${action}…`
+      label = options.releaseWait ? 'Waiting for background task…' : slow ? `${action} slow…` : `${action}…`
       break
     case 'waiting':
       label = slow ? 'LLM slow…' : 'Waiting for model…'
@@ -331,13 +333,12 @@ export function formatSpinnerLine(
   const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
     ? ''
     : formatSpinnerTokenSuffix(state, now, stats)
-  // Ctrl+B is named again. It used to be hidden because foreground shells were
-  // handed back on a timer, which made the shortcut look like a required manual
-  // step for something the runtime did anyway. Nothing yields on a timer now, so
-  // this is the only way to get the turn back without killing the work — and an
-  // unadvertised key is one nobody presses.
+  // Advertise the current action: detach a foreground shell, or release an
+  // existing background task's blocking wait without stopping its process.
   const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
     ? ''
+    : options.releaseWait
+      ? ` · esc to interrupt · ${backgroundChord()} to stop waiting`
     : options.backgroundable
       ? ` · esc to interrupt · ${backgroundChord()} to background`
       : ' · esc to interrupt'

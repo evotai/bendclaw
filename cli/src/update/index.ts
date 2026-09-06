@@ -61,7 +61,7 @@ async function proxyContext(): Promise<string | undefined> {
  * Force-check for updates and install if available.
  * Used by `/update` and `evot update`.
  */
-export async function runUpdate(currentVersion: string): Promise<RunResult> {
+export async function runUpdate(currentVersion: string, progress?: { onProgress?: (line: string) => void; signal?: AbortSignal }): Promise<RunResult> {
   const result = await checkForUpdate(currentVersion, { force: true })
 
   if (result.kind === 'error') {
@@ -78,7 +78,8 @@ export async function runUpdate(currentVersion: string): Promise<RunResult> {
     }
   }
 
-  const installResult = await executeInstall(result.latest.tag, stagedEnvFor(result.latest.tag))
+  progress?.onProgress?.('Fetching release installer…')
+  const installResult = await executeInstall(result.latest.tag, stagedEnvFor(result.latest.tag), progress ?? {})
   if (installResult.success) {
     const notes = parseReleaseNotes(result.latest.body)
     return { kind: 'updated', from: currentVersion, to: result.latest.version, notes }

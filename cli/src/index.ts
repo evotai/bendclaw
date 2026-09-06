@@ -90,7 +90,25 @@ async function main() {
       const { runUpdate } = await import('./update/index.js')
       const { version } = await import('./native/index.js')
       console.log('  checking for updates...')
-      const result = await runUpdate(version())
+      // The installer runs in its own process group so cancellation can reach
+      // curl/tar; Ctrl+C on this CLI must therefore be forwarded explicitly, or
+      // the swap would continue after the user believes it stopped.
+      const cancel = new AbortController()
+      const onInterrupt = () => cancel.abort()
+      process.once('SIGINT', onInterrupt)
+      const meter = process.stderr.isTTY
+      const result = await runUpdate(version(), {
+        signal: cancel.signal,
+        // curl's meter arrives as \r-separated frames; on a terminal redraw one
+        // line instead of logging every frame.
+        onProgress: line => process.stderr.write(meter ? `\r\x1b[2K  ${line}` : `  ${line}\n`),
+      })
+      process.off('SIGINT', onInterrupt)
+      if (meter) process.stderr.write('\n')
+      if (cancel.signal.aborted) {
+        console.error('  ✗ update cancelled')
+        process.exit(130)
+      }
       switch (result.kind) {
         case 'up_to_date':
           console.log(

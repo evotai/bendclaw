@@ -3,6 +3,7 @@
  * Pure logic: returns the string to display, no React.
  */
 
+import { providerFailurePresentation } from '../provider/error-presentation.js'
 import { formatCacheHitPercent } from '../render/cache.js'
 import { resolveRunInteraction, type RunInteractionState } from './app/run-interaction.js'
 import { runStatusPresentation } from './viewmodel/run-status.js'
@@ -114,6 +115,9 @@ export interface SpinnerState {
   streaming: boolean
   toolName: string | null
   waitRetryAt: number | null
+  /** Raw diagnostics are not displayed; the shared provider presenter maps them. */
+  retryError?: string
+  recoveryStartedAt?: number
   /** Which attempt the current retry storm is on, and its ceiling.
    *
    *  Held on the spinner rather than emitted as a card per attempt: the counter
@@ -167,10 +171,12 @@ export function setSpinnerPhase(state: SpinnerState, phase: SpinnerPhase, toolNa
   }
 }
 
-export function setLongWait(state: SpinnerState, phase: LongWaitPhase, delayMs: number, now = Date.now()): SpinnerState {
+export function setLongWait(state: SpinnerState, phase: LongWaitPhase, delayMs: number, now = Date.now(), error?: string): SpinnerState {
   return {
     ...resetStreamStats(state),
     phase,
+    recoveryStartedAt: state.recoveryStartedAt ?? now,
+    retryError: error ?? state.retryError,
     phaseStartedAt: now,
     toolName: null,
     waitRetryAt: now + Math.max(0, delayMs),
@@ -194,10 +200,13 @@ export function setRetryWait(
   attempt: number,
   maxAttempts: number,
   now = Date.now(),
+  error?: string,
 ): SpinnerState {
   return {
     ...resetStreamStats(state),
     phase: 'retrying',
+    recoveryStartedAt: state.recoveryStartedAt ?? now,
+    retryError: error ?? state.retryError,
     phaseStartedAt: now,
     toolName: null,
     waitRetryAt: now + Math.max(0, delayMs),
@@ -283,8 +292,7 @@ export function formatSpinnerLine(
       break
     case 'quota_waiting': {
       const seconds = Math.max(0, Math.ceil(((state.waitRetryAt ?? now) - now) / 1000))
-      const model = options.model?.replace(/\u001b(?:\[[0-9;?]*[ -/]*[@-~]|].*?(?:\u0007|\u001b\\)|.)/g, '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim()
-      const subject = model ? `${model} quota unavailable` : 'Model quota unavailable'
+      const subject = providerFailurePresentation({ kind: 'quota' }).label
       label = seconds > 0
         ? `${subject} · retrying in ${formatWaitCountdown(seconds)}`
         : `${subject} · retrying…`
@@ -292,7 +300,7 @@ export function formatSpinnerLine(
     }
     case 'outage_waiting': {
       const seconds = Math.max(0, Math.ceil(((state.waitRetryAt ?? now) - now) / 1000))
-      label = `Upstream unavailable · retrying in ${seconds}s`
+      label = `${providerFailurePresentation({ error: state.retryError, sustained: true }).label} · retrying in ${seconds}s`
       break
     }
     case 'retrying': {
@@ -304,9 +312,10 @@ export function formatSpinnerLine(
       const counter = attempt !== null
         ? max !== null ? ` · attempt ${attempt}/${max}` : ` · attempt ${attempt}`
         : ''
+      const subject = state.retryError ? providerFailurePresentation({ error: state.retryError }).label : 'Retrying'
       label = seconds > 0
-        ? `Retrying in ${seconds}s${counter}`
-        : `Retrying…${counter}`
+        ? `${subject}${state.retryError ? ' · retrying' : ''} in ${seconds}s${counter}`
+        : `${subject}${state.retryError ? ' · retrying' : ''}…${counter}`
       break
     }
     case 'thinking':
@@ -324,7 +333,8 @@ export function formatSpinnerLine(
       label = slow ? 'Preparing slow…' : 'Preparing…'
   }
 
-  const status = humanDuration(elapsed)
+  const status = state.recoveryStartedAt !== undefined && isLongWaitPhase(state.phase)
+    ? `waiting ${humanDuration(Math.max(0, now - state.recoveryStartedAt))}` : humanDuration(elapsed)
   label = presentation.label ?? label
   const tokenSuffix = presentation.showUsage ? formatSpinnerTokenSuffix(state, now, stats) : ''
   const interruptHint = presentation.hint

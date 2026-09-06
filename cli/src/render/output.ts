@@ -8,6 +8,7 @@
  * This module is pure logic — no React, no stdout. Easy to test.
  */
 
+import { providerFailurePresentation } from '../provider/error-presentation.js'
 import { renderMarkdown, renderThinkingMarkdown } from './markdown.js'
 import { colorizeUnifiedDiffRows, type DiffRowKind } from './diff.js'
 import { highlightCode, highlightCodeLine } from '../markdown/render/ansi.js'
@@ -857,7 +858,8 @@ export function buildLlmCard(text: string): OutputLine[] {
     lines.push({ id: genId('tool'), kind: 'tool', text: `  ${mark}${meta ? ` · ${meta}` : ''}` })
   }
   for (const b of body) {
-    lines.push({ id: genId('tool-res'), kind: 'error', text: `  ${b}` })
+    const failure = providerFailurePresentation({ error: b })
+    lines.push({ id: genId('tool-res'), kind: 'error', text: `  ${failure.kind === 'unknown' ? b : failure.label}` })
   }
   return lines
 }

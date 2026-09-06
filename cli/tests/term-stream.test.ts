@@ -51,9 +51,9 @@ describe('term stream machine', () => {
     const text = waiting.commitLines.map(line => line.text).join('\n')
     expect(text).toContain('✦ llm  claude-fable-5')
     expect(text).toContain('quota unavailable · retry in 30m')
-    expect(text).toContain('HTTP 429: rate_limit_error: Rate limit exceeded. Please retry later.')
+    expect(text).toContain('Rate limited')
     expect(text).not.toContain('attempt 1/10')
-    expect(waiting.writeLines).toEqual([])
+    expect(waiting.writeLines.some(line => line.text.includes('HTTP 429'))).toBe(true)
     expect(waiting.state.appState.verboseEvents).toEqual([])
     expect(waiting.rerenderStatus).toBe(true)
 
@@ -109,7 +109,7 @@ describe('term stream machine', () => {
       },
     }, { termRows: 24 })
     const text = waiting.commitLines.map(line => line.text).join('\n')
-    expect(text).toContain('HTTP 429')
+    expect(text).toContain('Rate limited')
     expect(text).not.toContain('\x1b')
     expect(text).not.toContain(']8;;')
   })
@@ -143,7 +143,7 @@ describe('term stream machine', () => {
     expect(waiting.state.spinnerState.phase).toBe('outage_waiting')
     expect(waiting.state.spinnerState.waitRetryAt).toBeGreaterThan(Date.now())
     expect(waiting.commitLines).toEqual([])
-    expect(waiting.writeLines).toEqual([])
+    expect(waiting.writeLines.some(line => line.text.includes('Upstream request failed'))).toBe(true)
     expect(waiting.state.appState.verboseEvents).toEqual([])
     expect(waiting.rerenderStatus).toBe(true)
   })
@@ -1219,7 +1219,7 @@ describe('term stream machine', () => {
     const text = update.commitLines.map(l => l.text).join('\n')
     expect(text).toContain('✦ llm  retry')
     expect(text).toContain('\u21bb \u00b7 retrying in 1 second \u00b7 attempt 1/3')
-    expect(text).toContain('network error')
+    expect(text).toContain('Connection interrupted')
   })
 
   test('llm stats route to writeLines (screen.log only), not commitLines', () => {
@@ -1300,7 +1300,7 @@ describe('term stream machine', () => {
     }, { termRows: 24 })
     const text = update.commitLines.map(l => l.text).join('\n')
     expect(text).toContain('✦ llm  retry')
-    expect(text).toContain('rate limited')
+    expect(text).toContain('Rate limited')
   })
 
   test('a retry storm commits one card and advances the spinner in place', () => {
@@ -1320,7 +1320,7 @@ describe('term stream machine', () => {
     state = first.state
     const firstText = first.commitLines.map(l => l.text).join('\n')
     expect(firstText).toContain('✦ llm  retry')
-    expect(firstText).toContain(err)
+    expect(firstText).toContain('Service busy')
     expect(state.spinnerState.phase).toBe('retrying')
     expect(state.spinnerState.retryAttempt).toBe(1)
     expect(state.spinnerState.retryMaxAttempts).toBe(10)
@@ -1364,7 +1364,7 @@ describe('term stream machine', () => {
     }, { termRows: 24 })
 
     const text = [...failed.commitLines, ...retry.commitLines].map(l => l.text).join('\n')
-    expect(text.split(err).length - 1).toBe(1)
+    expect(text.split('Service busy').length - 1).toBe(1)
     // Both cards still appear; only the repeated sentence is gone.
     expect(text).toContain('✦ llm  claude-opus-5')
     expect(text).toContain('✦ llm  retry')
@@ -1430,7 +1430,7 @@ describe('term stream machine', () => {
       kind: 'llm_call_completed',
       payload: { model: 'claude-opus-5', turn: 28, error: 'API error: HTTP 500', metrics: { duration_ms: 120 } },
     }, { termRows: 24 })
-    expect(failed.commitLines.map(l => l.text).join('\n')).toContain('API error: HTTP 500')
+    expect(failed.commitLines.map(l => l.text).join('\n')).toContain('Service busy')
   })
 
   test('an exhausted storm still reports the failure that ended the run', () => {
@@ -1457,8 +1457,9 @@ describe('term stream machine', () => {
       payload: { message: err },
     }, { termRows: 24 })
     const visible = terminal.commitLines.map(l => l.text).join('\n')
-    expect(visible).toContain(err)
-    expect(visible.split(err).length - 1).toBe(1)
+    expect(visible).toContain('Service busy')
+    expect(visible.split('Service busy').length - 1).toBe(1)
+    expect(terminal.writeLines.some(line => line.text.includes(err))).toBe(true)
   })
 
   test('llm error card and following error event do not duplicate the message', () => {
@@ -1473,7 +1474,7 @@ describe('term stream machine', () => {
     const tui = [...u1.commitLines, ...u2.commitLines].map(l => l.text).join('\n')
     // Message shows exactly once in the TUI (the llm card), and the redundant
     // standalone error line is routed to screen.log instead.
-    expect((tui.match(/HTTP 520: error code: 520/g) ?? []).length).toBe(1)
+    expect((tui.match(/Service busy/g) ?? []).length).toBe(1)
     expect(tui).toContain('✦ llm  claude-opus-4-6')
     expect(u2.writeLines.some(l => l.text.includes('HTTP 520'))).toBe(true)
   })
@@ -1520,7 +1521,7 @@ describe('term stream machine', () => {
       // BYOK keys are user-managed: evot has nothing to re-mint, so these stay
       // visible errors instead of entering the cloud recovery path.
       expect(update.sessionRevoked).toBe(false)
-      expect(terminal).toContain(raw.includes('session_revoked') ? 'custom gateway session ended' : 'invalid API key')
+      expect(terminal).toContain(raw.includes('session_revoked') ? 'custom gateway session ended' : 'Authentication failed')
     }
   })
 

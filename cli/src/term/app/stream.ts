@@ -1,3 +1,4 @@
+import { providerFailurePresentation } from '../../provider/error-presentation.js'
 import { formatLongWaitError } from '../../render/verbose.js'
 import { buildError, buildVerboseEvent, buildEventCard, isVisibleEvent, withoutRedundantErrorTail, type OutputLine } from '../../render/output.js'
 import { formatDuration } from '../../render/format.js'
@@ -146,6 +147,9 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   const routeVerbose = (text: string, target: { commit: OutputLine[]; write: OutputLine[] }) => {
     if (isVisibleEvent(text)) {
       target.commit.push(...buildEventCard(text))
+      // Customer copy is intentionally shorter; retain raw provider diagnostics
+      // in the log-only stream instead of losing them during presentation.
+      target.write.push(...buildVerboseEvent(text))
       // Remember the error message (the `    error     <msg>` tail) so a
       // following `error` event with the same text isn't rendered twice.
       const m = text.match(/\n\s*error\s+(.+)$/s)
@@ -194,11 +198,14 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
             retry.delayMs,
             retry.attempt,
             retry.maxRetries,
+            Date.now(),
+            known?.kind === 'llm_call_retry' ? known.payload.error : undefined,
           )
         : activeLlmCall
           ? setSpinnerPhase(resetStreamStats(flushed.state.spinnerState), 'waiting')
           : flushed.state.spinnerState,
     }
+    if (startsFreshCall) state = { ...state, spinnerState: { ...state.spinnerState, recoveryStartedAt: undefined, retryError: undefined } }
     commitLines.push(...flushed.lines)
     mergeFlushExpanded(flushed)
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
@@ -257,6 +264,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     const waitDelayMs = known.payload.delay_ms
     const quotaError = known.payload.error?.trim() ?? ''
     const quotaWaitAlreadyShown = known.kind === 'quota_waiting' && prev.quotaWaitShown
+    writeLines.push(...buildVerboseEvent(`[LLM] wait · ${known.kind}\n    error     ${quotaError}`))
     state = {
       ...flushed.state,
       activeLlmCall: false,
@@ -267,6 +275,8 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
         flushed.state.spinnerState,
         known.kind === 'outage_waiting' ? 'outage_waiting' : 'quota_waiting',
         waitDelayMs,
+        Date.now(),
+        quotaError,
       ),
     }
     commitLines.push(...flushed.lines)
@@ -455,7 +465,11 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
       const alreadyShown = capturedLlmError != null &&
         (message.trim() === capturedLlmError || message.includes(capturedLlmError) || capturedLlmError.includes(message.trim()))
       if (alreadyShown) writeLines.push(...buildError(message))
-      else commitLines.push(...buildError(message))
+      else {
+        const failure = providerFailurePresentation({ error: message })
+        commitLines.push(...buildError(failure.kind === 'unknown' ? message : failure.label))
+        writeLines.push(...buildError(message))
+      }
     }
   }
 

@@ -172,12 +172,12 @@ describe('formatSpinnerLine', () => {
       inputTokens: 100,
       cacheReadTokens: 90,
     }, { model: 'claude-fable-5' }))
-    expect(line).toContain('claude-fable-5 quota unavailable · retrying in 29m42s')
+    expect(line).toContain('Quota unavailable · retrying in 29m42s')
     expect(line).not.toContain('cache')
     expect(line).toContain('esc twice to interrupt')
     expect(line).not.toContain('slow')
     const expired = stripAnsi(formatSpinnerLine(state, now + 1_800_000, undefined, { model: 'claude-fable-5' }))
-    expect(expired).toContain('claude-fable-5 quota unavailable · retrying…')
+    expect(expired).toContain('Quota unavailable · retrying…')
     expect(expired).not.toContain('retrying in 0s')
   })
 
@@ -190,7 +190,7 @@ describe('formatSpinnerLine', () => {
       inputTokens: 100,
       cacheReadTokens: 90,
     }))
-    expect(line).toContain('Upstream unavailable · retrying in 42s')
+    expect(line).toContain('Request failed · retrying in 42s')
     expect(line).not.toContain('cache')
     expect(line).toContain('esc twice to interrupt')
     expect(line).not.toContain('slow')

@@ -183,7 +183,8 @@ describe('transcript conversion', () => {
     }]
 
     const rendered = messagesToOutputLines(messages).map(line => line.text).join('\n')
-    expect(rendered.split(err).length - 1).toBe(1)
+    expect(rendered.split('Service busy').length - 1).toBe(1)
+    expect(rendered).not.toContain(err)
     expect(rendered.split('✦ llm  retry').length - 1).toBe(1)
     // The storm is still visible as an event, just once.
     expect(rendered).toContain('attempt 1/10')
@@ -206,7 +207,7 @@ describe('transcript conversion', () => {
     }]
 
     const rendered = messagesToOutputLines(messages).map(line => line.text).join('\n')
-    expect(rendered).toContain('Overloaded: HTTP 529')
-    expect(rendered).toContain('API error: HTTP 500')
+    expect(rendered.split('Service busy').length - 1).toBe(2)
+    expect(rendered).toContain('turn 29')
   })
 })

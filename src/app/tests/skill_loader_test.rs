@@ -311,6 +311,27 @@ fn all_builtin_skills_load() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn stale_builtin_dirs_are_removed() -> Result<(), Box<dyn std::error::Error>> {
+    const CHILD: &str = "EVOT_STALE_BUILTIN_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = tempfile::tempdir()?;
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "skill_loader_test::stale_builtin_dirs_are_removed",
+                "--nocapture",
+            ])
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env(CHILD, "1")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
     // `opencli` and `humanize` moved to the evot-skills catalog. An upgraded
     // binary must clear the copies it wrote in an earlier version, or they keep
     // loading and collide with the installed ones.

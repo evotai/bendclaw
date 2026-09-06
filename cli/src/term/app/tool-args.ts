@@ -16,6 +16,11 @@ export function parseStreamingToolArgs(raw: string): Record<string, unknown> {
   }
 }
 
+/** Wire tool arguments are arbitrary JSON; the UI only displays object fields. */
+export function toolArgsRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

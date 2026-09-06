@@ -23,7 +23,7 @@ status = 0
 pid, fd = pty.fork()
 if pid == 0:
     os.environ['TERM'] = 'xterm-256color'
-    os.execv(sys.argv[1], [sys.argv[1]])
+    os.execv(sys.argv[1], sys.argv[1:])
 try:
     while True:
         r, _, _ = select.select([sys.stdin.buffer, fd], [], [], 0.1)
@@ -239,6 +239,31 @@ async function startEvot(
 }
 
 describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
+  test('--continue with no history exits cleanly during partial startup', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'evot-continue-home-'))
+    seedSmokeHome(home)
+    const child = spawn('python3', ['-c', PTY_RELAY, EVOT_BIN, '--continue'], {
+      env: smokeEnvironment(home), stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let output = ''
+    child.stdout.on('data', data => { output += data.toString() })
+    child.stderr.on('data', data => { output += data.toString() })
+    const timer = setTimeout(() => child.kill('SIGTERM'), 15_000)
+    try {
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', resolve)
+      })
+      expect(code).toBe(1)
+      expect(output).not.toContain('ReferenceError')
+      expect(output).not.toContain('before initialization')
+    } finally {
+      clearTimeout(timer)
+      child.kill('SIGTERM')
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   test('renders the composer and echoes typed text', async () => {
     const session = await startEvot()
     try {

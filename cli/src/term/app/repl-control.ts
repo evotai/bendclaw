@@ -1,5 +1,5 @@
 import type { KeyEvent } from '../input.js'
-import type { OverlayState } from '../viewmodel/index.js'
+import type { OverlayState } from './overlay-state.js'
 import type { EditorState } from '../input/editor.js'
 import { isEditorEmpty } from '../input/editor.js'
 

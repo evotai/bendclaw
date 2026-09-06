@@ -3,6 +3,7 @@
  * with ordered assistant content and completed tool results.
  */
 
+import { toolArgsRecord } from '../term/app/tool-args.js'
 import type { TranscriptItem } from '../native/index.js'
 import type { UIAssistantBlock, UIMessage } from '../term/app/types.js'
 
@@ -13,7 +14,7 @@ import type { UIAssistantBlock, UIMessage } from '../term/app/types.js'
 type RawAssistantBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
-  | { type: 'tool_call'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; input: unknown }
 
 interface RawItem {
   type: string
@@ -113,17 +114,18 @@ function buildAssistantContent(
         return { type: 'thinking', contentIndex, text: block.text }
       case 'tool_call': {
         const result = toolResults.get(block.id)
+        const args = toolArgsRecord(block.input) ?? {}
         return {
           type: 'tool_call',
           contentIndex,
           toolCall: {
             id: block.id,
             name: block.name,
-            args: block.input,
+            args,
             status: result ? (result.isError ? 'error' : 'done') : 'queued',
             result: result?.content,
             details: result?.details,
-            previewCommand: inferPreviewCommand(block.name, block.input),
+            previewCommand: inferPreviewCommand(block.name, args),
           },
         }
       }

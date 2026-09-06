@@ -4,7 +4,7 @@
  */
 
 import { formatCacheHitPercent } from '../render/cache.js'
-import { backgroundChord } from './app/hint.js'
+import { backgroundChord } from './design/key-hints.js'
 
 function getSpinnerChars(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {

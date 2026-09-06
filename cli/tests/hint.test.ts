@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { HINT_SEPARATOR, backgroundChord, backgroundChordLabel, formatChord } from '../src/term/app/hint.js'
+import { HINT_SEPARATOR, backgroundChord, backgroundChordLabel, formatChord } from '../src/term/design/key-hints.js'
 
 describe('formatChord', () => {
   test('named keys get their display spelling', () => {

@@ -1,8 +1,8 @@
+import { SELECTOR_OWNER } from '../src/term/app/selector-identity.js'
 import { describe, expect, test } from 'bun:test'
 import { handleSelectorControl } from '../src/term/app/selector-control.js'
 import {
   createSkillSelectorState,
-  isSkillSelectorTitle,
   SKILL_SELECTOR_TITLE,
 } from '../src/term/app/skill-window.js'
 
@@ -44,8 +44,9 @@ describe('skill command window', () => {
     expect(state.items).toEqual([])
   })
 
-  test('recognizes only the skill selector title', () => {
-    expect(isSkillSelectorTitle(SKILL_SELECTOR_TITLE)).toBe(true)
-    expect(isSkillSelectorTitle('Models')).toBe(false)
+  test('assigns skill ownership independently of the display title', () => {
+    const state = { ...createSkillSelectorState([{ name: 'review', dir: '/skills/review' }]), title: 'Models' }
+    expect(state.owner).toBe(SELECTOR_OWNER.skill)
+    expect(handleSelectorControl(state, { type: 'enter' })).toEqual({ kind: 'none' })
   })
 })

@@ -7,188 +7,27 @@
 // @ts-ignore — binding.js is generated
 import { NapiAgent as RawAgent, version as rawVersion, startServer as rawStartServer, startServerBackground as rawStartServerBackground, fastExit as rawFastExit, authBegin as rawAuthBegin, authPoll as rawAuthPoll, authLogout as rawAuthLogout, authSyncModels as rawAuthSyncModels, authSyncNotices as rawAuthSyncNotices, authWhoami as rawAuthWhoami, authRefreshSession as rawAuthRefreshSession, authNotices as rawAuthNotices } from './binding.js'
 
-type RawAgentType = any
-type RawRunType = any
-type RawForkedType = any
+import { QueryStream } from './query-stream.js'
+export { QueryStream } from './query-stream.js'
+export type { QueuedPrompt, PromptQueueKind } from './query-stream.js'
+export type { RunEvent, QueryEvent, HostToolEvent } from './contracts/query-event.js'
+import { decodeConfigInfo, type ConfigInfo } from './contracts/config-info.js'
+export type { ConfigInfo, ModelOption, ModelProtocol } from './contracts/config-info.js'
+
+import type { NativeAgent, NativeCompaction, NativeForkedAgent } from './contracts/ports.js'
 
 // ---------------------------------------------------------------------------
 // Event types (mirrors Rust RunEvent / RunEventPayload)
 // ---------------------------------------------------------------------------
 
-export interface RunEvent {
-  event_id: string
-  run_id: string
-  session_id: string
-  turn: number
-  kind: string
-  payload: Record<string, unknown>
-  created_at: string
-}
-
-export interface SessionMeta {
-  session_id: string
-  title: string
-  model: string
-  /** Provider paired with model; absent on sessions saved before provider-aware selection. */
-  provider?: string
-  thinking_level: string | null
-  cwd: string
-  source: string
-  turns: number
-  created_at: string
-  updated_at: string
-}
-
-export interface TranscriptItem {
-  [key: string]: unknown
-}
-
-export interface SessionWithText extends SessionMeta {
-  search_text: string
-  /** Real user turns, oldest first. Compaction boilerplate is excluded. */
-  user_prompts: string[]
-}
-
-export interface VariableInfo {
-  key: string
-  value: string
-  updated_at?: string
-}
-
-export interface BackgroundProcess {
-  task_id: string
-  command: string
-  cwd: string
-  output_path: string
-  /** No `timed_out`: the engine only produces that state where background
-   *  support is absent (headless/readonly), and those runtimes have no process
-   *  manager to list. Everything reaching this type comes from a TUI session,
-   *  where the deadline backgrounds instead of killing. */
-  status: 'running_foreground' | 'running' | 'completed' | 'failed' | 'killed'
-  exit_code: number | null
-  elapsed_ms: number
-  output_file_truncated: boolean
-  stopped_by_user: boolean
-}
+import * as results from './contracts/results.js'
+import { decodeResult } from './contracts/results.js'
+import type { SessionMeta, SessionWithText, TranscriptItem, VariableInfo, BackgroundProcess, ManualCompactionOutcome, CompactionPhase } from './contracts/results.js'
+export type { SessionMeta, SessionWithText, TranscriptItem, VariableInfo, BackgroundProcess, ManualCompactionOutcome, CompactionPhase } from './contracts/results.js'
 
 export type SubmitOutcome =
   | { kind: 'run'; stream: QueryStream }
   | { kind: 'command'; message: string }
-
-export interface QueuedPrompt {
-  id: string
-  version: number
-  message: Record<string, unknown>
-}
-
-export type PromptQueueKind = 'steering' | 'follow_up'
-
-export type ModelProtocol = 'anthropic' | 'openai' | 'openai_responses'
-
-export interface ModelOption {
-  provider: string
-  /** Wire protocol configured for this provider. */
-  protocol?: ModelProtocol
-  model: string
-  /** Provider-qualified value accepted by --model and the model setter. */
-  spec: string
-  /** Heading for this model's group, pushed by the server. Cloud models only. */
-  group_label?: string
-  /** Where this group sits relative to the others. Cloud models only. */
-  group_order?: number
-  /** Catalog rank inside the tier: higher shows earlier. Cloud models only. */
-  sort_order?: number
-  /** Present on evot cloud models; carries server-pushed metadata. */
-  free?: {
-    display_name?: string
-    tagline?: string
-    is_new?: boolean
-    /** `base` (open to everyone) or `special` (granted per account). */
-    tier?: string
-  }
-}
-
-export interface ConfigInfo {
-  provider: string
-  protocol: ModelProtocol
-  envPath: string
-  hasApiKey: boolean
-  baseUrl: string | null
-  availableModels: ModelOption[]
-  thinkingLevel: string
-}
-
-// ---------------------------------------------------------------------------
-// QueryStream — async iterable over RunEvents
-// ---------------------------------------------------------------------------
-
-export class QueryStream {
-  private raw: RawRunType
-
-  constructor(raw: RawRunType) {
-    this.raw = raw
-  }
-
-  get sessionId(): string {
-    return this.raw.sessionId
-  }
-
-  async next(): Promise<RunEvent | null> {
-    const json = await this.raw.next()
-    if (json === null) return null
-    return JSON.parse(json) as RunEvent
-  }
-
-  abort(): void {
-    this.raw.abort()
-  }
-
-  steer(text: string, contentJson?: string): QueuedPrompt {
-    return JSON.parse(this.raw.steer(text, contentJson ?? null)) as QueuedPrompt
-  }
-
-  followUp(text: string, contentJson?: string): QueuedPrompt {
-    return JSON.parse(this.raw.followUp(text, contentJson ?? null)) as QueuedPrompt
-  }
-
-  queuedPrompts(queue: PromptQueueKind): QueuedPrompt[] {
-    return JSON.parse(this.raw.queuedPrompts(queue)) as QueuedPrompt[]
-  }
-
-  updateQueuedPrompt(queue: PromptQueueKind, id: string, version: number, text: string): QueuedPrompt {
-    return JSON.parse(this.raw.updateQueuedPrompt(queue, id, version, text)) as QueuedPrompt
-  }
-
-  removeQueuedPrompt(queue: PromptQueueKind, id: string, version?: number): QueuedPrompt {
-    return JSON.parse(this.raw.removeQueuedPrompt(queue, id, version ?? null)) as QueuedPrompt
-  }
-
-  sendQueuedPromptNow(id: string, version?: number): QueuedPrompt {
-    return JSON.parse(this.raw.sendQueuedPromptNow(id, version ?? null)) as QueuedPrompt
-  }
-
-  moveQueuedPrompt(queue: PromptQueueKind, id: string, version: number, direction: 'up' | 'down'): QueuedPrompt {
-    return JSON.parse(this.raw.moveQueuedPrompt(queue, id, version, direction)) as QueuedPrompt
-  }
-
-  clearQueuedPrompts(queue: PromptQueueKind): void {
-    this.raw.clearQueuedPrompts(queue)
-  }
-
-  /** Respond to a host_tool_call event with a JSON-encoded response.
-   *  Payload shape: { tool_call_id, content, details?, is_error? }. */
-  async respondHostTool(responseJson: string): Promise<void> {
-    await this.raw.respondHostTool(responseJson)
-  }
-
-  /** Async iterator support — `for await (const event of stream)` */
-  async *[Symbol.asyncIterator](): AsyncIterableIterator<RunEvent> {
-    let event: RunEvent | null
-    while ((event = await this.next()) !== null) {
-      yield event
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Content block types for multi-content queries
@@ -215,41 +54,15 @@ export type ContentBlock = TextContentBlock | ImageContentBlock
 // Agent — main entry point
 // ---------------------------------------------------------------------------
 
-export type ManualCompactionOutcome =
-  | {
-      status: 'compacted'
-      summary: string
-      tokens_before: number
-      tokens_after: number
-      messages_before: number
-      messages_after: number
-      context_window: number
-      messages_evicted: number
-      current_run_reclaimed: number
-      compaction_level: number
-      used_fallback: boolean
-      method?: 'remote' | 'local' | 'remote_failed_local'
-      remote_blob_bytes?: number
-      fallback_reason?: string
-    }
-  | { status: 'nothing_to_compact' }
-  | { status: 'cancelled' }
-
-export type CompactionPhase = 'planning' | 'remote' | 'local_fallback' | 'local' | 'complete'
-
 export class CompactionTask {
-  private raw: any
-
-  constructor(raw: any) {
-    this.raw = raw
-  }
+  constructor(private readonly raw: NativeCompaction) {}
 
   get phase(): CompactionPhase {
-    return this.raw.phase as CompactionPhase
+    return results.compactionPhase.read(this.raw.phase, '$.phase')
   }
 
   async result(): Promise<ManualCompactionOutcome> {
-    return JSON.parse(await this.raw.result()) as ManualCompactionOutcome
+    return decodeResult(await this.raw.result(), results.compactionOutcome)
   }
 
   abort(): void {
@@ -258,11 +71,7 @@ export class CompactionTask {
 }
 
 export class Agent {
-  private raw: RawAgentType
-
-  private constructor(raw: RawAgentType) {
-    this.raw = raw
-  }
+  private constructor(private readonly raw: NativeAgent) {}
 
   static async create(model?: string, envFile?: string): Promise<Agent> {
     const raw = await RawAgent.create(model ?? null, envFile ?? null)
@@ -317,12 +126,12 @@ export class Agent {
 
   async createSession(): Promise<SessionMeta> {
     const json = await this.raw.createSession()
-    return JSON.parse(json) as SessionMeta
+    return decodeResult(json, results.sessionMeta)
   }
 
   async listSessions(limit?: number): Promise<SessionMeta[]> {
     const json = await this.raw.listSessions(limit ?? null)
-    return JSON.parse(json) as SessionMeta[]
+    return decodeResult(json, results.sessions)
   }
 
   async deleteSession(sessionId: string): Promise<boolean> {
@@ -330,17 +139,17 @@ export class Agent {
   }
 
   backgroundProcesses(sessionId: string): BackgroundProcess[] {
-    return JSON.parse(this.raw.backgroundProcesses(sessionId)) as BackgroundProcess[]
+    return decodeResult(this.raw.backgroundProcesses(sessionId), results.backgroundProcesses)
   }
 
   async stopBackgroundProcess(sessionId: string, taskId: string): Promise<BackgroundProcess | null> {
     const json = await this.raw.stopBackgroundProcess(sessionId, taskId)
-    return json ? JSON.parse(json) as BackgroundProcess : null
+    return json ? decodeResult(json, results.backgroundProcess) : null
   }
 
   async stopAllBackgroundProcesses(sessionId: string): Promise<BackgroundProcess[]> {
     const json = await this.raw.stopAllBackgroundProcesses(sessionId)
-    return JSON.parse(json) as BackgroundProcess[]
+    return decodeResult(json, results.backgroundProcesses)
   }
 
   /** Detach every foreground shell so the turn can be reclaimed without
@@ -385,27 +194,27 @@ export class Agent {
 
   async listSessionsWithText(limit?: number): Promise<SessionWithText[]> {
     const json = await this.raw.listSessionsWithText(limit ?? null)
-    return JSON.parse(json) as SessionWithText[]
+    return decodeResult(json, results.sessionsWithText)
   }
 
   async loadTranscript(sessionId: string): Promise<TranscriptItem[]> {
     const json = await this.raw.loadTranscript(sessionId)
-    return JSON.parse(json) as TranscriptItem[]
+    return decodeResult(json, results.transcript)
   }
 
   async loadContextTranscript(sessionId: string): Promise<TranscriptItem[]> {
     const json = await this.raw.loadContextTranscript(sessionId)
-    return JSON.parse(json) as TranscriptItem[]
+    return decodeResult(json, results.transcript)
   }
 
   async loadResumeTranscript(sessionId: string): Promise<TranscriptItem[]> {
     const json = await this.raw.loadResumeTranscript(sessionId)
-    return JSON.parse(json) as TranscriptItem[]
+    return decodeResult(json, results.transcript)
   }
 
   async findSession(sessionId: string): Promise<SessionMeta | null> {
     const json = await this.raw.findSession(sessionId)
-    return json ? JSON.parse(json) as SessionMeta : null
+    return json ? decodeResult(json, results.sessionMeta) : null
   }
 
   fork(systemPrompt: string): ForkedAgent {
@@ -414,7 +223,7 @@ export class Agent {
   }
 
   listVariables(): VariableInfo[] {
-    return JSON.parse(this.raw.listVariables()) as VariableInfo[]
+    return decodeResult(this.raw.listVariables(), results.variables)
   }
 
   async setVariable(key: string, value: string): Promise<void> {
@@ -426,7 +235,7 @@ export class Agent {
   }
 
   configInfo(): ConfigInfo {
-    return JSON.parse(this.raw.configInfo()) as ConfigInfo
+    return decodeConfigInfo(this.raw.configInfo())
   }
 
   availableModels(): string[] {
@@ -518,11 +327,7 @@ export class Agent {
 // ---------------------------------------------------------------------------
 
 export class ForkedAgent {
-  private raw: RawForkedType
-
-  constructor(raw: RawForkedType) {
-    this.raw = raw
-  }
+  constructor(private readonly raw: NativeForkedAgent) {}
 
   async query(prompt: string): Promise<QueryStream> {
     const raw = await this.raw.query(prompt)
@@ -542,17 +347,13 @@ export async function startServer(port?: number, model?: string, envFile?: strin
   return rawStartServer(port ?? null, model ?? null, envFile ?? null)
 }
 
-export interface ServerInfo {
-  port: number
-  address: string
-  channels: string[]
-  channelCount: number
-}
+import type { ServerInfo, LoginCodeResponse, AuthPollResult, CloudUser, AuthRefreshResult, CloudNotice } from './contracts/results.js'
+export type { ServerInfo, LoginCodeResponse, AuthPollResult, CloudUser, AuthRefreshStatus, AuthRefreshResult, CloudNotice } from './contracts/results.js'
 
 export async function startServerBackground(port?: number, model?: string, envFile?: string): Promise<ServerInfo | null> {
   const json = await rawStartServerBackground(port ?? null, model ?? null, envFile ?? null)
   if (json === null) return null
-  return JSON.parse(json) as ServerInfo
+  return decodeResult(json, results.serverInfo)
 }
 
 /**
@@ -572,34 +373,22 @@ export function fastExit(code = 0): never {
 // Cloud auth (evot login)
 // ---------------------------------------------------------------------------
 
-export interface LoginCodeResponse {
-  code: string
-  login_url: string
-  expires_at: number
-  expires_in_ms: number
-  interval_ms: number
-}
-
-export type AuthPollResult =
-  | { status: 'pending' | 'expired' | 'denied' }
-  | { status: 'success'; state: { user: { id: string; name: string; email: string } }; sync_error?: string }
-
 function parseJsonOrThrow(raw: unknown, context: string): unknown {
   if (typeof raw !== 'string') return raw
   try {
     return JSON.parse(raw)
   } catch {
     // The addon surfaces Rust errors as plain text — rethrow with context.
-    throw new Error(raw.startsWith('Error') ? `${context}: ${raw.replace(/^Error:\s*/, '')}` : `${context}: ${raw}`)
+    throw new Error(`${context}: invalid native result at $`)
   }
 }
 
 export async function authBegin(serverUrl: string, fingerprintId: string): Promise<LoginCodeResponse> {
-  return parseJsonOrThrow(await rawAuthBegin(serverUrl, fingerprintId), 'login failed') as LoginCodeResponse
+  return results.loginCode.read(parseJsonOrThrow(await rawAuthBegin(serverUrl, fingerprintId), 'login failed'), '$')
 }
 
 export async function authPoll(serverUrl: string, code: string, expiresAt: number): Promise<AuthPollResult> {
-  return parseJsonOrThrow(await rawAuthPoll(serverUrl, code, expiresAt), 'login polling failed') as AuthPollResult
+  return results.authPoll.read(parseJsonOrThrow(await rawAuthPoll(serverUrl, code, expiresAt), 'login polling failed'), '$')
 }
 
 export async function authSyncModels(): Promise<void> {
@@ -607,65 +396,33 @@ export async function authSyncModels(): Promise<void> {
 }
 
 export async function authSyncNotices(): Promise<CloudNotice[]> {
-  return parseJsonOrThrow(await rawAuthSyncNotices(), 'notice sync failed') as CloudNotice[]
+  return results.cloudNotices.read(parseJsonOrThrow(await rawAuthSyncNotices(), 'notice sync failed'), '$')
 }
 
 export async function authLogout(): Promise<void> {
   await rawAuthLogout()
 }
 
-export async function authWhoami(): Promise<{ id: string; name: string; email: string } | null> {
+export async function authWhoami(): Promise<CloudUser | null> {
   const raw = await rawAuthWhoami()
   if (!raw) return null
   try {
-    return JSON.parse(raw)
+    return decodeResult(raw, results.cloudUser)
   } catch {
     return null
   }
 }
 
-export interface CloudUser {
-  id: string
-  name: string
-  email: string
-}
-
-/**
- * Outcome of repairing a cloud session the gateway rejected.
- * - `recovered`: a fresh scoped key was cached; retry the request.
- * - `login_required`: the CLI token was refused and has been cleared.
- * - `unavailable`: server unreachable; nothing was cleared.
- */
-export type AuthRefreshStatus = 'recovered' | 'login_required' | 'unavailable'
-
-export interface AuthRefreshResult {
-  status: AuthRefreshStatus
-  /** Null only when a new login is required. */
-  user: CloudUser | null
-  /** Why the server could not be reached, when status is `unavailable`. */
-  error?: string | null
-  /** Set when clearing a refused credential failed. */
-  cleanup_error?: string | null
-}
-
 /** Re-mint the scoped LLM key after the gateway reported `session_revoked`. */
 export async function authRefreshSession(): Promise<AuthRefreshResult> {
-  return parseJsonOrThrow(await rawAuthRefreshSession(), 'session refresh failed') as AuthRefreshResult
-}
-
-export interface CloudNotice {
-  id: string
-  kind: 'notice' | 'ad'
-  priority?: number
-  title: string
-  body_md?: string
+  return results.authRefresh.read(parseJsonOrThrow(await rawAuthRefreshSession(), 'session refresh failed'), '$')
 }
 
 export function authNotices(): CloudNotice[] {
   const raw = rawAuthNotices()
   if (!raw) return []
   try {
-    return JSON.parse(raw) as CloudNotice[]
+    return decodeResult(raw, results.cloudNotices)
   } catch {
     return []
   }

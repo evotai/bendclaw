@@ -1,0 +1,5 @@
+[
+  {"event_id":"fixture-start","run_id":"run-1","session_id":"session-1","turn":0,"kind":"run_started","payload":{},"created_at":"2026-01-01T00:00:00Z"},
+  {"event_id":"fixture-text","run_id":"run-1","session_id":"session-1","turn":1,"kind":"assistant_delta","payload":{"content_index":0,"content_type":"text","delta":"hello"},"created_at":"2026-01-01T00:00:00Z"},
+  {"kind":"host_tool_call","payload":{"tool_name":"ask_user","tool_call_id":"call-1","arguments":{"questions":[]}}}
+]

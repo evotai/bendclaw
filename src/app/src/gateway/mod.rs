@@ -1,3 +1,4 @@
+pub mod channel_tasks;
 pub mod channels;
 pub mod delivery;
 pub mod registry;

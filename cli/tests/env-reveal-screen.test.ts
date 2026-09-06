@@ -13,7 +13,8 @@
  * scrollback — erased on screen in principle, still there when you scroll up.
  */
 import { describe, expect, test } from 'bun:test'
-import { TermRenderer, CURSOR_MARKER } from '../src/term/renderer.js'
+import { TermRenderer } from '../src/term/renderer.js'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import { ScreenHarness } from './helpers/screen.js'
 
 const SECRET = 'K=supersecretvalue'

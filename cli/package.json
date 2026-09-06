@@ -21,6 +21,7 @@
     "dev": "bun run src/index.ts",
     "test": "bun test tests/ --path-ignore-patterns 'tests/tui/**'",
     "test:tui": "bun test tests/tui/",
+    "preview:tui": "bun scripts/preview-tui.ts",
     "trace:renderer": "bun scripts/analyze-renderer-trace.ts"
   },
   "dependencies": {

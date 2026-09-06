@@ -51,7 +51,7 @@ async fn first_request_prompt(
     };
     while run.next().await.is_some() {}
 
-    let transcript = agent.load_transcript(&meta.session_id).await?;
+    let transcript = agent.sessions().transcript(&meta.session_id).await?;
     let started = transcript
         .iter()
         .find_map(TranscriptStats::try_from_item)

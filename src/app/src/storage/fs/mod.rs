@@ -1,3 +1,4 @@
+mod favorites;
 mod migrate;
 mod storage;
 

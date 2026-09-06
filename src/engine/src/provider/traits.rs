@@ -155,10 +155,30 @@ impl<T: StreamProvider + ?Sized> StreamProvider for Arc<T> {
     ) -> Result<StreamOutcome, ProviderError> {
         self.as_ref().stream(config, tx, cancel).await
     }
+
+    async fn stream_bounded(
+        &self,
+        config: StreamConfig,
+        tx: mpsc::Sender<StreamEvent>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        self.as_ref().stream_bounded(config, tx, cancel).await
+    }
 }
 
 #[async_trait]
 pub trait StreamProvider: Send + Sync {
+    /// Bounded host path. Legacy custom providers use this compatibility
+    /// bridge; built-in HTTP providers override it without an intermediate queue.
+    async fn stream_bounded(
+        &self,
+        config: StreamConfig,
+        tx: mpsc::Sender<StreamEvent>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        super::legacy_bridge::stream(self, config, tx, cancel).await
+    }
+
     /// Stream a completion, sending [`StreamEvent`]s through the channel.
     ///
     /// On success returns the completed assistant message. On failure returns a

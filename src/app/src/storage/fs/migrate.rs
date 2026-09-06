@@ -347,7 +347,7 @@ fn decode_legacy_compact(
         context_summary_message: Some(crate::compact::context_view::compact_summary_text(&summary)),
         ..Default::default()
     };
-    let engine_messages = crate::agent::run::convert::into_agent_messages(&messages);
+    let engine_messages = crate::conversation::convert::into_agent_messages(&messages);
 
     Ok(TranscriptItem::Compact {
         id: value
@@ -378,7 +378,7 @@ fn decode_legacy_snapshot(
         .cloned()
         .ok_or(())
         .and_then(|messages| serde_json::from_value(messages).map_err(|_| ()))?;
-    let engine_messages = crate::agent::run::convert::into_agent_messages(&messages);
+    let engine_messages = crate::conversation::convert::into_agent_messages(&messages);
     Ok(TranscriptItem::Compact {
         id: format!("legacy-{seq}"),
         created_at: 0,

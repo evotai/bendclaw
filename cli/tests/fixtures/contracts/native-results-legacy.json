@@ -1,0 +1,9 @@
+{
+  "session": {"session_id":"s","cwd":"/fixture","model":"m","title":null,"turns":0,"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},
+  "queue": {"id":"q","version":0,"message":{"role":"user","timestamp":0,"content":[{"type":"text","text":"fixture"}]}},
+  "background": {"task_id":"t","command":"fixture","cwd":"/fixture","output_path":"/fixture/output","status":"completed","exit_code":0,"elapsed_ms":1,"output_file_truncated":false,"stopped_by_user":false},
+  "compaction": {"status":"compacted","summary":"fixture","tokens_before":100,"tokens_after":20,"messages_before":5,"messages_after":2,"context_window":1000,"messages_evicted":3,"current_run_reclaimed":0,"compaction_level":3,"used_fallback":true},
+  "notice": {"id":"n","kind":"notice","title":"fixture"},
+  "user": {"id":"u","name":"fixture","email":"fixture@example.invalid"},
+  "login": {"code":"fixture","login_url":"https://example.invalid/login","expires_at":1,"expires_in_ms":1,"interval_ms":1}
+}

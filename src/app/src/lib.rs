@@ -1,11 +1,16 @@
 pub mod agent;
 pub(crate) mod atomic_file;
 pub mod auth;
+pub mod bootstrap;
 pub mod command;
 pub mod compact;
 pub mod conf;
+pub mod contracts;
+pub mod conversation;
 pub mod error;
 pub mod gateway;
+pub mod models;
 pub mod search;
+pub mod sessions;
 pub mod storage;
 pub mod types;

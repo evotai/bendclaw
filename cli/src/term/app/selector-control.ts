@@ -9,10 +9,8 @@ import {
   selectorUp,
   type SelectorState,
 } from '../selector.js'
-import { decideQueueSelectorAction, isQueueSelectorTitle, type ManagedQueuedPrompt } from './queue-manage.js'
-import { isBackgroundPanelTitle } from './background-panel.js'
-import { isResumeSelectorTitle } from './resume.js'
-import { isSkillSelectorTitle } from './skill-window.js'
+import { decideQueueSelectorAction, type ManagedQueuedPrompt } from './queue-manage.js'
+import { SELECTOR_OWNER } from './selector-identity.js'
 
 export type SelectorControlAction =
   | { kind: 'update'; state: SelectorState }
@@ -49,7 +47,7 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
       // Lists that reserve bare letters for their own gestures never build a
       // filter query: doing so would silently drop rows with no filter line on
       // screen to explain why.
-      if (state.noFilter || isQueueSelectorTitle(state.title)) return { kind: 'none' }
+      if (state.noFilter || state.owner === SELECTOR_OWNER.queue) return { kind: 'none' }
       return { kind: 'update', state: selectorType(disarmDelete(state), event.char) }
     case 'backspace':
       if (state.noFilter) return { kind: 'none' }
@@ -68,22 +66,18 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
 }
 
 function selectAction(state: SelectorState): SelectorControlAction {
-  // The live skill inventory is informational. Management remains explicit via
-  // `/skill list|install|update|remove`, so Enter must never reinterpret a
-  // skill name as a model spec or execute a destructive action.
-  if (isSkillSelectorTitle(state.title)) return { kind: 'none' }
+  // Only explicitly owned actionable lists can dispatch business operations.
+  // Skill/background/unknown lists must never fall through to model selection.
+  if (state.owner !== SELECTOR_OWNER.model
+    && state.owner !== SELECTOR_OWNER.resume
+    && state.owner !== SELECTOR_OWNER.queue) return { kind: 'none' }
 
   const selected = selectorSelect(state)
   if (!selected) return { kind: 'close' }
 
-  if (isResumeSelectorTitle(state.title)) return { kind: 'resume', sessionId: selected.id ?? selected.label }
+  if (state.owner === SELECTOR_OWNER.resume) return { kind: 'resume', sessionId: selected.id ?? selected.label }
 
-  // The panel owns `enter` (view output) in its own handler. Reaching here means
-  // there was nothing to act on, so fall through to nothing rather than letting
-  // the default branch read the row as a model spec.
-  if (isBackgroundPanelTitle(state.title)) return { kind: 'none' }
-
-  if (isQueueSelectorTitle(state.title)) {
+  if (state.owner === SELECTOR_OWNER.queue) {
     const action = decideQueueSelectorAction(selected, 'enter')
     if (action.kind === 'edit') return { kind: 'queue-edit', entry: action.entry }
     return { kind: 'none' }
@@ -96,7 +90,7 @@ function deleteAction(state: SelectorState): SelectorControlAction {
   const target = selectorSelect(state)
   if (!target?.id) return { kind: 'none' }
 
-  if (isQueueSelectorTitle(state.title)) {
+  if (state.owner === SELECTOR_OWNER.queue) {
     const action = decideQueueSelectorAction(target, 'delete')
     if (action.kind !== 'remove') return { kind: 'none' }
     return {
@@ -106,7 +100,7 @@ function deleteAction(state: SelectorState): SelectorControlAction {
     }
   }
 
-  if (!isResumeSelectorTitle(state.title)) return { kind: 'none' }
+  if (state.owner !== SELECTOR_OWNER.resume) return { kind: 'none' }
 
   // Deleting a session is irreversible, so the first press only arms it and a
   // second press confirms. The armed id must still be the focused row: an async

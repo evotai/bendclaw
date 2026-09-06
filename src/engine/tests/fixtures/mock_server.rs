@@ -100,6 +100,36 @@ pub async fn run_provider_json(
     result.map(|outcome| (outcome.into_message(), events))
 }
 
+/// Exercise the bounded provider path with a capacity-one consumer.
+pub async fn run_provider_sse_bounded(
+    provider: &dyn StreamProvider,
+    config: StreamConfig,
+    body: &str,
+) -> Result<(Message, Vec<StreamEvent>), ProviderError> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(body.to_string(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let config = override_base_url(config, &server.uri());
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let collect = async move {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+            tokio::task::yield_now().await;
+        }
+        events
+    };
+    let (outcome, events) = tokio::join!(
+        provider.stream_bounded(config, tx, CancellationToken::new()),
+        collect
+    );
+    outcome.map(|outcome| (outcome.into_message(), events))
+}
+
 /// Override the base_url in a StreamConfig's model_config to point at the mock server.
 /// For Anthropic (no model_config), creates one with the given base_url.
 fn override_base_url(mut config: StreamConfig, base_url: &str) -> StreamConfig {

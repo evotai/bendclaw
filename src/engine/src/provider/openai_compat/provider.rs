@@ -28,6 +28,39 @@ impl StreamProvider for OpenAiCompatProvider {
         tx: mpsc::UnboundedSender<StreamEvent>,
         cancel: tokio_util::sync::CancellationToken,
     ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(
+            config,
+            crate::provider::stream_sink::StreamSink::Legacy(tx),
+            cancel,
+        )
+        .await
+    }
+
+    async fn stream_bounded(
+        &self,
+        config: StreamConfig,
+        tx: mpsc::Sender<StreamEvent>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(
+            config,
+            crate::provider::stream_sink::StreamSink::Bounded {
+                tx,
+                cancel: cancel.clone(),
+            },
+            cancel,
+        )
+        .await
+    }
+}
+
+impl OpenAiCompatProvider {
+    async fn stream_sink(
+        &self,
+        config: StreamConfig,
+        tx: crate::provider::stream_sink::StreamSink,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
         let model_config = config.model_config.as_ref().ok_or_else(|| {
             ProviderError::Other("ModelConfig required for OpenAI provider".into())
         })?;
@@ -65,7 +98,7 @@ impl StreamProvider for OpenAiCompatProvider {
                 sse_decode::decode_sse_stream(response, tx, cancel, &config, &compat).await
             }
             StreamResponseKind::Json => {
-                json_fallback::handle_json_response(response, tx, &config, &compat)
+                json_fallback::handle_json_response_sink(response, tx, &config, &compat)
                     .await
                     .map(StreamOutcome::complete)
             }

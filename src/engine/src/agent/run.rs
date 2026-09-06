@@ -9,6 +9,7 @@ use super::queue::PromptQueue;
 use crate::context::ContextConfig;
 use crate::runner::agent_loop_continue_with_state;
 use crate::runner::agent_loop_with_state;
+use crate::runner::event_sink::EventSink;
 use crate::runner::AgentLoopConfig;
 use crate::types::*;
 
@@ -73,6 +74,19 @@ impl Agent {
         self.spawn_run(RunKind::Continue).await
     }
 
+    /// Bounded execution stream for hosts that consume while the run executes.
+    /// Continue draining after abort so final transcript events can be saved.
+    pub async fn submit_bounded(
+        &mut self,
+        messages: Vec<AgentMessage>,
+    ) -> (RunHandle, mpsc::Receiver<AgentEvent>) {
+        self.finish().await;
+        let cancel = CancellationToken::new();
+        let (tx, rx) = EventSink::bounded(cancel.clone());
+        let handle = self.spawn_with_sink(RunKind::Prompt { messages }, tx, cancel);
+        (handle, rx)
+    }
+
     pub async fn finish(&mut self) {
         if let Some(handle) = self.pending_completion.take() {
             match handle.await {
@@ -98,6 +112,17 @@ impl Agent {
         kind: RunKind,
     ) -> (RunHandle, mpsc::UnboundedReceiver<AgentEvent>) {
         let cancel = CancellationToken::new();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let handle = self.spawn_with_sink(kind, tx.into(), cancel);
+        (handle, rx)
+    }
+
+    fn spawn_with_sink(
+        &mut self,
+        kind: RunKind,
+        tx: EventSink,
+        cancel: CancellationToken,
+    ) -> RunHandle {
         self.cancel = Some(cancel.clone());
         self.is_streaming = true;
 
@@ -111,8 +136,6 @@ impl Agent {
             cancel: cancel.clone(),
         };
         self.last_run_handle = Some(run_handle.clone());
-
-        let (tx, rx) = mpsc::unbounded_channel();
 
         let mut context = AgentContext {
             system_prompt: self.system_prompt.clone(),
@@ -154,14 +177,17 @@ impl Agent {
                         message: format!("Agent loop panicked: {msg}"),
                     },
                 })
+                .await
                 .ok();
-                tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
+                tx.send(AgentEvent::AgentEnd { messages: vec![] })
+                    .await
+                    .ok();
             }
             (context.tools, context.messages, compaction_state)
         });
 
         self.pending_completion = Some(handle);
-        (run_handle, rx)
+        run_handle
     }
 
     fn build_config_with_queues(

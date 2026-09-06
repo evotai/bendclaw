@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::config::AgentLoopConfig;
+use super::event_sink::EventSink;
 use crate::context::AfterResponseAction;
 use crate::context::CompactionController;
 use crate::context::CompactionResponse;
@@ -73,7 +73,7 @@ pub(super) async fn check_compaction(
     messages: &mut Vec<AgentMessage>,
     input: CompactionCheckInput<'_>,
     cancel: CancellationToken,
-    tx: &mpsc::UnboundedSender<AgentEvent>,
+    tx: &EventSink,
 ) -> bool {
     let CompactionCheckInput {
         assistant_message,
@@ -148,7 +148,7 @@ pub(super) async fn check_compaction(
     };
 
     let should_retry = response.action == AfterResponseAction::Retry;
-    emit_compaction_events(ctrl, tracker, messages, &response, tx);
+    emit_compaction_events(ctrl, tracker, messages, &response, tx).await;
     should_retry
 }
 
@@ -156,12 +156,12 @@ pub(super) async fn check_compaction(
 ///
 /// Shared by post-response and pre-prompt compaction so both surface the same
 /// observability events and persist via the app layer's compact orchestrator.
-fn emit_compaction_events(
+async fn emit_compaction_events(
     ctrl: &CompactionController,
     tracker: &mut ContextTracker,
     messages: &[AgentMessage],
     response: &CompactionResponse,
-    tx: &mpsc::UnboundedSender<AgentEvent>,
+    tx: &EventSink,
 ) {
     if let Some(ref stats) = response.stats {
         let reason = response
@@ -176,6 +176,7 @@ fn emit_compaction_events(
             trigger_threshold: ctrl.config().trigger_threshold(),
             will_retry,
         })
+        .await
         .ok();
         tx.send(AgentEvent::ContextCompactionEnd {
             reason,
@@ -186,6 +187,7 @@ fn emit_compaction_events(
             context_window: ctrl.config().displayed_window(),
             will_retry,
         })
+        .await
         .ok();
         tracker.record_compaction_done(ctrl.state().timestamp);
     }
@@ -197,6 +199,7 @@ fn emit_compaction_events(
                 message: OVERFLOW_EXHAUSTED_MESSAGE.to_string(),
             },
         })
+        .await
         .ok();
     }
 
@@ -207,6 +210,7 @@ fn emit_compaction_events(
                 message: OVERFLOW_RECOVERY_FAILED_MESSAGE.to_string(),
             },
         })
+        .await
         .ok();
     }
 }

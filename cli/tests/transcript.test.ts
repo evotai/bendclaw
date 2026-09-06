@@ -3,6 +3,20 @@ import { messagesToOutputLines } from '../src/render/output.js'
 import { transcriptToMessages } from '../src/session/transcript.js'
 
 describe('transcript conversion', () => {
+  test('replay accepts opaque JSON tool arguments without crashing preview reconstruction', () => {
+    for (const input of [null, false, 1, 'text', []]) {
+      for (const name of ['bash', 'read', 'write', 'edit']) {
+        const messages = transcriptToMessages([{
+          type: 'assistant', content: [{ type: 'tool_call', id: 'c1', name, input }],
+        }])
+        const block = messages[0]?.content?.[0]
+        if (block?.type !== 'tool_call') throw new Error('missing tool block')
+        expect(block.toolCall.args).toEqual({})
+        expect(block.toolCall.previewCommand).toBeUndefined()
+      }
+    }
+  })
+
   test('restores canonical assistant content in provider order', () => {
     const messages = transcriptToMessages([{
       type: 'assistant',

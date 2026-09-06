@@ -1,11 +1,8 @@
 import type { SkillEntry } from '../../commands/skill.js'
-import { createSelectorState, type SelectorState } from '../selector.js'
+import type { SelectorState } from '../selector.js'
+import { createAppSelectorState } from './selector-identity.js'
 
 export const SKILL_SELECTOR_TITLE = 'Skills'
-
-export function isSkillSelectorTitle(title: string): boolean {
-  return title === SKILL_SELECTOR_TITLE
-}
 
 /** Build the read-only live inventory shown while `/skill` is in the composer. */
 export function createSkillSelectorState(entries: SkillEntry[]): SelectorState {
@@ -16,7 +13,7 @@ export function createSkillSelectorState(entries: SkillEntry[]): SelectorState {
     searchText: `${entry.name} ${entry.group ?? ''} ${entry.dir}`,
   }))
   return {
-    ...createSelectorState(SKILL_SELECTOR_TITLE, items, items),
+    ...createAppSelectorState('skill', SKILL_SELECTOR_TITLE, items, items),
     subtitle: `${entries.length} installed · /skill list for sources and management`,
     ...(items.length === 0 ? { emptyMessage: 'No skills installed' } : {}),
     hints: [

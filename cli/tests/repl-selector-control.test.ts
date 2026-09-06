@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { handleSelectorControl } from '../src/term/app/selector-control.js'
 import { RESUME_SELECTOR_TITLE } from '../src/term/app/resume.js'
 import { SKILL_SELECTOR_TITLE } from '../src/term/app/skill-window.js'
+import { createAppSelectorState } from '../src/term/app/selector-identity.js'
 import { createSelectorState, selectorExpandItems, selectorType, type SelectorItem } from '../src/term/selector.js'
 
 const char = (value: string) => ({ type: 'char' as const, char: value })
@@ -59,11 +60,11 @@ describe('repl selector control', () => {
   })
 
   test('first navigation key focuses and moves in every command window', () => {
-    for (const title of ['Models', SKILL_SELECTOR_TITLE, RESUME_SELECTOR_TITLE]) {
+    for (const [owner, title] of [['model', 'Models'], ['skill', SKILL_SELECTOR_TITLE], ['resume', RESUME_SELECTOR_TITLE]] as const) {
       for (const direction of ['up', 'down', 'tab', 'shift-tab'] as const) {
         const backwards = direction === 'up' || direction === 'shift-tab'
         const state = {
-          ...createSelectorState(title, items),
+          ...createAppSelectorState(owner, title, items),
           focusIndex: backwards ? 1 : 0,
           listFocused: false,
         }
@@ -101,7 +102,7 @@ describe('repl selector control', () => {
   })
 
   test('first arrow at a non-circular boundary still focuses the list', () => {
-    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: false }
+    const state = { ...createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items), listFocused: false }
     const action = handleSelectorControl(state, key('up'))
     expect(action.kind).toBe('update')
     if (action.kind !== 'update') return
@@ -131,7 +132,7 @@ describe('repl selector control', () => {
   })
 
   test('typing returns resume focus to the filter', () => {
-    const state = { ...createSelectorState(RESUME_SELECTOR_TITLE, items), listFocused: true }
+    const state = { ...createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items), listFocused: true }
     const next = handleSelectorControl(state, char('o'))
     expect(next.kind).toBe('update')
     if (next.kind === 'update') {
@@ -141,22 +142,22 @@ describe('repl selector control', () => {
   })
 
   test('resume enter returns selected session id', () => {
-    const action = handleSelectorControl(createSelectorState(RESUME_SELECTOR_TITLE, items), key('enter'))
+    const action = handleSelectorControl(createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items), key('enter'))
     expect(action).toEqual({ kind: 'resume', sessionId: 'session-one' })
   })
 
   test('model enter returns provider-qualified select-model action', () => {
-    const state = createSelectorState('Select model', [{ label: 'claude', id: 'anthropic:claude', detail: 'anthropic' }])
+    const state = createAppSelectorState('model', 'Select model', [{ label: 'claude', id: 'anthropic:claude', detail: 'anthropic' }])
     expect(handleSelectorControl(state, key('enter'))).toEqual({ kind: 'select-model', spec: 'anthropic:claude' })
   })
 
   test('skill inventory enter is read-only', () => {
-    const state = createSelectorState(SKILL_SELECTOR_TITLE, [{ label: 'review', id: 'review' }])
+    const state = createAppSelectorState('skill', SKILL_SELECTOR_TITLE, [{ label: 'review', id: 'review' }])
     expect(handleSelectorControl(state, key('enter'))).toEqual({ kind: 'none' })
   })
 
   test('delete requires a second press before removing resume session', () => {
-    const state = createSelectorState(RESUME_SELECTOR_TITLE, items)
+    const state = createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items)
     const first = handleSelectorControl(state, key('delete'))
     expect(first.kind).toBe('update')
     if (first.kind !== 'update') return
@@ -176,7 +177,7 @@ describe('repl selector control', () => {
   })
 
   test('ctrl-d requires a second press before removing resume session', () => {
-    const state = createSelectorState(RESUME_SELECTOR_TITLE, items)
+    const state = createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items)
     const first = handleSelectorControl(state, { type: 'ctrl', key: 'd' })
     expect(first.kind).toBe('update')
     if (first.kind !== 'update') return
@@ -186,7 +187,7 @@ describe('repl selector control', () => {
   })
 
   test('navigation after arming resume delete cancels the confirmation', () => {
-    const state = createSelectorState(RESUME_SELECTOR_TITLE, items)
+    const state = createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items)
     const armed = handleSelectorControl(state, key('delete'))
     expect(armed.kind).toBe('update')
     if (armed.kind !== 'update') return
@@ -201,7 +202,7 @@ describe('repl selector control', () => {
   })
 
   test('async list refresh between presses cannot delete a different session', () => {
-    const armed = handleSelectorControl(createSelectorState(RESUME_SELECTOR_TITLE, items), key('delete'))
+    const armed = handleSelectorControl(createAppSelectorState('resume', RESUME_SELECTOR_TITLE, items), key('delete'))
     expect(armed.kind).toBe('update')
     if (armed.kind !== 'update') return
     expect(armed.state.pendingDeleteId).toBe('session-one')
@@ -226,7 +227,7 @@ describe('repl selector control', () => {
   })
 
   test('queue selector supports selection, edit, and remove only', () => {
-    const state = createSelectorState('Prompt queue', [{
+    const state = createAppSelectorState('queue', 'Prompt queue', [{
       label: '1. later',
       id: 'follow_up|q1|3',
       searchText: 'later',
@@ -242,7 +243,7 @@ describe('repl selector control', () => {
   })
 
   test('queue character keys do not define alternate edit or remove shortcuts', () => {
-    const state = createSelectorState('Prompt queue', [{
+    const state = createAppSelectorState('queue', 'Prompt queue', [{
       label: '1. queued',
       id: 'steering|q2|0',
       searchText: 'queued',

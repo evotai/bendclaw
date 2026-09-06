@@ -113,7 +113,7 @@ async fn rsearch_submit_does_not_persist_a_session(
         SubmitOutcome::Run(_) => return Err("expected command outcome, got run".into()),
     }
 
-    let sessions = agent.list_sessions(0).await?;
+    let sessions = agent.sessions().list(0).await?;
     assert!(
         sessions.is_empty(),
         "resume search must not create sessions, found: {sessions:?}"

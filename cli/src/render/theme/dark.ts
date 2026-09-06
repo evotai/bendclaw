@@ -29,6 +29,7 @@ export function darkTheme(): Theme {
 
     // Desaturated periwinkle: reads as "same family as the frame" while staying
     // dark enough that brand-hued text on top keeps its contrast.
+    mutedHex: '#777777',
     selectionBgHex: '#2c2f4a',
     selectionMutedHex: '#9aa0b4',
 

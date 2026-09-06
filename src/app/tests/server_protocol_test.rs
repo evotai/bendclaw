@@ -33,10 +33,10 @@ fn transcript_round_trip_preserves_ordered_assistant_blocks_and_provider_metadat
         response_id: None,
     });
 
-    let transcript = evot::agent::run::convert::transcript_from_agent_message(&message);
+    let transcript = evot::conversation::convert::transcript_from_agent_message(&message);
     let serialized = serde_json::to_string(&transcript)?;
     let transcript: TranscriptItem = serde_json::from_str(&serialized)?;
-    let restored = evot::agent::run::convert::agent_message_from_transcript(&transcript);
+    let restored = evot::conversation::convert::agent_message_from_transcript(&transcript);
 
     assert!(matches!(
         restored,
@@ -86,7 +86,7 @@ fn legacy_responses_tool_ids_migrate_at_transcript_load_boundary() {
         },
     ];
 
-    let restored = evot::agent::run::convert::into_agent_messages(&items);
+    let restored = evot::conversation::convert::into_agent_messages(&items);
     assert!(matches!(
         &restored[..],
         [

@@ -3,6 +3,7 @@
 use tokio::sync::mpsc;
 
 use super::config::AgentLoopConfig;
+use super::event_sink::EventSink;
 use super::tool_exec::build_tool_definitions;
 use crate::context::now_ms;
 use crate::provider::ApiProtocol;
@@ -57,7 +58,7 @@ pub(super) struct AssistantStreamInput {
 pub(super) async fn stream_assistant_response(
     context: &AgentContext,
     config: &AgentLoopConfig,
-    tx: &mpsc::UnboundedSender<AgentEvent>,
+    tx: &EventSink,
     cancel: &tokio_util::sync::CancellationToken,
     input: AssistantStreamInput,
 ) -> AssistantStreamResult {
@@ -149,11 +150,12 @@ pub(super) async fn stream_assistant_response(
                 stats: llm_stats,
                 budget: budget.clone(),
             })
+            .await
             .ok();
         }
 
         let call_start = std::time::Instant::now();
-        let (stream_tx, mut stream_rx) = mpsc::unbounded_channel();
+        let (stream_tx, mut stream_rx) = mpsc::channel(64);
         let provider_cancel = cancel.clone();
 
         // Reset metrics for this attempt.
@@ -190,6 +192,7 @@ pub(super) async fn stream_assistant_response(
                             .send(AgentEvent::MessageStart {
                                 message: placeholder,
                             })
+                            .await
                             .ok();
                     }
                     StreamEvent::TextDelta {
@@ -212,6 +215,7 @@ pub(super) async fn stream_assistant_response(
                                         delta: delta.clone(),
                                     },
                                 })
+                                .await
                                 .ok();
                         }
                     }
@@ -235,6 +239,7 @@ pub(super) async fn stream_assistant_response(
                                         delta: delta.clone(),
                                     },
                                 })
+                                .await
                                 .ok();
                         }
                     }
@@ -254,6 +259,7 @@ pub(super) async fn stream_assistant_response(
                                         name: name.clone(),
                                     },
                                 })
+                                .await
                                 .ok();
                         }
                     }
@@ -275,6 +281,7 @@ pub(super) async fn stream_assistant_response(
                                         delta: delta.clone(),
                                     },
                                 })
+                                .await
                                 .ok();
                         }
                     }
@@ -296,6 +303,7 @@ pub(super) async fn stream_assistant_response(
                                         arguments: arguments.clone(),
                                     },
                                 })
+                                .await
                                 .ok();
                         }
                     }
@@ -310,7 +318,10 @@ pub(super) async fn stream_assistant_response(
                         }
                         if partial_message.is_none() {
                             let am: AgentMessage = message.clone().into();
-                            event_tx.send(AgentEvent::MessageStart { message: am }).ok();
+                            event_tx
+                                .send(AgentEvent::MessageStart { message: am })
+                                .await
+                                .ok();
                         }
                     }
                     StreamEvent::Error { message } => {
@@ -323,7 +334,10 @@ pub(super) async fn stream_assistant_response(
                         }
                         if partial_message.is_none() {
                             let am: AgentMessage = message.clone().into();
-                            event_tx.send(AgentEvent::MessageStart { message: am }).ok();
+                            event_tx
+                                .send(AgentEvent::MessageStart { message: am })
+                                .await
+                                .ok();
                         }
                     }
                 }
@@ -334,7 +348,7 @@ pub(super) async fn stream_assistant_response(
         // When provider returns, stream_tx is dropped, ending the forwarder
         let result = config
             .provider
-            .stream(stream_config, stream_tx, provider_cancel)
+            .stream_bounded(stream_config, stream_tx, provider_cancel)
             .await;
 
         // Promote empty Ok(Message) to a retryable error so the retry loop
@@ -382,6 +396,7 @@ pub(super) async fn stream_assistant_response(
                     delay_ms: delay.as_millis() as u64,
                     error: error.to_string(),
                 })
+                .await
                 .ok();
                 long_wait_started = true;
                 quota_probe_delay = quota_probe_delay.saturating_mul(2).min(QUOTA_PROBE_MAX);
@@ -429,6 +444,7 @@ pub(super) async fn stream_assistant_response(
                     response_model: None,
                     response_id: None,
                 })
+                .await
                 .ok();
                 attempt += 1;
                 let delay = retry.delay_for_attempt(attempt);
@@ -439,6 +455,7 @@ pub(super) async fn stream_assistant_response(
                     delay_ms: delay.as_millis() as u64,
                     error: e.to_string(),
                 })
+                .await
                 .ok();
                 tokio::select! {
                     _ = cancel.cancelled() => break Err(ProviderError::Cancelled),
@@ -469,6 +486,7 @@ pub(super) async fn stream_assistant_response(
                     delay_ms: delay.as_millis() as u64,
                     error: e.to_string(),
                 })
+                .await
                 .ok();
                 long_wait_started = true;
                 let _idle_pause = idle_clock.as_ref().map(crate::context::IdleClock::pause);
@@ -526,6 +544,7 @@ pub(super) async fn stream_assistant_response(
                 response_model,
                 response_id,
             })
+            .await
             .ok();
             AssistantStreamResult::complete(outcome.into_message())
         }
@@ -554,6 +573,7 @@ pub(super) async fn stream_assistant_response(
                 response_model: None,
                 response_id: None,
             })
+            .await
             .ok();
             AssistantStreamResult::complete(Message::Assistant {
                 content: vec![Content::Text {

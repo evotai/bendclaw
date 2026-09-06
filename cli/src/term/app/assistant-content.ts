@@ -1,3 +1,4 @@
+import { toolArgsRecord } from './tool-args.js'
 import type { UIAssistantBlock, UIMessage, UIToolCall } from './types.js'
 
 export interface AssistantDeltaPayload {
@@ -88,7 +89,7 @@ export function completedAssistantContent(
         toolCall: current ?? {
           id,
           name: String(block.name ?? ''),
-          args: asArgs(block.input),
+          args: toolArgsRecord(block.input) ?? {},
           status: 'queued',
         },
       }
@@ -113,12 +114,6 @@ export function updateToolCallInMessages(
     return next
   }
   return messages
-}
-
-function asArgs(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
 }
 
 function sorted<T extends { contentIndex: number }>(content: T[]): T[] {

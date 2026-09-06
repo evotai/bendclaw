@@ -1,8 +1,8 @@
-use evot::agent::session::Session;
 use evot::agent::*;
 use evot::conf::Protocol;
 use evot::conf::ProviderProfile;
 use evot::conf::StorageConfig;
+use evot::sessions::Session;
 use evot::storage::open_storage;
 use evot::types::*;
 use tempfile::TempDir;
@@ -70,7 +70,7 @@ async fn write_test_compact(
     } = &mut item
     {
         *messages = new_context.clone();
-        *engine_messages = evot::agent::run::convert::into_agent_messages(&new_context);
+        *engine_messages = evot::conversation::convert::into_agent_messages(&new_context);
     }
     session
         .write_compact(item, new_context, expected_seq)
@@ -179,15 +179,16 @@ async fn agent_create_session_keeps_empty_draft_out_of_lists() -> TestResult {
     assert_eq!(meta.turns, 0);
 
     let loaded = agent
-        .find_session(&meta.session_id)
+        .sessions()
+        .find(&meta.session_id)
         .await?
         .ok_or_else(|| missing_error("missing created session"))?;
     assert_eq!(loaded.session_id, meta.session_id);
 
-    let transcript = agent.load_transcript(&meta.session_id).await?;
+    let transcript = agent.sessions().transcript(&meta.session_id).await?;
     assert!(transcript.is_empty());
 
-    let sessions = agent.list_sessions(0).await?;
+    let sessions = agent.sessions().list(0).await?;
     assert!(!sessions.iter().any(|s| s.session_id == meta.session_id));
 
     // A run can persist transcript activity before its final metadata save.
@@ -203,7 +204,7 @@ async fn agent_create_session_keeps_empty_draft_out_of_lists() -> TestResult {
             content: vec![],
         }])
         .await?;
-    let sessions = agent.list_sessions(0).await?;
+    let sessions = agent.sessions().list(0).await?;
     assert!(sessions.iter().any(|s| s.session_id == meta.session_id));
     Ok(())
 }
@@ -252,7 +253,8 @@ async fn new_session_binds_requested_workspace_and_resume_keeps_it() -> TestResu
     while run.next().await.is_some() {}
 
     let created = agent
-        .find_session(&session_id)
+        .sessions()
+        .find(&session_id)
         .await?
         .ok_or_else(|| missing_error("missing workspace session"))?;
     let expected = std::fs::canonicalize(&workspace)?;
@@ -274,7 +276,8 @@ async fn new_session_binds_requested_workspace_and_resume_keeps_it() -> TestResu
     };
     while follow_run.next().await.is_some() {}
     let resumed = agent
-        .find_session(&session_id)
+        .sessions()
+        .find(&session_id)
         .await?
         .ok_or_else(|| missing_error("missing resumed session"))?;
     assert_eq!(resumed.cwd, created.cwd);
@@ -332,7 +335,7 @@ async fn resume_transcript_replays_retained_messages_with_lightweight_compact_ca
         }])
         .await?;
 
-    let resumed = agent.load_resume_transcript(&meta.session_id).await?;
+    let resumed = agent.sessions().resume_transcript(&meta.session_id).await?;
 
     assert_eq!(resumed.len(), 4);
     assert!(matches!(
@@ -970,7 +973,7 @@ async fn write_compact_bounds_summary_without_touching_retained_user() -> TestRe
     } = &mut item
     {
         *messages = replacement.clone();
-        *engine_messages = evot::agent::run::convert::into_agent_messages(&replacement);
+        *engine_messages = evot::conversation::convert::into_agent_messages(&replacement);
     }
 
     session.write_compact(item, replacement, 0).await?;
@@ -1059,7 +1062,7 @@ async fn open_bounds_legacy_poisoned_summary_without_touching_live_user() -> Tes
     } = &mut item
     {
         *messages = compact_context.clone();
-        *engine_messages = evot::agent::run::convert::into_agent_messages(&compact_context);
+        *engine_messages = evot::conversation::convert::into_agent_messages(&compact_context);
     }
     // Bypass Session::write_compact to emulate a poisoned item persisted by an
     // older release before write-time bounds existed.
@@ -1238,7 +1241,7 @@ async fn compaction_seed_updates_restores_and_clear_breaks_chain() -> TestResult
         *messages = vec![evot::compact::context_view::compact_summary_item(
             "summary-v1",
         )];
-        *engine_messages = evot::agent::run::convert::into_agent_messages(messages);
+        *engine_messages = evot::conversation::convert::into_agent_messages(messages);
     }
     session
         .write_compact(
@@ -2100,7 +2103,7 @@ async fn structured_compact_entry_rebuilds_context() -> TestResult {
     } = &mut item
     {
         *messages = replacement.clone();
-        *engine_messages = evot::agent::run::convert::into_agent_messages(&replacement);
+        *engine_messages = evot::conversation::convert::into_agent_messages(&replacement);
     }
     session.write_compact(item, replacement, 2).await?;
 

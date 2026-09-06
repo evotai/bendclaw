@@ -199,12 +199,26 @@ async fn console_assets_carry_executable_content_types() -> TestResult {
 async fn page_modules_only_import_served_paths() -> TestResult {
     // The pages are unbundled ES modules, so every import must resolve to a
     // route. A typo would only surface as a blank page in a browser.
-    for path in ["/ui/models.js", "/ui/feishu.js"] {
+    for path in [
+        "/ui/app.js",
+        "/ui/models.js",
+        "/ui/feishu.js",
+        "/ui/chat.js",
+        "/ui/chrome.js",
+    ] {
         let (_, _, body) = get(path).await?;
-        assert!(
-            body.contains("from \"./app.js\""),
-            "{path} should import the shared helpers"
-        );
+        for line in body.lines().filter(|line| line.starts_with("import ")) {
+            if let Some((_, suffix)) = line.split_once("from \"./") {
+                let name = suffix.split('"').next().ok_or("missing module name")?;
+                let url = format!("/ui/{name}");
+                let (status, content_type, _) = get(&url).await?;
+                assert_eq!(status, StatusCode::OK, "{path} imports missing {url}");
+                assert!(
+                    content_type.starts_with("text/javascript"),
+                    "{url} is not executable"
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -365,6 +379,25 @@ async fn saving_models_leaves_the_channel_alone() -> TestResult {
     assert!(written.contains("EVOT_CHANNEL_FEISHU_APP_ID=cli_app"));
     assert!(written.contains("EVOT_LLM_THINKING_LEVEL=high"));
     let _ = std::fs::remove_file(&env_path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn settings_reject_external_changes_instead_of_overwriting_new_secrets() -> TestResult {
+    let (app, env_path) = router_with_env("conflict")?;
+    let update = serde_json::json!({
+        "app_id": "fixture-app", "app_secret": "fixture-secret", "mention_only": true,
+    });
+    let (status, _, body) = post(app.clone(), "/api/channels/feishu", update.clone()).await?;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let edited =
+        std::fs::read_to_string(&env_path)?.replace("fixture-secret", "externally-rotated");
+    std::fs::write(&env_path, &edited)?;
+    let (status, _, body) = post(app, "/api/channels/feishu", update).await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("configuration changed on disk"));
+    assert_eq!(std::fs::read_to_string(&env_path)?, edited);
+    std::fs::remove_file(env_path)?;
     Ok(())
 }
 
@@ -586,6 +619,19 @@ async fn chat_page_uses_conversation_layout_and_runtime_controls() -> TestResult
 
 #[tokio::test]
 async fn chat_assets_are_served() -> TestResult {
+    let (status, content_type, transport) = get("/ui/chat-transport.js").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/javascript"));
+    assert!(transport.contains("export async function streamChat"));
+    assert!(!transport.contains("document."));
+    let (status, content_type, control) = get("/ui/chat-control.js").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/javascript"));
+    assert!(control.contains("export async function requestSteering"));
+    assert!(!control.contains("document."));
+    let chat = include_str!("../src/gateway/channels/http/static/ui/chat.js");
+    assert!(chat.contains("import { streamChat }"));
+    assert!(!chat.contains("response.body.getReader()"));
     let (status, content_type, body) = get("/ui/chat.css").await?;
     assert_eq!(status, StatusCode::OK);
     assert!(content_type.starts_with("text/css"), "was {content_type}");
@@ -647,7 +693,8 @@ async fn chat_assets_are_served() -> TestResult {
     assert!(body.contains("NOTICE_POLL_MS"));
     assert!(body.contains("visibilitychange"));
     assert!(body.contains("/api/chat/abort"));
-    assert!(body.contains("/api/chat/steer"));
+    assert!(control.contains("/api/chat/steer"));
+    assert!(body.contains("requestSteering(postJson, sessionId, text)"));
     assert!(body.contains("/api/workspace"));
     assert!(body.contains("/api/sessions/"));
     // Sidebar sessions: full-text search plus armed two-step delete.
@@ -662,7 +709,16 @@ async fn chat_assets_are_served() -> TestResult {
     assert!(body.contains("onSearchKeydown"));
     assert!(body.contains("snippetAround"));
     assert!(body.contains("Stop generating"));
-    assert!(body.contains("new AbortController()"));
+    let (status, content_type, state) = get("/ui/chat-state.js").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/javascript"));
+    assert!(state.contains("new AbortController()"));
+    assert!(!state.contains("document."));
+    let (status, content_type, stream_state) = get("/ui/chat-stream-state.js").await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/javascript"));
+    assert!(stream_state.contains("class ChatStreamState"));
+    assert!(body.contains("runtime.begin(currentSessionId)"));
     assert!(body.contains("requestAnimationFrame"));
     assert!(body.contains("followOutput = isNearBottom()"));
     assert!(body.contains("thinking_level: thinkingLevel"));
@@ -727,6 +783,8 @@ async fn chat_steer_is_validated_and_reports_no_active_run() -> TestResult {
     for payload in [
         serde_json::json!({ "session_id": "", "message": "hi" }),
         serde_json::json!({ "session_id": "sess-1", "message": "   " }),
+        serde_json::json!({ "session_id": "sess-1", "message": "/compact" }),
+        serde_json::json!({ "session_id": "sess-1", "message": "/unknown" }),
     ] {
         let (status, _, body) = post(app.clone(), "/api/chat/steer", payload).await?;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -850,6 +908,14 @@ async fn chat_options_expose_the_live_configured_model() -> TestResult {
 async fn chat_rejects_unconfigured_runtime_selections_before_starting() -> TestResult {
     let cases = [
         (
+            serde_json::json!({ "message": "hello", "provider": "anthropic" }),
+            "chat model selection requires both provider and model",
+        ),
+        (
+            serde_json::json!({ "message": "hello", "model": "claude-sonnet-4-6" }),
+            "chat model selection requires both provider and model",
+        ),
+        (
             serde_json::json!({
                 "message": "hello",
                 "provider": "ghost",
@@ -886,7 +952,17 @@ async fn chat_rejects_unconfigured_runtime_selections_before_starting() -> TestR
     ];
 
     for (payload, expected) in cases {
-        let (status, content_type, body) = post(router()?, "/api/chat", payload).await?;
+        let config = test_config();
+        let storage = Arc::new(MemoryStorage::new());
+        let agent = Agent::new_with_provider_for_test(
+            &config,
+            "/work",
+            storage.clone(),
+            evot_engine::provider::MockProvider::text("unexpected run"),
+        )?;
+        let before = agent.llm();
+        let app = Server::new(agent.clone(), config).router();
+        let (status, content_type, body) = post(app, "/api/chat", payload).await?;
         // SSE endpoints keep HTTP 200 and carry run/setup failures as events.
         assert_eq!(status, StatusCode::OK);
         assert!(content_type.starts_with("text/event-stream"));
@@ -899,7 +975,53 @@ async fn chat_rejects_unconfigured_runtime_selections_before_starting() -> TestR
             body.contains("\"type\":\"done\""),
             "stream did not close: {body}"
         );
+        assert_eq!(agent.llm().provider, before.provider);
+        assert_eq!(agent.llm().model, before.model);
+        assert_eq!(agent.llm().thinking_level, before.thinking_level);
+        assert!(agent.sessions().list(0).await?.is_empty());
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn chat_selection_pins_session_effort_and_keeps_legacy_omission_semantics() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let mut config = test_config_at(dir.path().join("not-written.env"));
+    config.storage = evot::conf::StorageConfig::fs(dir.path().to_path_buf());
+    let agent = Agent::new_with_provider_for_test(
+        &config,
+        dir.path().to_string_lossy(),
+        Arc::new(MemoryStorage::new()),
+        evot_engine::provider::MockProvider::text("ok"),
+    )?;
+    let app = Server::new(agent.clone(), config.clone()).router();
+    for payload in [
+        serde_json::json!({
+            "message": "hello", "provider": "anthropic", "model": "claude-sonnet-4-6", "thinking_level": "low",
+        }),
+        // Historical requests with no provider/model use the live snapshot and
+        // ignore a standalone thinking field, even one that would be invalid.
+        serde_json::json!({ "message": "again", "thinking_level": "invalid" }),
+    ] {
+        let (status, content_type, body) = post(app.clone(), "/api/chat", payload).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert!(content_type.starts_with("text/event-stream"));
+        assert!(
+            !body.contains("\"type\":\"error\""),
+            "unexpected SSE error: {body}"
+        );
+        assert_eq!(agent.llm().thinking_level, ThinkingLevel::Low);
+    }
+    let sessions = agent.sessions().list(0).await?;
+    assert_eq!(sessions.len(), 2);
+    for session in sessions {
+        assert_eq!(session.model, "claude-sonnet-4-6");
+        assert_eq!(session.thinking_level.as_deref(), Some("low"));
+    }
+    assert!(
+        !config.env_file_path.exists(),
+        "runtime selection must not persist defaults"
+    );
     Ok(())
 }
 
@@ -1213,7 +1335,7 @@ async fn sessions_api_pages_lightweight_rows() -> TestResult {
 
     // A conversation with durable transcript activity shows up without
     // waiting for the final turns/title metadata save.
-    let session = evot::agent::session::Session::new(
+    let session = evot::sessions::Session::new(
         "seed-visible".into(),
         "/work".into(),
         "claude-sonnet-4-6".into(),

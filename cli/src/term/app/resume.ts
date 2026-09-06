@@ -88,10 +88,6 @@ export function resolveSessionByPrefix(sessions: SessionMeta[], prefix: string):
   return { kind: 'matched', session: matches[0]! }
 }
 
-export function isResumeSelectorTitle(title: string): boolean {
-  return title.startsWith('Resume session')
-}
-
 /**
  * Side-pane content for one session: a wall of near-identical titles is what
  * makes the resume list hard to read, so the pane shows the full title, one

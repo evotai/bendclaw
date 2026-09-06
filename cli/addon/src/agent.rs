@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use evot::agent::Agent;
@@ -8,11 +7,12 @@ use evot::agent::ForkRequest;
 use evot::agent::HostTools;
 use evot::agent::QueryRequest;
 use evot::agent::ToolMode;
+use evot::models::ModelSelection;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use crate::compaction::NapiCompaction;
 use crate::convert::parse_content_blocks;
@@ -43,7 +43,7 @@ impl NapiAgent {
             .map_err(|e| Error::from_reason(format!("config model: {e}")))?;
 
         let env_file_path = config.env_file_path.to_string_lossy().to_string();
-        let agent = evot::gateway::service::build_agent(&config)
+        let agent = evot::bootstrap::build_agent(&config)
             .await
             .map_err(|e| Error::from_reason(format!("agent init: {e}")))?;
 
@@ -90,9 +90,9 @@ impl NapiAgent {
         content_json: Option<String>,
         host_specs_json: Option<String>,
     ) -> Result<NapiSubmitOutcome> {
-        let (host_event_tx, host_event_rx) = tokio_mpsc::unbounded_channel::<String>();
+        let (host_event_tx, host_event_rx) = tokio_mpsc::channel::<String>(32);
         let host_responders: HostResponders =
-            Arc::new(Mutex::new(std::collections::HashMap::new()));
+            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
         let mode = match tool_mode.as_deref() {
             Some("interactive") | Some("planning_interactive") => {
@@ -108,8 +108,8 @@ impl NapiAgent {
         };
 
         // Assemble host tools from the registered specs. Readonly runs carry no
-        // host bridge (matches ToolMode::allows_host_tools).
-        let host_tools = if mode.allows_host_tools() {
+        // host bridge (as required by the resolved preset policy).
+        let host_tools = if mode.policy().host_tools {
             let specs =
                 parse_host_tool_specs(host_specs_json.as_deref()).map_err(Error::from_reason)?;
             if specs.is_empty() {
@@ -164,8 +164,7 @@ impl NapiAgent {
                         inner: Mutex::new(run),
                         handle,
                         cached_session_id: sid,
-                        aborted: Arc::new(AtomicBool::new(false)),
-                        abort_notify: Arc::new(Notify::new()),
+                        abort_signal: CancellationToken::new(),
                         host_event_rx: Mutex::new(Some(host_event_rx)),
                         host_responders,
                     })),
@@ -190,7 +189,8 @@ impl NapiAgent {
     pub async fn list_sessions(&self, limit: Option<u32>) -> Result<String> {
         let sessions = self
             .agent
-            .list_sessions(limit.unwrap_or(20) as usize)
+            .sessions()
+            .list(limit.unwrap_or(20) as usize)
             .await
             .map_err(|e| Error::from_reason(format!("list sessions: {e}")))?;
 
@@ -201,7 +201,8 @@ impl NapiAgent {
     pub async fn list_sessions_with_text(&self, limit: Option<u32>) -> Result<String> {
         let items = self
             .agent
-            .list_sessions_with_text(limit.unwrap_or(0) as usize)
+            .sessions()
+            .list_with_text(limit.unwrap_or(0) as usize)
             .await
             .map_err(|e| Error::from_reason(format!("list sessions with text: {e}")))?;
         serde_json::to_string(&items).map_err(|e| Error::from_reason(format!("serialize: {e}")))
@@ -298,7 +299,8 @@ impl NapiAgent {
     pub async fn load_transcript(&self, session_id: String) -> Result<String> {
         let items = self
             .agent
-            .load_transcript(&session_id)
+            .sessions()
+            .transcript(&session_id)
             .await
             .map_err(|e| Error::from_reason(format!("load transcript: {e}")))?;
 
@@ -310,7 +312,8 @@ impl NapiAgent {
     pub async fn load_context_transcript(&self, session_id: String) -> Result<String> {
         let items = self
             .agent
-            .load_context_transcript(&session_id)
+            .sessions()
+            .context_transcript(&session_id)
             .await
             .map_err(|e| Error::from_reason(format!("load context transcript: {e}")))?;
 
@@ -323,7 +326,8 @@ impl NapiAgent {
     pub async fn load_resume_transcript(&self, session_id: String) -> Result<String> {
         let items = self
             .agent
-            .load_resume_transcript(&session_id)
+            .sessions()
+            .resume_transcript(&session_id)
             .await
             .map_err(|e| Error::from_reason(format!("load resume transcript: {e}")))?;
 
@@ -335,7 +339,8 @@ impl NapiAgent {
     pub async fn find_session(&self, session_id: String) -> Result<Option<String>> {
         let meta = self
             .agent
-            .find_session(&session_id)
+            .sessions()
+            .find(&session_id)
             .await
             .map_err(|e| Error::from_reason(format!("find session: {e}")))?;
         match meta {
@@ -414,16 +419,16 @@ impl NapiAgent {
         let env_path = config.env_file_path.to_string_lossy().to_string();
         let has_api_key = !llm.api_key.is_empty();
         let available = self.collect_models(&config);
-        let thinking_level = display_thinking_level(&llm);
-        let info = serde_json::json!({
-            "provider": provider,
-            "protocol": llm.protocol.to_string(),
-            "envPath": env_path,
-            "hasApiKey": has_api_key,
-            "baseUrl": llm.base_url,
-            "availableModels": available,
-            "thinkingLevel": thinking_level,
-        });
+        let thinking_level = ModelSelection::display_thinking_level_for(&llm);
+        let info = evot::contracts::ConfigInfo {
+            provider,
+            protocol: llm.protocol.to_string(),
+            env_path,
+            has_api_key,
+            base_url: Some(llm.base_url),
+            available_models: available,
+            thinking_level,
+        };
         serde_json::to_string(&info).map_err(|e| Error::from_reason(format!("serialize: {e}")))
     }
 
@@ -512,7 +517,7 @@ impl NapiAgent {
     pub fn set_provider(&self, provider: String) -> Result<()> {
         let config = self.load_config()?;
         self.agent
-            .set_provider_by_spec(&config, &provider)
+            .set_model_by_spec(&config, &provider)
             .map_err(|e| Error::from_reason(format!("invalid provider: {e}")))
     }
 
@@ -551,7 +556,9 @@ impl NapiAgent {
             let provider = self.agent.llm().provider.clone();
             let _ = evot::conf::persist_default_thinking_level(&mut config, &provider, level);
         }
-        Some(display_thinking_level(&self.agent.llm()))
+        Some(ModelSelection::display_thinking_level_for(
+            &self.agent.llm(),
+        ))
     }
 
     /// Apply a named thinking level when supported by the active model.
@@ -685,21 +692,4 @@ fn serialize_process_summaries(
         .collect::<Vec<_>>();
     serde_json::to_string(&values)
         .map_err(|e| Error::from_reason(format!("serialize background processes: {e}")))
-}
-
-/// Footer label for the active reasoning effort, mirroring pi's footer:
-/// the abstract level name (`off`/`low`/`medium`/`high`/`xhigh`/`max`) is shown
-/// verbatim — it is never translated through the model's
-/// `thinking_level_map`.
-///
-/// Returns an empty string when the model honors no selectable reasoning
-/// effort (e.g. an OpenAI-compatible provider without the reasoning-effort
-/// capability), which tells the footer to omit the indicator — the same gate
-/// pi applies via `model.reasoning`.
-fn display_thinking_level(llm: &evot::conf::LlmConfig) -> String {
-    let model_config = &llm.model_config;
-    if !model_config.reasoning() || model_config.supported_thinking_levels().is_empty() {
-        return String::new();
-    }
-    llm.thinking_level.as_str().to_string()
 }

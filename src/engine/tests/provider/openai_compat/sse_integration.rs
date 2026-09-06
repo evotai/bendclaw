@@ -24,6 +24,29 @@ fn openai_config() -> StreamConfig {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+async fn bounded_provider_preserves_delta_order_under_backpressure(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let body = openai_sse::body(vec![
+        openai_sse::text_chunk("one", None),
+        openai_sse::text_chunk("two", None),
+        openai_sse::finish_with_usage("stop", 10, 2),
+        openai_sse::done(),
+    ]);
+    let (_, events) =
+        run_provider_sse_bounded(&OpenAiCompatProvider, openai_config(), &body).await?;
+    let deltas: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            StreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, vec!["one", "two"]);
+    assert!(matches!(events.last(), Some(StreamEvent::Done { .. })));
+    Ok(())
+}
+
+#[tokio::test]
 async fn openai_sse_text_response() {
     let sse = openai_sse::body(vec![
         openai_sse::text_chunk("Hello, ", None),

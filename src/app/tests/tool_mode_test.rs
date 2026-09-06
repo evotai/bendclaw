@@ -1,39 +1,38 @@
-//! Tests for `ToolMode` capability policy.
-
+use evot::agent::run::policy::ExecutionBudget;
+use evot::agent::run::policy::ToolAccess;
 use evot::agent::ToolMode;
 
-/// Interactive and planning runs are human-in-the-loop: a person is watching
-/// and can steer or interrupt, so they impose no execution limits (pi parity).
-/// A long build, a slow training run, or a slow human reply must never
-/// terminate the agent.
 #[test]
-fn interactive_modes_are_human_in_the_loop() {
-    assert!(ToolMode::Interactive.is_interactive());
-    assert!(ToolMode::Planning.is_interactive());
-}
-
-/// Autonomous modes keep their execution limits as a runaway-cost safety net,
-/// since no human is watching to interrupt a spinning loop.
-#[test]
-fn autonomous_modes_keep_limits() {
-    assert!(!ToolMode::Headless.is_interactive());
-    assert!(!ToolMode::Readonly.is_interactive());
+fn interactive_presets_are_unbounded_and_can_background() {
+    for mode in [ToolMode::Interactive, ToolMode::Planning] {
+        let policy = mode.policy();
+        assert_eq!(policy.budget, ExecutionBudget::Unbounded);
+        assert!(policy.background_processes);
+        assert!(policy.host_tools);
+        assert!(policy.web_fetch);
+    }
+    assert_eq!(ToolMode::Interactive.policy().tools, ToolAccess::Full);
+    assert_eq!(ToolMode::Planning.policy().tools, ToolAccess::Planning);
 }
 
 #[test]
-fn background_processes_are_tui_only() {
-    assert!(ToolMode::Interactive.allows_background_processes());
-    assert!(ToolMode::Planning.allows_background_processes());
-    assert!(!ToolMode::Headless.allows_background_processes());
-    assert!(!ToolMode::Readonly.allows_background_processes());
+fn autonomous_presets_keep_budget_and_no_background_processes() {
+    for mode in [ToolMode::Headless, ToolMode::Readonly] {
+        let policy = mode.policy();
+        assert_eq!(policy.budget, ExecutionBudget::Configured);
+        assert!(!policy.background_processes);
+        assert!(!policy.web_fetch);
+    }
+    assert_eq!(ToolMode::Headless.policy().tools, ToolAccess::Full);
+    assert!(ToolMode::Headless.policy().host_tools);
+    assert_eq!(ToolMode::Readonly.policy().tools, ToolAccess::Readonly);
+    assert!(!ToolMode::Readonly.policy().host_tools);
 }
 
-/// Host-owned tools attach in every mode except Readonly forks, which run
-/// without a host.
 #[test]
-fn only_readonly_forbids_host_tools() {
-    assert!(ToolMode::Interactive.allows_host_tools());
-    assert!(ToolMode::Headless.allows_host_tools());
-    assert!(ToolMode::Planning.allows_host_tools());
-    assert!(!ToolMode::Readonly.allows_host_tools());
+fn tool_builder_consumes_resolved_policy_not_transport_presets() {
+    let source = include_str!("../src/agent/tools/build.rs");
+    assert!(!source.contains("mode: ToolMode"));
+    assert!(!source.contains("matches!(mode"));
+    assert!(source.contains("policy: RunPolicy"));
 }

@@ -2,14 +2,17 @@ pub mod anthropic;
 pub mod bedrock;
 pub mod error;
 pub mod json_repair;
+mod legacy_bridge;
 pub mod mock;
 mod model;
 pub mod openai_compat;
 pub mod openai_responses;
 pub mod registry;
 pub mod route;
+pub mod sse;
 pub mod stream_fallback;
 pub mod stream_http;
+pub mod stream_sink;
 mod system_prompt;
 pub mod traits;
 

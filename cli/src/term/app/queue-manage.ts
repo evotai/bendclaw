@@ -1,6 +1,7 @@
 import type { KeyEvent } from '../input.js'
 import type { SelectorItem } from '../selector.js'
-import { createSelectorState, type SelectorState } from '../selector.js'
+import type { SelectorState } from '../selector.js'
+import { createAppSelectorState } from './selector-identity.js'
 
 export const QUEUE_SELECTOR_TITLE = 'Prompt queue'
 export const QUEUE_MANAGE_SHORTCUT_HINT = 'ctrl+g'
@@ -29,11 +30,6 @@ export type QueueManageAction =
   | { kind: 'edit'; entry: ManagedQueuedPrompt }
   | { kind: 'remove'; entry: ManagedQueuedPrompt }
   | { kind: 'none' }
-
-/** True when the selector is the queue manager. */
-export function isQueueSelectorTitle(title: string): boolean {
-  return title === QUEUE_SELECTOR_TITLE
-}
 
 /** Collapse whitespace and truncate for selector labels. */
 export function formatQueuePreview(text: string, maxChars = 80): string {
@@ -82,7 +78,7 @@ export function formatQueueSelectorItems(entries: ManagedQueuedPrompt[]): Select
 export function createQueueSelectorState(entries: ManagedQueuedPrompt[]): SelectorState {
   const items = formatQueueSelectorItems(entries)
   return {
-    ...createSelectorState(QUEUE_SELECTOR_TITLE, items),
+    ...createAppSelectorState('queue', QUEUE_SELECTOR_TITLE, items),
     subtitle: entries.length === 0 ? 'No queued prompts' : `${entries.length} queued`,
   }
 }

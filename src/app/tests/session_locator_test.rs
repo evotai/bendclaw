@@ -6,12 +6,34 @@
 
 use std::sync::Arc;
 
-use evot::agent::session::Session;
-use evot::agent::session_locator::SessionLocator;
+use evot::sessions::Session;
+use evot::sessions::SessionLocator;
 use evot::storage::MemoryStorage;
 use evot::types::AssistantBlock;
 use evot::types::TranscriptItem;
 use evot::types::UsageSummary;
+
+#[test]
+fn locator_identity_is_stable_and_scoped() {
+    let a = SessionLocator::new("feishu", "chat:c1:user:u1");
+    assert_eq!(
+        a.session_id(),
+        SessionLocator::new("feishu", "chat:c1:user:u1").session_id()
+    );
+    assert_ne!(
+        a.session_id(),
+        SessionLocator::new("feishu", "chat:c1:user:u2").session_id()
+    );
+    assert_ne!(
+        a.session_id(),
+        SessionLocator::new("slack", "chat:c1:user:u1").session_id()
+    );
+    assert_eq!(a.stable_key(), "feishu:chat:c1:user:u1");
+    let id = a.session_id();
+    assert!(id.starts_with("ch_"));
+    assert_eq!(id.len(), 35);
+    assert!(id[3..].chars().all(|c| c.is_ascii_hexdigit()));
+}
 
 fn text_item(text: &str) -> TranscriptItem {
     TranscriptItem::user_from_content(&[evot_engine::Content::Text {

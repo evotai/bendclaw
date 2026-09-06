@@ -24,6 +24,39 @@ impl StreamProvider for AnthropicProvider {
         tx: mpsc::UnboundedSender<StreamEvent>,
         cancel: tokio_util::sync::CancellationToken,
     ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(
+            config,
+            crate::provider::stream_sink::StreamSink::Legacy(tx),
+            cancel,
+        )
+        .await
+    }
+
+    async fn stream_bounded(
+        &self,
+        config: StreamConfig,
+        tx: mpsc::Sender<StreamEvent>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(
+            config,
+            crate::provider::stream_sink::StreamSink::Bounded {
+                tx,
+                cancel: cancel.clone(),
+            },
+            cancel,
+        )
+        .await
+    }
+}
+
+impl AnthropicProvider {
+    async fn stream_sink(
+        &self,
+        config: StreamConfig,
+        tx: crate::provider::stream_sink::StreamSink,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
         let is_oauth = config.api_key.contains("sk-ant-oat");
 
         let base_url = config
@@ -95,9 +128,11 @@ impl StreamProvider for AnthropicProvider {
             StreamResponseKind::Streaming => {
                 sse_decode::decode_sse_stream(response, tx, cancel, &config).await
             }
-            StreamResponseKind::Json => json_fallback::handle_json_response(response, tx, &config)
-                .await
-                .map(StreamOutcome::complete),
+            StreamResponseKind::Json => {
+                json_fallback::handle_json_response_sink(response, tx, &config)
+                    .await
+                    .map(StreamOutcome::complete)
+            }
             StreamResponseKind::Other(ct) => Err(ProviderError::Api(format!(
                 "Unexpected content type from Anthropic: {ct}"
             ))),

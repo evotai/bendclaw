@@ -19,4 +19,13 @@ mod stream_fallback;
 #[path = "provider/stream_http.rs"]
 mod stream_http;
 
+#[path = "provider/sse_reader.rs"]
+mod sse_reader;
+
+#[path = "provider/stream_sink.rs"]
+mod stream_sink;
+
+#[path = "provider/legacy_bridge.rs"]
+mod legacy_bridge;
+
 mod fixtures;

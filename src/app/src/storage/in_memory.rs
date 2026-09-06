@@ -195,11 +195,17 @@ impl Storage for MemoryStorage {
             .unwrap_or_default())
     }
 
-    async fn save_favorites(&self, ids: Vec<String>) -> Result<()> {
-        if let Ok(mut f) = self.favorites.lock() {
-            *f = ids;
-        }
-        Ok(())
+    async fn edit_favorites(&self, edit: super::FavoritesEdit) -> Result<super::FavoritesUpdate> {
+        let mut ids = self
+            .favorites
+            .lock()
+            .map_err(|_| crate::error::EvotError::Store("favorites lock poisoned".into()))?;
+        let before = ids.len();
+        edit.apply(&mut ids);
+        Ok(super::FavoritesUpdate {
+            removed: before.saturating_sub(ids.len()),
+            ids: ids.clone(),
+        })
     }
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {

@@ -23,6 +23,7 @@ export function lightTheme(): Theme {
 
     // Light counterpart of the dark selection fill: a pale periwinkle wash that
     // keeps the brand-hued label readable on a white background.
+    mutedHex: '#777777',
     selectionBgHex: '#dfe3fd',
     selectionMutedHex: '#5b6070',
 

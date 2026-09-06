@@ -781,7 +781,8 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     } else {
         ensure_env_file(&env_path)?;
     }
-    let env_file_vars = load_env_file(&env_path)?;
+    let transaction = super::env_transaction::EnvTransaction::open(&env_path)?;
+    let env_file_vars = load_env_file(transaction.path())?;
     apply_env(&mut config, &env_file_vars)?;
 
     config.env_file_path = env_path;
@@ -798,7 +799,8 @@ pub(super) fn load_config_inner(env_file: Option<&str>) -> Result<Config> {
     }
 
     apply_cloud_provider(&mut config)?;
-    reconcile_cloud_env(&mut config, &env_file_vars);
+    reconcile_cloud_env(&mut config, &env_file_vars, &transaction);
+    config.env_revision = Some(transaction.revision()?);
 
     if !config.providers.contains_key(&config.llm.provider) {
         if let Some(first) = config.providers.keys().next() {
@@ -848,7 +850,11 @@ fn is_stale_cloud_profile(profile: &ProviderProfile) -> bool {
     is_cloud_base_url(&profile.base_url) && profile.api_key.trim().starts_with("evot.")
 }
 
-fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) {
+fn reconcile_cloud_env(
+    config: &mut Config,
+    env_file_vars: &[(String, String)],
+    transaction: &super::env_transaction::EnvTransaction,
+) {
     let stale: Vec<String> = env_file_vars
         .iter()
         .filter_map(|(key, _)| parse_provider_env_key(key).map(|(name, _)| name))
@@ -870,7 +876,13 @@ fn reconcile_cloud_env(config: &mut Config, env_file_vars: &[(String, String)]) 
         }
     }
 
-    match crate::conf::purge_providers_from_env(&config.env_file_path, &stale) {
+    let prefixes: Vec<String> = stale
+        .iter()
+        .map(|name| format!("EVOT_LLM_{}_", super::provider_to_env_name(name)))
+        .collect();
+    match super::env_writer::remove_keys_locked(transaction, |key| {
+        prefixes.iter().any(|prefix| key.starts_with(prefix))
+    }) {
         Ok(true) => tracing::info!(
             "removed server-managed provider keys from {}: {}",
             config.env_file_path.display(),

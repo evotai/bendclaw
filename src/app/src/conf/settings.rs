@@ -156,14 +156,15 @@ pub fn persist_default_thinking_level(
     provider: &str,
     level: evot_engine::ThinkingLevel,
 ) -> Result<()> {
-    config.llm.thinking_level = Some(level);
-    if let Some(profile) = config.providers.get_mut(provider) {
-        if profile.thinking_level.is_some() {
-            profile.thinking_level = Some(level);
+    super::update_config(config, |candidate| {
+        candidate.llm.thinking_level = Some(level);
+        if let Some(profile) = candidate.providers.get_mut(provider) {
+            if profile.thinking_level.is_some() {
+                profile.thinking_level = Some(level);
+            }
         }
-    }
-    let groups = config_to_env_groups(config);
-    crate::conf::env_writer::write_grouped(&config.env_file_path, &groups)
+        Ok(())
+    })
 }
 
 /// Validate and apply a settings update to a live `Config` in place.

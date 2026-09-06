@@ -11,13 +11,13 @@ use crate::agent::run_manager::RunManager;
 use crate::agent::run_manager::SendOutcome;
 use crate::agent::Agent;
 use crate::agent::QueryRequest;
-use crate::agent::SessionLocator;
 use crate::agent::ToolMode;
 use crate::conf::channels::FeishuChannelConfig;
 use crate::error::Result;
 use crate::gateway::delivery::stream as stream_delivery;
 use crate::gateway::delivery::stream::StreamDeliveryConfig;
 use crate::gateway::Channel;
+use crate::sessions::SessionLocator;
 
 pub struct FeishuChannel {
     config: FeishuChannelConfig,

@@ -908,6 +908,7 @@ describe('term stream machine', () => {
       payload: {
         tool_call_id: 'call-edit',
         tool_name: 'edit',
+        text: '',
         details: { diff: '@@ -1 +1 @@\n-old\n+new', phase: 'preview' },
       },
     }, { termRows: 24 }).state

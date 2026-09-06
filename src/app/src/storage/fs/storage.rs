@@ -702,9 +702,14 @@ impl Storage for FsStorage {
         }
     }
 
-    async fn save_favorites(&self, ids: Vec<String>) -> Result<()> {
-        let doc = FavoritesDocument { version: 1, ids };
-        self.write_json(self.favorites_path(), &doc).await
+    async fn edit_favorites(
+        &self,
+        edit: crate::storage::FavoritesEdit,
+    ) -> Result<crate::storage::FavoritesUpdate> {
+        let path = self.favorites_path();
+        tokio::task::spawn_blocking(move || super::favorites::edit(&path, edit))
+            .await
+            .map_err(|error| EvotError::Store(format!("favorites writer task failed: {error}")))?
     }
 
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>> {

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
@@ -8,8 +7,9 @@ use crate::context::now_ms;
 use crate::provider::error::classify_stream_error;
 use crate::provider::error::ProviderError;
 use crate::provider::json_repair::try_repair_json;
-use crate::provider::stream_http;
+use crate::provider::sse::SseReader;
 use crate::provider::stream_http::SseEvent;
+use crate::provider::stream_sink::StreamSink;
 use crate::provider::traits::*;
 use crate::types::*;
 
@@ -33,15 +33,11 @@ enum OutputSlot {
 
 pub(crate) async fn decode_sse_stream(
     response: reqwest::Response,
-    tx: mpsc::UnboundedSender<StreamEvent>,
+    tx: StreamSink,
     cancel: CancellationToken,
     config: &StreamConfig,
 ) -> Result<StreamOutcome, ProviderError> {
-    let (sse_tx, mut sse_rx) = mpsc::unbounded_channel::<SseEvent>();
-    let driver_cancel = cancel.clone();
-    let driver = tokio::spawn(async move {
-        stream_http::drive_sse_response(response, sse_tx, driver_cancel).await
-    });
+    let mut reader = SseReader::new(response);
 
     let mut content = Vec::new();
     let mut slots = HashMap::<usize, OutputSlot>::new();
@@ -51,12 +47,13 @@ pub(crate) async fn decode_sse_stream(
     let mut stop_reason = StopReason::Stop;
     let mut incomplete_reason = None;
     let mut saw_terminal = false;
-    let _ = tx.send(StreamEvent::Start);
+    let _ = tx.send(StreamEvent::Start).await;
 
     loop {
         tokio::select! {
+            biased;
             _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
-            event = sse_rx.recv() => match event {
+            event = reader.next(&cancel) => match event.map_err(ProviderError::Network)? {
                 None => break,
                 Some(event) if event.data == "[DONE]" => break,
                 Some(event) => process_event(
@@ -70,14 +67,11 @@ pub(crate) async fn decode_sse_stream(
                     &mut stop_reason,
                     &mut incomplete_reason,
                     &mut saw_terminal,
-                )?,
+                ).await?,
             }
         }
     }
 
-    if let Ok(Err(error)) = driver.await {
-        return Err(ProviderError::Network(error));
-    }
     if !saw_terminal {
         return Err(ProviderError::ProtocolIncomplete(
             "OpenAI Responses stream ended before a terminal response event".into(),
@@ -110,16 +104,18 @@ pub(crate) async fn decode_sse_stream(
         error_message: incomplete_reason.map(|reason| format!("response incomplete: {reason}")),
         response_id,
     };
-    let _ = tx.send(StreamEvent::Done {
-        message: message.clone(),
-    });
+    let _ = tx
+        .send(StreamEvent::Done {
+            message: message.clone(),
+        })
+        .await;
     Ok(StreamOutcome::complete(message).served_by(response_model))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_event(
+async fn process_event(
     sse: &SseEvent,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+    tx: &StreamSink,
     content: &mut Vec<Content>,
     slots: &mut HashMap<usize, OutputSlot>,
     usage: &mut Usage,
@@ -157,48 +153,54 @@ fn process_event(
         "response.output_item.added" => {
             let output_index = usize_field(&value, "output_index")?;
             if let Some(item) = value.get("item") {
-                create_slot(output_index, item, tx, content, slots);
+                create_slot(output_index, item, tx, content, slots).await;
             }
         }
         "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
             let output_index = usize_field(&value, "output_index")?;
             let delta = string_field(&value, "delta");
-            let content_index = ensure_thinking_slot(output_index, content, slots);
+            let content_index = ensure_thinking_slot(output_index, content, slots).await;
             if let Some(Content::Thinking { thinking, .. }) = content.get_mut(content_index) {
                 thinking.push_str(delta);
             }
             if !delta.is_empty() {
-                let _ = tx.send(StreamEvent::ThinkingDelta {
-                    content_index,
-                    delta: delta.to_string(),
-                });
+                let _ = tx
+                    .send(StreamEvent::ThinkingDelta {
+                        content_index,
+                        delta: delta.to_string(),
+                    })
+                    .await;
             }
         }
         "response.reasoning_summary_part.done" => {
             let output_index = usize_field(&value, "output_index")?;
-            let content_index = ensure_thinking_slot(output_index, content, slots);
+            let content_index = ensure_thinking_slot(output_index, content, slots).await;
             if let Some(Content::Thinking { thinking, .. }) = content.get_mut(content_index) {
                 if !thinking.is_empty() {
                     thinking.push_str("\n\n");
-                    let _ = tx.send(StreamEvent::ThinkingDelta {
-                        content_index,
-                        delta: "\n\n".into(),
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ThinkingDelta {
+                            content_index,
+                            delta: "\n\n".into(),
+                        })
+                        .await;
                 }
             }
         }
         "response.output_text.delta" | "response.refusal.delta" => {
             let output_index = usize_field(&value, "output_index")?;
             let delta = string_field(&value, "delta");
-            let content_index = ensure_text_slot(output_index, content, slots);
+            let content_index = ensure_text_slot(output_index, content, slots).await;
             if let Some(Content::Text { text }) = content.get_mut(content_index) {
                 text.push_str(delta);
             }
             if !delta.is_empty() {
-                let _ = tx.send(StreamEvent::TextDelta {
-                    content_index,
-                    delta: delta.to_string(),
-                });
+                let _ = tx
+                    .send(StreamEvent::TextDelta {
+                        content_index,
+                        delta: delta.to_string(),
+                    })
+                    .await;
             }
         }
         "response.function_call_arguments.delta" => {
@@ -216,19 +218,23 @@ fn process_event(
                 arguments.push_str(delta);
                 if !*started && (!call_id.is_empty() || !name.is_empty()) {
                     *started = true;
-                    let _ = tx.send(StreamEvent::ToolCallStart {
-                        content_index: *content_index,
-                        id: call_id.clone(),
-                        name: name.clone(),
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ToolCallStart {
+                            content_index: *content_index,
+                            id: call_id.clone(),
+                            name: name.clone(),
+                        })
+                        .await;
                 }
                 if *started && !delta.is_empty() {
-                    let _ = tx.send(StreamEvent::ToolCallDelta {
-                        content_index: *content_index,
-                        id: call_id.clone(),
-                        name: name.clone(),
-                        delta: delta.to_string(),
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ToolCallDelta {
+                            content_index: *content_index,
+                            id: call_id.clone(),
+                            name: name.clone(),
+                            delta: delta.to_string(),
+                        })
+                        .await;
                 }
             }
         }
@@ -243,9 +249,9 @@ fn process_event(
             let output_index = usize_field(&value, "output_index")?;
             if let Some(item) = value.get("item") {
                 if !slots.contains_key(&output_index) {
-                    create_slot(output_index, item, tx, content, slots);
+                    create_slot(output_index, item, tx, content, slots).await;
                 }
-                finish_slot(output_index, item, tx, content, slots);
+                finish_slot(output_index, item, tx, content, slots).await;
             }
         }
         "response.completed" => {
@@ -272,10 +278,10 @@ fn process_event(
     Ok(())
 }
 
-fn create_slot(
+async fn create_slot(
     output_index: usize,
     item: &serde_json::Value,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+    tx: &StreamSink,
     content: &mut Vec<Content>,
     slots: &mut HashMap<usize, OutputSlot>,
 ) {
@@ -310,11 +316,13 @@ fn create_slot(
             });
             let started = !call_id.is_empty() || !name.is_empty();
             if started {
-                let _ = tx.send(StreamEvent::ToolCallStart {
-                    content_index,
-                    id: call_id.clone(),
-                    name: name.clone(),
-                });
+                let _ = tx
+                    .send(StreamEvent::ToolCallStart {
+                        content_index,
+                        id: call_id.clone(),
+                        name: name.clone(),
+                    })
+                    .await;
             }
             slots.insert(output_index, OutputSlot::Tool {
                 content_index,
@@ -329,7 +337,7 @@ fn create_slot(
     }
 }
 
-fn ensure_thinking_slot(
+async fn ensure_thinking_slot(
     output_index: usize,
     content: &mut Vec<Content>,
     slots: &mut HashMap<usize, OutputSlot>,
@@ -346,7 +354,7 @@ fn ensure_thinking_slot(
     content_index
 }
 
-fn ensure_text_slot(
+async fn ensure_text_slot(
     output_index: usize,
     content: &mut Vec<Content>,
     slots: &mut HashMap<usize, OutputSlot>,
@@ -362,10 +370,10 @@ fn ensure_text_slot(
     content_index
 }
 
-fn finish_slot(
+async fn finish_slot(
     output_index: usize,
     item: &serde_json::Value,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+    tx: &StreamSink,
     content: &mut [Content],
     slots: &mut HashMap<usize, OutputSlot>,
 ) {
@@ -429,11 +437,13 @@ fn finish_slot(
             }
             let id = call_id.clone();
             if !*started {
-                let _ = tx.send(StreamEvent::ToolCallStart {
-                    content_index: *content_index,
-                    id: id.clone(),
-                    name: name.clone(),
-                });
+                let _ = tx
+                    .send(StreamEvent::ToolCallStart {
+                        content_index: *content_index,
+                        id: id.clone(),
+                        name: name.clone(),
+                    })
+                    .await;
             }
             let parsed = try_repair_json(arguments)
                 .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
@@ -449,12 +459,14 @@ fn finish_slot(
                 current_arguments.clone_from(&parsed);
                 *metadata = openai_tool_metadata(item_id);
             }
-            let _ = tx.send(StreamEvent::ToolCallEnd {
-                content_index: *content_index,
-                id,
-                name: name.clone(),
-                arguments: parsed,
-            });
+            let _ = tx
+                .send(StreamEvent::ToolCallEnd {
+                    content_index: *content_index,
+                    id,
+                    name: name.clone(),
+                    arguments: parsed,
+                })
+                .await;
         }
     }
 }

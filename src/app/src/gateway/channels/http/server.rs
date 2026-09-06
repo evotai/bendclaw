@@ -4,9 +4,7 @@ use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Html;
 use axum::response::IntoResponse;
-use axum::response::Redirect;
 use axum::response::Sse;
 use axum::routing::get;
 use axum::routing::post;
@@ -27,42 +25,6 @@ use crate::error::Result;
 use crate::gateway::channels::http::stream;
 use crate::types::ListSessions;
 use crate::types::SessionMeta;
-
-const INDEX_HTML: &str = include_str!("static/index.html");
-
-// Shared console shell, plus one document per page. Served from the binary so
-// the console works from any working directory.
-const UI_CSS: &str = include_str!("static/ui/app.css");
-const UI_JS: &str = include_str!("static/ui/app.js");
-const MODELS_HTML: &str = include_str!("static/ui/models.html");
-const MODELS_JS: &str = include_str!("static/ui/models.js");
-const FEISHU_HTML: &str = include_str!("static/ui/feishu.html");
-const FEISHU_JS: &str = include_str!("static/ui/feishu.js");
-const CHAT_CSS: &str = include_str!("static/ui/chat.css");
-const CHAT_JS: &str = include_str!("static/ui/chat.js");
-const CHROME_JS: &str = include_str!("static/ui/chrome.js");
-const BRAND_ICON: &[u8] = include_bytes!("static/brand/icon.png");
-
-/// Static assets: explicit content types; `no-cache` keeps markup/script in sync.
-fn css(body: &'static str) -> impl IntoResponse {
-    (
-        [
-            ("content-type", "text/css; charset=utf-8"),
-            ("cache-control", "no-cache"),
-        ],
-        body,
-    )
-}
-
-fn js(body: &'static str) -> impl IntoResponse {
-    (
-        [
-            ("content-type", "text/javascript; charset=utf-8"),
-            ("cache-control", "no-cache"),
-        ],
-        body,
-    )
-}
 
 /// `0` = no limit: the full-text index wants every session.
 const SESSION_SEARCH_LIMIT: usize = 0;
@@ -208,10 +170,6 @@ impl Server {
         let dashboard = super::dashboard::dashboard_router(self.agent.clone());
         Router::new()
             .route(
-                "/chat",
-                get(|State(server): State<Arc<Server>>| async move { server.index().await }),
-            )
-            .route(
                 "/api/chat",
                 post(
                     |State(server): State<Arc<Server>>, Json(req): Json<ChatRequest>| async move {
@@ -276,18 +234,6 @@ impl Server {
                 ),
             )
             .route(
-                "/brand/icon.png",
-                get(|| async {
-                    (
-                        [
-                            ("content-type", "image/png"),
-                            ("cache-control", "public, max-age=604800"),
-                        ],
-                        BRAND_ICON,
-                    )
-                }),
-            )
-            .route(
                 "/api/auth/session",
                 get(|State(server): State<Arc<Server>>| async move { server.auth_session() }),
             )
@@ -347,29 +293,10 @@ impl Server {
                     },
                 ),
             )
-            .route("/models", get(|| async { Html(MODELS_HTML) }))
-            .route("/feishu", get(|| async { Html(FEISHU_HTML) }))
-            .route("/ui/app.css", get(|| async { css(UI_CSS) }))
-            .route("/ui/chat.css", get(|| async { css(CHAT_CSS) }))
-            .route("/ui/app.js", get(|| async { js(UI_JS) }))
-            .route("/ui/chat.js", get(|| async { js(CHAT_JS) }))
-            .route("/ui/chrome.js", get(|| async { js(CHROME_JS) }))
-            .route("/ui/models.js", get(|| async { js(MODELS_JS) }))
-            .route("/ui/feishu.js", get(|| async { js(FEISHU_JS) }))
-            // Kept so existing links and bookmarks still land somewhere useful
-            // now that provider and channel config have their own pages.
-            // The console's front door is Chat. Sessions management folds
-            // into Chat (recent list + search); /sessions remains a direct
-            // link for bookmarks and the trace viewer.
-            .route("/", get(|| async { Redirect::to("/chat") }))
-            .route("/settings", get(|| async { Redirect::permanent("/models") }))
             .with_state(self)
+            .merge(super::assets::router())
             .merge(dashboard)
             .layer(CorsLayer::permissive())
-    }
-
-    async fn index(&self) -> Html<&'static str> {
-        Html(INDEX_HTML)
     }
 
     /// Provider + model state with secrets masked, for the Models page.
@@ -398,10 +325,10 @@ impl Server {
     /// Re-read the env file from disk and replace the shared config. Uses the
     /// path the process was started with so a custom `--env-file` is honored.
     fn reload_config_from_disk(&self) -> Result<()> {
-        let env_path = self.config.read().env_file_path.clone();
-        let path_arg = env_path.to_str();
+        let mut config = self.config.write();
+        let path_arg = config.env_file_path.to_str();
         let fresh = Config::load_with_env_file(path_arg)?;
-        *self.config.write() = fresh;
+        *config = fresh;
         Ok(())
     }
 
@@ -457,16 +384,10 @@ impl Server {
     /// pages cannot interleave and lose each other's changes.
     fn apply_and_persist(&self, mutate: impl FnOnce(&mut Config) -> Result<()>) -> Result<()> {
         let mut config = self.config.write();
-        let mut candidate = config.clone();
-        mutate(&mut candidate)?;
-        // Surface resolution errors (e.g. missing key) before writing the file.
-        let llm = candidate.active_llm()?;
-        let env_path = candidate.env_file_path.clone();
-        // Persist before publishing the candidate so a write failure leaves the
-        // live config and running agent on the last durable configuration.
-        let groups = crate::conf::config_to_env_groups(&candidate);
-        crate::conf::env_writer::write_grouped(&env_path, &groups)?;
-        *config = candidate;
+        let llm = crate::conf::update_config(&mut config, |candidate| {
+            mutate(candidate)?;
+            candidate.active_llm()
+        })?;
         self.agent.set_llm(llm);
         Ok(())
     }
@@ -478,7 +399,7 @@ impl Server {
                 return Ok(rows.clone());
             }
         }
-        let rows = self.agent.list_sessions(0).await?;
+        let rows = self.agent.sessions().list(0).await?;
         *self.recent_cache.lock() = Some((std::time::Instant::now(), rows.clone()));
         Ok(rows)
     }
@@ -506,7 +427,8 @@ impl Server {
             // Search pays for transcript text; the sidebar never does.
             return match self
                 .agent
-                .list_sessions_with_text(SESSION_SEARCH_LIMIT)
+                .sessions()
+                .list_with_text(SESSION_SEARCH_LIMIT)
                 .await
             {
                 // Agent/storage filtering is transcript-aware: a run can have
@@ -631,15 +553,10 @@ impl Server {
                     .filter_map(|model| {
                         match config.build_llm(name, Some(model.clone())) {
                             Ok(llm) => {
-                                let thinking_levels = if llm.model_config.reasoning() {
-                                    llm.model_config
-                                        .supported_thinking_levels()
-                                        .iter()
-                                        .map(|level| level.as_str())
-                                        .collect::<Vec<_>>()
-                                } else {
-                                    Vec::new()
-                                };
+                                let thinking_levels = crate::models::ModelSelection::supported_thinking_levels_for(&llm)
+                                    .into_iter()
+                                    .map(|level| level.as_str())
+                                    .collect::<Vec<_>>();
                                 // The effective default after the catalog map
                                 // and model metadata resolve: the composer
                                 // preselects this when the user switches to
@@ -705,30 +622,8 @@ impl Server {
         };
 
         let config = self.config.read();
-        let profile = config
-            .providers
-            .get(provider)
-            .ok_or_else(|| EvotError::Conf(format!("provider '{provider}' is not configured")))?;
-        if !profile.models.iter().any(|configured| configured == model) {
-            return Err(EvotError::Conf(format!(
-                "model '{model}' is not configured for provider '{provider}'"
-            )));
-        }
-
-        let mut llm = config.build_llm(provider, Some(model.clone()))?;
-        if let Some(name) = req.thinking_level.as_deref() {
-            let level = crate::conf::thinking_level_from_str(name)?;
-            let supported = llm.model_config.supported_thinking_levels();
-            if !supported.contains(&level) {
-                return Err(EvotError::Conf(format!(
-                    "thinking level '{name}' is not supported by {provider}/{model}"
-                )));
-            }
-            llm.thinking_level = level;
-        }
-        drop(config);
-        self.agent.set_llm(llm.clone());
-        Ok(llm)
+        self.agent
+            .select_configured_model(&config, provider, model, req.thinking_level.as_deref())
     }
 
     // -- account (login / notices) ------------------------------------------
@@ -1009,10 +904,10 @@ impl Server {
     }
 
     async fn session_detail(&self, id: &str) -> impl IntoResponse {
-        match self.agent.find_session(id).await {
+        match self.agent.sessions().find(id).await {
             Ok(Some(meta)) => {
-                let nodes = match self.agent.load_resume_transcript(id).await {
-                    Ok(items) => super::chat::replay_nodes(&items),
+                let nodes = match self.agent.sessions().resume_transcript(id).await {
+                    Ok(items) => crate::conversation::projection::replay_nodes(&items),
                     Err(error) => {
                         tracing::warn!(session_id = %id, "chat: failed to load transcript: {error}");
                         Vec::new()
@@ -1022,10 +917,10 @@ impl Server {
                 // context), so the whole-session readings are folded here from
                 // the raw entries instead.
                 let stats = match self.agent.storage().load_active_entries(id).await {
-                    Ok(entries) => super::chat::session_stats(&entries),
+                    Ok(entries) => crate::conversation::projection::session_stats(&entries),
                     Err(error) => {
                         tracing::warn!(session_id = %id, "chat: failed to load stats: {error}");
-                        super::chat::ChatStats::default()
+                        crate::conversation::projection::ChatStats::default()
                     }
                 };
                 Json(serde_json::json!({
@@ -1094,19 +989,23 @@ impl Server {
                 })),
             );
         }
-        if !self.agent.has_active_run(session_id) {
+        if crate::command::is_queued_command(message) {
             return (
-                StatusCode::OK,
-                Json(serde_json::json!({ "ok": true, "active": false })),
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": "Commands don't queue while a response is running. Stop it or wait for the turn to finish.",
+                })),
             );
         }
-        self.agent
-            .steer(session_id, vec![evot_engine::Content::Text {
+        let active = self
+            .agent
+            .try_steer(session_id, vec![evot_engine::Content::Text {
                 text: message.to_string(),
             }]);
         (
             StatusCode::OK,
-            Json(serde_json::json!({ "ok": true, "active": true })),
+            Json(serde_json::json!({ "ok": true, "active": active })),
         )
     }
 
@@ -1171,10 +1070,11 @@ impl Server {
 
             match self.agent.submit(request).await {
                 Ok(SubmitOutcome::Run(query_run)) => {
-                    let session_event = match self.agent.find_session(&query_run.session_id).await {
-                        Ok(Some(meta)) => stream::session_meta_event(&meta),
-                        _ => stream::session_event(&query_run.session_id),
-                    };
+                    let session_event =
+                        match self.agent.sessions().find(&query_run.session_id).await {
+                            Ok(Some(meta)) => stream::session_meta_event(&meta),
+                            _ => stream::session_event(&query_run.session_id),
+                        };
                     if tx.send(session_event).await.is_err() {
                         query_run.abort();
                         return;

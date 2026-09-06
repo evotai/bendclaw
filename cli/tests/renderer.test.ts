@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { Writable } from 'node:stream'
 import stripAnsi from 'strip-ansi'
-import { TermRenderer, CURSOR_MARKER } from '../src/term/renderer.js'
+import { TermRenderer } from '../src/term/renderer.js'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import { renderMarkdown } from '../src/render/markdown.js'
 import { withColumns } from './helpers/stdout-columns.js'
 
@@ -75,11 +76,26 @@ describe('TermRenderer', () => {
       expect(stdout.output).toContain('\x1b[?25h')
     })
 
-    test('double destroy is safe', () => {
-      const { renderer } = createRenderer()
+    test('double destroy does not move the cursor or write again', () => {
+      const { renderer, stdout } = createRenderer()
       renderer.init()
       renderer.destroy()
-      renderer.destroy() // should not throw
+      stdout.clear()
+      renderer.destroy()
+      expect(stdout.output).toBe('')
+    })
+
+    test('destroy prevents a pending frame from accessing disposed application state', async () => {
+      const { renderer, stdout } = createRenderer()
+      renderer.init()
+      let frames = 0
+      renderer.setRenderCallback(() => { frames++; return ['late'] })
+      renderer.requestRender(true)
+      renderer.destroy()
+      stdout.clear()
+      await Bun.sleep(25)
+      expect(frames).toBe(0)
+      expect(stdout.output).toBe('')
     })
   })
 

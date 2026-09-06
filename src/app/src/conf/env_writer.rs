@@ -64,6 +64,15 @@ fn is_managed_key(key: &str) -> bool {
 }
 
 pub fn remove_keys(path: &Path, discard: impl Fn(&str) -> bool) -> Result<bool> {
+    let transaction = super::env_transaction::EnvTransaction::open(path)?;
+    remove_keys_locked(&transaction, discard)
+}
+
+pub(crate) fn remove_keys_locked(
+    transaction: &super::env_transaction::EnvTransaction,
+    discard: impl Fn(&str) -> bool,
+) -> Result<bool> {
+    let path = transaction.path();
     if !path.exists() {
         return Ok(false);
     }
@@ -126,6 +135,15 @@ fn tidy_managed_block(lines: &[&str]) -> String {
 /// Written atomically (temp file + rename); on Unix the mode is tightened to
 /// `0o600` since the file may hold provider secrets.
 pub fn write_grouped(path: &Path, groups: &[EnvGroup]) -> Result<()> {
+    let transaction = super::env_transaction::EnvTransaction::open(path)?;
+    write_grouped_locked(&transaction, groups)
+}
+
+pub(crate) fn write_grouped_locked(
+    transaction: &super::env_transaction::EnvTransaction,
+    groups: &[EnvGroup],
+) -> Result<()> {
+    let path = transaction.path();
     let existing = if path.exists() {
         std::fs::read_to_string(path)
             .map_err(|e| EvotError::Conf(format!("failed to read {}: {e}", path.display())))?

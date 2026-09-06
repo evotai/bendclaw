@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
+import { createAppSelectorState } from '../src/term/app/selector-identity.js'
 import {
   createSelectorState,
   selectorUp,
@@ -13,8 +14,9 @@ import {
   warmSearchableText,
   type SelectorState,
 } from '../src/term/selector.js'
-import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
-import { CURSOR_MARKER } from '../src/term/renderer.js'
+import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
+import { buildSelectorRegionLines } from '../src/term/viewmodel/selector.js'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import { getTheme } from '../src/render/theme/index.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import stripAnsi from 'strip-ansi'
@@ -308,7 +310,7 @@ describe('renderSelector via viewmodel', () => {
   })
 
   test('shows queue actions with the shared Ctrl+D remove shortcut', () => {
-    const state = createSelectorState('Prompt queue', items)
+    const state = createAppSelectorState('queue', 'Prompt queue', items)
     const lines = blocksToLines(buildOverlayBlocks({ kind: 'selector', state }, 80))
     const text = lines.map(l => stripAnsi(l)).join('\n')
     expect(text).toContain('enter edit')

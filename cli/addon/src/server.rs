@@ -55,7 +55,7 @@ pub async fn start_server_background(
         Err(_) => return Ok(None),
     };
 
-    let agent = evot::gateway::service::build_agent(&config)
+    let agent = evot::bootstrap::build_agent(&config)
         .await
         .map_err(|e| Error::from_reason(format!("agent init: {e}")))?;
 

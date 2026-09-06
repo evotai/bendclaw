@@ -62,6 +62,43 @@ impl HostBridge for StubHost {
     }
 }
 
+struct WaitingHost {
+    started: CancellationToken,
+    dropped: CancellationToken,
+}
+
+#[async_trait]
+impl HostBridge for WaitingHost {
+    async fn execute_tool(&self, _call: HostToolCall) -> Result<HostToolResponse, HostError> {
+        let _guard = self.dropped.clone().drop_guard();
+        self.started.cancel();
+        std::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn cancellation_releases_a_host_that_never_replies() -> Result<(), Box<dyn std::error::Error>>
+{
+    let started = CancellationToken::new();
+    let dropped = CancellationToken::new();
+    let tool = HostTool::new(
+        spec(),
+        Arc::new(WaitingHost {
+            started: started.clone(),
+            dropped: dropped.clone(),
+        }),
+    );
+    let context = ctx();
+    let cancel = context.cancel.clone();
+    let run = tokio::spawn(async move { tool.execute(serde_json::json!({}), context).await });
+    tokio::time::timeout(std::time::Duration::from_secs(1), started.cancelled()).await?;
+    cancel.cancel();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(1), run).await??;
+    assert!(matches!(result, Err(ToolError::Cancelled)));
+    assert!(dropped.is_cancelled());
+    Ok(())
+}
+
 #[test]
 fn spec_maps_onto_agent_tool_metadata() {
     let host = StubHost::ok(HostToolResponse::text("ok"));

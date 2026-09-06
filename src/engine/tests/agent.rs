@@ -5,4 +5,7 @@ mod run;
 #[path = "agent/state.rs"]
 mod state;
 
+#[path = "agent/bounded.rs"]
+mod bounded;
+
 mod fixtures;

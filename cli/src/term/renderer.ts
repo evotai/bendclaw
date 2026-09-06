@@ -10,6 +10,7 @@
  *   ~/github/pi/packages/tui/src/tui.ts
  */
 
+import { CURSOR_MARKER, type RenderFrame, type RenderOverlay } from './render-frame.js'
 import { performance } from 'node:perf_hooks'
 import stringWidth from 'string-width'
 import stripAnsi from 'strip-ansi'
@@ -31,52 +32,6 @@ const NOWRAP = '\x1b[?7l'   // Disable auto-wrap (DECAWM off)
 const WRAP = '\x1b[?7h'     // Re-enable auto-wrap
 
 // --- Types ---
-
-export interface RenderOverlay {
-  lines: string[]
-}
-
-export interface RenderFrame {
-  lines: string[]
-  /**
-   * Let a frame that fills the viewport keep its trailing edge on the bottom
-   * row, even after the frame shrinks.
-   *
-   * This is not an initial bottom pin: content decides where the composer sits
-   * until the frame first reaches the bottom. After that point, shrinkage gets
-   * leading physical space so the trailing edge stays on the row it already
-   * reached instead of jumping back to the logical frame's natural position.
-   */
-  bottomAnchor?: boolean
-  /**
-   * Start of the repaintable tail that should retain its screen position after
-   * a naturally laid-out frame first reaches the viewport bottom. Shrinkage is
-   * absorbed here, between committed content and the live region, rather than
-   * above the whole frame. Ignored until the frame has actually reached bottom.
-   */
-  bottomAnchorStart?: number
-  /**
-   * Rows in this frame that belong to a transient surface: a command window,
-   * selector, or ask prompt mounted between the transcript and the composer.
-   * They may push the frame past the viewport bottom, but they never establish
-   * the bottom anchor. When they close, the composer follows the durable rows
-   * back up instead of holding a blank hole open where the surface used to be.
-   */
-  transientRows?: number
-  /**
-   * Keep an already anchored, same-height viewport in place when only the
-   * logical rows above it also changed. The terminal cannot rewrite scrollback,
-   * so those rows remain stale until this transient frame closes; visible rows
-   * are still patched normally. Reserved for stable command-window swaps —
-   * streaming/history frames must preserve the default full-redraw behavior.
-   */
-  stableViewport?: boolean
-  /** Screen-relative modal content composited over the visible viewport. */
-  overlay?: RenderOverlay
-}
-
-/** Zero-width marker embedded in rendered output to indicate cursor position for IME. */
-export const CURSOR_MARKER = '\x1b_pi:c\x07'
 
 export interface RendererTraceEntry {
   schemaVersion: 1
@@ -170,6 +125,9 @@ export class TermRenderer {
   }
 
   destroy(): void {
+    if (this.destroyed) return
+    this.renderRequested = false
+    this.renderCallback = null
     if (this.renderTimer) {
       clearTimeout(this.renderTimer)
       this.renderTimer = undefined

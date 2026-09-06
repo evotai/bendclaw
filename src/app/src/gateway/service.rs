@@ -1,11 +1,6 @@
-use std::sync::Arc;
-
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::prompt::SystemPrompt;
-use crate::agent::Agent;
 use crate::conf::Config;
-use crate::error::EvotError;
 use crate::error::Result;
 
 pub async fn start(conf: Config) -> Result<()> {
@@ -22,60 +17,24 @@ pub async fn start(conf: Config) -> Result<()> {
         "server starting"
     );
 
-    let agent = build_agent(&conf).await?;
+    let agent = crate::bootstrap::build_agent(&conf).await?;
     let cancel = CancellationToken::new();
 
     // Long-lived channels (feishu, telegram, ...)
     let channel_handles = super::registry::spawn_all(&conf.channels, agent.clone(), cancel.clone());
 
-    print_banner(&conf, &channel_handles)?;
+    let channels = super::channel_tasks::ChannelTasks::new(cancel, channel_handles);
+    print_banner(&conf, !channels.is_empty());
 
-    // HTTP channel (blocking)
-    super::channels::http::Server::new(agent, conf.clone())
+    // Always stop channel tasks, including when HTTP binding/startup fails.
+    let result = super::channels::http::Server::new(agent, conf.clone())
         .start(conf.server.host.clone(), conf.server.port)
-        .await?;
-
-    // Shutdown
-    cancel.cancel();
-    for h in channel_handles {
-        let _ = h.await;
-    }
-    Ok(())
+        .await;
+    channels.shutdown(std::time::Duration::from_secs(5)).await;
+    result
 }
 
-pub async fn build_agent(conf: &Config) -> Result<Arc<Agent>> {
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| EvotError::Run(format!("failed to get cwd: {e}")))?;
-
-    let tools = crate::agent::tools::prompt_tools();
-    let model = conf.active_llm().map(|l| l.model).unwrap_or_default();
-    let (system_prompt_text, system_prompt_sections) = SystemPrompt::base(&cwd, &tools, &model);
-
-    let mut skills_dirs = Vec::new();
-    let builtin = crate::agent::prompt::skill::ensure_builtin_skills_dir()
-        .map_err(|error| EvotError::Agent(format!("cannot initialize builtin skills: {error}")))?;
-    skills_dirs.push(builtin);
-    let global = crate::conf::paths::skills_dir()?;
-    skills_dirs.push(global);
-    skills_dirs.extend(conf.skills_dirs.clone());
-
-    tracing::info!(skills_dirs = ?skills_dirs, "agent skills directories");
-
-    let agent = Agent::new(conf, &cwd)?
-        .with_system_prompt_sections(system_prompt_text, system_prompt_sections)
-        .with_skills_dirs(skills_dirs);
-
-    // Load persisted variables
-    let storage = agent.storage();
-    let records = storage.load_variables().await.unwrap_or_default();
-    let variables = std::sync::Arc::new(crate::agent::Variables::new(storage, records));
-    agent.with_variables(variables);
-
-    Ok(agent)
-}
-
-fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) -> Result<()> {
+fn print_banner(conf: &Config, has_channels: bool) {
     let llm = conf.active_llm().ok();
     let addr = format!("{}:{}", conf.server.host, conf.server.port);
     let storage_backend = match conf.storage.backend {
@@ -111,7 +70,7 @@ fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) 
         eprintln!("  base_url: {base_url}");
     }
     eprintln!("  storage:  {storage_backend} ({storage_target})");
-    if !channel_handles.is_empty() {
+    if has_channels {
         let mut names = Vec::new();
         if conf.channels.feishu.is_some() {
             names.push("feishu");
@@ -120,5 +79,4 @@ fn print_banner(conf: &Config, channel_handles: &[tokio::task::JoinHandle<()>]) 
     }
     eprintln!("  ───────────────────────────────────");
     eprintln!();
-    Ok(())
 }

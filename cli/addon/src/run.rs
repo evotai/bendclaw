@@ -1,13 +1,9 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-
 use evot_engine::host::HostToolResponse;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio::sync::Mutex;
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use crate::convert::parse_content_blocks;
 use crate::host::HostResponders;
@@ -38,7 +34,7 @@ macro_rules! next_run_or_abort {
                     None => Ok(None),
                 }
             }
-            _ = $notify.notified() => {
+            _ = $notify.cancelled() => {
                 $run.abort();
                 Ok(None)
             }
@@ -88,9 +84,8 @@ pub struct NapiRun {
     pub(crate) inner: Mutex<evot::agent::Run>,
     pub(crate) handle: evot::agent::RunControl,
     pub(crate) cached_session_id: String,
-    pub(crate) aborted: Arc<AtomicBool>,
-    pub(crate) abort_notify: Arc<Notify>,
-    pub(crate) host_event_rx: Mutex<Option<tokio_mpsc::UnboundedReceiver<String>>>,
+    pub(crate) abort_signal: CancellationToken,
+    pub(crate) host_event_rx: Mutex<Option<tokio_mpsc::Receiver<String>>>,
     pub(crate) host_responders: HostResponders,
 }
 
@@ -105,7 +100,7 @@ impl NapiRun {
     /// Returns null when the run is complete.
     #[napi]
     pub async fn next(&self) -> Result<Option<String>> {
-        if self.aborted.load(Ordering::Relaxed) {
+        if self.abort_signal.is_cancelled() {
             return Ok(None);
         }
 
@@ -116,7 +111,7 @@ impl NapiRun {
         let host_rx_slot = &mut *host_rx_guard;
 
         match host_rx_slot {
-            None => next_run_or_abort!(run, self.abort_notify),
+            None => next_run_or_abort!(run, self.abort_signal),
             Some(host_rx) => {
                 tokio::select! {
                     host_json = host_rx.recv() => {
@@ -126,7 +121,7 @@ impl NapiRun {
                                 // Sender dropped and buffer empty — permanently
                                 // disable the host branch, then read from run.
                                 *host_rx_slot = None;
-                                next_run_or_abort!(run, self.abort_notify)
+                                next_run_or_abort!(run, self.abort_signal)
                             }
                         }
                     }
@@ -136,7 +131,7 @@ impl NapiRun {
                             None => Ok(None),
                         }
                     }
-                    _ = self.abort_notify.notified() => {
+                    _ = self.abort_signal.cancelled() => {
                         run.abort();
                         Ok(None)
                     }
@@ -154,7 +149,10 @@ impl NapiRun {
     pub async fn respond_host_tool(&self, response_json: String) -> Result<()> {
         let parsed: HostToolResponsePayload = serde_json::from_str(&response_json)
             .map_err(|e| Error::from_reason(format!("parse host tool response: {e}")))?;
-        let mut guard = self.host_responders.lock().await;
+        let mut guard = self
+            .host_responders
+            .lock()
+            .map_err(|_| Error::from_reason("host response lock poisoned"))?;
         if let Some(tx) = guard.remove(&parsed.tool_call_id) {
             let _ = tx.send(Ok(parsed.response));
         }
@@ -164,8 +162,7 @@ impl NapiRun {
     /// Abort the running query. Safe to call while next() is awaiting.
     #[napi]
     pub fn abort(&self) {
-        self.aborted.store(true, Ordering::Relaxed);
-        self.abort_notify.notify_waiters();
+        self.abort_signal.cancel();
         self.handle.abort();
     }
 

@@ -4,7 +4,7 @@ use chrono::Utc;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 
-use super::session_locator::SessionLocator;
+use super::locator::SessionLocator;
 use crate::error::Result;
 use crate::storage::Storage;
 use crate::types::ListTranscriptEntries;
@@ -351,13 +351,13 @@ impl Session {
                     Some(context) => {
                         state.engine_transcript =
                             compact_engine_messages(&items).unwrap_or_else(|| {
-                                crate::agent::run::convert::into_agent_messages(&context)
+                                crate::conversation::convert::into_agent_messages(&context)
                             });
                         state.transcript = context;
                     }
                     None => {
                         state.engine_transcript.extend(
-                            crate::agent::run::convert::into_agent_messages(
+                            crate::conversation::convert::into_agent_messages(
                                 &items
                                     .iter()
                                     .filter(|item| item.is_context_item())

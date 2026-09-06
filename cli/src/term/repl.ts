@@ -1,4 +1,5 @@
-import { TermRenderer, type RenderFrame } from './renderer.js'
+import { TermRenderer } from './renderer.js'
+import type { RenderFrame } from './render-frame.js'
 import { readOutputTail } from './app/output-tail.js'
 import {
   enableRawMode,
@@ -11,12 +12,16 @@ import { TerminalInputBuffer } from './input/buffer.js'
 import { schemeFromRgbColor } from './terminal-colors.js'
 import { getTheme, setDetectedThemeScheme } from '../render/theme/index.js'
 import { createSpinnerState, advanceSpinner, formatSpinnerLine, setSpinnerPhase, spinnerStatsFromLastUsage } from './spinner.js'
-import { createSelectorState, selectorExpandItems, selectorClearQuery, selectorFocusOn, warmSearchableText, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from './selector.js'
+import { createModelWindow, createResumeWindow } from './app/selector-windows.js'
+import { buildShellFrame } from './viewmodel/shell.js'
+import { promptFromSnapshot } from './viewmodel/prompt-snapshot.js'
+import { createAppSelectorState, isCommandSelector, isBackgroundSelector, SELECTOR_OWNER } from './app/selector-identity.js'
+import { selectorExpandItems, selectorClearQuery, warmSearchableText, type SelectorItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
-import { formatCompactionCompleted } from '../render/verbose.js'
+import { manualCompactionLines } from './viewmodel/manual-compaction.js'
 import { wrapTextWithAnsi } from '../render/wrap.js'
-import { Agent, QueryStream, fastExit, authNotices, type CompactionTask, type ManualCompactionOutcome, type SessionMeta, type SessionWithText, type ConfigInfo, type QueuedPrompt } from '../native/index.js'
+import { Agent, QueryStream, fastExit, authNotices, type ManualCompactionOutcome, type SessionMeta, type ConfigInfo } from '../native/index.js'
 import { createInitialState, type AppState } from './app/state.js'
 import { assistantToolCalls } from './app/assistant-content.js'
 import type { UIAssistantBlock } from './app/types.js'
@@ -30,19 +35,13 @@ import { isSlashCommand, resolveCommand, buildHardenPrompt } from '../commands/i
 import { BannerCache } from './banner-cache.js'
 import {
   buildOutputBlocks,
-  buildPromptBlocks,
-  buildPromptFooterBlocks,
-  buildOverlayBlocks,
-  buildSelectorRegionLines,
-  buildAskRegionLines,
   updateLiveHeight,
   formatQueuedMessageLines,
   blocksToLines,
-  type OverlayState,
   type PromptVMInput,
   type ViewBlock,
 } from './viewmodel/index.js'
-import { joinLeftRight, spansWidth } from './viewmodel/width.js'
+import { updateNoticeSpans, attachUpdateNotice, standaloneUpdateNotice } from './viewmodel/update-notice.js'
 import { createAdSlotState, tickAdSlot, nextAdSlotRenderDelay, triggerAdSlot, queueAdSlotTransition, buildAdSlotBlocks, campaignFingerprint, type AdSlotState } from './viewmodel/ad-slot.js'
 import { HistoryRenderCache } from './viewmodel/history-cache.js'
 import { Committer } from './committer.js'
@@ -61,7 +60,6 @@ import {
   acceptCompletion,
   closeCompletion,
   moveCompletion,
-  showCompletions,
   refreshGhostHint,
   createHistoryState,
   pushHistory,
@@ -99,7 +97,7 @@ import {
   type AskUserParams,
 } from './host-tools.js'
 import { extractPlanItems, type PlanModeItem } from './plan-mode.js'
-import { currentModelSpec, formatModelLabel, formatModelOptionLabel, hasPremiumModel, isCloudModel, modelOptions, modelSelectorItems, providerDisplayName, selectModelOption } from './app/provider.js'
+import { currentModelSpec, formatModelLabel, formatModelOptionLabel, hasPremiumModel, isCloudModel, modelOptions, modelSelectorItems, selectModelOption } from './app/provider.js'
 import chalk from 'chalk'
 import {
   shouldCollapse,
@@ -122,7 +120,6 @@ import {
   COMPACT_SUMMARY_PREFIX,
   formatSessionItems,
   formatSessionWithTextItems,
-  isResumeSelectorTitle,
   isSessionIdPrefix,
   normalizeResumeQuery,
   resolveSessionByPrefix,
@@ -133,20 +130,31 @@ import { handleSelectorControl } from './app/selector-control.js'
 import { decideReplControl, type ReplControlAction } from './app/repl-control.js'
 import { replaceOrPushStatusLine } from './app/status-line.js'
 import { AuthWatcher } from './app/auth-watch.js'
+import { ManualCompaction } from './app/manual-compaction.js'
+import { busySubmissionAction } from './app/busy-submission.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
 import { BackgroundTerminals } from './app/background-terminals.js'
-import { isBackgroundPanelShortcut, isBackgroundPanelTitle } from './app/background-panel.js'
+import { isBackgroundPanelShortcut } from './app/background-panel.js'
 import {
   createQueueSelectorState,
   isQueueManageShortcut,
   type ManagedQueuedPrompt,
 } from './app/queue-manage.js'
+import { FileCompletion } from './app/file-completion.js'
 import { extractAtPrefix, completeAtFile } from '../commands/file-completion.js'
 import { getSkillEntries } from '../commands/skill.js'
 import { isCommandWindowBridge, isCommandWindowTypingEvent, resolveCommandWindowTrigger } from './app/command-window-trigger.js'
-import { createSkillSelectorState, isSkillSelectorTitle } from './app/skill-window.js'
+import { createSkillSelectorState } from './app/skill-window.js'
 import { transcriptToMessages } from '../session/transcript.js'
 import { GitInfoProvider } from './git-info.js'
+import { isHostToolEvent } from '../native/contracts/query-event.js'
+import { ResumeSessionCache } from './app/resume-cache.js'
+import { CloudSync } from './app/cloud-sync.js'
+import { prepareResume } from './app/prepare-resume.js'
+import { campaignContent, refreshCampaigns } from './app/campaigns.js'
+import type { OverlayState } from './app/overlay-state.js'
+import { ResourceScope } from './resource-scope.js'
+import { RenderWakeup } from './render-wakeup.js'
 import { CaretBlink } from './caret-blink.js'
 import { errorText } from '../render/format.js'
 import { TerminalTitle } from './title.js'
@@ -166,7 +174,7 @@ import {
 
 const SPINNER_INTERVAL_MS = 100
 
-type QueuedUserMessage = QueuedPrompt & { text: string; queue: 'steering' | 'follow_up' }
+import { readPromptQueues, visibleQueueEntries, reconcilePromptQueue, type QueuedUserMessage } from './app/prompt-queue.js'
 type QueuedCompactionSubmission = { displayText: string; expandedText: string; contentJson?: string }
 type CommandWindowPreview =
   | { kind: 'selector'; trigger: 'model' | 'resume' | 'skill'; sourceText: string; generation: number; state: SelectorState }
@@ -194,9 +202,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   renderer.init()
 
   // The composer paints its own caret, so the idle blink is ours to drive.
+  const resources = new ResourceScope()
+  const backgroundCleanup = new ResourceScope()
   const caretBlink = new CaretBlink({ onChange: () => renderer.requestRender() })
   // Armed by buildFrame only while visible text or its lifecycle needs a wakeup.
-  let adSlotTimer: ReturnType<typeof setTimeout> | undefined
+  const adSlotWakeup = new RenderWakeup(() => renderer.requestRender())
 
   let appState: AppState = {
     ...createInitialState(agent.model, agent.cwd),
@@ -229,7 +239,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const beginRun = (): number => runOwnership.begin()
   const ownsRun = (generation: number): boolean => runOwnership.owns(generation)
   const revokeRun = (): void => runOwnership.revoke()
-  let compactionTask: CompactionTask | null = null
+  const manualCompaction = new ManualCompaction()
   let queuedCompactionSubmissions: QueuedCompactionSubmission[] = []
   let spinnerTimer: ReturnType<typeof setInterval> | null = null
   const terminalTitle = new TerminalTitle(agent.cwd, () => serverState?.port ?? null)
@@ -274,13 +284,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let resumeSearchEnrichmentTimer: ReturnType<typeof setTimeout> | undefined
   /** Cancels the in-progress search-text warm-up, if one is running. */
   let cancelSearchTextWarmup: (() => void) | null = null
-  let resumeSessionsCache: SessionMeta[] | null = null
-  let resumeSessionsCacheComplete = false
-  let resumeSessionsCacheGeneration = 0
-  let resumeSessionsPreviewLoad: Promise<SessionMeta[]> | null = null
-  let resumeSessionsLoad: Promise<SessionMeta[]> | null = null
-  let resumeSessionsWithTextCache: SessionWithText[] | null = null
-  let resumeSessionsWithTextLoad: Promise<SessionWithText[]> | null = null
+  let preloadedSessions: SessionMeta[] = []
+  const resumeCache = new ResumeSessionCache(agent, rows => { preloadedSessions = rows })
+  resources.add(() => resumeCache.dispose())
   /** Invalidates callbacks belonging to an explicitly submitted `/resume`. */
   let explicitResumeSelectorGeneration = 0
   // Assigned after configInfo below, which decides the premium intake filter.
@@ -456,20 +462,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function modelSelectorState(): SelectorState {
-    const models = modelOptions(configInfo, agent.model)
-    const activeSpec = currentModelSpec(configInfo, agent.model)
-    return selectorFocusOn(
-      {
-        ...createSelectorState('Models', modelSelectorItems(models, activeSpec)),
-        presentation: 'model',
-        circularNavigation: true,
-        // Same contract as every other command window: the composer keeps
-        // focus while this previews, so the search input must not claim the
-        // caret before an arrow promotes the list.
-        listFocused: false,
-      },
-      item => item.id === activeSpec,
-    )
+    return createModelWindow(configInfo, agent.model)
   }
 
   function skillSelectorState(): SelectorState {
@@ -477,85 +470,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function resumeSelectorState(items: SelectorItem[], initialQuery?: string): SelectorState {
-    const state = createSelectorState(RESUME_SELECTOR_TITLE, items, items, initialQuery)
-    return {
-      ...state,
-      // The slash-command composer owns focus until the first arrow. Keeping
-      // this explicit prevents the filter caret and a session pointer from
-      // appearing active at the same time.
-      listFocused: false,
-      ...(state.query.length === 0 && state.items.length === 0 && state.allItems.some(item => !item.header)
-        ? { emptyMessage: 'No sessions in current cwd · type to search all sessions' }
-        : {}),
-    }
-  }
-
-  function isStableCommandSelector(state: SelectorState): boolean {
-    return isResumeSelectorTitle(state.title)
-      || state.presentation === 'model'
-      || isSkillSelectorTitle(state.title)
-  }
-
-  function fullResumeSelectorSlotState(): SelectorState {
-    const items = Array.from({ length: SELECTOR_VIEWPORT + 2 }, (_, index) => ({
-      id: `command-window-slot-${index}`,
-      label: `session-${index}`,
-      detail: 'source title [1 turn] now',
-      preview: ['Session title', 'model · 1 turn · now'],
-    }))
-    return {
-      ...createSelectorState(RESUME_SELECTOR_TITLE, items),
-      subtitle: 'Recent sessions',
-      focusIndex: 1,
-      scrollOffset: 1,
-    }
-  }
-
-  function fullModelSelectorSlotState(): SelectorState {
-    const items = Array.from({ length: 7 }, (_, groupIndex) => {
-      const group = `Provider ${groupIndex}`
-      return [
-        { label: group, header: true, focusable: false, group },
-        { id: `provider-${groupIndex}:model`, label: `Model ${groupIndex}`, group },
-      ]
-    }).flat()
-    return {
-      ...createSelectorState('Models', items),
-      presentation: 'model',
-      circularNavigation: true,
-      // Center a model row in an overflowing viewport. Alternating one-model
-      // groups exercise every separator row the model renderer can insert.
-      focusIndex: 7,
-    }
-  }
-
-  function commandSelectorRegionLines(state: SelectorState, active: boolean): string[] {
-    const lines = buildSelectorRegionLines(
-      state,
-      renderer.termCols,
-      renderer.termRows,
-      active,
-    )
-    const fullResumeHeight = buildSelectorRegionLines(
-      fullResumeSelectorSlotState(),
-      renderer.termCols,
-      renderer.termRows,
-      false,
-    ).length
-    const fullModelHeight = buildSelectorRegionLines(
-      fullModelSelectorSlotState(),
-      renderer.termCols,
-      renderer.termRows,
-      false,
-    ).length
-    const slotHeight = Math.max(fullResumeHeight, fullModelHeight)
-    // Reserve the fully populated selector geometry from the first loading
-    // frame. Session rows can then arrive asynchronously without growing the
-    // live region, and bridge/model transitions replace content in place.
-    return [
-      ...Array(Math.max(0, slotHeight - lines.length)).fill(''),
-      ...lines,
-    ]
+    return createResumeWindow(items, initialQuery)
   }
 
   function currentResumeCommandWindowState(generation: number): SelectorState | null {
@@ -571,7 +486,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (
       focusedCommandWindowGeneration === generation
       && overlay.kind === 'selector'
-      && isResumeSelectorTitle(overlay.state.title)
+      && overlay.state.owner === SELECTOR_OWNER.resume
     ) {
       return overlay.state
     }
@@ -592,7 +507,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (
       focusedCommandWindowGeneration === generation
       && overlay.kind === 'selector'
-      && isResumeSelectorTitle(overlay.state.title)
+      && overlay.state.owner === SELECTOR_OWNER.resume
     ) {
       overlay = { kind: 'selector', state }
       renderer.requestRender()
@@ -605,19 +520,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Keep every keystroke bounded: the composer preview is recognition aid,
     // not the full search surface. Never format transcript text here, and cap
     // metadata work to the same recent-session budget used at startup.
-    const recent = (resumeSessionsCache ?? []).slice(0, 20)
+    const recent = (resumeCache.metadata ?? []).slice(0, 20)
     if (recent.length > 0) {
       const items = formatSessionItems(recent, agent.cwd)
       return resumeSelectorState(items)
     }
-    if (resumeSessionsCacheComplete) {
+    if (resumeCache.complete) {
       return {
-        ...createSelectorState(RESUME_SELECTOR_TITLE, []),
+        ...createAppSelectorState('resume', RESUME_SELECTOR_TITLE, []),
         emptyMessage: 'No sessions found',
       }
     }
     return {
-      ...createSelectorState(RESUME_SELECTOR_TITLE, []),
+      ...createAppSelectorState('resume', RESUME_SELECTOR_TITLE, []),
       emptyMessage: 'Loading sessions…',
     }
   }
@@ -668,7 +583,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (!isActiveResumePreview(generation)) return
 
     const current = currentResumeCommandWindowState(generation)
-    if (current && resumeSessionsCache === null) {
+    if (current && resumeCache.metadata === null) {
       updateResumeCommandWindow(
         generation,
         current.items.length === 0
@@ -689,11 +604,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     resumeCommandLoadTimer = setTimeout(() => {
       resumeCommandLoadTimer = undefined
       if (!isActiveResumePreview(generation)) return
-      void loadResumeSessionPreview().then(sessions => {
+      void resumeCache.preview().then(sessions => {
         if (!isActiveResumePreview(generation)) return
         applyResumeSessions(generation, sessions, 20)
 
-        void loadResumeSessions().then(allSessions => {
+        void resumeCache.all().then(allSessions => {
           if (!isActiveResumePreview(generation)) return
           if (applyResumeSessions(generation, allSessions)) {
             enrichedResumeMetadataGeneration = generation
@@ -762,17 +677,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       resumeSearchEnrichmentTimer = undefined
       if (!currentResumeCommandWindowState(generation)) return
 
-      const metadata = resumeSessionsCacheComplete && resumeSessionsCache !== null
-        ? Promise.resolve(resumeSessionsCache)
-        : loadResumeSessions()
+      const metadata = resumeCache.all()
       void metadata.then(sessions => {
         if (!applyResumeSessions(generation, sessions)) return
         enrichedResumeMetadataGeneration = generation
         if (!includeText) return
 
-        const withText = resumeSessionsWithTextCache !== null
-          ? Promise.resolve(resumeSessionsWithTextCache)
-          : loadResumeSessionsWithText()
+        const withText = resumeCache.text()
         return withText.then(sessionsWithText => {
           const current = currentResumeCommandWindowState(generation)
           if (!current) return
@@ -934,7 +845,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
   const compactLines: OutputLine[] = []
   const expandedLines: OutputLine[] = []
-  let fdAbort: AbortController | null = null
+  const fileCompletion = new FileCompletion(completeAtFile)
+  resources.add(() => fileCompletion.dispose())
   const screenLog = new ScreenLog()
   const committer = new Committer({
     compactLines,
@@ -1028,13 +940,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   const premiumAccount = hasPremiumModel(configInfo)
   adSlot = createAdSlotState(
-    authNotices().map(n => ({
-      id: n.id,
-      kind: n.kind,
-      priority: n.priority,
-      title: n.title,
-      body: n.body_md ?? '',
-    })),
+    campaignContent(authNotices()),
     { premium: premiumAccount },
   )
   // Logged-in users see the slot from the start — no need to wait for a
@@ -1126,112 +1032,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     return active !== undefined && isCloudModel(active)
   }
 
-  let preloadedSessions: SessionMeta[] = []
   if (shouldPreloadStartupSessions(opts)) {
     try {
       preloadedSessions = await agent.listSessions(opts.continueLatest ? 0 : 20)
-      resumeSessionsCache = preloadedSessions
-      resumeSessionsCacheComplete = Boolean(opts.continueLatest)
+      resumeCache.replace(preloadedSessions, Boolean(opts.continueLatest))
     } catch {}
-  }
-
-  function loadResumeSessionPreview(): Promise<SessionMeta[]> {
-    // A non-empty bounded cache is immediately useful. An empty cache is only
-    // authoritative when a full listing completed; otherwise it means “not
-    // loaded yet” and the prefix must still trigger a native lookup.
-    if (
-      resumeSessionsCache !== null
-      && (resumeSessionsCacheComplete || resumeSessionsCache.length > 0)
-    ) {
-      return Promise.resolve(resumeSessionsCache.slice(0, 20))
-    }
-    if (resumeSessionsPreviewLoad) return resumeSessionsPreviewLoad
-
-    const cacheGeneration = resumeSessionsCacheGeneration
-    const load = agent.listSessions(20).then(sessions => {
-      if (cacheGeneration !== resumeSessionsCacheGeneration) {
-        return (resumeSessionsCache ?? []).slice(0, 20)
-      }
-      // A full-list request may have completed while this bounded request was
-      // in flight. Never replace that complete cache with only 20 rows.
-      if (!resumeSessionsCacheComplete) {
-        resumeSessionsCache = sessions
-        preloadedSessions = sessions
-        return sessions
-      }
-      return (resumeSessionsCache ?? sessions).slice(0, 20)
-    })
-    resumeSessionsPreviewLoad = load
-    void load.finally(() => {
-      if (resumeSessionsPreviewLoad === load) resumeSessionsPreviewLoad = null
-    }).catch(() => {})
-    return load
-  }
-
-  function loadResumeSessions(): Promise<SessionMeta[]> {
-    if (resumeSessionsCacheComplete && resumeSessionsCache !== null) {
-      return Promise.resolve(resumeSessionsCache)
-    }
-    if (resumeSessionsLoad) return resumeSessionsLoad
-
-    const cacheGeneration = resumeSessionsCacheGeneration
-    const load = agent.listSessions(0).then(sessions => {
-      if (cacheGeneration !== resumeSessionsCacheGeneration) {
-        return resumeSessionsCache ?? []
-      }
-      resumeSessionsCache = sessions
-      resumeSessionsCacheComplete = true
-      preloadedSessions = sessions
-      return sessions
-    })
-    resumeSessionsLoad = load
-    void load.finally(() => {
-      if (resumeSessionsLoad === load) resumeSessionsLoad = null
-    }).catch(() => {})
-    return load
-  }
-
-  function loadResumeSessionsWithText(): Promise<SessionWithText[]> {
-    if (resumeSessionsWithTextCache !== null) return Promise.resolve(resumeSessionsWithTextCache)
-    if (resumeSessionsWithTextLoad) return resumeSessionsWithTextLoad
-
-    const cacheGeneration = resumeSessionsCacheGeneration
-    const load = agent.listSessionsWithText(0).then(sessions => {
-      if (cacheGeneration !== resumeSessionsCacheGeneration) {
-        return resumeSessionsWithTextCache ?? []
-      }
-      resumeSessionsWithTextCache = sessions
-      resumeSessionsCache = sessions
-      resumeSessionsCacheComplete = true
-      preloadedSessions = sessions
-      return sessions
-    })
-    resumeSessionsWithTextLoad = load
-    void load.finally(() => {
-      if (resumeSessionsWithTextLoad === load) resumeSessionsWithTextLoad = null
-    }).catch(() => {})
-    return load
-  }
-
-  function replaceResumeSessionCache(sessions: SessionMeta[], complete = false): void {
-    resumeSessionsCacheGeneration++
-    resumeSessionsCache = sessions
-    resumeSessionsCacheComplete = complete
-    resumeSessionsPreviewLoad = null
-    resumeSessionsWithTextCache = null
-    resumeSessionsLoad = null
-    resumeSessionsWithTextLoad = null
   }
 
   /** Drop snapshots after a run changes session visibility, title, or recency. */
   function invalidateResumeSessionCache(): void {
-    resumeSessionsCacheGeneration++
-    resumeSessionsCache = null
-    resumeSessionsCacheComplete = false
-    resumeSessionsPreviewLoad = null
-    resumeSessionsLoad = null
-    resumeSessionsWithTextCache = null
-    resumeSessionsWithTextLoad = null
+    resumeCache.invalidate()
     enrichedResumeMetadataGeneration = null
     enrichedResumeTextGeneration = null
     cancelSearchTextWarm()
@@ -1272,38 +1082,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   renderer.requestRender()
 
   function getPromptVM(): PromptVMInput {
-    return {
-      lines: editor.lines,
-      cursorLine: editor.cursorLine,
-      cursorCol: editor.cursorCol,
+    return promptFromSnapshot({
+      editor,
+      session: appState,
+      config: configInfo,
       active: overlay.kind === 'none',
       caretVisible: caretBlink.visible,
-      model: appState.model,
-      provider: providerDisplayName(
-        configInfo?.availableModels.find(
-          m => m.model === appState.model && m.provider === (configInfo?.provider ?? ''))
-          ?? configInfo?.availableModels.find(m => m.model === appState.model),
-        configInfo?.provider ?? '',
-      ),
       planning,
       logMode: logMode !== null,
       dashboardUrl: serverState?.address ?? null,
       exitHint,
-      completion: editor.completion,
-      ghostHint: editor.ghostHint,
       columns: renderer.termCols,
       rows: renderer.termRows,
-      placeholder: isEditorEmpty(editor),
-      cwd: appState.cwd,
       gitBranch: gitInfo.getBranch(),
-      // Footer shows session state only (context/model/thinking). Per-call
-      // token usage renders on the spinner; session totals belong to logs.
-      contextTokens: appState.sessionTokens.contextTokens,
-      contextWindow: appState.sessionTokens.contextWindow,
       backgroundProcessCount: backgroundTerminals.runningCount(),
-      backgroundPanelDownAvailable: backgroundTerminals.hintVisible(isEditorEmpty(editor)),
-      thinkingLevel: configInfo?.thinkingLevel ?? '',
-    }
+    })
   }
 
   // Release notes (shown once after update)
@@ -1333,6 +1126,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
   // Catch edits made by other sessions without filesystem work in buildFrame.
   const bannerRefreshTimer = setInterval(refreshBannerData, 15_000)
+  resources.add(() => clearInterval(bannerRefreshTimer))
   bannerRefreshTimer.unref?.()
 
   function currentBannerText(): string {
@@ -1483,7 +1277,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           : manualCompactionPhase === 'local'
             ? 'compact_local'
             : 'compact'
-      const spinnerForDisplay = compactionTask
+      const spinnerForDisplay = manualCompaction.active
         ? { ...spinnerState, toolName: compactToolName }
         : spinnerState
       const spinnerText = formatSpinnerLine(
@@ -1491,7 +1285,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         Date.now(),
         // Manual compaction and local commands report no per-call usage of their
         // own; showing the previous run's tokens would misattribute them.
-        compactionTask || foregroundCommand
+        manualCompaction.active || foregroundCommand
           ? undefined
           : spinnerStatsFromLastUsage(
               appState.currentRunStats.lastLlmUsage,
@@ -1539,20 +1333,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // until its rotation deadline instead of repainting at animation cadence.
     const adSlotNow = Date.now()
     const adSlotTick = tickAdSlot(adSlot, adSlotNow)
-    if (adSlotTimer !== undefined) clearTimeout(adSlotTimer)
-    adSlotTimer = undefined
-    const adSlotDelay = nextAdSlotRenderDelay(adSlot, adSlotTick, adSlotNow,
+    adSlotWakeup.replace(nextAdSlotRenderDelay(adSlot, adSlotTick, adSlotNow,
       overlay.kind === 'none' && !isLoading && !spinnerBlock
-      && !commandWindowIsMounted && renderer.termCols >= 30)
-    if (adSlotDelay !== null) {
-      adSlotTimer = setTimeout(() => {
-        adSlotTimer = undefined
-        renderer.requestRender()
-      }, adSlotDelay)
-      adSlotTimer.unref?.()
-    }
+      && !commandWindowIsMounted && renderer.termCols >= 30))
     const preEditorBlocks: ViewBlock[] = []
-    const queueManagerOpen = overlay.kind === 'selector' && overlay.state.title === 'Prompt queue'
+    const queueManagerOpen = overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.queue
     const queueLines = queueManagerOpen
       ? []
       : formatQueuedMessageLines([
@@ -1572,33 +1357,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // because it wants to be seen: "restart when convenient". Downloading
     // and manual-only-available are dim background noise. Failures stay
     // silent; the manual /update reports them with full context.
-    let updateNotice: ViewBlock['lines'][number]['spans'] | null = null
-    if (overlay.kind === 'none' && !commandWindowIsMounted) {
-      if (updateStatus === 'staged' && updateVersion) {
-        updateNotice = [
-          { text: '✔ ', hex: getTheme().brandHex },
-          { text: `Update installed v${updateVersion}`, hex: getTheme().brandHex },
-          { text: ' · /restart to apply', dim: true },
-        ]
-      } else if (updateStatus === 'downloading' && updateVersion) {
-        updateNotice = [{ text: `⬇ Auto-updating to v${updateVersion}…`, dim: true }]
-      } else if (updateStatus === 'idle' && updateAvailable && !spinnerBlock) {
-        updateNotice = [
-          { text: `↑ evot v${updateAvailable.version} available`, dim: true },
-          { text: ' — run /update', dim: true },
-        ]
-      }
-    }
+    let updateNotice = updateNoticeSpans({
+      status: updateStatus,
+      version: updateVersion,
+      availableVersion: updateAvailable?.version ?? null,
+      visible: overlay.kind === 'none' && !commandWindowIsMounted,
+      busy: spinnerBlock !== null,
+    })
     if (spinnerBlock && updateNotice) {
-      const last = spinnerBlock.lines.length - 1
-      const left = spinnerBlock.lines[last]?.spans ?? []
-      spinnerBlock = {
-        ...spinnerBlock,
-        lines: [
-          ...spinnerBlock.lines.slice(0, last),
-          { spans: joinLeftRight(left, updateNotice, renderer.termCols) },
-        ],
-      }
+      spinnerBlock = attachUpdateNotice(spinnerBlock, updateNotice, renderer.termCols)
       updateNotice = null
     }
     if (spinnerBlock) preEditorBlocks.push(spinnerBlock)
@@ -1608,91 +1375,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       preEditorBlocks.push(...buildAdSlotBlocks(adSlot, adSlotTick, renderer.termCols, adSlotNow))
     }
     if (updateNotice) {
-      const pad = Math.max(0, renderer.termCols - spansWidth(updateNotice))
-      preEditorBlocks.push({
-        lines: [{ spans: [{ text: ' '.repeat(pad) }, ...updateNotice] }],
-        // Sit on the frame: no blank row between this and the composer.
-        // Keep a blank above only when nothing else already occupies the slot.
-        marginTop: preEditorBlocks.length > 0 ? 0 : 1,
-      })
+      preEditorBlocks.push(standaloneUpdateNotice(updateNotice, renderer.termCols, preEditorBlocks.length > 0))
     }
 
-    // A promoted command window keeps the exact preview geometry: selector
-    // above, composer below. Focus only changes active styling/cursor ownership,
-    // so the first arrow never shrinks the frame or makes the terminal erase
-    // and re-anchor the composer before the list can respond.
-    if (
-      overlay.kind === 'selector'
-      && focusedCommandWindowGeneration !== null
-      && isStableCommandSelector(overlay.state)
-    ) {
-      const preEditorLines = blocksToLines(preEditorBlocks)
-      const selectorLines = commandSelectorRegionLines(overlay.state, true)
-      const promptLines = blocksToLines(buildPromptBlocks(getPromptVM(), {
-        attachedAbove: true,
-        reservedAboveRows: preEditorLines.length + selectorLines.length,
-      }))
-      return {
-        lines: [...contentLines, ...preEditorLines, ...selectorLines, ...promptLines],
-        bottomAnchor: true,
-        bottomAnchorStart: contentLines.length,
-        transientRows: selectorLines.length,
-        stableViewport: true,
-      }
-    }
-
-    // Other selectors replace only pi's editorContainer. Their preceding
-    // queue/status siblings and following footer sibling remain in normal flow.
-    if (overlay.kind === 'selector') {
-      const selectorLines = buildSelectorRegionLines(overlay.state, renderer.termCols, renderer.termRows)
-      return {
-        lines: [
-          ...contentLines,
-          ...blocksToLines(preEditorBlocks),
-          ...selectorLines,
-          ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
-        ],
-        bottomAnchor: true,
-        bottomAnchorStart: contentLines.length,
-        transientRows: selectorLines.length,
-      }
-    }
-
-    if (overlay.kind === 'ask-user') {
-      const askLines = buildAskRegionLines(overlay.state, renderer.termCols)
-      return {
-        lines: [
-          ...contentLines,
-          ...blocksToLines(preEditorBlocks),
-          ...askLines,
-          ...blocksToLines(buildPromptFooterBlocks(getPromptVM())),
-        ],
-        bottomAnchor: true,
-        bottomAnchorStart: contentLines.length,
-        transientRows: askLines.length,
-      }
-    }
-
-    const modalLines = blocksToLines(buildOverlayBlocks(overlay, renderer.termCols))
-    const previewLines = commandWindowPreview
-      ? commandWindowPreview.kind === 'selector'
-        ? commandSelectorRegionLines(commandWindowPreview.state, false)
-        : blocksToLines(buildOverlayBlocks({ kind: 'help' }, renderer.termCols))
-      : []
-    const preEditorLines = blocksToLines(preEditorBlocks)
-    const promptLines = blocksToLines(buildPromptBlocks(getPromptVM(), {
-      attachedAbove: preEditorLines.length > 0 || previewLines.length > 0,
-      reservedAboveRows: preEditorLines.length + previewLines.length,
-    }))
-
-    return {
-      lines: [...contentLines, ...preEditorLines, ...previewLines, ...promptLines],
-      bottomAnchor: true,
-      bottomAnchorStart: contentLines.length,
-      transientRows: previewLines.length,
-      ...(commandWindowPreview?.kind === 'selector' ? { stableViewport: true } : {}),
-      ...(modalLines.length > 0 ? { overlay: { lines: modalLines } } : {}),
-    }
+    return buildShellFrame({
+      contentLines,
+      preEditorBlocks,
+      prompt: getPromptVM(),
+      overlay,
+      commandFocused: focusedCommandWindowGeneration !== null,
+      preview: commandWindowPreview,
+    })
   }
 
   renderer.setRenderCallback(buildFrame)
@@ -1811,7 +1504,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     titleFrame = 0
     spinnerTimer = setInterval(() => {
       spinnerState = advanceSpinner(spinnerState)
-      if (compactionTask) manualCompactionPhase = compactionTask.phase
+      if (manualCompaction.active) manualCompactionPhase = manualCompaction.phase
       if (streamMachine) {
         streamMachine = { ...streamMachine, spinnerState }
       }
@@ -1839,22 +1532,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   async function resumeSession(session: SessionMeta) {
     try {
-      const transcript = await agent.loadResumeTranscript(session.session_id)
-      // Fields may be missing when the caller passes a partial SessionMeta
-      // (e.g. the resume selector only knows the id); fetch the full record.
-      let model = session.model
-      let provider = session.provider
-      let thinkingLevel = session.thinking_level
-      let sessionCwd = session.cwd
-      if (!model || !provider || thinkingLevel === undefined || !sessionCwd) {
-        const full = await agent.findSession(session.session_id)
-        if (full) {
-          if (!model) model = full.model
-          if (!provider) provider = full.provider
-          if (thinkingLevel === undefined) thinkingLevel = full.thinking_level
-          if (!sessionCwd) sessionCwd = full.cwd
-        }
-      }
+      const { transcript, model, provider, thinkingLevel, cwd: sessionCwd } = await prepareResume(agent, session)
 
       // Restore model selection from current config, then the session's
       // recorded thinking level (session wins over the config default).
@@ -1930,60 +1608,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (hidden > 0) restoreLines([resumeElidedLine(hidden)])
     restoreLines(messagesToOutputLines(shown))
 
-    const method = outcome.method === 'remote'
-      ? 'remote'
-      : outcome.method === 'remote_failed_local'
-        ? 'remote_failed_local'
-        : 'local'
-    const details = formatCompactionCompleted({
-      reason: 'manual',
-      context_window: outcome.context_window,
-      result: {
-        type: 'compacted',
-        before_message_count: outcome.messages_before,
-        after_message_count: outcome.messages_after,
-        before_tokens: outcome.tokens_before,
-        after_tokens: outcome.tokens_after,
-        messages_evicted: outcome.messages_evicted,
-        current_run_reclaimed: outcome.current_run_reclaimed,
-        compaction_level: outcome.compaction_level,
-        method,
-        remote_blob_bytes: outcome.remote_blob_bytes,
-        fallback_reason: outcome.fallback_reason,
-      },
-    })
-    const detailLines = details.split('\n')
-    const headline = detailLines[0]?.replace(/^\[COMPACT\] ✓ · /, '') ?? 'manual'
-    const label = { id: 'sys-compact-label', kind: 'system' as const, text: '  [compaction]' }
-    const status = {
-      id: 'sys-compact-result',
-      kind: 'system' as const,
-      text: `  Compacted · ${headline} (ctrl+o to expand)`,
-    }
-    compactLines.push(label, status)
-    expandedLines.push(
-      label,
-      { ...status, text: `  ${details}` },
-      ...buildAssistantLines(outcome.summary),
-    )
-    if (outcome.used_fallback) {
-      const fallback = {
-        id: 'sys-compact-fallback',
-        kind: 'system' as const,
-        text: '  Note: the LLM summary was unavailable; a deterministic fallback summary was used.',
-      }
-      compactLines.push(fallback)
-      expandedLines.push(fallback)
-    }
-    if (outcome.context_window > 0 && outcome.tokens_after >= outcome.context_window) {
-      const warning = {
-        id: 'sys-compact-warning',
-        kind: 'error' as const,
-        text: `Context is still ${outcome.tokens_after.toLocaleString()} tokens, above this model's ${outcome.context_window.toLocaleString()}-token window. Switch to a larger-context model or start a new session.`,
-      }
-      compactLines.push(warning)
-      expandedLines.push(warning)
-    }
+    const lines = manualCompactionLines(outcome)
+    compactLines.push(...lines.compact)
+    expandedLines.push(...lines.expanded)
     renderer.requestRender()
   }
 
@@ -2005,22 +1632,27 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     isLoading = true
     spinnerState = setSpinnerPhase(createSpinnerState(), 'executing', 'compact')
     startSpinner()
-    compactionTask = agent.compact(sessionId, customInstructions || undefined)
-    manualCompactionPhase = compactionTask.phase
-    renderer.requestRender()
+    const targetSession = sessionId
     try {
-      const outcome = await compactionTask.result()
-      if (outcome.status === 'compacted') {
-        await rebuildAfterManualCompaction(outcome)
-      } else if (outcome.status === 'cancelled') {
-        commitSystem('sys-compact-cancelled', '  Compaction cancelled.')
-      } else {
-        commitSystem('sys-compact-empty', '  Nothing to compact.')
-      }
+      await manualCompaction.run(
+        () => agent.compact(targetSession, customInstructions || undefined),
+        () => {
+          manualCompactionPhase = manualCompaction.phase
+          renderer.requestRender()
+        },
+        async outcome => {
+          if (outcome.status === 'compacted') {
+            await rebuildAfterManualCompaction(outcome)
+          } else if (outcome.status === 'cancelled') {
+            commitSystem('sys-compact-cancelled', '  Compaction cancelled.')
+          } else {
+            commitSystem('sys-compact-empty', '  Nothing to compact.')
+          }
+        },
+      )
     } catch (err) {
       commitSystem('sys-compact-err', `Compact failed: ${errorText(err)}`, 'error')
     } finally {
-      compactionTask = null
       manualCompactionPhase = null
       isLoading = false
       stopSpinner()
@@ -2081,13 +1713,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     updatePanel: state => {
       // Only ever touch the overlay while the panel owns it: an async stop
       // landing after the user moved on must not close a different overlay.
-      if (overlay.kind !== 'selector' || !isBackgroundPanelTitle(overlay.state.title)) return
+      if (overlay.kind !== 'selector' || !isBackgroundSelector(overlay.state)) return
       overlay = state ? { kind: 'selector', state } : { kind: 'none' }
       renderer.requestRender()
     },
-    panelOpen: () => overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title),
+    panelOpen: () => overlay.kind === 'selector' && isBackgroundSelector(overlay.state),
     panelState: () =>
-      overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title) ? overlay.state : null,
+      overlay.kind === 'selector' && isBackgroundSelector(overlay.state) ? overlay.state : null,
     // A run drains the notification queue itself between turns, so waking is
     // only for the idle case.
     runInFlight: () => isLoading,
@@ -2103,6 +1735,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       void runQuery('')
     },
   })
+
+  backgroundCleanup.add(() => backgroundTerminals.killAllNow())
 
   function refreshBackgroundProcesses(): void {
     backgroundTerminals.refresh()
@@ -2128,6 +1762,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     renderer.requestRender()
   }, SPINNER_INTERVAL_MS)
   ;(backgroundWaitTimer as unknown as { unref?: () => void }).unref?.()
+  resources.add(() => clearInterval(backgroundWaitTimer))
 
   /** Insert pasted text, collapsing large pastes into refs. */
   function insertPaste(raw: string) {
@@ -2241,6 +1876,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
 
+        if (isHostToolEvent(event)) {
+          const response = await dispatchHostToolCall(event.payload, collectAskUserAnswers)
+          if (ownsRun(generation)) await stream.respondHostTool(JSON.stringify(response))
+          continue
+        }
+
         if (event.kind === 'run_started') {
           sessionHook.startSession(event.session_id, agent.cwd)
           sessionHook.runStarted(event.run_id)
@@ -2248,27 +1889,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           sessionHook.runFinished(event.run_id)
         } else if (event.kind === 'error') {
           sessionHook.runFailed(event.run_id, String(event.payload?.message ?? ''))
-        }
-
-        if (event.kind === 'host_tool_call') {
-          // The engine delegated a host-owned tool (ask_user). Dispatch it and
-          // send a response even when execution fails so the run cannot hang.
-          const call = (event.payload ?? {}) as {
-            tool_name?: string
-            tool_call_id?: string
-            arguments?: Record<string, unknown>
-          }
-          if (call.tool_name && call.tool_call_id) {
-            const response = await dispatchHostToolCall({
-              tool_name: call.tool_name,
-              tool_call_id: call.tool_call_id,
-              arguments: call.arguments ?? {},
-            }, collectAskUserAnswers)
-            if (ownsRun(generation)) {
-              await stream.respondHostTool(JSON.stringify(response))
-            }
-          }
-          continue
         }
 
         const update = reduceRunEvent(streamMachine!, event, {
@@ -2398,7 +2018,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // though only two choice rows changed. Let the renderer diff those rows.
     const commandSelectorNavigation = overlay.kind === 'selector'
       && focusedCommandWindowGeneration !== null
-      && isStableCommandSelector(overlay.state)
+      && isCommandSelector(overlay.state)
       && (event.type === 'up' || event.type === 'down' || event.type === 'tab' || event.type === 'shift-tab')
     // While the composer owns a mounted command window, ordinary text edits
     // should likewise remain differential. Invalidating from the live-region
@@ -2424,7 +2044,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
     }
     if (isQueueManageShortcut(event)) {
-      if (overlay.kind === 'selector' && overlay.state.title === 'Prompt queue') {
+      if (overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.queue) {
         overlay = { kind: 'none' }
         renderer.requestRender()
       } else if (streamRef && queuedUserMessages.length > 0) {
@@ -2440,7 +2060,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // The panel claims its own gestures (enter / x / X / esc) before the
     // generic selector handling, which would otherwise treat them as filter
     // input or a plain selection.
-    if (overlay.kind === 'selector' && isBackgroundPanelTitle(overlay.state.title)) {
+    if (overlay.kind === 'selector' && isBackgroundSelector(overlay.state)) {
       if (backgroundTerminals.handlePanelKey(event)) return
     }
 
@@ -2453,7 +2073,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       exitHint,
       logMode: logMode !== null,
       hasQueuedPrompt: queuedUserMessages.length > 0,
-      isCompacting: compactionTask !== null,
+      isCompacting: manualCompaction.active,
       canReclaimTurn: backgroundTerminals.canReclaimTurn(),
     })
 
@@ -2486,8 +2106,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         return true
       }
       case 'interrupt':
-        if (compactionTask) {
-          compactionTask.abort()
+        if (manualCompaction.active) {
+          manualCompaction.abort()
           return true
         }
         interruptStream('sys-int', '  Interrupted.')
@@ -2532,7 +2152,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // path remains stable; only this explicit close is allowed to shrink.
         const closesCommandWindow = focusedCommandWindowGeneration !== null
           && overlay.kind === 'selector'
-          && isStableCommandSelector(overlay.state)
+          && isCommandSelector(overlay.state)
         if (overlay.kind === 'ask-user') resolvePendingAsk()
         invalidateExplicitResumeSelector()
         overlay = { kind: 'none' }
@@ -2617,36 +2237,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     sessionHook.settleRun()
   }
 
-  function queueEntryText(entry: QueuedPrompt): string {
-    const message = entry.message as { role?: string; content?: Array<{ type?: string; text?: string }> }
-    const text = message.content
-      ?.filter(content => content.type === 'text' && typeof content.text === 'string')
-      .map(content => content.text)
-      .join('\n')
-      .trim()
-    return text || '(non-text prompt)'
-  }
-
   function managedQueueEntries(): ManagedQueuedPrompt[] {
     if (!streamRef) return []
-    const visible = new Map(queuedUserMessages.map(message => [message.id, message.text]))
-    try {
-      const collect = (queue: 'steering' | 'follow_up') => streamRef!
-        .queuedPrompts(queue)
-        .map(entry => ({
-          queue,
-          id: entry.id,
-          version: entry.version,
-          text: visible.get(entry.id) ?? queueEntryText(entry),
-        }))
-      return [...collect('steering'), ...collect('follow_up')]
-    } catch {
-      return []
-    }
+    return visibleQueueEntries(readPromptQueues(streamRef), queuedUserMessages)
   }
 
   function openQueueSelector() {
-    const entries = managedQueueEntries()
+    let entries: ManagedQueuedPrompt[]
+    try {
+      entries = managedQueueEntries()
+    } catch (err) {
+      commitSystem('sys-queue-err', `  Queue read failed: ${errorText(err)}`, 'error')
+      renderer.requestRender()
+      return
+    }
     if (entries.length === 0) {
       overlay = { kind: 'none' }
       commitSystem('sys-queue-empty', '  No queued prompts.')
@@ -2691,9 +2295,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       finishQueueEdit()
       commitSystem('sys-queue-edit-save', '  Queued prompt updated.')
     } catch (err) {
-      const current = managedQueueEntries().find(candidate => candidate.id === entry.id)
-      if (current) editingQueuedPrompt = { ...current, text }
-      else finishQueueEdit()
+      try {
+        const current = managedQueueEntries().find(candidate => candidate.id === entry.id)
+        if (current) editingQueuedPrompt = { ...current, text }
+        else finishQueueEdit()
+      } catch {
+        // Failed refresh is not proof the entry was consumed. Retain the edit
+        // and its draft so the user can retry or explicitly discard it.
+      }
       commitSystem('sys-queue-err', chalk.red(`  Queue edit failed: ${errorText(err)}`))
       renderer.requestRender()
     }
@@ -2749,19 +2358,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       ? getExpandedText(imageResult.resolvedIds)
       : getExpandedText()
 
-    const trimmed = (expandedText || '').trim()
-    // A slash command may be typed with images attached; probe the visible
-    // draft too so "/compact" plus an image ref is still treated as a command.
-    const commandProbe = trimmed || displayText.trim()
-    if (compactionTask) {
-      if (commandProbe && isSlashCommand(commandProbe)) {
+    const action = busySubmissionAction({
+      displayText, expandedText, hasImages: imageBlocks !== null,
+      compacting: manualCompaction.active, editingQueue: editingQueuedPrompt !== null,
+      hasRun: streamRef !== null,
+    })
+    if (manualCompaction.active) {
+      if (action === 'blocked_compaction_command') {
         // Not silently swallowed: commands cannot run mid-compaction and are
         // not queueable prompts. Keep the draft in the editor for later.
         commitSystem('sys-compact-cmd', "  Commands don't run during compaction. Press Esc to cancel it, or wait for it to finish.")
         renderer.requestRender()
         return
       }
-      if (trimmed || imageBlocks) {
+      if (action === 'queue_compaction') {
         const queuedDisplay = displayText || '(image prompt)'
         queuedCompactionSubmissions.push({
           displayText: queuedDisplay,
@@ -2776,11 +2386,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       return
     }
-    if (editingQueuedPrompt) {
+    if (action === 'edit_queue') {
       saveQueueEdit(expandedText)
       return
     }
-    if (trimmed === '/log') {
+    if (action === 'show_log') {
       clearAll()
       const logPath = screenLog.filePath
       if (logPath) {
@@ -2795,13 +2405,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Slash commands are not model input: queueing one as follow-up text
     // would send "/compact" to the LLM as conversation. Keep the draft in the
     // editor and tell the user instead.
-    if (commandProbe && isSlashCommand(commandProbe) && streamRef) {
+    if (action === 'blocked_run_command') {
       commitSystem('sys-cmd-busy', "  Commands don't queue while a response is running. Press Esc to interrupt, or wait for the turn to finish.")
       renderer.requestRender()
       return
     }
 
-    if ((expandedText || imageBlocks) && streamRef) {
+    if (action === 'steer' && streamRef) {
       if (imageBlocks) {
         const contentJson = JSON.stringify(imageBlocks)
         const queued = streamRef.steer('', contentJson)
@@ -2833,22 +2443,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   /** Commit queued prompts that are no longer present in either native queue. */
   function reconcileQueuedUserMessages() {
     if (queuedUserMessages.length === 0 || !streamRef) return
-    let remainingIds: Set<string>
+    let reconciliation: ReturnType<typeof reconcilePromptQueue>
     try {
-      remainingIds = new Set([
-        ...streamRef.queuedPrompts('steering'),
-        ...streamRef.queuedPrompts('follow_up'),
-      ].map(entry => entry.id))
+      reconciliation = reconcilePromptQueue(readPromptQueues(streamRef), queuedUserMessages)
     } catch {
       return
     }
-    const remaining: QueuedUserMessage[] = []
-    for (const message of queuedUserMessages) {
-      if (remainingIds.has(message.id)) remaining.push(message)
-      else commitLines(buildUserMessage(message.text))
-    }
+    const { ids: remainingIds, remaining, consumed } = reconciliation
+    for (const message of consumed) commitLines(buildUserMessage(message.text))
     queuedUserMessages = remaining
-    if (remaining.length === 0 && overlay.kind === 'selector' && overlay.state.title === 'Prompt queue') {
+    if (remaining.length === 0 && overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.queue) {
       overlay = { kind: 'none' }
     }
     if (editingQueuedPrompt && !remainingIds.has(editingQueuedPrompt.id)) {
@@ -2858,31 +2462,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function refreshFileCompletions(acceptSingle: boolean): void {
-    const lineIndex = editor.cursorLine
-    const cursorCol = editor.cursorCol
-    const beforeCursor = editor.lines[lineIndex]!.slice(0, cursorCol)
-    const prefix = extractAtPrefix(beforeCursor)
-    if (!prefix) return
-
-    fdAbort?.abort()
-    const controller = new AbortController()
-    fdAbort = controller
-    completeAtFile(beforeCursor, appState.cwd, controller.signal).then(result => {
-      if (controller.signal.aborted) return
-      const currentBefore = editor.lines[lineIndex]?.slice(0, cursorCol)
-      if (editor.cursorLine !== lineIndex || editor.cursorCol !== cursorCol || currentBefore !== beforeCursor) return
-      if (!result) {
-        editor = closeCompletion(editor)
-      } else {
-        const items = result.items.map(item => ({
-          label: item.label,
-          value: item.value + (item.isDirectory ? '' : ' '),
-        }))
-        editor = showCompletions(editor, items, result.prefixStart, cursorCol, result.note)
-        if (acceptSingle && items.length === 1) editor = acceptCompletion(editor)
-      }
+    const beforeCursor = editor.lines[editor.cursorLine]?.slice(0, editor.cursorCol) ?? ''
+    if (!extractAtPrefix(beforeCursor)) return
+    void fileCompletion.refresh(editor, appState.cwd, acceptSingle, () => editor, next => {
+      editor = next
       renderer.requestRender()
-    }).catch(() => {})
+    })
   }
 
   function deleteAtCursor() {
@@ -3206,12 +2791,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     let result
     try {
       result = handleSlashCommand(text, {
-      agent,
-      appState,
-      configInfo,
-      preloadedSessions,
-      planning,
-    })
+        agent,
+        appState,
+        configInfo,
+        planning,
+      })
     } catch (err) {
       commitSystem('sys-command-err', chalk.red(`  Command failed: ${errorText(err)}`))
       renderer.requestRender()
@@ -3220,12 +2804,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     appState = result.appState
     planning = result.planning
     if (result.overlay) overlay = result.overlay
-    if (result.clearScreen) {
-      renderer.clearScreen()
-      compactLines.length = 0
-      expandedLines.length = 0
-      resetHistoryCache()
-    }
     if (result.clearContext) {
       // Abort any in-flight streaming and clear local context view without switching sessions.
       if (isLoading && streamRef) {
@@ -3249,7 +2827,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       expandedLines.length = 0
       resetHistoryCache()
       try { preloadedSessions = await agent.listSessions(20) } catch {}
-      replaceResumeSessionCache(preloadedSessions)
+      resumeCache.replace(preloadedSessions)
     }
     if (result.newSession) {
       // Abort any in-flight streaming.
@@ -3280,7 +2858,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
     if (result.exit) { exitAfterCleanup(0); return }
     if (result.restart) { restartAfterCleanup(); return }
-    if (result.resumeSession) await resumeSession(result.resumeSession)
     if (result.systemLines.length > 0) commitSystemLines(result.systemLines)
 
     // Handle async commands that the simple handleSlashCommand can't do
@@ -3426,7 +3003,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const query = normalizeResumeQuery(args)
       try {
         if (query && isSessionIdPrefix(query)) {
-          const allSessions = await loadResumeSessions()
+          const allSessions = await resumeCache.all()
           const resolved = resolveSessionByPrefix(allSessions, query)
           if (resolved.kind === 'matched') {
             await resumeSession(resolved.session)
@@ -3455,67 +3032,48 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
    * sessions. Falls back to the literal-filter selector on failure.
    */
   function cloudCampaigns(notices = authNotices()) {
-    return notices.map(n => ({
-      id: n.id,
-      kind: n.kind,
-      priority: n.priority,
-      title: n.title,
-      body: n.body_md ?? '',
-    }))
+    return campaignContent(notices)
   }
 
   /** Re-read the synced catalog: refresh model config and the ad/notice slot.
    *  Called after login, by the live-sync poller, and on demand. */
   function reloadCloudContent(fresh = cloudCampaigns()): void {
-    const previous = [...adSlot.notices, ...adSlot.ads]
-    const previousById = new Map(previous.map(campaign => [campaign.id, campaign]))
-    // Refresh campaigns in place — runtime slot state (whether the slot has
-    // been triggered, and where rotation is) must survive a content refresh.
-    const keep = {
-      seenNoticeIds: adSlot.seenNoticeIds,
-      triggered: adSlot.triggered,
-      currentId: adSlot.currentId,
-      shownAt: adSlot.shownAt,
-      rotationDueAt: adSlot.rotationDueAt,
-      queuedId: adSlot.queuedId,
-      shownFingerprints: adSlot.shownFingerprints,
-    }
-    // Re-read, not cached: a mid-session login can grant a premium model.
-    const premium = hasPremiumModel(configInfo)
-    Object.assign(
-      adSlot,
-      createAdSlotState(fresh, { premium, shownFingerprints: adSlot.shownFingerprints }),
-      keep,
-    )
-    const showing = [...adSlot.notices, ...adSlot.ads].find(campaign => campaign.id === adSlot.currentId)
-    if (adSlot.currentId && !showing) {
-      adSlot.currentId = null
-      adSlot.queuedId = null
-    } else if (showing) {
-      const before = previousById.get(showing.id)
-      if (before && campaignFingerprint(before) !== campaignFingerprint(showing)) {
-        // Same campaign, new copy — retype so the updated markdown appears now.
-        adSlot.shownAt = Date.now()
-        adSlot.queuedId = null
-      }
-    }
-    if (!adSlot.triggered && (adSlot.notices.length > 0 || adSlot.ads.length > 0)) {
-      triggerAdSlot(adSlot, Date.now())
-    }
+    refreshCampaigns(adSlot, fresh, hasPremiumModel(configInfo), Date.now())
     try { configInfo = agent.configInfo() } catch {}
   }
 
   // Live sync: re-fetch the cloud catalog so new notices, ads and models
   // appear in-session without a restart. Silent when nothing changed.
-  let lastSyncedAt = 0
   let inflightSync: Promise<void> | null = null
   const CLOUD_SYNC_MS = 15_000
+  const cloudSync = new CloudSync({
+    authenticated: async () => {
+      const { authWhoami } = await import('../native/index.js')
+      return Boolean(await authWhoami())
+    },
+    syncNotices: async () => {
+      const { authSyncNotices } = await import('../native/index.js')
+      return authSyncNotices()
+    },
+    syncModels: async () => {
+      const { authSyncModels } = await import('../native/index.js')
+      return authSyncModels()
+    },
+    noticesUpdated: notices => reloadCloudContent(cloudCampaigns(notices)),
+    modelsUpdated: () => {
+      authWatcher?.sync()
+      reloadCloudContent()
+    },
+  }, CLOUD_SYNC_MS)
+  resources.add(() => cloudSync.dispose())
   const syncTimer = setInterval(() => {
     void syncCloudNow()
   }, CLOUD_SYNC_MS)
   ;(syncTimer as unknown as { unref?: () => void }).unref?.()
+  resources.add(() => clearInterval(syncTimer))
   const backgroundProcessTimer = setInterval(refreshBackgroundProcesses, 500)
   ;(backgroundProcessTimer as unknown as { unref?: () => void }).unref?.()
+  resources.add(() => clearInterval(backgroundProcessTimer))
 
   /** Adopt a cloud auth change made by another evot process. */
   function adoptExternalAuthChange(): void {
@@ -3537,11 +3095,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   authWatcher = new AuthWatcher(() => adoptExternalAuthChange())
 
   async function syncCloudNow(force = false): Promise<void> {
+    if (destroyed) return
     if (inflightSync) return inflightSync
-    if (!force && Date.now() - lastSyncedAt < CLOUD_SYNC_MS) return
     inflightSync = (async () => {
-      const { authSyncModels, authSyncNotices, authWhoami } = await import('../native/index.js')
-      if (!await authWhoami()) return
       // Any server-pushed group counts, not just the free tier, so granted
       // models and split protocol groups are announced too.
       const cloudModels = () => configInfo?.availableModels.filter(isCloudModel) ?? []
@@ -3549,23 +3105,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const knownCampaignIds = new Set([...adSlot.notices, ...adSlot.ads].map(c => c.id))
       const knownFingerprints = new Set([...adSlot.notices, ...adSlot.ads].map(campaignFingerprint))
 
-      // Campaigns are public and refresh independently from the authenticated
-      // model catalog. An expired cloud token must not freeze the ad slot.
-      let noticesSynced = false
-      let modelsSynced = false
-      try {
-        const notices = await authSyncNotices()
-        noticesSynced = true
-        reloadCloudContent(cloudCampaigns(notices))
-      } catch {}
-      try {
-        await authSyncModels()
-        modelsSynced = true
-        // Absorb our own write so the watcher does not replay it.
-        authWatcher?.sync()
-        reloadCloudContent()
-      } catch {}
-      lastSyncedAt = Date.now()
+      const synced = await cloudSync.run(force)
+      if (destroyed || !synced) return
+      const { noticesSynced, modelsSynced } = synced
       if (!noticesSynced && !modelsSynced) return
 
       const addedModels = cloudModels().filter(m => !knownModelIds.has(m.model))
@@ -3604,26 +3146,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   // First pull as soon as the prompt is up, so ads/models aren't 30s stale.
-  setTimeout(() => { void syncCloudNow() }, 400).unref?.()
+  const initialSyncTimer = setTimeout(() => { void syncCloudNow() }, 400)
+  initialSyncTimer.unref?.()
+  resources.add(() => clearTimeout(initialSyncTimer))
 
   function openModelSelector(): void {
-    const models = modelOptions(configInfo, agent.model)
-    const activeSpec = currentModelSpec(configInfo, agent.model)
-    overlay = {
-      kind: 'selector',
-      state: selectorFocusOn(
-        {
-          ...createSelectorState('Models', modelSelectorItems(models, activeSpec)),
-          presentation: 'model',
-          circularNavigation: true,
-          // An explicitly opened window starts on the list, not in its search
-          // box: arrows move between models immediately and typing still moves
-          // focus to the filter. Same contract as the previewed window.
-          listFocused: true,
-        },
-        item => item.id === activeSpec,
-      ),
-    }
+    overlay = { kind: 'selector', state: createModelWindow(configInfo, agent.model, true) }
   }
 
   /** Swap the open or previewed /model list in place after a catalog refresh.
@@ -3631,7 +3159,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   function refreshOpenModelSelector(): boolean {
     const models = modelOptions(configInfo, agent.model)
     const activeSpec = currentModelSpec(configInfo, agent.model)
-    if (overlay.kind === 'selector' && overlay.state.presentation === 'model') {
+    if (overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.model) {
       overlay = {
         kind: 'selector',
         state: selectorExpandItems(overlay.state, modelSelectorItems(models, activeSpec)),
@@ -3667,7 +3195,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         if (m) ids.push(m[1]!)
       }
       if (ids.length === 0) return
-      const allSessions = await loadResumeSessions()
+      const allSessions = await resumeCache.all()
       const ranked = ids
         .map(id => allSessions.find(s => s.session_id === id))
         .filter((s): s is SessionMeta => Boolean(s))
@@ -3687,11 +3215,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function openResumeSelector(initialQuery?: string) {
     const generation = ++explicitResumeSelectorGeneration
-    const cached = resumeSessionsWithTextCache ?? resumeSessionsCache
+    const cached = resumeCache.withText ?? resumeCache.metadata
     const items = cached === null
       ? []
-      : resumeSessionsWithTextCache !== null
-        ? formatSessionWithTextItems(resumeSessionsWithTextCache, agent.cwd)
+      : resumeCache.withText !== null
+        ? formatSessionWithTextItems(resumeCache.withText, agent.cwd)
         : formatSessionItems(cached, agent.cwd)
     overlay = {
       kind: 'selector',
@@ -3704,11 +3232,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     const activeState = (): SelectorState | null => {
       if (generation !== explicitResumeSelectorGeneration) return null
-      if (overlay.kind !== 'selector' || !isResumeSelectorTitle(overlay.state.title)) return null
+      if (overlay.kind !== 'selector' || overlay.state.owner !== SELECTOR_OWNER.resume) return null
       return overlay.state
     }
 
-    loadResumeSessions().then(allSessions => {
+    resumeCache.all().then(allSessions => {
       const current = activeState()
       if (!current) return
       if (allSessions.length === 0) {
@@ -3724,7 +3252,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         state: selectorExpandItems(current, metaItems),
       }
       renderer.requestRender()
-      loadResumeSessionsWithText().then(allWithText => {
+      resumeCache.text().then(allWithText => {
         const enriched = activeState()
         if (!enriched) return
         const fullItems = formatSessionWithTextItems(allWithText, agent.cwd)
@@ -3873,6 +3401,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       for await (const event of stream) {
         if (destroyed || !ownsRun(generation)) break
         if (!streamMachine) break
+        if (isHostToolEvent(event)) throw new Error('Readonly log run requested a host tool')
 
         const update = reduceRunEvent(streamMachine, event, {
           termRows: renderer.termRows,
@@ -3929,7 +3458,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         renderer.requestRender()
         if (
           focusedCommandWindowGeneration !== null
-          && isResumeSelectorTitle(action.state.title)
+          && action.state.owner === SELECTOR_OWNER.resume
         ) {
           scheduleFocusedResumeEnrichment(
             focusedCommandWindowGeneration,
@@ -3981,17 +3510,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         agent.deleteSession(action.sessionId).then(ok => {
           if (ok) {
             preloadedSessions = preloadedSessions.filter(session => session.session_id !== action.sessionId)
-            const cached = (resumeSessionsCache ?? preloadedSessions)
-              .filter(session => session.session_id !== action.sessionId)
-            const cachedWithText = resumeSessionsWithTextCache
-              ?.filter(session => session.session_id !== action.sessionId) ?? null
-            const cacheWasComplete = resumeSessionsCacheComplete
-            replaceResumeSessionCache(cached, cacheWasComplete)
-            resumeSessionsWithTextCache = cachedWithText
+            resumeCache.remove(action.sessionId, preloadedSessions)
             commitSystem('sys-del', `  Deleted session ${action.label}`)
             // Also surface it on the overlay: resuming another session clears
             // the screen, which would otherwise wipe the only confirmation.
-            if (overlay.kind === 'selector' && isResumeSelectorTitle(overlay.state.title)) {
+            if (overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.resume) {
               overlay = {
                 kind: 'selector',
                 state: { ...overlay.state, subtitle: `Deleted ${action.label}` },
@@ -4130,14 +3653,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     destroyed = true
     queuedCompactionSubmissions = []
     unfreezeTerminalTitle()
-    compactionTask?.abort()
+    manualCompaction.abort()
     streamRef?.abort()
     stopSpinner()
-    if (adSlotTimer !== undefined) clearTimeout(adSlotTimer)
-    clearInterval(bannerRefreshTimer)
-    clearInterval(syncTimer)
-    clearInterval(backgroundProcessTimer)
-    clearInterval(backgroundWaitTimer)
+    adSlotWakeup.dispose()
+    resources.dispose()
     authWatcher?.dispose()
     authWatcher = null
     caretBlink.dispose()
@@ -4172,7 +3692,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // teardown. Background children live in their own process groups, so they
     // would survive as orphans unless signalled synchronously right here.
     // The controller absorbs its own failures: cleanup must never throw.
-    backgroundTerminals.killAllNow()
+    backgroundCleanup.dispose()
   }
 
   function restartAfterCleanup(): void {

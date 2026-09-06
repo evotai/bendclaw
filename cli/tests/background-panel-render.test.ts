@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { buildOverlayBlocks, buildSelectorRegionLines } from '../src/term/viewmodel/overlays.js'
+import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
+import { buildSelectorRegionLines } from '../src/term/viewmodel/selector.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import { createBackgroundOutputState, createBackgroundPanelState } from '../src/term/app/background-panel.js'
 import { selectorDown } from '../src/term/selector.js'

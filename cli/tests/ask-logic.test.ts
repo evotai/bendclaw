@@ -18,7 +18,8 @@ import {
   handleAskKeyEvent,
 } from '../src/term/ask.js'
 import { askStateToResponse } from '../src/term/app/ask-user.js'
-import { buildOverlayBlocks, buildAskRegionLines } from '../src/term/viewmodel/overlays.js'
+import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
+import { buildAskRegionLines } from '../src/term/viewmodel/ask.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
 import stripAnsi from 'strip-ansi'
 import chalk from 'chalk'

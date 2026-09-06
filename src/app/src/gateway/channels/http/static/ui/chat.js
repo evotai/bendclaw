@@ -2,6 +2,10 @@
  * session sidebar, assistant-step blocks (thinking/text/tools), turn tails,
  * and a workspace chip that only binds a directory for new sessions.
  */
+import { streamChat } from "./chat-transport.js";
+import { requestSteering, isQueuedCommand } from "./chat-control.js";
+import { ChatState } from "./chat-state.js";
+import { ChatStreamState } from "./chat-stream-state.js";
 import { esc, getJson, postJson, relTime, skeletonHtml, tierLabel, toast } from "./app.js";
 
 const $ = (id) => document.getElementById(id);
@@ -17,10 +21,7 @@ const commandBtn = $("commandBtn");
 const commandMenu = $("commandMenu");
 
 let currentSessionId = null;
-let streamSessionId = null;
-let streaming = false;
-let stopping = false;
-let streamController = null;
+const runtime = new ChatState();
 let directory = null;
 let followOutput = true;
 let scrollFrame = 0;
@@ -84,12 +85,12 @@ function thinkingLabel(level) {
 }
 
 function updatePrimary() {
-  if (streaming) {
+  if (runtime.streaming) {
     sendBtn.innerHTML = stopIcon;
-    sendBtn.setAttribute("aria-label", stopping ? "Stopping" : "Stop generating");
-    sendBtn.title = stopping ? "Stopping" : "Stop generating";
+    sendBtn.setAttribute("aria-label", runtime.stopping ? "Stopping" : "Stop generating");
+    sendBtn.title = runtime.stopping ? "Stopping" : "Stop generating";
     sendBtn.classList.add("stop");
-    sendBtn.disabled = stopping;
+    sendBtn.disabled = runtime.stopping;
     return;
   }
   sendBtn.innerHTML = sendIcon;
@@ -143,7 +144,7 @@ function renderThinking(preferred) {
       : levels[0];
   currentThinking = wanted;
   thinkingDisabled = false;
-  thinkingSelect.disabled = streaming;
+  thinkingSelect.disabled = runtime.streaming;
   $("thinkingLabel").textContent = thinkingLabel(wanted);
   if (picker) picker.hidden = false;
   thinkingMenu.innerHTML = levels.map((level) =>
@@ -224,7 +225,7 @@ function paintModelMenu() {
   modelMenu.querySelectorAll("[data-model]").forEach((button) => {
     button.addEventListener("click", () => chooseModel(button.dataset.provider, button.dataset.model));
   });
-  modelSelect.disabled = streaming || !groups.length;
+  modelSelect.disabled = runtime.streaming || !groups.length;
 }
 
 async function loadOptions() {
@@ -484,7 +485,7 @@ function deleteSessionFlow(button) {
 }
 
 async function deleteSession(id) {
-  if (streaming && id === currentSessionId) {
+  if (runtime.streaming && id === currentSessionId) {
     toast("Stop the running turn before deleting this session", "err");
     return;
   }
@@ -510,7 +511,7 @@ async function deleteSession(id) {
 /** Back to the empty hero: nothing selected, workspace unlocked again. */
 function returnToWelcome() {
   hideTurnStatus();
-  streamSessionId = null;
+  runtime.invalidateNavigation();
   setStats(null);
   setSession(null);
   closeContextPanel();
@@ -546,7 +547,7 @@ function bindWelcome() {
 }
 
 function newChat() {
-  if (streaming) return;
+  if (runtime.streaming) return;
   closeCommandMenu();
   closeWorkspace();
   // No draft session is created here: the session is born with the first
@@ -1557,10 +1558,12 @@ function renderTranscript(nodes) {
 }
 
 async function resumeSession(id) {
-  if (streaming) return;
+  const navigation = runtime.beginNavigation();
+  if (navigation === null) return;
   closeSearch();
   try {
     const detail = await getJson("/api/sessions/" + encodeURIComponent(id));
+    if (!runtime.ownsNavigation(navigation)) return;
     setSession(detail.session?.session_id || id, detail.session || {});
     if (!detail.nodes?.length) {
       conversation.classList.remove("hero");
@@ -1571,17 +1574,17 @@ async function resumeSession(id) {
     // Stats are folded server-side because replay drops the Stats items.
     setStats(detail.stats || null);
   } catch (error) {
+    if (!runtime.ownsNavigation(navigation)) return;
     toast(String(error.message || error), "err");
   }
-  input.focus();
+  if (runtime.ownsNavigation(navigation)) input.focus();
 }
 
 function streamState() {
   return {
     assistant: null,
-    buffers: new Map(),
+    content: new ChatStreamState(),
     renderFrame: 0,
-    aborted: false,
   };
 }
 
@@ -1589,7 +1592,7 @@ function flushStream(state) {
   if (state.renderFrame) cancelAnimationFrame(state.renderFrame);
   state.renderFrame = 0;
   if (!state.assistant) return;
-  for (const [key, buffer] of state.buffers) {
+  for (const [key, buffer] of state.content.buffers) {
     const [kind, index] = key.split(":");
     const el = blockEl(state.assistant, index, kind);
     if (kind === "thinking") paintThinking(el, buffer, true);
@@ -1606,7 +1609,7 @@ function scheduleFlush(state) {
 
 function consumeNode(state, node) {
   if (node.type === "session") {
-    streamSessionId = node.session_id;
+    runtime.bind(node.session_id);
     setSession(node.session_id, node);
     return;
   }
@@ -1629,8 +1632,10 @@ function consumeNode(state, node) {
     return;
   }
   if (node.type === "compact") {
+    flushStream(state);
     appendCompact(node);
     state.assistant = null;
+    state.content.resetAssistant();
     return;
   }
   if (node.type === "retry") {
@@ -1648,12 +1653,7 @@ function consumeNode(state, node) {
   if (!state.assistant) state.assistant = createAssistant();
   const assistant = state.assistant;
   if (node.type === "assistant" && node.status === "delta") {
-    const block = node.blocks?.[0];
-    if (!block) return;
-    const kind = block.kind === "thinking" ? "thinking" : "text";
-    const key = kind + ":" + (node.content_index ?? 0);
-    state.buffers.set(key, (state.buffers.get(key) || "") + (block.text || ""));
-    scheduleFlush(state);
+    if (state.content.delta(node)) scheduleFlush(state);
     return;
   }
   if (node.type === "assistant" && (node.status === "settled" || node.status === "interrupted")) {
@@ -1662,14 +1662,12 @@ function consumeNode(state, node) {
     // The settled node has no clock of its own on the live path; the turn
     // footer reads the arrival time so it matches the resumed transcript.
     applyTail(assistant, { ...node, time: node.time ?? Date.now() });
-    if (node.stop_reason === "aborted") state.aborted = true;
-    state.buffers.clear();
+    state.content.settle(node);
     return;
   }
   if (node.type === "assistant" && (node.status === "tail" || node.status === "run")) {
     flushStream(state);
-    if (!(state.aborted && node.status === "run")) applyTail(assistant, node);
-    if (node.stop_reason === "aborted") state.aborted = true;
+    if (state.content.acceptTail(node)) applyTail(assistant, node);
     // Every completed call reports occupancy and its own timings; fold them
     // into the session readings the composer shows.
     if (node.status === "tail") foldStats(node);
@@ -1688,46 +1686,59 @@ function consumeNode(state, node) {
 }
 
 async function stopRun() {
-  if (!streaming || stopping) return;
-  stopping = true;
+  if (!runtime.streaming || runtime.stopping) return;
+  const run = runtime.requestStop();
+  if (!run) return;
   updatePrimary();
-  const sessionId = streamSessionId || currentSessionId;
+  const sessionId = runtime.sessionId || currentSessionId;
   if (!sessionId) {
-    streamController?.abort();
+    run.controller.abort();
     return;
   }
   try {
     await postJson("/api/chat/abort", { session_id: sessionId }, { keepalive: true });
   } catch {
-    streamController?.abort();
+    run.controller.abort();
   }
 }
 
 /** Queue onto the running turn; false when no run was active. */
 async function steerRun(text) {
-  const sessionId = streamSessionId || currentSessionId;
+  const sessionId = runtime.sessionId || currentSessionId;
   if (!sessionId) return false;
+  const generation = runtime.generation;
   const bubble = appendPendingSteering(text);
-  try {
-    const result = await postJson("/api/chat/steer", { session_id: sessionId, message: text });
-    if (!result.active) {
-      // The run finished between the keystroke and this request.
-      bubble.remove();
-      return false;
+  const result = await requestSteering(postJson, sessionId, text);
+  if (result.status === "inactive") {
+    if (!runtime.canRestoreSubmission(generation, input.value)) {
+      const label = bubble.querySelector(".msg-actions .tail-meta");
+      if (label) label.textContent = "Not delivered · copy to retry";
+      bubble.dataset.pendingSteering = "abandoned";
+      return true;
     }
-    return true;
-  } catch (error) {
+    // The server explicitly confirmed that the run was no longer active.
     bubble.remove();
-    toast(String(error.message || error), "err");
-    return true;
+    return false;
   }
+  if (result.status === "uncertain") {
+    // Preserve the text and copy action. A lost HTTP response does not prove
+    // that the engine rejected it, so neither drop the draft nor auto-resend.
+    const label = bubble.querySelector(".msg-actions .tail-meta");
+    if (label && bubble.dataset.pendingSteering) label.textContent = "Delivery unconfirmed · copy to retry";
+    toast(result.error, "err");
+  }
+  return true;
 }
 
 /** Submit: steer into the running turn, or start a new one. */
 async function submitMessage() {
   const text = input.value.trim();
   if (!text) return;
-  if (streaming) {
+  if (runtime.streaming) {
+    if (isQueuedCommand(text)) {
+      toast("Commands don't queue while a response is running. Stop it or wait for the turn to finish.", "err");
+      return;
+    }
     input.value = "";
     autoResize();
     // A run that ended mid-request falls back to a normal turn with the same
@@ -1746,7 +1757,7 @@ async function sendMessage() {
   const text = input.value.trim();
   const selection = selectedModel();
   const thinkingLevel = thinkingDisabled ? null : currentThinking;
-  if (!text || streaming || !selection) return;
+  if (!text || runtime.streaming || !selection) return;
 
   closeCommandMenu();
   closeSeatMenus();
@@ -1755,9 +1766,8 @@ async function sendMessage() {
   $(".resume-note")?.remove();
   appendUser(text, Date.now());
   input.value = "";
-  streaming = true;
-  stopping = false;
-  streamSessionId = currentSessionId;
+  const run = runtime.begin(currentSessionId);
+  if (!run) return;
   modelSelect.disabled = true;
   thinkingSelect.disabled = true;
   autoResize();
@@ -1768,8 +1778,7 @@ async function sendMessage() {
   // row is created lazily by the first node that has something to show.
   showTurnStatus();
 
-  const controller = new AbortController();
-  streamController = controller;
+  const controller = run.controller;
   try {
     const payload = {
       message: text,
@@ -1779,37 +1788,15 @@ async function sendMessage() {
       thinking_level: thinkingLevel,
     };
     if (!currentSessionId && workspace.cwd) payload.cwd = workspace.cwd;
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+    await streamChat(payload, {
       signal: controller.signal,
+      onNode: (node) => { if (runtime.owns(run)) consumeNode(state, node); },
     });
-    if (!response.ok || !response.body) throw new Error("Chat request failed (" + response.status + ")");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    const consumeLine = (line) => {
-      if (!line.startsWith("data: ")) return;
-      let node;
-      try { node = JSON.parse(line.slice(6)); } catch { return; }
-      consumeNode(state, node);
-    };
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true }).replace(/\r/g, "");
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) consumeLine(line);
-    }
-    buffer += decoder.decode().replace(/\r/g, "");
-    if (buffer) consumeLine(buffer);
     flushStream(state);
   } catch (error) {
     flushStream(state);
     hideTurnStatus();
-    if (controller.signal.aborted && stopping) {
+    if (controller.signal.aborted && run.stopping) {
       // A dropped stream after Stop still owes the reader a settled footer.
       if (state.assistant) applyTail(state.assistant, { stop_reason: "aborted" });
     } else {
@@ -1822,10 +1809,7 @@ async function sendMessage() {
     // rather than leaving it reading "Queued" forever; the copy action keeps
     // the text recoverable.
     abandonPendingSteering();
-    if (streamController === controller) streamController = null;
-    streamSessionId = null;
-    streaming = false;
-    stopping = false;
+    runtime.finish(run);
     modelSelect.disabled = !selectedModel();
     renderThinking(currentThinking);
     autoResize();
@@ -2028,7 +2012,7 @@ async function refreshAuthBox() {
     if (!signedIn && !selectedModel()) {
       // An empty picker becomes the login affordance.
       $("modelLabel").textContent = "Log in to load models";
-      modelSelect.disabled = streaming;
+      modelSelect.disabled = runtime.streaming;
     }
     box.innerHTML = session.logged_in
       ? '<button type="button" class="auth-row" id="authUser" title="Account">' +
@@ -2267,7 +2251,7 @@ function positionWorkspaceMenu() {
 }
 
 function openWorkspace() {
-  if (workspace.locked || streaming) return;
+  if (workspace.locked || runtime.streaming) return;
   closeCommandMenu();
   closeSeatMenus();
   closeSearch();
@@ -2374,7 +2358,7 @@ input.addEventListener("keydown", (event) => {
   }
 });
 sendBtn.addEventListener("mousedown", (event) => event.preventDefault());
-sendBtn.addEventListener("click", () => streaming ? void stopRun() : void sendMessage());
+sendBtn.addEventListener("click", () => runtime.streaming ? void stopRun() : void sendMessage());
 modelSelect.addEventListener("mousedown", (event) => event.preventDefault());
 thinkingSelect.addEventListener("mousedown", (event) => event.preventDefault());
 modelSelect.addEventListener("click", () => {

@@ -224,6 +224,8 @@ pub struct Config {
     pub skills_dirs: Vec<PathBuf>,
     /// The env file path actually used during config loading.
     pub env_file_path: PathBuf,
+    /// Revision captured during load/save; not part of any published format.
+    pub(crate) env_revision: Option<super::env_transaction::EnvRevision>,
     /// Server-pushed thinking defaults, keyed by cloud model id.
     pub cloud_thinking_levels: HashMap<String, ThinkingLevel>,
     /// Catalog tier per cloud model id (`base` / `special`).
@@ -245,6 +247,7 @@ impl Config {
             sandbox: SandboxConfig::default(),
             skills_dirs: Vec::new(),
             env_file_path: PathBuf::new(),
+            env_revision: None,
             cloud_thinking_levels: HashMap::new(),
             cloud_model_tiers: HashMap::new(),
             cloud_model_sorts: HashMap::new(),

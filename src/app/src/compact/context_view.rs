@@ -106,7 +106,7 @@ pub fn resolve_engine_context_with_state(
                 (messages, Some(state))
             }
             TranscriptItem::Marker { messages, .. } => (
-                crate::agent::run::convert::into_agent_messages(messages),
+                crate::conversation::convert::into_agent_messages(messages),
                 None,
             ),
             _ => (Vec::new(), None),
@@ -116,7 +116,7 @@ pub fn resolve_engine_context_with_state(
     let start = last_control
         .map(|index| index.saturating_add(1))
         .unwrap_or(0);
-    messages.extend(crate::agent::run::convert::into_agent_messages(
+    messages.extend(crate::conversation::convert::into_agent_messages(
         &entries[start..]
             .iter()
             .filter(|entry| entry.item.is_context_item())

@@ -1,9 +1,9 @@
-use evot::agent::session::Session;
 use evot::compact::context_view::resolve_context_items;
 use evot::compact::orchestrator::compact_session;
 use evot::compact::orchestrator::CompactSettings;
 use evot::compact::orchestrator::ManualCompactRequest;
 use evot::conf::StorageConfig;
+use evot::sessions::Session;
 use evot::storage::open_storage;
 use evot::types::AssistantBlock;
 use evot::types::CompactReason;
@@ -120,7 +120,7 @@ async fn compact_context_view_preserves_full_generated_summary() -> TestResult {
         messages_before: 2,
         messages_after: 1,
         messages: vec![summary_item.clone()],
-        engine_messages: evot::agent::run::convert::into_agent_messages(std::slice::from_ref(
+        engine_messages: evot::conversation::convert::into_agent_messages(std::slice::from_ref(
             &summary_item,
         )),
         state: Box::default(),
@@ -176,7 +176,7 @@ async fn compact_after_clear_does_not_inherit_previous_summary() -> TestResult {
                 messages_before: 2,
                 messages_after: 1,
                 messages: vec![old_summary.clone()],
-                engine_messages: evot::agent::run::convert::into_agent_messages(
+                engine_messages: evot::conversation::convert::into_agent_messages(
                     std::slice::from_ref(&old_summary),
                 ),
                 state: Box::new(evot_engine::CompactionState {

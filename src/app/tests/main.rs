@@ -10,18 +10,30 @@ mod auth_test;
 mod auto_compact_test;
 #[path = "background_reclaim_test.rs"]
 mod background_reclaim_test;
+#[path = "bootstrap_test.rs"]
+mod bootstrap_test;
+#[path = "channel_tasks_test.rs"]
+mod channel_tasks_test;
 #[path = "command_test.rs"]
 mod command_test;
 #[path = "compact_test.rs"]
 mod compact_test;
 #[path = "conf_load_test.rs"]
 mod conf_load_test;
+#[path = "config_info_contract_test.rs"]
+mod config_info_contract_test;
+#[path = "config_transaction_test.rs"]
+mod config_transaction_test;
 #[path = "console_routes_test.rs"]
 mod console_routes_test;
+#[path = "conversation_projection_test.rs"]
+mod conversation_projection_test;
 #[path = "dashboard_search_test.rs"]
 mod dashboard_search_test;
 #[path = "delivery_test.rs"]
 mod delivery_test;
+#[path = "favorites_atomic_test.rs"]
+mod favorites_atomic_test;
 #[path = "feishu_message_test.rs"]
 mod feishu_message_test;
 #[path = "feishu_sink_test.rs"]
@@ -32,24 +44,38 @@ mod id_validation_test;
 mod manual_compact_llm_test;
 #[path = "model_metadata_test.rs"]
 mod model_metadata_test;
+#[path = "model_selection_test.rs"]
+mod model_selection_test;
 #[path = "orchestrator_compact_test.rs"]
 mod orchestrator_compact_test;
+mod process_registry_test;
 #[path = "resume_search_test.rs"]
 mod resume_search_test;
 #[path = "run_ask_channel_test.rs"]
 mod run_ask_channel_test;
+#[path = "run_manager_test.rs"]
+mod run_manager_test;
+mod run_outbox_test;
+mod run_projection_test;
 #[path = "run_queue_test.rs"]
 mod run_queue_test;
+#[path = "run_registry_test.rs"]
+mod run_registry_test;
 #[path = "schema_compat_test.rs"]
 mod schema_compat_test;
 #[path = "search_test.rs"]
 mod search_test;
 #[path = "server_protocol_test.rs"]
 mod server_protocol_test;
+#[path = "session_gates_test.rs"]
+mod session_gates_test;
 #[path = "session_locator_test.rs"]
 mod session_locator_test;
 #[path = "session_observability_test.rs"]
 mod session_observability_test;
+#[path = "session_queries_test.rs"]
+mod session_queries_test;
+mod session_service_test;
 #[path = "session_test.rs"]
 mod session_test;
 #[path = "settings_test.rs"]

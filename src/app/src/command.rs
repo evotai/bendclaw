@@ -42,6 +42,21 @@ pub fn clip_session_prompt(memory_instructions: &str) -> String {
     )
 }
 
+/// Queue guard shared by product adapters. This mirrors CLI command-shape
+/// recognition, not execution parsing: paths and a lone slash remain prompts.
+pub fn is_queued_command(text: &str) -> bool {
+    let token = text.split_whitespace().next().unwrap_or("");
+    match token.strip_prefix('/') {
+        Some(name) => {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        }
+        None => false,
+    }
+}
+
 pub fn parse_command(text: &str) -> Option<Command> {
     let trimmed = text.trim();
     let lower = trimmed.to_lowercase();

@@ -2,6 +2,27 @@ use evot::command::parse_command;
 use evot::command::Command;
 
 #[test]
+fn queue_command_shapes_match_cli_and_web_contract() -> Result<(), Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Case {
+        text: String,
+        command: bool,
+    }
+    let cases: Vec<Case> = serde_json::from_str(include_str!(
+        "../../../cli/tests/fixtures/contracts/command-shapes.json"
+    ))?;
+    for case in cases {
+        assert_eq!(
+            evot::command::is_queued_command(&case.text),
+            case.command,
+            "{}",
+            case.text
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn parse_clear() {
     assert!(matches!(parse_command("/clear"), Some(Command::Clear)));
     assert!(matches!(parse_command("/CLEAR"), Some(Command::Clear)));
@@ -114,7 +135,7 @@ async fn clip_all_persists_pre_activated_memory_workflow() -> Result<(), Box<dyn
     };
     while run.next().await.is_some() {}
 
-    let transcript = agent.load_transcript(&meta.session_id).await?;
+    let transcript = agent.sessions().transcript(&meta.session_id).await?;
     let prompt = transcript
         .iter()
         .find_map(|item| match item {

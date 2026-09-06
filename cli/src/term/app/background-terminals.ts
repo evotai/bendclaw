@@ -8,6 +8,7 @@
  * in tests without a terminal or a live agent.
  */
 
+import { SELECTOR_OWNER, isBackgroundSelector } from './selector-identity.js'
 import type { BackgroundProcess } from '../../native/index.js'
 import type { KeyEvent } from '../input.js'
 import type { SelectorState } from '../selector.js'
@@ -27,7 +28,6 @@ import {
   createBackgroundPanelState,
   decideBackgroundPanelAction,
   focusedPanelTarget,
-  isBackgroundOutputTitle,
   refreshBackgroundOutputState,
   refreshBackgroundPanelState,
   shouldDownOpenPanel,
@@ -291,7 +291,7 @@ export class BackgroundTerminals {
       if (this.deps.panelOpen()) {
         const state = this.deps.panelState()
         if (state) {
-          if (isBackgroundOutputTitle(state.title)) {
+          if (state.owner === SELECTOR_OWNER.backgroundOutput) {
             this.refreshOutputView(state, next)
           } else {
             this.deps.updatePanel(refreshBackgroundPanelState(state, next))
@@ -357,8 +357,8 @@ export class BackgroundTerminals {
    */
   handlePanelKey(event: KeyEvent): boolean {
     const state = this.deps.panelState()
-    if (!state) return false
-    if (isBackgroundOutputTitle(state.title)) {
+    if (!state || !isBackgroundSelector(state)) return false
+    if (state.owner === SELECTOR_OWNER.backgroundOutput) {
       if (event.type === 'escape') {
         const taskId = state.items[0]?.id
         const panel = createBackgroundPanelState(this.processes)

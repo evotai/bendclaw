@@ -1,0 +1,33 @@
+[
+  {
+    "kind":"llm_call_started",
+    "payload":{
+      "turn":1,"attempt":0,"injected_count":1,"model":"fixture","message_count":2,"message_bytes":128,
+      "system_prompt_tokens":10,"tool_count":1,"context_window":1000,
+      "message_stats":{"user_count":1,"assistant_count":1,"tool_result_count":0,"image_count":0,"image_path_count":0,"image_base64_count":0,"user_tokens":3,"assistant_tokens":4,"tool_result_tokens":0,"image_tokens":0,"tool_details":[["bash",5]]}
+    }
+  },
+  {
+    "kind":"llm_call_completed",
+    "payload":{
+      "turn":1,"attempt":0,"usage":{"input":10,"output":8,"cache_read":3,"cache_write":2},
+      "metrics":{"duration_ms":50,"ttfb_ms":4,"ttft_ms":5,"streaming_ms":40,"chunk_count":3},
+      "error":null,"response_model":"actual-model","tool_calls":[{"id":"call","name":"custom","arguments":false}]
+    }
+  },
+  {
+    "kind":"context_compaction_completed",
+    "payload":{
+      "reason":"overflow","summary":"short summary","will_retry":true,
+      "result":{"type":"compacted","before_message_count":10,"after_message_count":2,"before_tokens":500,"after_tokens":50,"messages_evicted":8,"current_run_reclaimed":20,"method":"remote_failed_local","remote_blob_bytes":12,"fallback_reason":"unavailable"}
+    }
+  },
+  {
+    "kind":"run_finished",
+    "payload":{"text":"answer","usage":{"input":10,"output":8},"turn_count":1,"duration_ms":50,"transcript_count":2,"compact_history":[{"level":3,"from_tokens":500,"to_tokens":50,"action_map":"DSS."}]}
+  },
+  {
+    "kind":"assistant_completed",
+    "payload":{"content":[{"type":"thinking","text":"reason","metadata":null},{"type":"tool_call","id":"call","name":"custom","input":null,"metadata":null}],"usage":null,"stop_reason":"tool_use","error_message":null}
+  }
+]

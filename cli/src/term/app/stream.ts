@@ -6,7 +6,7 @@ import { assistantToolCalls } from './assistant-content.js'
 import { assistantMessageToOutputLines } from '../../render/assistant.js'
 import { applyEvent } from './reducer.js'
 import type { AppState } from './state.js'
-import type { RunEvent } from '../../native/index.js'
+import { isKnownRunEvent, type KnownRunEvent, type RunEvent } from '../../native/contracts/query-event.js'
 
 export interface StreamMachineState {
   appState: AppState
@@ -96,8 +96,21 @@ function isSessionRevokedError(message: unknown): message is string {
   return typeof message === 'string' && /(?:^|\b)session_revoked(?:\b|:)/i.test(message)
 }
 
+/** Legacy `api_retry` events predate the typed union; read them by narrowing. */
+function legacyRetry(payload: Record<string, unknown>): { attempt: number; maxRetries: number; delayMs: number } {
+  const num = (...names: string[]): number | undefined => {
+    for (const name of names) {
+      const value = payload[name]
+      if (typeof value === 'number' && Number.isFinite(value)) return value
+    }
+    return undefined
+  }
+  return { attempt: num('attempt') ?? 0, maxRetries: num('max_retries') ?? 0, delayMs: num('retry_delay_ms', 'delay_ms') ?? 0 }
+}
+
 export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: StreamContext): StreamUpdate {
-  const p = (event.payload ?? {}) as Record<string, any>
+  const known: KnownRunEvent | null = isKnownRunEvent(event) ? event : null
+  const legacyPayload = event.payload ?? {}
   let state = event.kind === 'host_tool_call' ? prev : { ...prev, appState: applyEvent(prev.appState, event) }
   const commitLines: OutputLine[] = []
   const writeLines: OutputLine[] = []
@@ -107,10 +120,10 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
   // Tracks an LLM error message surfaced as a card this tick (or carried from a
   // prior tick via state), so a following `error` event won't duplicate it.
   let capturedLlmError: string | null = prev.lastLlmErrorMessage
-  const revokedMessage = event.kind === 'llm_call_completed'
-    ? p.error
-    : event.kind === 'error'
-      ? p.message
+  const revokedMessage = known?.kind === 'llm_call_completed'
+    ? known.payload.error
+    : known?.kind === 'error'
+      ? known.payload.message
       : undefined
   const revokedEvent = isSessionRevokedError(revokedMessage)
     && (ctx.cloudProvider === true || prev.sessionRevokedHandled)
@@ -144,7 +157,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
 
   if (event.kind === 'llm_call_started' || event.kind === 'llm_call_retry' || event.kind === 'api_retry' || event.kind === 'context_compaction_started') {
     const abandonsPartial = event.kind === 'llm_call_started'
-      || (event.kind === 'context_compaction_started' && p.will_retry === true)
+      || (known?.kind === 'context_compaction_started' && known.payload.will_retry === true)
       || event.kind === 'llm_call_retry'
       || event.kind === 'api_retry'
     const flushed = abandonsPartial
@@ -163,8 +176,10 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     // long wait suppresses it. So the reset keys off `attempt`, not the event
     // kind: keying off the kind would clear the flag on attempt 2 and bring
     // back the card-per-attempt storm this is meant to collapse.
-    const startsFreshCall = event.kind === 'llm_call_started' && ((p.attempt as number) ?? 0) === 0
-    const retryDelayMs = (p.retry_delay_ms as number) ?? (p.delay_ms as number) ?? 0
+    const startsFreshCall = known?.kind === 'llm_call_started' && known.payload.attempt === 0
+    const retry = known?.kind === 'llm_call_retry'
+      ? { attempt: known.payload.attempt, maxRetries: known.payload.max_retries, delayMs: known.payload.delay_ms }
+      : event.kind === 'api_retry' ? legacyRetry(legacyPayload) : null
     state = {
       ...flushed.state,
       activeLlmCall,
@@ -173,12 +188,12 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
       // Compaction execution is driven by the real-time phase event. The
       // started event is an observability snapshot and may be delivered beside
       // completion, so it must not overwrite the method-specific phase label.
-      spinnerState: isRetryEvent
+      spinnerState: retry
         ? setRetryWait(
             flushed.state.spinnerState,
-            retryDelayMs,
-            (p.attempt as number) ?? 0,
-            (p.max_retries as number) ?? 0,
+            retry.delayMs,
+            retry.attempt,
+            retry.maxRetries,
           )
         : activeLlmCall
           ? setSpinnerPhase(resetStreamStats(flushed.state.spinnerState), 'waiting')
@@ -207,8 +222,8 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'context_compaction_phase') {
-    const phase = p.phase as string | undefined
+  if (known?.kind === 'context_compaction_phase') {
+    const phase = known.payload.phase
     if (phase === 'complete') {
       state = {
         ...state,
@@ -230,7 +245,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'quota_waiting' || event.kind === 'outage_waiting') {
+  if (known?.kind === 'quota_waiting' || known?.kind === 'outage_waiting') {
     const flushed = {
       state: {
         ...state,
@@ -239,23 +254,23 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
       lines: [] as OutputLine[],
       expandedLines: undefined,
     }
-    const waitDelayMs = (p.delay_ms as number) ?? (p.retry_delay_ms as number) ?? 60_000
-    const quotaError = typeof p.error === 'string' ? p.error.trim() : ''
-    const quotaWaitAlreadyShown = event.kind === 'quota_waiting' && prev.quotaWaitShown
+    const waitDelayMs = known.payload.delay_ms
+    const quotaError = known.payload.error?.trim() ?? ''
+    const quotaWaitAlreadyShown = known.kind === 'quota_waiting' && prev.quotaWaitShown
     state = {
       ...flushed.state,
       activeLlmCall: false,
-      quotaWaitShown: event.kind === 'quota_waiting'
+      quotaWaitShown: known.kind === 'quota_waiting'
         ? true
         : flushed.state.quotaWaitShown,
       spinnerState: setLongWait(
         flushed.state.spinnerState,
-        event.kind === 'outage_waiting' ? 'outage_waiting' : 'quota_waiting',
+        known.kind === 'outage_waiting' ? 'outage_waiting' : 'quota_waiting',
         waitDelayMs,
       ),
     }
     commitLines.push(...flushed.lines)
-    if (event.kind === 'quota_waiting' && !quotaWaitAlreadyShown) {
+    if (known.kind === 'quota_waiting' && !quotaWaitAlreadyShown) {
       commitLines.push(...buildEventCard(formatLongWaitError(
         state.appState.model,
         quotaError,
@@ -265,9 +280,9 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'assistant_delta') {
-    if (p.content_type === 'text') {
-      const textDelta = p.delta as string | undefined
+  if (known?.kind === 'assistant_delta') {
+    if (known.payload.content_type === 'text') {
+      const textDelta = known.payload.delta
       if (textDelta) {
         state = {
           ...state,
@@ -277,7 +292,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
         rerenderStatus = true
       }
     } else {
-      const thinkingDelta = p.delta as string | undefined
+      const thinkingDelta = known.payload.delta
       if (thinkingDelta) {
         state = {
           ...state,
@@ -289,7 +304,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     }
   }
 
-  if (event.kind === 'assistant_tool_call') {
+  if (known?.kind === 'assistant_tool_call') {
     // Tool argument events are model output, including the final decoded call.
     // Do not claim execution has started until the engine emits tool_started —
     // but do treat them as live stream activity so the spinner leaves the
@@ -298,14 +313,14 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
       ...state,
       activeLlmCall: true,
       spinnerState: setSpinnerPhase(
-        recordStreamDelta(state.spinnerState, (p.delta as string) ?? ''),
+        recordStreamDelta(state.spinnerState, known.payload.delta ?? ''),
         'responding',
       ),
     }
     rerenderStatus = true
   }
 
-  if (event.kind === 'assistant_completed') {
+  if (known?.kind === 'assistant_completed') {
     // applyEvent has already replaced streamed blocks with the provider's
     // authoritative completed content. A tool-bearing assistant message stays
     // live while its tools execute, then repl commits the entire ordered block
@@ -325,8 +340,8 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     // not mistaken for a clean finish. Mirrors pi's assistant-message length
     // notice. `resolved_max_tokens` clamps the budget to the window, so this
     // only fires on a genuine max-output-tokens stop.
-    if (p.stop_reason === 'length') {
-      const reason = typeof p.error_message === 'string' ? p.error_message : ''
+    if (known.payload.stop_reason === 'length') {
+      const reason = known.payload.error_message ?? ''
       const message = reason.startsWith('response incomplete:')
         ? `Provider returned an incomplete response (${reason.slice('response incomplete:'.length).trim()}). Context recovery may compact and retry.`
         : 'Model stopped because it reached the maximum output token limit. The response may be incomplete.'
@@ -351,7 +366,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'llm_call_completed') {
+  if (known?.kind === 'llm_call_completed') {
     // LLM accounting completes before tool execution and is not an assistant
     // content boundary. Keep any tool-bearing ordered message live.
     state = { ...state, activeLlmCall: false }
@@ -359,7 +374,7 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     // beside the `↻` retry card, so each attempt printed the same error twice.
     // Once a storm has announced itself, the failures are what the countdown is
     // already reporting — keep them in the verbose stream instead.
-    const failedInsideStorm = state.retryCardShown && typeof p.error === 'string' && p.error.length > 0
+    const failedInsideStorm = state.retryCardShown && (known.payload.error?.length ?? 0) > 0
     const newEvents = state.appState.verboseEvents.slice(prev.appState.verboseEvents.length)
     for (const evt of newEvents) {
       if (revokedEvent || failedInsideStorm) writeLines.push(...buildVerboseEvent(evt.text))
@@ -381,8 +396,8 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     }
   }
 
-  if (event.kind === 'tool_started') {
-    const toolName = (p.tool_name as string) ?? 'unknown'
+  if (known?.kind === 'tool_started') {
+    const toolName = known.payload.tool_name
     // ask_user maps to executing like any tool: its label is "Waiting for
     // you…" and its slow threshold is infinite, so it never turns red.
     state = {
@@ -392,11 +407,10 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'tool_progress') {
-    const text = p.text as string | undefined
-    const spill = text ? parseSpillProgress(text) : undefined
+  if (known?.kind === 'tool_progress') {
+    const spill = parseSpillProgress(known.payload.text)
     if (spill) {
-      commitLines.push(...buildSpillEventLines(spill, p.tool_name as string | undefined))
+      commitLines.push(...buildSpillEventLines(spill, known.payload.tool_name))
     }
     rerenderStatus = true
   }
@@ -424,13 +438,13 @@ export function reduceRunEvent(prev: StreamMachineState, event: RunEvent, ctx: S
     rerenderStatus = true
   }
 
-  if (event.kind === 'error') {
+  if (known?.kind === 'error') {
     const flushed = flushStreaming(state)
     state = flushed.state
     commitLines.push(...flushed.lines)
     mergeFlushExpanded(flushed)
     writeLines.push(...flushed.lines)
-    const message = (p.message as string) ?? 'Unknown error'
+    const message = known.payload.message
     if (revokedEvent) {
       // Keep raw gateway detail in screen.log; the TUI already has the single
       // actionable cloud-session prompt above.

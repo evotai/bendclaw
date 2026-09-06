@@ -3,16 +3,16 @@
 
 use std::sync::Arc;
 
-use evot::agent::session::Session;
 use evot::agent::Agent;
 use evot::agent::QueryRequest;
 use evot::agent::RunEventPayload;
-use evot::agent::SelectionReload;
 use evot::agent::SubmitOutcome;
 use evot::conf::Config;
 use evot::conf::Protocol;
 use evot::conf::ProviderProfile;
 use evot::conf::StorageConfig;
+use evot::models::SelectionReload;
+use evot::sessions::Session;
 use evot::storage::open_storage;
 use evot::storage::MemoryStorage;
 use evot_engine::provider::CompatCaps;
@@ -515,11 +515,12 @@ async fn pinned_request_model_survives_live_model_changes() -> TestResult {
         .ok_or("missing anthropic profile")?;
     profile.models = vec!["claude-opus-4-6".into(), "claude-sonnet-4-6".into()];
 
-    let pinned = config.build_llm("anthropic", Some("claude-opus-4-6".into()))?;
-    let live = config.build_llm("anthropic", Some("claude-sonnet-4-6".into()))?;
     let storage = Arc::new(MemoryStorage::new());
     let agent =
         Agent::new_with_provider_for_test(&config, "/work", storage, MockProvider::text("ok"))?;
+    let pinned =
+        agent.select_configured_model(&config, "anthropic", "claude-opus-4-6", Some("max"))?;
+    let live = config.build_llm("anthropic", Some("claude-sonnet-4-6".into()))?;
 
     // Simulate another Chat request changing the live default after this
     // request captured its selection but before submit starts its run.
@@ -542,11 +543,13 @@ async fn pinned_request_model_survives_live_model_changes() -> TestResult {
 
     assert_eq!(started_model.as_deref(), Some("claude-opus-4-6"));
     let meta = agent
-        .find_session(&session_id)
+        .sessions()
+        .find(&session_id)
         .await?
         .ok_or("pinned run did not persist its session")?;
     assert_eq!(meta.provider, "anthropic");
     assert_eq!(meta.model, "claude-opus-4-6");
+    assert_eq!(meta.thinking_level.as_deref(), Some("max"));
     // The live selection remains available as the next request's default.
     assert_eq!(agent.llm().model, "claude-sonnet-4-6");
     Ok(())

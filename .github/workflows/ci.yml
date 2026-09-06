@@ -64,7 +64,8 @@ jobs:
         with:
           bun-version: latest
       - run: cd cli && bun install
-      - run: cd cli && bun test tests/
+      - run: cd cli && bunx tsc --noEmit
+      - run: cd cli && bun test tests/ --path-ignore-patterns 'tests/tui/**'
 
   test-cli-macos:
     name: Test CLI (macOS arm64)
@@ -76,4 +77,9 @@ jobs:
         with:
           bun-version: latest
       - run: cd cli && bun install
-      - run: cd cli && bun test tests/
+      - run: cd cli && bunx tsc --noEmit
+      - run: cd cli && bun test tests/ --path-ignore-patterns 'tests/tui/**'
+      - uses: ./.github/actions/setup-rust
+      - run: cd cli && bun run build:napi && bun run build:cli
+      - run: cd cli && EVOT_TEST_NATIVE_CONTRACT=1 bun test tests/native-config-contract.test.ts
+      - run: cd cli && bun run test:tui

@@ -19,6 +19,33 @@ fn responses_config(model: &str) -> StreamConfigBuilder {
 }
 
 #[tokio::test]
+async fn bounded_responses_preserves_terminal_and_delta_order(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let body = concat!(
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"one\"}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"two\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n\n",
+    );
+    let (_, events) = super::super::fixtures::mock_server::run_provider_sse_bounded(
+        &OpenAiResponsesProvider,
+        responses_config("gpt-5.5").build(),
+        body,
+    )
+    .await?;
+    let deltas: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            StreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, vec!["one", "two"]);
+    assert!(matches!(events.last(), Some(StreamEvent::Done { .. })));
+    Ok(())
+}
+
+#[tokio::test]
 async fn rejected_compaction_replay_retries_once_with_fallback_text(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let server = MockServer::start().await;

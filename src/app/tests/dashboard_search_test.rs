@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use evot::agent::session::Session;
+use evot::sessions::Session;
 use evot::storage::MemoryStorage;
 use evot::types::ListSessions;
 use evot::types::*;
@@ -233,7 +233,10 @@ async fn favorites_persist_across_storage() -> TestResult {
 
     // Saving a set round-trips.
     storage
-        .save_favorites(vec!["fav-a".into(), "fav-b".into()])
+        .edit_favorites(evot::storage::FavoritesEdit::Replace(vec![
+            "fav-a".into(),
+            "fav-b".into(),
+        ]))
         .await?;
     let ids = storage.load_favorites().await?;
     assert_eq!(ids.len(), 2);
@@ -241,7 +244,9 @@ async fn favorites_persist_across_storage() -> TestResult {
     assert!(ids.contains(&"fav-b".to_string()));
 
     // Overwrite replaces rather than appends.
-    storage.save_favorites(vec!["fav-c".into()]).await?;
+    storage
+        .edit_favorites(evot::storage::FavoritesEdit::Replace(vec!["fav-c".into()]))
+        .await?;
     let ids = storage.load_favorites().await?;
     assert_eq!(ids, vec!["fav-c".to_string()]);
     Ok(())

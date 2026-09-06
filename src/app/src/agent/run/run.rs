@@ -12,6 +12,12 @@ use tokio::sync::mpsc;
 
 use super::control::RunControl;
 use super::event::RunEvent;
+use super::outbox::EventReceiver;
+
+enum Receiver {
+    Live(EventReceiver),
+    Fixture(mpsc::UnboundedReceiver<RunEvent>),
+}
 
 /// A single agent run. Owns the event stream and a control handle.
 ///
@@ -19,28 +25,47 @@ use super::event::RunEvent;
 pub struct Run {
     pub id: String,
     pub session_id: String,
-    rx: mpsc::UnboundedReceiver<RunEvent>,
+    rx: Receiver,
     control: RunControl,
+    exhausted: bool,
+}
+
+impl Drop for Run {
+    fn drop(&mut self) {
+        // Cancellation is synchronous even if the runtime is still building
+        // its engine and cannot yet observe event-channel closure.
+        if !self.exhausted {
+            self.control.abort();
+        }
+    }
 }
 
 impl Run {
     pub(crate) fn new(
         id: String,
         session_id: String,
-        rx: mpsc::UnboundedReceiver<RunEvent>,
+        rx: EventReceiver,
         control: RunControl,
     ) -> Self {
         Self {
             id,
             session_id,
-            rx,
+            rx: Receiver::Live(rx),
             control,
+            exhausted: false,
         }
     }
 
     /// Read the next event. Returns `None` when the run is finished.
     pub async fn next(&mut self) -> Option<RunEvent> {
-        self.rx.recv().await
+        let event = match &mut self.rx {
+            Receiver::Live(rx) => rx.recv().await,
+            Receiver::Fixture(rx) => rx.recv().await,
+        };
+        if event.is_none() {
+            self.exhausted = true;
+        }
+        event
     }
 
     /// Get a cloneable control handle for this run.
@@ -60,6 +85,12 @@ impl Run {
         session_id: String,
         run_id: String,
     ) -> Self {
-        Self::new(run_id, session_id, rx, RunControl::new())
+        Self {
+            id: run_id,
+            session_id,
+            rx: Receiver::Fixture(rx),
+            control: RunControl::new(),
+            exhausted: false,
+        }
     }
 }

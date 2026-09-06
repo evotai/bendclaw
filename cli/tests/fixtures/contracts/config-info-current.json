@@ -1,0 +1,16 @@
+{
+  "provider": "evot-free",
+  "protocol": "anthropic",
+  "envPath": "/fixture/evot.env",
+  "hasApiKey": true,
+  "baseUrl": "https://example.invalid/v1/llm",
+  "availableModels": [
+    {
+      "provider": "evot-free", "protocol": "anthropic", "model": "fixture-model", "spec": "evot-free:fixture-model",
+      "group_label": "Free", "group_order": 0, "sort_order": 5,
+      "free": { "display_name": "Fixture", "tagline": "Test model", "is_new": true, "tier": "base" }
+    },
+    { "provider": "byok", "protocol": "openai_responses", "model": "custom", "spec": "byok:custom" }
+  ],
+  "thinkingLevel": "high"
+}

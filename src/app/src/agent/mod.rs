@@ -1,11 +1,10 @@
 mod agent;
+pub mod processes;
 pub mod prompt;
 pub mod resume_search;
 pub mod run;
 pub mod run_manager;
 pub mod sandbox;
-pub mod session;
-pub mod session_locator;
 pub mod tools;
 #[allow(hidden_glob_reexports)]
 pub(crate) mod variables;
@@ -15,7 +14,6 @@ pub use agent::ExecutionLimits;
 pub use agent::ForkRequest;
 pub use agent::ForkedAgent;
 pub use agent::QueryRequest;
-pub use agent::SelectionReload;
 pub use agent::SubmitOutcome;
 pub use evot_engine::tools::BackgroundReason;
 pub use run::AssistantContentType;
@@ -28,7 +26,6 @@ pub use run::StatsAggregator;
 pub use run::ToolCallStreamPhase;
 pub use run_manager::RunManager;
 pub use run_manager::SendOutcome;
-pub use session_locator::SessionLocator;
 pub use tools::HostTools;
 pub use tools::ToolMode;
 pub use variables::Variables;

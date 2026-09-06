@@ -1,22 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import { handleSlashCommand } from '../src/term/app/commands.js'
+import { handleSlashCommand, type CommandContext } from '../src/term/app/commands.js'
 import { createInitialState } from '../src/term/app/state.js'
 
 describe('term commands', () => {
-  const mkCtx = () => ({
-    agent: { model: 'claude-3-5-sonnet', setProvider(spec: string) { this.model = spec } } as any,
+  const mkCtx = (): CommandContext => ({
+    agent: {
+      model: 'claude-3-5-sonnet',
+      setProvider(spec: string) { this.model = spec },
+      configInfo: () => ({ provider: 'p1' }),
+    },
     appState: createInitialState('claude-3-5-sonnet', '/tmp'),
     configInfo: {
       provider: 'p1',
+      protocol: 'openai', envPath: '', hasApiKey: true, baseUrl: null, thinkingLevel: '',
       availableModels: [
         { provider: 'p1', model: 'shared', spec: 'p1:shared' },
         { provider: 'p2', model: 'shared', spec: 'p2:shared' },
       ],
-    } as any,
-    preloadedSessions: [
-      { session_id: 'abc12345', title: 'session one', source: 'local' },
-      { session_id: 'def67890', title: 'session two' },
-    ] as any,
+    },
     planning: false,
   })
 
@@ -98,7 +99,7 @@ describe('term commands', () => {
     const result = handleSlashCommand('/resume abc', mkCtx())
     // /resume is now handled asynchronously in handleSlashInput
     expect(result.systemLines.length).toBe(0)
-    expect(result.resumeSession).toBeUndefined()
+    expect(result.overlay).toBeUndefined()
   })
 
   test('/resume with no arg returns empty result for selector', () => {

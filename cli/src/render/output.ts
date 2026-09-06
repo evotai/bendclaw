@@ -469,7 +469,7 @@ export function buildUserMessage(text: string, timestamp: number = Date.now()): 
 
 export function buildAssistantLines(
   markdownText: string,
-  options: { streaming?: boolean } = {},
+  options: { streaming?: boolean; idPrefix?: string } = {},
 ): OutputLine[] {
   if (!markdownText.trim()) return []
   const rendered = renderMarkdown(markdownText, { streaming: options.streaming })
@@ -477,7 +477,7 @@ export function buildAssistantLines(
   const cleaned = rendered.replace(/^\n+/, '').replace(/\n+$/, '')
   const parts = cleaned.split('\n')
   return parts.map((line, i) => ({
-    id: genId('asst'),
+    id: options.idPrefix === undefined ? genId('asst') : `${options.idPrefix}-${i}`,
     kind: 'assistant' as const,
     text: line,
     rawMarkdown: markdownText,

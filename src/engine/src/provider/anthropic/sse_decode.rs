@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 
 use serde::de::DeserializeOwned;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::warn;
@@ -15,8 +14,9 @@ use super::types::*;
 use crate::context::now_ms;
 use crate::provider::error::classify_sse_error_event;
 use crate::provider::error::ProviderError;
-use crate::provider::stream_http;
+use crate::provider::sse::SseReader;
 use crate::provider::stream_http::SseEvent;
+use crate::provider::stream_sink::StreamSink;
 use crate::provider::traits::StreamConfig;
 use crate::provider::traits::StreamEvent;
 use crate::provider::traits::StreamOutcome;
@@ -28,50 +28,33 @@ use crate::types::*;
 /// and returns the final assembled [`Message::Assistant`].
 pub(crate) async fn decode_sse_stream(
     response: reqwest::Response,
-    tx: mpsc::UnboundedSender<StreamEvent>,
+    tx: StreamSink,
     cancel: CancellationToken,
     config: &StreamConfig,
 ) -> Result<StreamOutcome, ProviderError> {
-    let (sse_tx, mut sse_rx) = mpsc::unbounded_channel::<SseEvent>();
-
-    // Spawn SSE frame parser
-    let sse_cancel = cancel.clone();
-    let sse_handle =
-        tokio::spawn(
-            async move { stream_http::drive_sse_response(response, sse_tx, sse_cancel).await },
-        );
+    let mut reader = SseReader::new(response);
 
     let mut state = AnthropicSseState::default();
 
-    let _ = tx.send(StreamEvent::Start);
+    let _ = tx.send(StreamEvent::Start).await;
 
     loop {
         tokio::select! {
+            biased;
             _ = cancel.cancelled() => {
                 return Err(ProviderError::Cancelled);
             }
-            event = sse_rx.recv() => {
-                match event {
+            event = reader.next(&cancel) => {
+                match event.map_err(ProviderError::Network)? {
                     None => break,
                     Some(sse) => {
-                        if process_sse_event(&sse, &tx, &mut state)? {
+                        if process_sse_event(&sse, &tx, &mut state).await? {
                             break;
                         }
                     }
                 }
             }
         }
-    }
-
-    // Wait for SSE driver to finish.
-    // If the driver errored (e.g. network disconnect mid-stream), always
-    // propagate — partial content is incomplete and must not be used.
-    if let Ok(Err(e)) = sse_handle.await {
-        debug!(
-            "SSE driver error (content_len={}): {e}",
-            state.content.len()
-        );
-        return Err(ProviderError::Network(e));
     }
 
     // Match pi/Anthropic semantics: an SSE response is only complete after
@@ -125,9 +108,11 @@ pub(crate) async fn decode_sse_stream(
         response_id: state.response_id,
     };
 
-    let _ = tx.send(StreamEvent::Done {
-        message: message.clone(),
-    });
+    let _ = tx
+        .send(StreamEvent::Done {
+            message: message.clone(),
+        })
+        .await;
 
     Ok(StreamOutcome::complete(message).served_by(served_model))
 }
@@ -199,9 +184,9 @@ fn map_stop_reason(reason: &str) -> Result<StopReason, ProviderError> {
     }
 }
 
-fn process_sse_event(
+async fn process_sse_event(
     sse: &SseEvent,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+    tx: &StreamSink,
     state: &mut AnthropicSseState,
 ) -> Result<bool, ProviderError> {
     match sse.event.as_str() {
@@ -246,11 +231,13 @@ fn process_sse_event(
                     metadata: None,
                 },
                 AnthropicContentBlock::ToolUse { id, name, .. } => {
-                    let _ = tx.send(StreamEvent::ToolCallStart {
-                        content_index: idx,
-                        id: id.clone(),
-                        name: name.clone(),
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ToolCallStart {
+                            content_index: idx,
+                            id: id.clone(),
+                            name: name.clone(),
+                        })
+                        .await;
                     Content::ToolCall {
                         id,
                         name,
@@ -286,10 +273,12 @@ fn process_sse_event(
                     if let Some(Content::Text { text: ref mut t }) = state.content.get_mut(idx) {
                         t.push_str(&text);
                     }
-                    let _ = tx.send(StreamEvent::TextDelta {
-                        content_index: idx,
-                        delta: text,
-                    });
+                    let _ = tx
+                        .send(StreamEvent::TextDelta {
+                            content_index: idx,
+                            delta: text,
+                        })
+                        .await;
                 }
                 AnthropicDelta::ThinkingDelta { thinking } => {
                     if let Some(Content::Thinking {
@@ -299,21 +288,25 @@ fn process_sse_event(
                     {
                         t.push_str(&thinking);
                     }
-                    let _ = tx.send(StreamEvent::ThinkingDelta {
-                        content_index: idx,
-                        delta: thinking,
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ThinkingDelta {
+                            content_index: idx,
+                            delta: thinking,
+                        })
+                        .await;
                 }
                 AnthropicDelta::InputJsonDelta { partial_json } => {
                     let input = state.tool_input_buffers.entry(idx).or_default();
                     input.push_str(&partial_json);
                     if let Some(Content::ToolCall { id, name, .. }) = state.content.get(idx) {
-                        let _ = tx.send(StreamEvent::ToolCallDelta {
-                            content_index: idx,
-                            id: id.clone(),
-                            name: name.clone(),
-                            delta: partial_json,
-                        });
+                        let _ = tx
+                            .send(StreamEvent::ToolCallDelta {
+                                content_index: idx,
+                                id: id.clone(),
+                                name: name.clone(),
+                                delta: partial_json,
+                            })
+                            .await;
                     }
                 }
                 AnthropicDelta::SignatureDelta { signature } => {
@@ -350,12 +343,14 @@ fn process_sse_event(
                 finalized = Some((id.clone(), name.clone(), arguments.clone()));
             }
             if let Some((id, name, arguments)) = finalized {
-                let _ = tx.send(StreamEvent::ToolCallEnd {
-                    content_index: idx,
-                    id,
-                    name,
-                    arguments,
-                });
+                let _ = tx
+                    .send(StreamEvent::ToolCallEnd {
+                        content_index: idx,
+                        id,
+                        name,
+                        arguments,
+                    })
+                    .await;
             }
         }
         "message_delta" => {

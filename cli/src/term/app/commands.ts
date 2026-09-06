@@ -1,15 +1,20 @@
-import type { Agent, SessionMeta, ConfigInfo } from '../../native/index.js'
+import type { ConfigInfo } from '../../native/contracts/config-info.js'
 import type { AppState } from './state.js'
 import type { OutputLine } from '../../render/output.js'
-import type { OverlayState } from '../viewmodel/index.js'
+import type { OverlayState } from './overlay-state.js'
 import { resolveCommand } from '../../commands/index.js'
 import { currentModelSpec, formatModelLabel, modelOptions } from './provider.js'
 
+export interface CommandModelClient {
+  model: string
+  setProvider(spec: string): void
+  configInfo(): Pick<ConfigInfo, 'provider'>
+}
+
 export interface CommandContext {
-  agent: Agent
+  agent: CommandModelClient
   appState: AppState
   configInfo?: ConfigInfo
-  preloadedSessions: SessionMeta[]
   planning: boolean
 }
 
@@ -17,12 +22,10 @@ export interface CommandResult {
   appState: AppState
   planning: boolean
   overlay?: OverlayState
-  clearScreen?: boolean
   clearContext?: boolean
   newSession?: boolean
   exit?: boolean
   restart?: boolean
-  resumeSession?: SessionMeta
   systemLines: OutputLine[]
 }
 

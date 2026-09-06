@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { TermRenderer, CURSOR_MARKER } from '../src/term/renderer.js'
+import { TermRenderer } from '../src/term/renderer.js'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import { ScreenHarness } from './helpers/screen.js'
 
 async function renderFrame(renderer: TermRenderer): Promise<void> {

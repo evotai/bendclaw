@@ -1,4 +1,4 @@
-import type { Hint } from './app/hint.js'
+import type { Hint } from './design/key-hints.js'
 
 export interface SelectorItem {
   label: string
@@ -34,6 +34,8 @@ export interface SelectorItem {
 }
 
 export interface SelectorState {
+  /** Opaque host-owned identity. Generic navigation preserves but never interprets it. */
+  owner?: symbol
   items: SelectorItem[]
   allItems: SelectorItem[]
   focusIndex: number

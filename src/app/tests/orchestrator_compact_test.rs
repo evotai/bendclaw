@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use evot::agent::session::Session;
 use evot::compact::orchestrator::compact_session;
 use evot::compact::orchestrator::compact_session_with_status;
 use evot::compact::orchestrator::CompactSessionStatus;
@@ -19,6 +18,7 @@ use evot::compact::orchestrator::ManualCompactRequest;
 use evot::conf::LlmConfig;
 use evot::conf::Protocol;
 use evot::conf::StorageConfig;
+use evot::sessions::Session;
 use evot::storage::open_storage;
 use evot::types::AssistantBlock;
 use evot::types::CompactReason;

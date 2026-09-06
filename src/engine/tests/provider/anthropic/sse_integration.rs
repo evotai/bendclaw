@@ -13,6 +13,36 @@ use super::super::fixtures::stream_config::*;
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+async fn bounded_anthropic_preserves_terminal_and_delta_order(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let body = anthropic_sse::body(vec![
+        anthropic_sse::message_start(10, 0),
+        anthropic_sse::text_block_start(0),
+        anthropic_sse::text_delta(0, "one"),
+        anthropic_sse::text_delta(0, "two"),
+        anthropic_sse::block_stop(0),
+        anthropic_sse::message_delta("end_turn", 2),
+        anthropic_sse::message_stop(),
+    ]);
+    let (_, events) = run_provider_sse_bounded(
+        &AnthropicProvider,
+        StreamConfigBuilder::anthropic().build(),
+        &body,
+    )
+    .await?;
+    let deltas: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            StreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, vec!["one", "two"]);
+    assert!(matches!(events.last(), Some(StreamEvent::Done { .. })));
+    Ok(())
+}
+
+#[tokio::test]
 async fn anthropic_sse_text_response() {
     let sse = anthropic_sse::body(vec![
         anthropic_sse::message_start(100, 0),

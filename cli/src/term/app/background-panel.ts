@@ -12,16 +12,13 @@
 import stripAnsi from 'strip-ansi'
 import type { KeyEvent } from '../input.js'
 import type { BackgroundProcess } from '../../native/index.js'
-import type { Hint } from './hint.js'
-import { createSelectorState, type SelectorItem, type SelectorState } from '../selector.js'
+import type { Hint } from '../design/key-hints.js'
+import type { SelectorItem, SelectorState } from '../selector.js'
+import { createAppSelectorState } from './selector-identity.js'
 import { formatElapsed } from '../../render/format.js'
 
 export const BACKGROUND_PANEL_TITLE = 'Background'
 export const BACKGROUND_OUTPUT_TITLE = 'Background output'
-
-export function isBackgroundOutputTitle(title: string): boolean {
-  return title === BACKGROUND_OUTPUT_TITLE
-}
 
 /**
  * Gesture advertised at the prompt while background work is live.
@@ -49,11 +46,6 @@ export function isBackgroundPanelShortcut(event: KeyEvent): boolean {
  */
 export function shouldDownOpenPanel(input: { editorEmpty: boolean; running: number }): boolean {
   return input.editorEmpty && input.running > 0
-}
-
-/** True when a selector belongs to background terminal management. */
-export function isBackgroundPanelTitle(title: string): boolean {
-  return title === BACKGROUND_PANEL_TITLE || isBackgroundOutputTitle(title)
 }
 
 /** Statuses that are still doing work. */
@@ -172,7 +164,7 @@ export function formatPanelItems(processes: BackgroundProcess[]): SelectorItem[]
 /** Open the panel over the current task list. */
 export function createBackgroundPanelState(processes: BackgroundProcess[]): SelectorState {
   return {
-    ...createSelectorState(BACKGROUND_PANEL_TITLE, formatPanelItems(processes)),
+    ...createAppSelectorState('background', BACKGROUND_PANEL_TITLE, formatPanelItems(processes)),
     subtitle: formatPanelSubtitle(processes),
     noFilter: true,
     emptyMessage: PANEL_EMPTY_MESSAGE,
@@ -301,7 +293,7 @@ export function createBackgroundOutputState(
 ): SelectorState {
   const safeOutput = sanitizeTerminalOutput(output)
   return {
-    ...createSelectorState(BACKGROUND_OUTPUT_TITLE, [{
+    ...createAppSelectorState('backgroundOutput', BACKGROUND_OUTPUT_TITLE, [{
       id: process.task_id,
       label: formatCommandLabel(process.command),
       detail: formatStatusDetail(process),

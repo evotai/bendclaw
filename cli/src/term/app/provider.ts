@@ -1,4 +1,4 @@
-import type { ConfigInfo, ModelOption } from '../../native/index.js'
+import type { ConfigInfo, ModelOption } from '../../native/contracts/config-info.js'
 import type { SelectorItem } from '../selector.js'
 
 /** Return configured provider/model pairs, preserving duplicate model ids. */

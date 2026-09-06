@@ -4,7 +4,6 @@ import {
   COMPACT_SUMMARY_PREFIX,
   formatSessionItems,
   formatSessionWithTextItems,
-  isResumeSelectorTitle,
   isSessionIdPrefix,
   normalizeResumeQuery,
   resolveSessionByPrefix,
@@ -173,8 +172,6 @@ describe('repl resume helpers', () => {
 
   test('resume title shows the portable Ctrl+D delete shortcut', () => {
     expect(RESUME_SELECTOR_TITLE).toBe('Resume session  (Ctrl+D delete · twice)')
-    expect(isResumeSelectorTitle(RESUME_SELECTOR_TITLE)).toBe(true)
-    expect(isResumeSelectorTitle('Select model')).toBe(false)
   })
 
   test('sanitizeSessionTitle hides compaction boilerplate titles', () => {

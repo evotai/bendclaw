@@ -28,7 +28,14 @@ impl RunControl {
     }
 
     pub(in crate::agent) fn install_engine(&self, handle: evot_engine::RunHandle) {
-        *self.engine.lock() = Some(handle);
+        let mut engine = self.engine.lock();
+        // Cancellation may win while a turn is being built, before it has an
+        // engine handle. Never attach a fresh uncancelled engine to an aborted
+        // run. Share the lock with abort() to cover either ordering.
+        if self.cancel.is_cancelled() {
+            handle.abort();
+        }
+        *engine = Some(handle);
     }
 
     pub(in crate::agent) fn detach_engine(&self) {

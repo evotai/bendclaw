@@ -3,19 +3,16 @@
 //!
 //! Direct session APIs (HTTP, NAPI) bypass this and call Agent directly.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use parking_lot::Mutex as SyncMutex;
-use tokio::sync::Mutex as AsyncMutex;
-
 use super::run::run::Run;
-use super::session::Session;
-use super::session_locator::SessionLocator;
 use super::Agent;
 use super::QueryRequest;
 use crate::agent::SubmitOutcome;
 use crate::error::Result;
+use crate::sessions::Session;
+use crate::sessions::SessionGates;
+use crate::sessions::SessionLocator;
 
 pub enum SendOutcome {
     Started(Run),
@@ -26,15 +23,16 @@ pub enum SendOutcome {
 
 pub struct RunManager {
     agent: Arc<Agent>,
-    /// Per-conversation serialization gates keyed by `SessionLocator::stable_key()`.
-    gates: SyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    /// Bounded conversation gates, separate from Agent's lifecycle gates so
+    /// calling submit while holding this gate cannot re-enter the same lock.
+    gates: SessionGates,
 }
 
 impl RunManager {
     pub fn new(agent: Arc<Agent>) -> Arc<Self> {
         Arc::new(Self {
             agent,
-            gates: SyncMutex::new(HashMap::new()),
+            gates: SessionGates::new(),
         })
     }
 
@@ -49,15 +47,7 @@ impl RunManager {
     ) -> Result<SendOutcome> {
         let key = locator.stable_key();
 
-        // Acquire per-conversation gate
-        let gate = {
-            let mut gates = self.gates.lock();
-            gates
-                .entry(key.clone())
-                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-                .clone()
-        };
-        let _guard = gate.lock().await;
+        let _guard = self.gates.gate(&key).lock().await;
 
         // Resolve session via locator (open existing or create new)
         let llm = self.agent.llm();
@@ -72,9 +62,18 @@ impl RunManager {
 
         let session_id = session.session_id().await;
 
+        // Busy commands are not prompts on any entry point. Keep channel
+        // commands out of the model queue just as TUI and HTTP do.
+        if self.agent.has_active_run(&session_id)
+            && crate::command::is_queued_command(&request.input_text())
+        {
+            return Ok(SendOutcome::Command(
+                "Commands don't queue while a response is running. Stop it or wait for the turn to finish.".into(),
+            ));
+        }
+
         // Steer into active run if one exists
-        if self.agent.has_active_run(&session_id) {
-            self.agent.steer(&session_id, request.input.clone());
+        if self.agent.try_steer(&session_id, request.input.clone()) {
             return Ok(SendOutcome::Steered);
         }
 

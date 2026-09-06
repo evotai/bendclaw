@@ -13,11 +13,11 @@ use evot_engine::context::compaction::summary::SummaryOutcome;
 use tokio_util::sync::CancellationToken;
 
 use super::context_view::compact_summary_item;
-use crate::agent::run::convert;
-use crate::agent::session::Session;
 use crate::conf::LlmConfig;
+use crate::conversation::convert;
 use crate::error::EvotError;
 use crate::error::Result;
+use crate::sessions::Session;
 use crate::types::CompactDetails;
 use crate::types::CompactReason;
 use crate::types::CompactionMethod;

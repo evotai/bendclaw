@@ -16,6 +16,7 @@ use super::compaction_check::CompactionCheckPhase;
 use super::compaction_check::CompactionRequestShape;
 use super::config::AgentLoopConfig;
 use super::doom_loop::DoomLoopDetector;
+use super::event_sink::EventSink;
 use super::llm_call::stream_assistant_response;
 use super::llm_call::AssistantStreamInput;
 use super::thinking_only_guard::ThinkingOnlyGuard;
@@ -42,7 +43,7 @@ pub async fn agent_loop(
     tx: mpsc::UnboundedSender<AgentEvent>,
     cancel: tokio_util::sync::CancellationToken,
 ) -> Vec<AgentMessage> {
-    agent_loop_with_state(prompts, context, config, tx, cancel)
+    agent_loop_with_state(prompts, context, config, tx.into(), cancel)
         .await
         .messages
 }
@@ -51,12 +52,12 @@ pub(crate) async fn agent_loop_with_state(
     prompts: Vec<AgentMessage>,
     context: &mut AgentContext,
     config: &AgentLoopConfig,
-    tx: mpsc::UnboundedSender<AgentEvent>,
+    tx: EventSink,
     cancel: tokio_util::sync::CancellationToken,
 ) -> AgentLoopOutcome {
-    tx.send(AgentEvent::AgentStart).ok();
+    tx.send(AgentEvent::AgentStart).await.ok();
     let mut new_messages = prompts.clone();
-    tx.send(AgentEvent::TurnStart).ok();
+    tx.send(AgentEvent::TurnStart).await.ok();
 
     let compaction_state =
         run_loop(context, &mut new_messages, prompts, config, &tx, &cancel).await;
@@ -64,6 +65,7 @@ pub(crate) async fn agent_loop_with_state(
     tx.send(AgentEvent::AgentEnd {
         messages: new_messages.clone(),
     })
+    .await
     .ok();
     AgentLoopOutcome {
         messages: new_messages,
@@ -78,7 +80,7 @@ pub async fn agent_loop_continue(
     tx: mpsc::UnboundedSender<AgentEvent>,
     cancel: tokio_util::sync::CancellationToken,
 ) -> Vec<AgentMessage> {
-    agent_loop_continue_with_state(context, config, tx, cancel)
+    agent_loop_continue_with_state(context, config, tx.into(), cancel)
         .await
         .messages
 }
@@ -86,10 +88,10 @@ pub async fn agent_loop_continue(
 pub(crate) async fn agent_loop_continue_with_state(
     context: &mut AgentContext,
     config: &AgentLoopConfig,
-    tx: mpsc::UnboundedSender<AgentEvent>,
+    tx: EventSink,
     cancel: tokio_util::sync::CancellationToken,
 ) -> AgentLoopOutcome {
-    tx.send(AgentEvent::AgentStart).ok();
+    tx.send(AgentEvent::AgentStart).await.ok();
 
     let invalid_state = if context.messages.is_empty() {
         Some("Cannot continue: no messages in context")
@@ -109,8 +111,11 @@ pub(crate) async fn agent_loop_continue_with_state(
                 message: message.into(),
             },
         })
+        .await
         .ok();
-        tx.send(AgentEvent::AgentEnd { messages: vec![] }).ok();
+        tx.send(AgentEvent::AgentEnd { messages: vec![] })
+            .await
+            .ok();
         return AgentLoopOutcome {
             messages: vec![],
             compaction_state: config.initial_compaction_state.clone(),
@@ -118,7 +123,7 @@ pub(crate) async fn agent_loop_continue_with_state(
     }
 
     let mut new_messages = Vec::new();
-    tx.send(AgentEvent::TurnStart).ok();
+    tx.send(AgentEvent::TurnStart).await.ok();
 
     let compaction_state =
         run_loop(context, &mut new_messages, Vec::new(), config, &tx, &cancel).await;
@@ -126,6 +131,7 @@ pub(crate) async fn agent_loop_continue_with_state(
     tx.send(AgentEvent::AgentEnd {
         messages: new_messages.clone(),
     })
+    .await
     .ok();
     AgentLoopOutcome {
         messages: new_messages,
@@ -142,7 +148,7 @@ async fn run_loop(
     new_messages: &mut Vec<AgentMessage>,
     initial_prompts: Vec<AgentMessage>,
     config: &AgentLoopConfig,
-    tx: &mpsc::UnboundedSender<AgentEvent>,
+    tx: &EventSink,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Option<crate::context::CompactionState> {
     let mut first_turn = true;
@@ -166,9 +172,7 @@ async fn run_loop(
     let mut compaction_controller = config.context_config.as_ref().map(|ctx_cfg| {
         let phase_tx = tx.clone();
         let observer: crate::context::CompactionObserver = Arc::new(move |phase| {
-            phase_tx
-                .send(AgentEvent::ContextCompactionPhase { phase })
-                .ok();
+            phase_tx.progress(AgentEvent::ContextCompactionPhase { phase });
         });
         let controller = crate::context::CompactionController::new(
             crate::context::CompactionConfig::from_context_config(ctx_cfg),
@@ -223,10 +227,12 @@ async fn run_loop(
             tx.send(AgentEvent::MessageStart {
                 message: prompt.clone(),
             })
+            .await
             .ok();
             tx.send(AgentEvent::MessageEnd {
                 message: prompt.clone(),
             })
+            .await
             .ok();
             context.messages.push(prompt);
         }
@@ -248,7 +254,7 @@ async fn run_loop(
         let mut steering_after_tools: Option<Vec<AgentMessage>> = None;
 
         if !first_turn {
-            tx.send(AgentEvent::TurnStart).ok();
+            tx.send(AgentEvent::TurnStart).await.ok();
         } else {
             first_turn = false;
         }
@@ -265,10 +271,12 @@ async fn run_loop(
                 tx.send(AgentEvent::MessageStart {
                     message: msg.clone(),
                 })
+                .await
                 .ok();
                 tx.send(AgentEvent::MessageEnd {
                     message: msg.clone(),
                 })
+                .await
                 .ok();
                 context.messages.push(msg.clone());
                 new_messages.push(msg);
@@ -287,10 +295,12 @@ async fn run_loop(
                 tx.send(AgentEvent::MessageStart {
                     message: limit_msg.clone(),
                 })
+                .await
                 .ok();
                 tx.send(AgentEvent::MessageEnd {
                     message: limit_msg.clone(),
                 })
+                .await
                 .ok();
                 context.messages.push(limit_msg.clone());
                 new_messages.push(limit_msg);
@@ -369,6 +379,7 @@ async fn run_loop(
         tx.send(AgentEvent::MessageEnd {
             message: agent_msg.clone(),
         })
+        .await
         .ok();
 
         // Match pi's message_end lifecycle: every non-error assistant response
@@ -403,6 +414,7 @@ async fn run_loop(
                             message: err_str,
                         },
                     })
+                    .await
                     .ok();
                 }
                 // Call after_turn even on error/abort so callers tracking usage don't miss this turn
@@ -413,6 +425,7 @@ async fn run_loop(
                     message: agent_msg,
                     tool_results: vec![],
                 })
+                .await
                 .ok();
 
                 let should_retry = check_compaction(
@@ -449,7 +462,7 @@ async fn run_loop(
             if let Some(intervention) = doom_detector.check(&tool_calls) {
                 let mut tool_results = Vec::new();
                 for (id, name, args) in &tool_calls {
-                    let result = skip_tool_call_doom_loop(id, name, args, tx);
+                    let result = skip_tool_call_doom_loop(id, name, args, tx).await;
                     let am: AgentMessage = result.clone().into();
                     context.messages.push(am.clone());
                     new_messages.push(am);
@@ -476,6 +489,7 @@ async fn run_loop(
                     message: agent_msg,
                     tool_results,
                 })
+                .await
                 .ok();
                 continue;
             }
@@ -491,7 +505,7 @@ async fn run_loop(
                 // provider JSON repair. They may parse successfully while
                 // still being incomplete, so fail the whole batch and let the
                 // model re-issue it rather than executing corrupted input.
-                tool_results = fail_truncated_tool_calls(&tool_calls, tx);
+                tool_results = fail_truncated_tool_calls(&tool_calls, tx).await;
             } else {
                 let idle_clock = tracker.as_ref().map(|t| t.idle_clock());
                 let execution = execute_tool_calls(
@@ -557,6 +571,7 @@ async fn run_loop(
             message: agent_msg,
             tool_results,
         })
+        .await
         .ok();
 
         // Continue the current run while tool work or steering remains.

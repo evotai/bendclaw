@@ -3,7 +3,6 @@
 //! Parses OpenAI Chat Completions streaming chunks and translates them
 //! into internal [`StreamEvent`]s while accumulating the final [`Message`].
 
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
@@ -14,8 +13,9 @@ use crate::provider::error::classify_stream_error;
 use crate::provider::error::ProviderError;
 use crate::provider::route::OpenAiCompat;
 use crate::provider::route::ThinkingFormat;
-use crate::provider::stream_http;
+use crate::provider::sse::SseReader;
 use crate::provider::stream_http::SseEvent;
+use crate::provider::stream_sink::StreamSink;
 use crate::provider::traits::StreamConfig;
 use crate::provider::traits::StreamEvent;
 use crate::provider::traits::StreamOutcome;
@@ -24,18 +24,12 @@ use crate::types::*;
 /// Drive an OpenAI-compatible SSE stream from a raw HTTP response.
 pub(crate) async fn decode_sse_stream(
     response: reqwest::Response,
-    tx: mpsc::UnboundedSender<StreamEvent>,
+    tx: StreamSink,
     cancel: CancellationToken,
     config: &StreamConfig,
     compat: &OpenAiCompat,
 ) -> Result<StreamOutcome, ProviderError> {
-    let (sse_tx, mut sse_rx) = mpsc::unbounded_channel::<SseEvent>();
-
-    let sse_cancel = cancel.clone();
-    let sse_handle =
-        tokio::spawn(
-            async move { stream_http::drive_sse_response(response, sse_tx, sse_cancel).await },
-        );
+    let mut reader = SseReader::new(response);
 
     let mut content: Vec<Content> = Vec::new();
     let mut usage = Usage::default();
@@ -45,15 +39,16 @@ pub(crate) async fn decode_sse_stream(
     let mut response_model: Option<String> = None;
     let mut incomplete_reason: Option<String> = None;
 
-    let _ = tx.send(StreamEvent::Start);
+    let _ = tx.send(StreamEvent::Start).await;
 
     loop {
         tokio::select! {
+            biased;
             _ = cancel.cancelled() => {
                 return Err(ProviderError::Cancelled);
             }
-            event = sse_rx.recv() => {
-                match event {
+            event = reader.next(&cancel) => {
+                match event.map_err(ProviderError::Network)? {
                     None => break,
                     Some(sse) => {
                         if sse.data == "[DONE]" {
@@ -70,23 +65,11 @@ pub(crate) async fn decode_sse_stream(
                             &mut response_id,
                             &mut response_model,
                             &mut incomplete_reason,
-                        )?;
+                        ).await?;
                     }
                 }
             }
         }
-    }
-
-    // Wait for SSE driver to finish.
-    // If the driver errored (e.g. network disconnect mid-stream), always
-    // propagate — partial content is incomplete and must not be used.
-    if let Ok(Err(e)) = sse_handle.await {
-        debug!(
-            "SSE driver error (content_len={}, tool_calls={}): {e}",
-            content.len(),
-            tool_call_buffers.len()
-        );
-        return Err(ProviderError::Network(e));
     }
 
     // Detect empty response: no content and no usage from provider
@@ -97,7 +80,7 @@ pub(crate) async fn decode_sse_stream(
     }
 
     // Finalize tool calls
-    finalize_tool_calls(&tx, &mut content, &tool_call_buffers);
+    finalize_tool_calls(&tx, &mut content, &tool_call_buffers).await;
 
     if !tool_call_buffers.is_empty()
         || content
@@ -122,16 +105,18 @@ pub(crate) async fn decode_sse_stream(
         response_id,
     };
 
-    let _ = tx.send(StreamEvent::Done {
-        message: message.clone(),
-    });
+    let _ = tx
+        .send(StreamEvent::Done {
+            message: message.clone(),
+        })
+        .await;
     Ok(StreamOutcome::complete(message).served_by(response_model))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_sse_chunk(
+async fn process_sse_chunk(
     sse: &SseEvent,
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+    tx: &StreamSink,
     content: &mut Vec<Content>,
     usage: &mut Usage,
     stop_reason: &mut StopReason,
@@ -268,10 +253,12 @@ fn process_sse_chunk(
             if let Some(Content::Thinking { thinking, .. }) = content.get_mut(idx) {
                 thinking.push_str(reasoning_text);
             }
-            let _ = tx.send(StreamEvent::ThinkingDelta {
-                content_index: idx,
-                delta: reasoning_text.to_string(),
-            });
+            let _ = tx
+                .send(StreamEvent::ThinkingDelta {
+                    content_index: idx,
+                    delta: reasoning_text.to_string(),
+                })
+                .await;
         }
 
         // Handle text content. As with reasoning, preserve type transitions so
@@ -288,10 +275,12 @@ fn process_sse_chunk(
             if let Some(Content::Text { text: t }) = content.get_mut(idx) {
                 t.push_str(text);
             }
-            let _ = tx.send(StreamEvent::TextDelta {
-                content_index: idx,
-                delta: text.clone(),
-            });
+            let _ = tx
+                .send(StreamEvent::TextDelta {
+                    content_index: idx,
+                    delta: text.clone(),
+                })
+                .await;
         }
 
         // Handle tool calls
@@ -335,11 +324,13 @@ fn process_sse_chunk(
 
                 if !buf.started && (!buf.id.is_empty() || !buf.name.is_empty()) {
                     buf.started = true;
-                    let _ = tx.send(StreamEvent::ToolCallStart {
-                        content_index,
-                        id: buf.id.clone(),
-                        name: buf.name.clone(),
-                    });
+                    let _ = tx
+                        .send(StreamEvent::ToolCallStart {
+                            content_index,
+                            id: buf.id.clone(),
+                            name: buf.name.clone(),
+                        })
+                        .await;
                 }
                 if let Some(delta) = tc
                     .function
@@ -347,12 +338,14 @@ fn process_sse_chunk(
                     .and_then(|function| function.arguments.as_ref())
                 {
                     if buf.started && !delta.is_empty() {
-                        let _ = tx.send(StreamEvent::ToolCallDelta {
-                            content_index,
-                            id: buf.id.clone(),
-                            name: buf.name.clone(),
-                            delta: delta.clone(),
-                        });
+                        let _ = tx
+                            .send(StreamEvent::ToolCallDelta {
+                                content_index,
+                                id: buf.id.clone(),
+                                name: buf.name.clone(),
+                                delta: delta.clone(),
+                            })
+                            .await;
                     }
                 }
             }
@@ -372,8 +365,8 @@ fn process_sse_chunk(
     Ok(())
 }
 
-fn finalize_tool_calls(
-    tx: &mpsc::UnboundedSender<StreamEvent>,
+async fn finalize_tool_calls(
+    tx: &StreamSink,
     content: &mut Vec<Content>,
     tool_call_buffers: &[ToolCallBuffer],
 ) {
@@ -399,11 +392,13 @@ fn finalize_tool_calls(
             // well-formed streams.
             content.push(tool_call);
         }
-        let _ = tx.send(StreamEvent::ToolCallEnd {
-            content_index,
-            id: buf.id.clone(),
-            name: buf.name.clone(),
-            arguments: args,
-        });
+        let _ = tx
+            .send(StreamEvent::ToolCallEnd {
+                content_index,
+                id: buf.id.clone(),
+                name: buf.name.clone(),
+                arguments: args,
+            })
+            .await;
     }
 }

@@ -1,0 +1,74 @@
+use std::sync::Arc;
+
+use crate::conf::Protocol;
+
+/// Fully resolved engine construction input. No transport or session I/O is
+/// performed here; the application prepares this snapshot before execution.
+pub struct EngineOptions {
+    pub provider: String,
+    pub protocol: Protocol,
+    pub model: String,
+    pub api_key: String,
+    pub model_config: evot_engine::provider::ModelConfig,
+    pub system_prompt: String,
+    pub system_prompt_sections: Vec<crate::agent::prompt::Section>,
+    pub limits: Option<crate::agent::ExecutionLimits>,
+    pub tools: Vec<Box<dyn evot_engine::AgentTool>>,
+    pub thinking_level: evot_engine::ThinkingLevel,
+    pub cwd: std::path::PathBuf,
+    pub path_guard: Arc<evot_engine::PathGuard>,
+    pub spill_dir: Option<std::path::PathBuf>,
+    pub process_manager: Option<Arc<evot_engine::tools::ProcessManager>>,
+    pub prompt_cache_key: Option<String>,
+    pub provider_override: Option<Arc<dyn evot_engine::provider::StreamProvider>>,
+    pub compaction_state: Option<evot_engine::CompactionState>,
+}
+
+pub(super) fn build_engine(
+    options: EngineOptions,
+    prior_messages: Vec<evot_engine::AgentMessage>,
+) -> evot_engine::Agent {
+    use evot_engine::provider::AnthropicProvider;
+    use evot_engine::provider::OpenAiCompatProvider;
+    use evot_engine::provider::OpenAiResponsesProvider;
+
+    let model_config = options.model_config;
+    let context_config =
+        evot_engine::context::ContextConfig::from_model(&model_config, options.thinking_level);
+    let provider_agent = match (options.provider_override, &options.protocol) {
+        (Some(provider), _) => evot_engine::Agent::new(provider),
+        (None, Protocol::Anthropic) => evot_engine::Agent::new(AnthropicProvider),
+        (None, Protocol::OpenAiResponses) => evot_engine::Agent::new(OpenAiResponsesProvider),
+        (None, Protocol::OpenAi) => evot_engine::Agent::new(OpenAiCompatProvider),
+    };
+    let limits = options
+        .limits
+        .map(|limits| evot_engine::context::ExecutionLimits {
+            max_turns: limits.max_turns as usize,
+            max_total_tokens: limits.max_total_tokens as usize,
+            max_duration: std::time::Duration::from_secs(limits.max_duration_secs),
+        });
+    let agent = provider_agent
+        .with_model(&options.model)
+        .with_api_key(&options.api_key)
+        .with_model_config(model_config)
+        .with_context_config(context_config)
+        .with_system_prompt(&options.system_prompt)
+        .with_messages(prior_messages)
+        .with_execution_limits_opt(limits)
+        .with_tools(options.tools)
+        .with_cwd(options.cwd)
+        .with_path_guard(options.path_guard)
+        .with_thinking(options.thinking_level)
+        .with_compaction_state_opt(options.compaction_state)
+        .with_prompt_cache_key_opt(options.prompt_cache_key)
+        .with_spill_opt(
+            options
+                .spill_dir
+                .map(|dir| Arc::new(evot_engine::spill::FsSpill::new(dir))),
+        );
+    match options.process_manager {
+        Some(process_manager) => agent.with_process_manager(process_manager),
+        None => agent,
+    }
+}

@@ -7,7 +7,8 @@ use evot_engine::host::HostToolSpec;
 use evot_engine::host::SharedHost;
 use evot_engine::tools::*;
 
-use super::ToolMode;
+use crate::agent::run::policy::RunPolicy;
+use crate::agent::run::policy::ToolAccess;
 
 /// Host-owned tools attached to a run.
 ///
@@ -54,16 +55,16 @@ fn build_bash_tool(
 /// Assemble the active tool set for a turn.
 ///
 /// `host_tools` carries the host bridge and its registered specs; it is
-/// attached only when the mode allows it (see [`ToolMode::allows_host_tools`]).
+/// attached only when the resolved policy permits it.
 pub(crate) fn build_tools(
-    mode: ToolMode,
+    policy: RunPolicy,
     envs: Vec<(String, String)>,
     allow_bash: bool,
     sandbox_dirs: Option<Vec<PathBuf>>,
     process_manager: Option<std::sync::Arc<ProcessManager>>,
     host_tools: Option<HostTools>,
 ) -> Vec<Box<dyn evot_engine::AgentTool>> {
-    if matches!(mode, ToolMode::Readonly) {
+    if policy.tools == ToolAccess::Readonly {
         // Read-only mode: read + structured search, no mutation or shell.
         return vec![
             Box::new(ReadFileTool::default()),
@@ -82,7 +83,7 @@ pub(crate) fn build_tools(
     t.push(Box::new(ReadFileTool::default()));
 
     if allow_bash {
-        let background_enabled = mode.allows_background_processes() && process_manager.is_some();
+        let background_enabled = policy.background_processes && process_manager.is_some();
         t.push(build_bash_tool(
             envs,
             sandbox_dirs,
@@ -94,7 +95,7 @@ pub(crate) fn build_tools(
         }
     }
 
-    if matches!(mode, ToolMode::Planning) {
+    if policy.tools == ToolAccess::Planning {
         let msg = "Not allowed in planning mode. Use /act to switch.";
         t.push(Box::new(EditFileTool::new().disallow(msg)));
         t.push(Box::new(WriteFileTool::new().disallow(msg)));
@@ -104,13 +105,13 @@ pub(crate) fn build_tools(
     }
 
     // evot-specific tools, appended after the pi-aligned core set.
-    if !matches!(mode, ToolMode::Headless) {
+    if policy.web_fetch {
         t.push(Box::new(WebFetchTool::new()));
     }
 
     // Host-owned tools (ask_user, …). The engine treats these exactly like
     // built-ins; only their execution is delegated back to the host.
-    if mode.allows_host_tools() {
+    if policy.host_tools {
         if let Some(host_tools) = host_tools {
             t.extend(host_tools.into_tools());
         }

@@ -2,6 +2,8 @@
    toasts, and the sidenav active marker. No framework and no build step — each
    page is a plain document that loads this file. */
 
+import { createJsonClient } from "./json-client.js";
+
 export const $ = (id) => document.getElementById(id);
 
 /** Escape for interpolation into HTML. Always used on server-supplied text. */
@@ -87,46 +89,7 @@ export function toast(message, kind) {
   }, kind === "err" ? 6000 : 2600);
 }
 
-/** GET JSON, throwing on a non-2xx so callers can use one catch path. */
-export async function getJson(url) {
-  beginLoad();
-  try {
-    const res = await fetch(url, { headers: { accept: "application/json" } });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return await res.json();
-  } finally {
-    endLoad();
-  }
-}
-
-/**
- * POST JSON. The server reports validation failures as `{ok:false,error}` with
- * a 4xx, so the message is lifted out of the body when present — a bare status
- * code would hide why a save was rejected.
- */
-export async function postJson(url, body, opts) {
-  beginLoad();
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      ...(opts || {}),
-    });
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      data = null;
-    }
-    if (!res.ok || (data && data.ok === false)) {
-      throw new Error((data && data.error) || "HTTP " + res.status);
-    }
-    return data;
-  } finally {
-    endLoad();
-  }
-}
+export const { getJson, postJson } = createJsonClient({ begin: beginLoad, end: endLoad });
 
 /** Mark the sidenav entry whose href matches the current path. */
 export function markActiveNav() {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 import { BackgroundTerminals } from '../src/term/app/background-terminals.js'
-import { isBackgroundPanelTitle } from '../src/term/app/background-panel.js'
+import { isBackgroundSelector } from '../src/term/app/selector-identity.js'
 import type { SelectorState } from '../src/term/selector.js'
 import type { BackgroundProcess } from '../src/native/index.js'
 
@@ -21,7 +21,7 @@ function proc(overrides: Partial<BackgroundProcess> = {}): BackgroundProcess {
 
 /**
  * Drives the controller with an in-memory overlay and client, mirroring how
- * `repl.ts` wires it: `panelOpen` is derived from the overlay's title, so the
+ * `repl.ts` wires it: `panelOpen` is derived from the overlay's identity, so the
  * tests exercise the same guard the REPL relies on.
  */
 function harness(options: {
@@ -110,7 +110,7 @@ function harness(options: {
     },
     openPanel: state => { panel = state },
     updatePanel: state => { panel = state },
-    panelOpen: () => panel !== null && isBackgroundPanelTitle(panel.title),
+    panelOpen: () => panel !== null && isBackgroundSelector(panel),
     panelState: () => panel,
     runInFlight: () => options.runInFlight?.() ?? false,
     queuedMessages: () => options.queuedMessages?.() ?? 0,
@@ -134,6 +134,34 @@ function harness(options: {
 }
 
 describe('BackgroundTerminals.handlePromptDown', () => {
+  test('renamed background views still refresh and route back to the list', () => {
+    const h = harness({ processes: [proc()], output: 'latest output' })
+    h.controller.togglePanel()
+    const list = h.panel()
+    if (!list) throw new Error('expected background list')
+    list.title = 'Renamed list'
+    expect(h.controller.handlePanelKey({ type: 'enter' })).toBe(true)
+    const output = h.panel()
+    if (!output) throw new Error('expected output view')
+    output.title = 'Models'
+    h.controller.refresh()
+    expect(h.panel()?.presentation).toBe('background-output')
+    expect(h.panel()?.items[0]?.preview?.join('\n')).toContain('latest output')
+    expect(h.controller.handlePanelKey({ type: 'escape' })).toBe(true)
+    expect(h.panel()?.presentation).toBeUndefined()
+    expect(h.panel()?.items[0]?.id).toBe(proc().task_id)
+  })
+
+  test('a foreign selector cannot stop tasks even if its title matches', () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.togglePanel()
+    const panel = h.panel()
+    if (!panel) throw new Error('expected panel')
+    panel.owner = Symbol('foreign')
+    expect(h.controller.handlePanelKey({ type: 'char', char: 'x' })).toBe(false)
+    expect(h.processes()[0]?.status).toBe('running')
+  })
+
   test('↓ opens the panel on an empty composer with live work', () => {
     const h = harness({ processes: [proc()] })
     h.controller.refresh()

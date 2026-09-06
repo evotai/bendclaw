@@ -66,7 +66,11 @@ impl AgentTool for HostTool {
         // Idle-clock accounting (excluding this wait from the execution
         // duration limit) is handled uniformly by the loop for every tool, so
         // there is nothing tool-specific to do here.
-        let response = self.host.execute_tool(call).await;
+        let response = tokio::select! {
+            biased;
+            _ = ctx.cancel.cancelled() => return Err(ToolError::Cancelled),
+            response = self.host.execute_tool(call) => response,
+        };
 
         match response {
             Ok(resp) => {

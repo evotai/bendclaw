@@ -7,19 +7,13 @@
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
 
 use super::error::ProviderError;
 
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 const MAX_ERROR_DETAIL_CHARS: usize = 4096;
 
-/// A parsed SSE event with event type and data.
-#[derive(Debug, Clone)]
-pub struct SseEvent {
-    pub event: String,
-    pub data: String,
-}
+pub use super::sse::SseEvent;
 
 // ---------------------------------------------------------------------------
 // Response classification
@@ -296,95 +290,20 @@ pub async fn drive_sse_response(
     tx: mpsc::UnboundedSender<SseEvent>,
     cancel: CancellationToken,
 ) -> Result<(), String> {
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-
+    // Compatibility entry point. Built-in providers consume SseReader directly.
+    let mut reader = super::sse::SseReader::new(response);
     loop {
-        tokio::select! {
-            _ = cancel.cancelled() => {
-                return Err("cancelled".into());
-            }
-            chunk = stream.next() => {
-                match chunk {
-                    None => {
-                        // Stream ended — flush any remaining buffered event
-                        flush_sse_buffer(&mut buffer, &tx);
-                        return Ok(());
-                    }
-                    Some(Err(e)) => {
-                        return Err(format!("Stream read error: {e}"));
-                    }
-                    Some(Ok(bytes)) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
-                        // Process complete SSE frames. Spec allows CRLF;
-                        // OpenRouter and some CDNs emit \r\n\r\n.
-                        while let Some((pos, sep)) = next_sse_boundary(&buffer) {
-                            let frame = buffer[..pos].to_string();
-                            buffer = buffer[pos + sep..].to_string();
-                            if let Some(event) = parse_sse_frame(&frame) {
-                                if tx.send(event).is_err() {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                    }
+        let event = tokio::select! {
+            _ = tx.closed() => return Ok(()),
+            event = reader.next(&cancel) => event?,
+        };
+        match event {
+            Some(event) => {
+                if tx.send(event).is_err() {
+                    return Ok(());
                 }
             }
+            None => return Ok(()),
         }
     }
-}
-
-/// First complete SSE frame boundary. Spec allows CRLF; some CDNs emit it.
-fn next_sse_boundary(buffer: &str) -> Option<(usize, usize)> {
-    let lf = buffer.find("\n\n").map(|pos| (pos, 2));
-    let crlf = buffer.find("\r\n\r\n").map(|pos| (pos, 4));
-    match (lf, crlf) {
-        (Some(a), Some(b)) if b.0 < a.0 => Some(b),
-        (Some(a), _) => Some(a),
-        (None, other) => other,
-    }
-}
-
-/// Parse a single SSE frame into an [`SseEvent`].
-fn parse_sse_frame(frame: &str) -> Option<SseEvent> {
-    let mut event_type = String::new();
-    let mut data_lines: Vec<&str> = Vec::new();
-
-    for line in frame.lines() {
-        if let Some(value) = line.strip_prefix("event:") {
-            event_type = value.trim().to_string();
-        } else if let Some(value) = line.strip_prefix("data:") {
-            data_lines.push(value.trim_start_matches(' '));
-        } else if line.starts_with(':') {
-            // Comment line, skip
-        }
-    }
-
-    if data_lines.is_empty() {
-        return None;
-    }
-
-    let data = data_lines.join("\n");
-    if event_type.is_empty() {
-        event_type = "message".to_string();
-    }
-
-    debug!("SSE frame: event={event_type} data_len={}", data.len());
-
-    Some(SseEvent {
-        event: event_type,
-        data,
-    })
-}
-
-/// Flush any remaining partial SSE data in the buffer.
-fn flush_sse_buffer(buffer: &mut String, tx: &mpsc::UnboundedSender<SseEvent>) {
-    let trimmed = buffer.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    if let Some(event) = parse_sse_frame(trimmed) {
-        let _ = tx.send(event);
-    }
-    buffer.clear();
 }

@@ -34,6 +34,33 @@ impl StreamProvider for BedrockProvider {
         tx: mpsc::UnboundedSender<StreamEvent>,
         cancel: tokio_util::sync::CancellationToken,
     ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(config, super::stream_sink::StreamSink::Legacy(tx), cancel)
+            .await
+    }
+    async fn stream_bounded(
+        &self,
+        config: StreamConfig,
+        tx: mpsc::Sender<StreamEvent>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        self.stream_sink(
+            config,
+            super::stream_sink::StreamSink::Bounded {
+                tx,
+                cancel: cancel.clone(),
+            },
+            cancel,
+        )
+        .await
+    }
+}
+impl BedrockProvider {
+    async fn stream_sink(
+        &self,
+        config: StreamConfig,
+        tx: super::stream_sink::StreamSink,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
         let model_config = config
             .model_config
             .as_ref()
@@ -90,7 +117,7 @@ impl StreamProvider for BedrockProvider {
         let mut stop_reason = StopReason::Stop;
         let mut tool_input_buffers: HashMap<usize, String> = HashMap::new();
 
-        let _ = tx.send(StreamEvent::Start);
+        let _ = tx.send(StreamEvent::Start).await;
 
         // Bedrock ConverseStream returns event-stream format (application/vnd.amazon.eventstream)
         // For simplicity, we parse it as newline-delimited JSON chunks.
@@ -143,7 +170,7 @@ impl StreamProvider for BedrockProvider {
                                             let _ = tx.send(StreamEvent::TextDelta {
                                                 content_index: idx,
                                                 delta: text,
-                                            });
+                                            }).await;
                                         }
                                         if let Some(tool_use) = delta.tool_use {
                                             if let Some((idx, id, name)) = content
@@ -166,7 +193,7 @@ impl StreamProvider for BedrockProvider {
                                                     id,
                                                     name,
                                                     delta: tool_use.input,
-                                                });
+                                                }).await;
                                             }
                                         }
                                     }
@@ -183,7 +210,7 @@ impl StreamProvider for BedrockProvider {
                                                 content_index: idx,
                                                 id: tool_use.tool_use_id,
                                                 name: tool_use.name,
-                                            });
+                                            }).await;
                                         }
                                     }
                                     BedrockEvent::ContentBlockStop { .. } => {
@@ -212,7 +239,7 @@ impl StreamProvider for BedrockProvider {
                                                 id,
                                                 name,
                                                 arguments,
-                                            });
+                                            }).await;
                                         }
                                     }
                                     BedrockEvent::MessageStop { stop_reason: sr } => {
@@ -250,9 +277,11 @@ impl StreamProvider for BedrockProvider {
             response_id: None,
         };
 
-        let _ = tx.send(StreamEvent::Done {
-            message: message.clone(),
-        });
+        let _ = tx
+            .send(StreamEvent::Done {
+                message: message.clone(),
+            })
+            .await;
         Ok(StreamOutcome::complete(message))
     }
 }

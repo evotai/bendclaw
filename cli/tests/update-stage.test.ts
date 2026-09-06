@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createHash } from 'crypto'
@@ -105,6 +105,13 @@ beforeEach(() => {
   // Most staging cases model an install.sh-managed release. Individual tests
   // remove this record to exercise source/local-development installs.
   writeInstalledVersion('2026.4.13')
+  // Staging tests exercise downloads/install eligibility, not release lookup.
+  // Every check must have a fresh fixture cache; otherwise the local/source
+  // build cases call the real update service and can outlive the test timeout.
+  writeFileSync(join(home, 'update-check.json'), JSON.stringify({
+    checked_at: Date.now(),
+    releases: [{ tag: 'v2026.5.1', version: '2026.5.1', prerelease: false }],
+  }))
   delete process.env.EVOT_AUTO_DOWNLOAD
   requestCount = 0
 })
@@ -428,17 +435,24 @@ describe('staging', () => {
       const mgr = new UpdateManager('2026.4.13', Date.now, stageFixtureUpdate)
       mgr.on('update-status', (s: UpdateStatus) => statuses.push(s))
 
-      await mgr.check()
-      for (let i = 0; i < 50 && mgr.getStatus().kind !== 'staged'; i++) {
-        await new Promise(resolve => setTimeout(resolve, 20))
-      }
+      const staged = new Promise<void>(resolve => {
+        mgr.on('update-status', (status: UpdateStatus) => {
+          if (status.kind === 'staged' && status.version === '2026.10.1') resolve()
+        })
+      })
+      try {
+        await mgr.check()
+        // Await the actual completion signal, not an arbitrary one-second
+        // polling budget. The unchanged test deadline still bounds failures.
+        await staged
 
-      expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.10.1' })
-      expect(readStaged()?.version).toBe('2026.10.1')
-      // The superseded month-end download must not linger on disk.
-      expect(existsSync(join(home, 'staging', '2026.9.30'))).toBe(false)
-      expect(statuses.some(s => s.kind === 'downloading')).toBe(true)
-      mgr.cleanup()
+        expect(mgr.getStatus()).toEqual({ kind: 'staged', version: '2026.10.1' })
+        expect(readStaged()?.version).toBe('2026.10.1')
+        expect(existsSync(join(home, 'staging', '2026.9.30'))).toBe(false)
+        expect(statuses.some(s => s.kind === 'downloading')).toBe(true)
+      } finally {
+        mgr.cleanup()
+      }
     } finally {
       void server.stop(true)
     }

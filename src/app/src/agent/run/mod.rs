@@ -1,8 +1,12 @@
 pub mod control;
-pub mod convert;
+pub mod engine;
 pub mod event;
 pub mod observability;
+pub mod outbox;
+pub mod policy;
+pub mod projection;
 pub mod queue;
+pub mod registry;
 pub mod run;
 pub mod runtime;
 

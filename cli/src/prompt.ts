@@ -1,3 +1,4 @@
+import { isHostToolEvent, type RunEvent } from './native/contracts/query-event.js'
 import { Agent } from './native/index.js'
 import type { CliOptions } from './cli.js'
 import { createAgent } from './cli.js'
@@ -41,6 +42,7 @@ export async function runPrompt(opts: CliOptions) {
     sessionHook.startSession(stream.sessionId, agent.cwd)
 
     for await (const event of stream) {
+      if (isHostToolEvent(event)) throw new Error('Headless prompt requested a host tool')
       if (event.kind === 'run_started') {
         sessionHook.runStarted(event.run_id)
       } else if (event.kind === 'run_finished') {
@@ -67,7 +69,7 @@ export async function runPrompt(opts: CliOptions) {
   process.exit(0)
 }
 
-function printEventText(event: any) {
+function printEventText(event: RunEvent) {
   switch (event.kind) {
     case 'assistant_delta':
       if (event.payload?.content_type === 'text' && event.payload?.delta) process.stdout.write(String(event.payload.delta))

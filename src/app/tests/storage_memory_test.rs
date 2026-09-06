@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use evot::agent::session::Session;
+use evot::sessions::Session;
 use evot::storage::MemoryStorage;
 use evot::types::*;
 

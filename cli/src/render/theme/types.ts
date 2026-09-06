@@ -26,6 +26,8 @@ export interface Theme {
   accentBold: Style
   accentHex: string
 
+  /** Secondary interface copy (hints, metadata), independent of ANSI dim. */
+  mutedHex: string
   /** Fill behind a selected row (completion menu). */
   selectionBgHex: string
   /** Secondary text on `selectionBgHex`, where the normal dim gray is too dark. */

@@ -139,3 +139,18 @@ fn parse_success_response(
 
     Ok(emitter.finalize(&config.model, &provider))
 }
+
+/// JSON fallback is one finite response, not an unbounded streaming producer.
+pub(crate) async fn handle_json_response_sink(
+    response: reqwest::Response,
+    tx: crate::provider::stream_sink::StreamSink,
+    config: &StreamConfig,
+    compat: &OpenAiCompat,
+) -> Result<Message, ProviderError> {
+    let (legacy_tx, mut rx) = mpsc::unbounded_channel();
+    let message = handle_json_response(response, legacy_tx, config, compat).await?;
+    while let Some(event) = rx.recv().await {
+        tx.send(event).await.map_err(|_| ProviderError::Cancelled)?;
+    }
+    Ok(message)
+}

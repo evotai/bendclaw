@@ -4,7 +4,8 @@
  */
 
 import { formatCacheHitPercent } from '../render/cache.js'
-import { backgroundChord } from './design/key-hints.js'
+import { resolveRunInteraction, type RunInteractionState } from './app/run-interaction.js'
+import { runStatusPresentation } from './viewmodel/run-status.js'
 
 function getSpinnerChars(): string[] {
   if (process.env.TERM === 'xterm-ghostty') {
@@ -251,22 +252,10 @@ export interface SpinnerStats {
 }
 
 export interface SpinnerFormatOptions {
-  /** Show the keyboard interrupt hint. Defaults to true for agent/tool runs. */
-  interruptible?: boolean
+  /** Shared capabilities from the run interaction controller. */
+  interaction?: RunInteractionState
   /** Requested model, used to identify long quota waits. */
   model?: string
-  /**
-   * Work is running that ctrl+b can move to the background without killing it.
-   *
-   * Adds a second hint rather than replacing the interrupt one: esc always
-   * means interrupt, so swapping the text would hide the kill gesture exactly
-   * when a user might want it. Both keys are shown because both apply.
-   */
-  backgroundable?: boolean
-  /** A task is already backgrounded; Ctrl+B releases only task_output's wait. */
-  releaseWait?: boolean
-  /** Esc was pressed once; the hint asks for the confirming press. */
-  interruptPending?: boolean
 }
 
 export function formatSpinnerLine(
@@ -276,14 +265,18 @@ export function formatSpinnerLine(
   options: SpinnerFormatOptions = {},
 ): string {
   const elapsed = now - state.phaseStartedAt
-  const slow = !options.releaseWait && isSlow(state, now)
+  const presentation = runStatusPresentation(options.interaction ?? resolveRunInteraction({
+    active: state.phase !== 'awaiting_background', owner: state,
+    phase: state.phase, backgroundTasks: 1,
+  }))
+  const slow = presentation.allowSlowWarning && isSlow(state, now)
   const char = SPINNER_FRAMES[state.frame]!
 
   const action = state.toolName ? toolActionLabel(state.toolName) : 'Working'
   let label: string
   switch (state.phase) {
     case 'executing':
-      label = options.releaseWait ? 'Waiting for background task…' : slow ? `${action} slow…` : `${action}…`
+      label = slow ? `${action} slow…` : `${action}…`
       break
     case 'waiting':
       label = slow ? 'LLM slow…' : 'Waiting for model…'
@@ -325,25 +318,16 @@ export function formatSpinnerLine(
     case 'awaiting_background':
       // Not "Working": nothing is being computed here. The agent is parked
       // until a detached task reports back, and it will resume on its own.
-      label = 'Waiting for background task…'
+      label = '' // Run-status presentation supplies the passive-wait label.
       break
     default:
       label = slow ? 'Preparing slow…' : 'Preparing…'
   }
 
   const status = humanDuration(elapsed)
-  const tokenSuffix = isLongWaitPhase(state.phase) || isPassiveWaitPhase(state.phase)
-    ? ''
-    : formatSpinnerTokenSuffix(state, now, stats)
-  // Advertise foreground detach only; releasing an existing wait stays quiet.
-  const escHint = options.interruptPending ? 'esc again to interrupt' : 'esc to interrupt'
-  const interruptHint = options.interruptible === false || isPassiveWaitPhase(state.phase)
-    ? ''
-    : options.releaseWait
-      ? ` · ${escHint}`
-    : options.backgroundable
-      ? ` · ${escHint} · ${backgroundChord()} to background`
-      : ` · ${escHint}`
+  label = presentation.label ?? label
+  const tokenSuffix = presentation.showUsage ? formatSpinnerTokenSuffix(state, now, stats) : ''
+  const interruptHint = presentation.hint
 
   if (slow) {
     return `\x1b[31m${char}\x1b[0m \x1b[31m${label}\x1b[0m\x1b[2m (${status}${tokenSuffix})${interruptHint}\x1b[0m`

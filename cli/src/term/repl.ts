@@ -131,7 +131,7 @@ import { handleSelectorControl } from './app/selector-control.js'
 import { decideReplControl, type ReplControlAction } from './app/repl-control.js'
 import { replaceOrPushStatusLine } from './app/status-line.js'
 import { AuthWatcher } from './app/auth-watch.js'
-import { InterruptConfirmation } from './app/interrupt-confirmation.js'
+import { RunInteraction, type RunInteractionInput } from './app/run-interaction.js'
 import { ManualCompaction } from './app/manual-compaction.js'
 import { busySubmissionAction } from './app/busy-submission.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
@@ -237,9 +237,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let streamRef: QueryStream | null = null
   // Native abort settles asynchronously. Ownership is revoked before aborting
   // so an old Promise cannot report twice or clear a newer run's state.
-  const interruptConfirmation = new InterruptConfirmation()
-  /** The operation an interrupt would stop; a new run never inherits an armed window. */
-  const interruptOwner = (): unknown => manualCompaction.active ? manualCompaction : streamRef
+  const runInteraction = new RunInteraction()
+  function runInteractionInput(): RunInteractionInput {
+    return {
+      active: isLoading,
+      owner: manualCompaction.active ? manualCompaction : streamRef,
+      phase: spinnerState.phase,
+      compacting: manualCompaction.active,
+      localOperation: foregroundCommand !== null,
+      foregroundTasks: backgroundTerminals.foregroundCount(),
+      blockingWaits: backgroundTerminals.blockingWaitCount(),
+      backgroundTasks: backgroundTerminals.runningCount(),
+    }
+  }
   const runOwnership = new RunOwnership()
   const beginRun = (): number => runOwnership.begin()
   const ownsRun = (generation: number): boolean => runOwnership.owns(generation)
@@ -1343,13 +1353,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               usagePending,
             ),
         {
-          interruptible: foregroundCommand === null,
           model: appState.model,
-          // Ctrl+B can move this work aside without killing it, so the hint
-          // advertises that key alongside esc. Esc itself always interrupts.
-          backgroundable: backgroundTerminals.foregroundCount() > 0,
-          releaseWait: backgroundTerminals.foregroundCount() === 0 && backgroundTerminals.blockingWaitCount() > 0,
-          interruptPending: interruptConfirmation.pending(interruptOwner()),
+          interaction: runInteraction.snapshot(runInteractionInput()),
         },
       )
       spinnerBlock = {
@@ -1370,7 +1375,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // No per-call usage belongs to a wait: nothing is being spent while the
         // agent is parked.
         undefined,
-        { model: appState.model },
+        { model: appState.model, interaction: runInteraction.snapshot(runInteractionInput()) },
       )
       spinnerBlock = {
         lines: wrapTextWithAnsi(waitText, renderer.termCols).map(text => ({ spans: [{ text }] })),
@@ -1572,7 +1577,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function stopSpinner() {
-    interruptConfirmation.clear()
+    runInteraction.clear()
     if (spinnerTimer) {
       clearInterval(spinnerTimer)
       spinnerTimer = null
@@ -2135,7 +2140,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       logMode: logMode !== null,
       hasQueuedPrompt: queuedUserMessages.length > 0,
       isCompacting: manualCompaction.active,
-      canReclaimTurn: backgroundTerminals.canReclaimTurn(),
+      interaction: runInteraction.snapshot(runInteractionInput()),
     })
 
     for (const action of actions) {
@@ -2170,7 +2175,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // Same gesture as opencode: the first Esc arms a short window and the
         // spinner switches to "esc again to interrupt"; only the second press
         // within that window stops the work.
-        if (!interruptConfirmation.press(interruptOwner())) {
+        if (runInteraction.requestInterrupt(runInteractionInput()) !== 'interrupt') {
           renderer.requestRender()
           return true
         }

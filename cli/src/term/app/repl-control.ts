@@ -1,3 +1,4 @@
+import { resolveRunInteraction, type RunInteractionState } from './run-interaction.js'
 import type { KeyEvent } from '../input.js'
 import type { OverlayState } from './overlay-state.js'
 import type { EditorState } from '../input/editor.js'
@@ -18,6 +19,7 @@ export type ReplControlInput = {
    * killing it: a shell watched in the foreground, or a blocking `task_output`
    * call holding the turn.
    */
+  interaction?: RunInteractionState
   canReclaimTurn?: boolean
 }
 
@@ -45,6 +47,10 @@ export type ReplControlAction =
 export function decideReplControl(input: ReplControlInput): ReplControlAction[] {
   const { event, overlay, isLoading, hasStream, editor, exitHint, logMode, hasQueuedPrompt, isCompacting, canReclaimTurn } = input
   const actions: ReplControlAction[] = []
+  const interaction = input.interaction ?? resolveRunInteraction({
+    active: isLoading || Boolean(isCompacting), owner: hasStream || isCompacting ? input : null,
+    compacting: isCompacting, foregroundTasks: canReclaimTurn ? 1 : 0,
+  })
 
   // Esc owns interrupt (confirmed by a second press in the REPL, opencode
   // style). Ctrl+C never interrupts: it clears the editor or exits the app.
@@ -58,12 +64,10 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
     return [{ kind: 'clear-editor' }]
   }
 
-  // Ctrl+B is the dedicated "stop waiting, keep the work" gesture. Keeping it
-  // separate from esc is what makes both unambiguous: esc always kills, ctrl+b
-  // never does. Overloading esc meant the same key had two outcomes depending on
-  // state the user could not see.
+  // Ctrl+B releases foreground ownership without killing the process. Esc
+  // interrupts the agent run; stopping a detached process belongs to its panel.
   if (event.type === 'ctrl' && event.key === 'b') {
-    if (isLoading && hasStream && canReclaimTurn) return [{ kind: 'reclaim-turn' }]
+    if (interaction.backgroundAction) return [{ kind: 'reclaim-turn' }]
     return [{ kind: 'normal-key' }]
   }
 
@@ -80,7 +84,7 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
     // Esc is the interrupt key; the REPL asks for a second press within a
     // short window. Backgrounding lives on ctrl+b, so neither key's meaning
     // depends on state the user cannot see.
-    if (isLoading && hasStream) return actions.concat({ kind: 'interrupt' })
+    if (interaction.interruptTarget) return actions.concat({ kind: 'interrupt' })
     if (!isEditorEmpty(editor)) return actions.concat({ kind: 'clear-editor' })
     if (logMode) return actions.concat({ kind: 'exit-log-mode' })
     return actions

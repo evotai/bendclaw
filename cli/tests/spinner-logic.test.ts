@@ -10,6 +10,7 @@ import {
   formatSpinnerLine,
   spinnerStatsFromLastUsage,
 } from '../src/term/spinner.js'
+import { resolveRunInteraction } from '../src/term/app/run-interaction.js'
 import stripAnsi from 'strip-ansi'
 
 describe('createSpinnerState', () => {
@@ -173,7 +174,7 @@ describe('formatSpinnerLine', () => {
     }, { model: 'claude-fable-5' }))
     expect(line).toContain('claude-fable-5 quota unavailable · retrying in 29m42s')
     expect(line).not.toContain('cache')
-    expect(line).toContain('esc to interrupt')
+    expect(line).toContain('esc twice to interrupt agent')
     expect(line).not.toContain('slow')
     const expired = stripAnsi(formatSpinnerLine(state, now + 1_800_000, undefined, { model: 'claude-fable-5' }))
     expect(expired).toContain('claude-fable-5 quota unavailable · retrying…')
@@ -191,7 +192,7 @@ describe('formatSpinnerLine', () => {
     }))
     expect(line).toContain('Upstream unavailable · retrying in 42s')
     expect(line).not.toContain('cache')
-    expect(line).toContain('esc to interrupt')
+    expect(line).toContain('esc twice to interrupt agent')
     expect(line).not.toContain('slow')
   })
 
@@ -264,7 +265,7 @@ describe('formatSpinnerLine', () => {
     ]
     for (const [tool, label] of cases) {
       const state = setSpinnerPhase(createSpinnerState(), 'executing', tool)
-      const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interruptible: false }))
+      const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: null, localOperation: true }) }))
       expect(line).toContain(label)
       expect(line).not.toContain('esc to interrupt')
     }
@@ -318,15 +319,15 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('2.5s')
   })
 
-  test('contains esc to interrupt hint', () => {
+  test('contains esc twice to interrupt agent hint', () => {
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now()))
-    expect(line).toContain('esc to interrupt')
+    expect(line).toContain('esc twice to interrupt agent')
   })
 
   test('an armed interrupt asks for the confirming esc in place', () => {
     const state = createSpinnerState()
-    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interruptPending: true, backgroundable: true }))
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: { ...resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }), interruptPending: true } }))
     expect(line).toContain('esc again to interrupt')
     expect(line).toContain('to background')
     expect(line).not.toContain('esc to interrupt')
@@ -337,8 +338,8 @@ describe('formatSpinnerLine', () => {
     // yielding on a timer, ctrl+b is the only non-destructive way out of a
     // wait, so it has to be the thing the line names.
     const state = createSpinnerState()
-    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
-    expect(line).toContain('esc to interrupt')
+    const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }) }))
+    expect(line).toContain('esc twice to interrupt agent')
     expect(line).toContain('ctrl+b to background')
     expect(line).not.toContain('auto-background')
   })
@@ -351,7 +352,7 @@ describe('formatSpinnerLine', () => {
     process.env.TMUX = '/tmp/tmux-1000/default,1234,0'
     try {
       const state = createSpinnerState()
-      const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { backgroundable: true }))
+      const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }) }))
       expect(line).toContain('ctrl+b ctrl+b (twice) to background')
     } finally {
       if (previous === undefined) delete process.env.TMUX
@@ -362,7 +363,7 @@ describe('formatSpinnerLine', () => {
   test('a suppressed hint stays suppressed even when backgroundable', () => {
     const state = createSpinnerState()
     const line = stripAnsi(
-      formatSpinnerLine(state, Date.now(), undefined, { interruptible: false, backgroundable: true }),
+      formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: state, localOperation: true, foregroundTasks: 1 }) }),
     )
     expect(line).not.toContain('esc to')
   })
@@ -493,7 +494,7 @@ describe('awaiting_background phase', () => {
     // parked on a detached task.
     const state = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
     const line = stripAnsi(formatSpinnerLine(state, Date.now()))
-    expect(line).toContain('Waiting for background task…')
+    expect(line).toContain('Background task running · resumes when finished')
   })
 
   test('offers no keyboard hint, because no key applies', () => {
@@ -501,7 +502,7 @@ describe('awaiting_background phase', () => {
     // is already backgrounded. Advertising either would be a false promise.
     const state = setSpinnerPhase(createSpinnerState(), 'awaiting_background')
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, {
-      backgroundable: true,
+      interaction: resolveRunInteraction({ active: false, owner: null, backgroundTasks: 1, foregroundTasks: 1 }),
     }))
     expect(line).not.toContain('esc to interrupt')
     expect(line).not.toContain('to background')

@@ -1,3 +1,4 @@
+import { resolveRunInteraction } from '../src/term/app/run-interaction.js'
 import { expect, test } from 'bun:test'
 import stripAnsi from 'strip-ansi'
 import { createSpinnerState, setSpinnerPhase, formatSpinnerLine } from '../src/term/spinner.js'
@@ -5,12 +6,16 @@ import { createBackgroundOutputState } from '../src/term/app/background-panel.js
 import stringWidth from 'string-width'
 import { clipDisplayText } from '../src/render/format.js'
 
-test('background task wait shows its status without a release-wait hint or slowness', () => {
+test('background task wait names the agent interrupt target and hides old usage', () => {
   const state = setSpinnerPhase(createSpinnerState(), 'executing', 'task_output')
-  const text = stripAnsi(formatSpinnerLine(state, state.phaseStartedAt + 120000, undefined, { releaseWait: true }))
-  expect(text).toContain('Waiting for background task')
-  expect(text).not.toContain('to stop waiting')
-  expect(text).toContain('esc to interrupt')
+  const text = stripAnsi(formatSpinnerLine(state, state.phaseStartedAt + 120000, { inputTokens: 100, outputTokens: 40 }, {
+    interaction: resolveRunInteraction({ active: true, owner: state, blockingWaits: 1 }),
+  }))
+  expect(text).toContain('Waiting for task result')
+  expect(text).toContain('to release wait')
+  expect(text).toContain('esc twice to interrupt agent')
+  expect(text).not.toContain('↑')
+  expect(text).not.toContain('↓')
   expect(text).not.toContain('to background')
   expect(text).not.toContain('slow')
 })

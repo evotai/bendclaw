@@ -112,7 +112,7 @@ export interface DiffRow {
  * filled block use `kind` to give added/removed rows their own fill, the way
  * opencode tints diff rows inside a tool block.
  */
-export function colorizeUnifiedDiffRows(diff: string): DiffRow[] {
+export function colorizeUnifiedDiffRows(diff: string, showSigns = true): DiffRow[] {
   const hunks = parseDiffHunks(diff)
   const output: DiffRow[] = []
   if (hunks.length === 0) {
@@ -123,7 +123,7 @@ export function colorizeUnifiedDiffRows(diff: string): DiffRow[] {
     const hunk = hunks[hi]!
     const lines = buildDiffLines(hunk.lines.filter(line => !line.startsWith('\\')), hunk.oldStart, hunk.newStart)
     const numW = gutterWidth(lines)
-    for (const line of lines) output.push({ text: renderLine(line, numW), kind: line.type })
+    for (const line of lines) output.push({ text: renderLine(line, numW, showSigns), kind: line.type })
   }
   return output
 }
@@ -202,10 +202,10 @@ function assignLineNumbers(
  * Single-line edits get inverse highlighting on changed tokens. No background
  * bars and no padding, so the shared wrapper can reflow long lines cleanly.
  */
-function renderLine(line: DiffLine, numWidth: number): string {
+function renderLine(line: DiffLine, numWidth: number, showSigns = true): string {
   const num = String(line.lineNum).padStart(numWidth)
   const sigil = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '
-  const gutterStr = `${num} ${sigil}`
+  const gutterStr = showSigns ? `${num} ${sigil}` : `${num} `
 
   if (line.type === 'context') {
     return style.context(gutterStr + line.code)

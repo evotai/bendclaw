@@ -9,7 +9,7 @@ export function buildOverlayBlocks(overlay: OverlayState, columns: number): View
   switch (overlay.kind) {
     case 'none': return []
     case 'help': return buildHelpBlocks(columns)
-    case 'selector': return buildSelectorBlocks(overlay.state, columns, true)
+    case 'selector': return buildSelectorBlocks(overlay.state, columns)
     case 'ask-user': return buildAskBlocks(overlay.state, columns)
   }
 }

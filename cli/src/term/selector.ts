@@ -1,5 +1,8 @@
 import type { Hint } from './design/key-hints.js'
 
+/** Prefix marking a preview body entry as a section label rather than content. */
+export const PREVIEW_SECTION_PREFIX = '# '
+
 export interface SelectorItem {
   label: string
   detail?: string
@@ -23,8 +26,12 @@ export interface SelectorItem {
   group?: string
   /** Prefix retained when full-text filtering replaces detail with a snippet. */
   contextPrefix?: string
-  /** Lines shown in the side pane while this row is focused. First line is the
-   *  heading. Rows without a preview render the list at full width. */
+  /** Lines shown in the side pane while this row is focused. Entries before the
+   *  first blank are the pinned header (first line is the heading); the rest is
+   *  the body. Body entries starting with [`PREVIEW_SECTION_PREFIX`] label a
+   *  section: the first section is pinned, the second is the trimmable list,
+   *  later ones are optional. Rows without a preview render the list at full
+   *  width. */
   preview?: string[]
   /** Footer hints shown while this row is focused, overriding the selector's.
    *  Rows advertise their own gestures so a key that would do nothing on this
@@ -215,6 +222,16 @@ export function selectorExpandItems(state: SelectorState, allItems: SelectorItem
   if (!focused || focused.header) return next
   // Keep the row the user was looking at across an async catalog refresh.
   return selectorFocusOn(next, item => focused.id ? item.id === focused.id : item.label === focused.label)
+}
+
+/** Replace one row in both the visible list and the unfiltered pool. */
+export function selectorReplaceItem(
+  state: SelectorState,
+  id: string,
+  nextItem: SelectorItem,
+): SelectorState {
+  const replace = (items: SelectorItem[]) => items.map(item => item.id === id ? nextItem : item)
+  return { ...state, items: replace(state.items), allItems: replace(state.allItems) }
 }
 
 export function selectorClearQuery(state: SelectorState): SelectorState {

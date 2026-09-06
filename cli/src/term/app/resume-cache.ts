@@ -3,9 +3,20 @@ import type { SessionMeta, SessionWithText } from '../../native/index.js'
 export interface ResumeSessionClient {
   listSessions(limit: number): Promise<SessionMeta[]>
   listSessionsWithText(limit: number): Promise<SessionWithText[]>
+  sessionWithText(sessionId: string): Promise<SessionWithText | null>
 }
 
-/** Owns preview/full/text snapshots and rejects late results after invalidation.
+/**
+ * Focused sessions whose text is retained. Each row carries a bounded
+ * transcript excerpt, so browsing a long list would otherwise accumulate them
+ * for the life of the session. Oldest focus is evicted first.
+ */
+const FOCUSED_TEXT_LIMIT = 32
+
+/** Rows in the bounded first paint, before the full catalog arrives. */
+export const RESUME_PREVIEW_ROWS = 20
+
+/** Owns metadata/text snapshots and rejects late results after invalidation.
  * No terminal, editor, selector or rendering dependencies. */
 export class ResumeSessionCache {
   private rows: SessionMeta[] | null = null
@@ -16,12 +27,26 @@ export class ResumeSessionCache {
   private previewLoad: Promise<SessionMeta[]> | null = null
   private fullLoad: Promise<SessionMeta[]> | null = null
   private textLoad: Promise<SessionWithText[]> | null = null
+  /** Text loaded one row at a time, for the focused preview. */
+  private readonly focusedText = new Map<string, SessionWithText>()
+  private readonly focusedLoads = new Map<string, Promise<SessionWithText | null>>()
 
   constructor(private readonly client: ResumeSessionClient, private readonly onLoaded: (rows: SessionMeta[]) => void = () => {}) {}
 
   get metadata(): SessionMeta[] | null { return this.rows }
   get withText(): SessionWithText[] | null { return this.textRows }
   get complete(): boolean { return this.full }
+
+  /**
+   * Text known for one session, from either load path.
+   *
+   * The list formatter reads this, so a row renders the same whether its text
+   * arrived with the whole catalog or from focusing that single row.
+   */
+  sessionText(sessionId: string): SessionWithText | undefined {
+    return this.textRows?.find(row => row.session_id === sessionId)
+      ?? this.focusedText.get(sessionId)
+  }
 
   replace(rows: SessionMeta[], complete = false): void {
     if (this.disposed) return
@@ -47,6 +72,8 @@ export class ResumeSessionCache {
     this.previewLoad = null
     this.fullLoad = null
     this.textLoad = null
+    this.focusedText.clear()
+    this.focusedLoads.clear()
   }
 
   dispose(): void {
@@ -56,17 +83,17 @@ export class ResumeSessionCache {
 
   preview(): Promise<SessionMeta[]> {
     if (this.disposed) return Promise.resolve([])
-    if (this.rows !== null && (this.full || this.rows.length > 0)) return Promise.resolve(this.rows.slice(0, 20))
+    if (this.rows !== null && (this.full || this.rows.length > 0)) return Promise.resolve(this.rows.slice(0, RESUME_PREVIEW_ROWS))
     if (this.previewLoad) return this.previewLoad
     const generation = this.generation
-    const load = this.client.listSessions(20).then(rows => {
-      if (generation !== this.generation) return (this.rows ?? []).slice(0, 20)
+    const load = this.client.listSessions(RESUME_PREVIEW_ROWS).then(rows => {
+      if (generation !== this.generation) return (this.rows ?? []).slice(0, RESUME_PREVIEW_ROWS)
       if (!this.full) {
         this.rows = rows
         this.onLoaded(rows)
         return rows
       }
-      return (this.rows ?? rows).slice(0, 20)
+      return (this.rows ?? rows).slice(0, RESUME_PREVIEW_ROWS)
     })
     this.previewLoad = load
     void load.finally(() => { if (this.previewLoad === load) this.previewLoad = null }).catch(() => {})
@@ -93,6 +120,7 @@ export class ResumeSessionCache {
     return load
   }
 
+  /** Every session's text. Only a typed filter needs this much. */
   text(): Promise<SessionWithText[]> {
     if (this.disposed) return Promise.resolve([])
     if (this.textRows !== null) return Promise.resolve(this.textRows)
@@ -108,6 +136,36 @@ export class ResumeSessionCache {
     })
     this.textLoad = load
     void load.finally(() => { if (this.textLoad === load) this.textLoad = null }).catch(() => {})
+    return load
+  }
+
+  /**
+   * One session's text, for the focused preview row.
+   *
+   * Coalesced per session and dropped on invalidation. Resolves to null when
+   * the session is gone or the read failed; the row then keeps its metadata
+   * preview rather than showing an error in a recognition aid.
+   */
+  loadSessionText(sessionId: string): Promise<SessionWithText | null> {
+    if (this.disposed) return Promise.resolve(null)
+    const known = this.sessionText(sessionId)
+    if (known) return Promise.resolve(known)
+    const inFlight = this.focusedLoads.get(sessionId)
+    if (inFlight) return inFlight
+    const generation = this.generation
+    const load = this.client.sessionWithText(sessionId).then(row => {
+      if (generation !== this.generation || row === null) return null
+      this.focusedText.set(sessionId, row)
+      if (this.focusedText.size > FOCUSED_TEXT_LIMIT) {
+        const oldest = this.focusedText.keys().next()
+        if (!oldest.done) this.focusedText.delete(oldest.value)
+      }
+      return row
+    }, () => null)
+    this.focusedLoads.set(sessionId, load)
+    void load.finally(() => {
+      if (this.focusedLoads.get(sessionId) === load) this.focusedLoads.delete(sessionId)
+    }).catch(() => {})
     return load
   }
 }

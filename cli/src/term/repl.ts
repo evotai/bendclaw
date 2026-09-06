@@ -17,7 +17,7 @@ import { createModelWindow, createResumeWindow } from './app/selector-windows.js
 import { buildShellFrame } from './viewmodel/shell.js'
 import { promptFromSnapshot } from './viewmodel/prompt-snapshot.js'
 import { createAppSelectorState, isCommandSelector, isBackgroundSelector, SELECTOR_OWNER } from './app/selector-identity.js'
-import { selectorExpandItems, selectorClearQuery, warmSearchableText, type SelectorItem, type SelectorState } from './selector.js'
+import { selectorExpandItems, selectorClearQuery, selectorReplaceItem, warmSearchableText, type SelectorItem, type SelectorState } from './selector.js'
 import { createAskState, handleAskKeyEvent, type AskQuestion } from './ask.js'
 import { buildAssistantLines, buildUserMessage, messagesToOutputLines, type OutputLine } from '../render/output.js'
 import { manualCompactionLines } from './viewmodel/manual-compaction.js'
@@ -119,8 +119,8 @@ import { tryStartServer, type ServerState } from './app/server.js'
 import {
   RESUME_SELECTOR_TITLE,
   COMPACT_SUMMARY_PREFIX,
+  applySessionText,
   formatSessionItems,
-  formatSessionWithTextItems,
   isSessionIdPrefix,
   normalizeResumeQuery,
   resolveSessionByPrefix,
@@ -527,7 +527,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // metadata work to the same recent-session budget used at startup.
     const recent = (resumeCache.metadata ?? []).slice(0, 20)
     if (recent.length > 0) {
-      const items = formatSessionItems(recent, agent.cwd)
+      const items = formatSessionItems(recent, agent.cwd, id => resumeCache.sessionText(id))
       return resumeSelectorState(items)
     }
     if (resumeCache.complete) {
@@ -550,7 +550,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const current = currentResumeCommandWindowState(generation)
     if (!current) return false
     const visibleSessions = limit === undefined ? sessions : sessions.slice(0, limit)
-    const items = formatSessionItems(visibleSessions, agent.cwd)
+    const items = formatSessionItems(visibleSessions, agent.cwd, id => resumeCache.sessionText(id))
     const {
       emptyMessage: _loadingMessage,
       subtitle: _loadingSubtitle,
@@ -566,7 +566,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             ? 'No sessions in current cwd · type to search all sessions'
             : 'No sessions found',
         }
-    return updateResumeCommandWindow(generation, next)
+    const applied = updateResumeCommandWindow(generation, next)
+    if (applied) loadFocusedResumePreview(next)
+    return applied
   }
 
   function cancelResumeCommandLoad(): void {
@@ -688,11 +690,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         enrichedResumeMetadataGeneration = generation
         if (!includeText) return
 
-        const withText = resumeCache.text()
-        return withText.then(sessionsWithText => {
+        return resumeCache.text().then(sessionsWithText => {
           const current = currentResumeCommandWindowState(generation)
           if (!current) return
-          const fullItems = formatSessionWithTextItems(sessionsWithText, agent.cwd)
+          const fullItems = formatSessionItems(sessionsWithText, agent.cwd, id => resumeCache.sessionText(id))
           if (updateResumeCommandWindow(generation, selectorExpandItems(current, fullItems))) {
             enrichedResumeTextGeneration = generation
             // Transcript text just became searchable. Lowercase it in idle
@@ -709,6 +710,47 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         })
       })
     }, 160)
+  }
+
+  /**
+   * The resume list currently on screen, with the setter that owns it.
+   *
+   * A resume list lives either in the composer preview or in the promoted
+   * overlay. Both need the focused row's preview filled in, so the loader
+   * addresses whichever one is mounted instead of only the overlay.
+   */
+  function resumeSurface(): { state: SelectorState; apply: (state: SelectorState) => void } | null {
+    if (commandWindowPreview?.kind === 'selector' && commandWindowPreview.trigger === 'resume') {
+      const mounted = commandWindowPreview
+      return { state: mounted.state, apply: state => { commandWindowPreview = { ...mounted, state } } }
+    }
+    if (overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.resume) {
+      return { state: overlay.state, apply: state => { overlay = { kind: 'selector', state } } }
+    }
+    return null
+  }
+
+  /**
+   * Fill the focused row's preview from its own transcript.
+   *
+   * The pane shows one session at a time, so only that session is read. Reading
+   * the whole catalog to render one pane costs a transcript read per session,
+   * which on a large history left the pane empty long enough to look broken.
+   */
+  function loadFocusedResumePreview(state: SelectorState): void {
+    const focused = state.items[state.focusIndex]
+    if (!focused || focused.header || !focused.id) return
+    const id = focused.id
+    void resumeCache.loadSessionText(id).then(text => {
+      if (!text) return
+      const surface = resumeSurface()
+      const stillFocused = surface?.state.items[surface.state.focusIndex]
+      // Focus moved on, or the list was replaced: a later focus reloads from
+      // the cache, so there is nothing to reconcile here.
+      if (!surface || !stillFocused || stillFocused.id !== id) return
+      surface.apply(selectorReplaceItem(surface.state, id, applySessionText(stillFocused, text, agent.cwd)))
+      renderer.requestRender()
+    })
   }
 
   function refreshCommandWindowPreview(allowMount: boolean): void {
@@ -827,7 +869,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // the modal cannot immediately recreate the same preview from `/help`.
     if (preview.kind === 'help') clearAll()
     renderer.requestRender()
-    if (preview.trigger === 'resume') scheduleFocusedResumeEnrichment(preview.generation)
+    if (preview.trigger === 'resume') {
+      scheduleFocusedResumeEnrichment(preview.generation)
+      if (overlay.kind === 'selector') loadFocusedResumePreview(overlay.state)
+    }
     return true
   }
 
@@ -2254,9 +2299,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // history under the cancellation notice.
     restoreQueuedUserMessagesToEditor()
     commitLines([{ id, kind: 'cancelled', text }])
-    // Ownership was revoked above, so the aborted run's own finally block will
-    // not settle the hook. Settle here or an external adapter would stay stuck
-    // on working/blocked after every interrupt.
+    backgroundTerminals.parkUntilBackground()
     sessionHook.settleRun()
   }
 
@@ -3223,7 +3266,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         .map(id => allSessions.find(s => s.session_id === id))
         .filter((s): s is SessionMeta => Boolean(s))
       if (ranked.length === 0) return
-      const items = formatSessionItems(ranked, agent.cwd)
+      const items = formatSessionItems(ranked, agent.cwd, id => resumeCache.sessionText(id))
       invalidateExplicitResumeSelector()
       overlay = {
         kind: 'selector',
@@ -3241,9 +3284,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     const cached = resumeCache.withText ?? resumeCache.metadata
     const items = cached === null
       ? []
-      : resumeCache.withText !== null
-        ? formatSessionWithTextItems(resumeCache.withText, agent.cwd)
-        : formatSessionItems(cached, agent.cwd)
+      : formatSessionItems(cached, agent.cwd, id => resumeCache.sessionText(id))
     overlay = {
       kind: 'selector',
       state: {
@@ -3252,6 +3293,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       },
     }
     renderer.requestRender()
+    if (cached !== null) loadFocusedResumePreview(overlay.state)
 
     const activeState = (): SelectorState | null => {
       if (generation !== explicitResumeSelectorGeneration) return null
@@ -3269,25 +3311,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         renderer.requestRender()
         return
       }
-      const metaItems = formatSessionItems(allSessions, agent.cwd)
+      const metaItems = formatSessionItems(allSessions, agent.cwd, id => resumeCache.sessionText(id))
       overlay = {
         kind: 'selector',
         state: selectorExpandItems(current, metaItems),
       }
       renderer.requestRender()
-      resumeCache.text().then(allWithText => {
-        const enriched = activeState()
-        if (!enriched) return
-        const fullItems = formatSessionWithTextItems(allWithText, agent.cwd)
-        overlay = {
-          kind: 'selector',
-          state: selectorExpandItems(enriched, fullItems),
-        }
-        // Same reason as the command-window path: warm the lowercased search
-        // text in idle slices instead of on the first keystroke.
-        startSearchTextWarm(fullItems)
-        renderer.requestRender()
-      }).catch(() => {})
+      loadFocusedResumePreview(overlay.state)
     }).catch((err: unknown) => {
       if (!activeState()) return
       commitSystem('sys-r-err', chalk.red(`  Failed to list sessions: ${errorText(err)}`))
@@ -3479,14 +3509,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'update':
         overlay = { kind: 'selector', state: action.state }
         renderer.requestRender()
-        if (
-          focusedCommandWindowGeneration !== null
-          && action.state.owner === SELECTOR_OWNER.resume
-        ) {
-          scheduleFocusedResumeEnrichment(
-            focusedCommandWindowGeneration,
-            action.state.query.length > 0,
-          )
+        if (action.state.owner === SELECTOR_OWNER.resume) {
+          if (focusedCommandWindowGeneration !== null) {
+            scheduleFocusedResumeEnrichment(
+              focusedCommandWindowGeneration,
+              action.state.query.length > 0,
+            )
+          }
+          loadFocusedResumePreview(action.state)
         }
         return
       case 'close':

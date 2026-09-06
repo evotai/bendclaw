@@ -20,6 +20,7 @@ function fixture() {
       text.push(result)
       return result.promise
     },
+    sessionWithText: () => Promise.resolve(null),
   }, rows => published.push(rows))
   return { cache, metadata, text, published }
 }
@@ -106,6 +107,7 @@ describe('resume cache ownership', () => {
     expect(await f.cache.preview()).toEqual([])
     expect(await f.cache.all()).toEqual([])
     expect(await f.cache.text()).toEqual([])
+    expect(await f.cache.loadSessionText('late')).toBeNull()
     expect(f.metadata).toHaveLength(1)
     expect(f.text).toHaveLength(0)
     expect(f.cache.metadata).toBeNull()
@@ -119,5 +121,63 @@ describe('resume cache ownership', () => {
     const retry = f.cache.all()
     f.metadata[1]!.result.resolve([row('ok')])
     expect(await retry).toEqual([row('ok')])
+  })
+
+  test('focused text loads one session, coalesces, and serves later reads from memory', async () => {
+    const requested: string[] = []
+    const pending = new Map<string, ReturnType<typeof Promise.withResolvers<SessionWithText | null>>>()
+    const cache = new ResumeSessionCache({
+      listSessions: () => Promise.resolve([]),
+      listSessionsWithText: () => Promise.resolve([]),
+      sessionWithText: sessionId => {
+        requested.push(sessionId)
+        const result = Promise.withResolvers<SessionWithText | null>()
+        pending.set(sessionId, result)
+        return result.promise
+      },
+    })
+    const text = { ...row('a'), search_text: 'body', user_prompts: ['ask'] }
+
+    const first = cache.loadSessionText('a')
+    expect(cache.loadSessionText('a')).toBe(first)
+    expect(requested).toEqual(['a'])
+    pending.get('a')!.resolve(text)
+    expect(await first).toEqual(text)
+    // The formatter reads it synchronously from here on, with no second read.
+    expect(cache.sessionText('a')).toEqual(text)
+    expect(await cache.loadSessionText('a')).toEqual(text)
+    expect(requested).toEqual(['a'])
+
+    cache.invalidate()
+    expect(cache.sessionText('a')).toBeUndefined()
+    const after = cache.loadSessionText('a')
+    expect(requested).toEqual(['a', 'a'])
+    pending.get('a')!.resolve(text)
+    expect(await after).toEqual(text)
+  })
+
+  test('a vanished session and a failed read both leave the row on metadata', async () => {
+    const cache = new ResumeSessionCache({
+      listSessions: () => Promise.resolve([]),
+      listSessionsWithText: () => Promise.resolve([]),
+      sessionWithText: sessionId => sessionId === 'gone'
+        ? Promise.resolve(null)
+        : Promise.reject(new Error('unreadable')),
+    })
+    expect(await cache.loadSessionText('gone')).toBeNull()
+    expect(await cache.loadSessionText('broken')).toBeNull()
+    expect(cache.sessionText('gone')).toBeUndefined()
+  })
+
+  test('focused text is bounded so browsing a long list cannot grow without limit', async () => {
+    const cache = new ResumeSessionCache({
+      listSessions: () => Promise.resolve([]),
+      listSessionsWithText: () => Promise.resolve([]),
+      sessionWithText: sessionId => Promise.resolve({ ...row(sessionId), search_text: sessionId, user_prompts: [] }),
+    })
+    for (let index = 0; index < 40; index++) await cache.loadSessionText(`s${index}`)
+    // The oldest focus is evicted; the most recent stay resident.
+    expect(cache.sessionText('s0')).toBeUndefined()
+    expect(cache.sessionText('s39')).toBeDefined()
   })
 })

@@ -17,6 +17,10 @@ export interface SessionMeta {
 export interface SessionWithText extends SessionMeta {
   search_text: string
   user_prompts: string[]
+  /** First real user turn; absent from older addons and empty sessions. */
+  first_prompt?: string
+  /** Paths edited or written, first-seen order; absent from older addons. */
+  changed_paths?: string[]
 }
 export interface TranscriptItem { [key: string]: unknown }
 export interface VariableInfo { key: string; value: string; updated_at?: string }
@@ -65,7 +69,11 @@ const sessionFields = {
 }
 export const sessionMeta: Schema<SessionMeta> = object(sessionFields)
 export const sessions = array(sessionMeta)
-export const sessionsWithText: Schema<SessionWithText[]> = array(object({ ...sessionFields, search_text: text, user_prompts: array(text) }))
+export const sessionWithText: Schema<SessionWithText> = object({
+  ...sessionFields, search_text: text, user_prompts: array(text),
+  first_prompt: optional(text), changed_paths: optional(array(text)),
+})
+export const sessionsWithText: Schema<SessionWithText[]> = array(sessionWithText)
 export const transcript: Schema<TranscriptItem[]> = array(record)
 export const variables: Schema<VariableInfo[]> = array(object({ key: text, value: text, updated_at: optional(text) }))
 export const queuedPrompt: Schema<QueuedPrompt> = object({ id: text, version: uint, message: record })

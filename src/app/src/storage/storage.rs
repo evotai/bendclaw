@@ -14,6 +14,10 @@ pub trait Storage: Send + Sync {
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMeta>>;
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>>;
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>>;
+    /// One session's searchable and displayable text, or `None` when the
+    /// session is gone. The resume pane loads the focused row this way rather
+    /// than paying for every transcript in the catalog.
+    async fn session_with_text(&self, session_id: &str) -> Result<Option<SessionWithText>>;
     /// Whether a session has any persisted transcript activity. Empty drafts
     /// have metadata only and must not consume slots in user-facing listings.
     async fn session_has_entries(&self, session_id: &str) -> Result<bool> {

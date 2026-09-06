@@ -197,6 +197,12 @@ export class Agent {
     return decodeResult(json, results.sessionsWithText)
   }
 
+  /** One session's text, or null when it is gone. */
+  async sessionWithText(sessionId: string): Promise<SessionWithText | null> {
+    const json = await this.raw.sessionWithText(sessionId)
+    return json === null ? null : decodeResult(json, results.sessionWithText)
+  }
+
   async loadTranscript(sessionId: string): Promise<TranscriptItem[]> {
     const json = await this.raw.loadTranscript(sessionId)
     return decodeResult(json, results.transcript)

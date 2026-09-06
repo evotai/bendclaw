@@ -185,6 +185,8 @@ integration('live NAPI ConfigInfo contract', () => {
         await agent.listSessionsWithText();
         await agent.findSession(session.session_id);
         await agent.loadTranscript(session.session_id);
+        const focused = await agent.sessionWithText(session.session_id);
+        if (focused?.session_id !== session.session_id) throw new Error('focused session contract mismatch');
         await agent.loadContextTranscript(session.session_id);
         await agent.loadResumeTranscript(session.session_id);
         agent.backgroundProcesses(session.session_id);

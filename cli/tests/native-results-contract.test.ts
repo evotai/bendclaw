@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import * as r from '../src/native/contracts/results.js'
+import { array, nullable, object, text, uint } from '../src/native/contracts/schema.js'
 import legacy from './fixtures/contracts/native-results-legacy.json'
 import { campaignContent } from '../src/term/app/campaigns.js'
 
@@ -16,6 +17,24 @@ describe('native result contracts', () => {
     const opaque = { ...legacy.queue, message: { future: [null, false, { input: 12 }] }, extension: true }
     expect(r.decodeResult(JSON.stringify(opaque), r.queuedPrompt)).toEqual(opaque)
     expect(r.decodeResult('[{"future_item":{"anything":[false]}}]', r.transcript)).toEqual([{ future_item: { anything: [false] } }])
+  })
+
+  test('session text keeps the legacy shape readable in both directions', () => {
+    const old = legacy.sessionWithText
+    expect(r.sessionWithText.read(old, '$')).toBe(old)
+    expect(old).not.toHaveProperty('first_prompt')
+    const current = { ...old, first_prompt: 'fixture ask', changed_paths: ['src/a.ts'] }
+    expect(r.sessionWithText.read(current, '$')).toBe(current)
+    // The pre-extension reader validates all its published fields and permits
+    // additive keys, just like the historical addon result contract.
+    const legacyReader = object({
+      session_id: text, cwd: text, model: text, title: nullable(text),
+      turns: uint, created_at: text, updated_at: text,
+      search_text: text, user_prompts: array(text),
+    })
+    expect(legacyReader.read(current, '$')).toBe(current)
+    expect(() => legacyReader.read({ ...current, user_prompts: [3] }, '$')).toThrow()
+    expect(() => r.sessionWithText.read({ ...current, changed_paths: [3] }, '$')).toThrow()
   })
 
   test('bad fields fail at their path without private values', () => {

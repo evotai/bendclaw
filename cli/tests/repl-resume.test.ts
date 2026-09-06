@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import {
   RESUME_SELECTOR_TITLE,
   COMPACT_SUMMARY_PREFIX,
+  applySessionText,
   formatSessionItems,
-  formatSessionWithTextItems,
   isSessionIdPrefix,
   normalizeResumeQuery,
   resolveSessionByPrefix,
   sanitizeSessionTitle,
   sessionPreviewLines,
 } from '../src/term/app/resume.js'
-import { createSelectorState, selectorExpandItems, selectorType } from '../src/term/selector.js'
+import { createSelectorState, selectorExpandItems, selectorReplaceItem, selectorType } from '../src/term/selector.js'
 import type { SessionMeta, SessionWithText } from '../src/native/index.js'
 
 describe('repl resume helpers', () => {
@@ -18,6 +18,10 @@ describe('repl resume helpers', () => {
     { session_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', title: 'cwd session', cwd: '/work', source: 'local', model: 'm1', turns: 3, updated_at: Date.now() } as any,
     { session_id: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', title: 'other session', cwd: '/other', model: 'm2', updated_at: Date.now() } as any,
   ]
+
+  function text(session: SessionMeta, overrides: Partial<SessionWithText> = {}): SessionWithText {
+    return { ...session, search_text: '', user_prompts: [], ...overrides }
+  }
 
   test('isSessionIdPrefix accepts hex prefix only', () => {
     expect(isSessionIdPrefix('abc123')).toBe(true)
@@ -63,9 +67,11 @@ describe('repl resume helpers', () => {
     ])
     expect(items[0]).toMatchObject({ header: true, focusable: false, group: 'current-cwd' })
     expect(items[1]).toMatchObject({ id: sessions[0]!.session_id, group: 'current-cwd' })
+    // Sources differ across rows (`local` vs none), so the column is shown.
     expect(items[1]!.detail).toContain('local ')
     expect(items[1]!.detail).toContain('cwd session')
-    expect(items[1]!.detail).toContain('[3 turns]')
+    expect(items[1]!.detail).toContain('3 turns')
+    expect(items[1]!.detail).not.toContain('[3 turns]')
     expect(items[1]!.searchText).toContain('/work')
     expect(items[3]).toMatchObject({ id: sessions[1]!.session_id, group: 'other-cwd' })
     expect(items[3]!.detail).toContain('/other')
@@ -116,12 +122,14 @@ describe('repl resume helpers', () => {
     expect(state.items.map(item => item.label)).toEqual(['Other cwd', 'aaaaaaaa'])
   })
 
-  test('formatSessionWithTextItems uses full search text and matching groups', () => {
+  test('loaded text supplies the searchable body, metadata carries the rest', () => {
     const withText = sessions.map((session, index) => ({
       ...session,
       search_text: index === 0 ? 'current full text body' : 'other full text body',
+      user_prompts: [],
     })) as SessionWithText[]
-    const items = formatSessionWithTextItems(withText, '/work')
+    const byId = new Map(withText.map(row => [row.session_id, row]))
+    const items = formatSessionItems(withText, '/work', id => byId.get(id))
     expect(items[1]!.searchText).toBe('current full text body')
     expect(items[3]!.searchText).toBe('other full text body')
     expect(items[3]!.contextPrefix).toBe('/other · ')
@@ -144,20 +152,71 @@ describe('repl resume helpers', () => {
   })
 
   test('sessionPreviewLines adds cwd only for sessions from another directory', () => {
-    expect(sessionPreviewLines(sessions[1]!, { showCwd: true })[1]).toEndWith(' · /other')
+    expect(sessionPreviewLines(sessions[1]!, undefined, true)[1]).toEndWith(' · /other')
   })
 
-  test('sessionPreviewLines lists user turns under a blank separator', () => {
-    const lines = sessionPreviewLines(sessions[0]!, {
-      userPrompts: ['fix the retry budget', 'now add a test'],
-    })
+  test('sessionPreviewLines splits the opening ask from the latest turns', () => {
+    const lines = sessionPreviewLines(sessions[0]!, text(sessions[0]!, {
+      user_prompts: ['fix the retry budget', 'now add a test', 'commit it'],
+    }))
 
     expect(lines[2]).toBe('')
-    expect(lines.slice(3)).toEqual(['› fix the retry budget', '› now add a test'])
+    expect(lines.slice(3)).toEqual([
+      '# Started with', '› fix the retry budget',
+      '',
+      '# Latest', '› now add a test', '› commit it',
+    ])
+  })
+
+  test('sessionPreviewLines keeps only the last three latest turns', () => {
+    const lines = sessionPreviewLines(sessions[0]!, text(sessions[0]!, {
+      user_prompts: ['one', 'two', 'three', 'four', 'five'],
+    }))
+    expect(lines).toContain('# Started with')
+    expect(lines).toContain('› one')
+    expect(lines).toContain('  ⋮')
+    expect(lines.slice(lines.indexOf('# Latest'))).toEqual([
+      '# Latest', '  ⋮', '› three', '› four', '› five',
+    ])
+    expect(lines).not.toContain('› two')
+  })
+
+  test('sessionPreviewLines keeps a trimmed session\'s real first prompt and lists changed files', () => {
+    const lines = sessionPreviewLines(sessions[0]!, text(sessions[0]!, {
+      first_prompt: 'build the whole thing',
+      user_prompts: ['turn 70', 'turn 71'],
+      changed_paths: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'],
+    }))
+    expect(lines.slice(3)).toEqual([
+      '# Started with', '› build the whole thing',
+      '',
+      '# Latest', '› turn 70', '› turn 71',
+      '',
+      '# Changed 5 files', '  a.ts · b.ts · c.ts · +2',
+    ])
+  })
+
+  test('sessionPreviewLines does not repeat a one-turn session under Latest', () => {
+    const lines = sessionPreviewLines(sessions[0]!, text(sessions[0]!, { user_prompts: ['only ask'] }))
+    expect(lines.slice(2)).toEqual(['', '# Started with', '› only ask'])
+  })
+
+  test('formatSessionItems hides the source column when every row shares one source', () => {
+    const same = sessions.map(session => ({ ...session, source: 'tui' }))
+    const items = formatSessionItems(same, '/work')
+    expect(items[1]!.detail).not.toContain('tui')
+    expect(items[1]!.detail).toStartWith('cwd session')
+  })
+
+  test('sessionPreviewLines shows a time span for sessions that ran across time', () => {
+    const day = 24 * 3600 * 1000
+    const spread = { ...sessions[0]!, created_at: new Date(Date.now() - 3 * day).toISOString(), updated_at: new Date().toISOString() }
+    expect(sessionPreviewLines(spread)[1]).toContain(' → ')
   })
 
   test('sessionPreviewLines omits the separator when no turns are loaded yet', () => {
-    expect(sessionPreviewLines(sessions[0]!, { userPrompts: [] })).toHaveLength(2)
+    expect(sessionPreviewLines(sessions[0]!)).toHaveLength(2)
+    expect(sessionPreviewLines(sessions[0]!, text(sessions[0]!, { user_prompts: [] }))).toHaveLength(2)
   })
 
   test('sessionPreviewLines drops the provider prefix from the model', () => {
@@ -189,5 +248,43 @@ describe('repl resume helpers', () => {
     expect(sanitizeSessionTitle('')).toBe('(untitled)')
     expect(sanitizeSessionTitle(undefined)).toBe('(untitled)')
     expect(sanitizeSessionTitle(null)).toBe('(untitled)')
+  })
+
+  test('applySessionText fills the focused row and leaves its neighbours alone', () => {
+    const items = formatSessionItems(sessions, '/work')
+    const loaded = text(sessions[0]!, {
+      search_text: 'full body',
+      first_prompt: 'ask',
+      user_prompts: ['ask', 'later'],
+      changed_paths: ['cli/src/term/repl.ts'],
+    })
+    const patched = applySessionText(items[1]!, loaded, '/work')
+
+    expect(patched.searchText).toBe('full body')
+    expect(patched.preview).toContain('# Started with')
+    expect(patched.preview).toContain('\u203a ask')
+    expect(patched.preview).toContain('# Latest')
+    expect(patched.preview).toContain('\u203a later')
+    expect(patched.preview).toContain('# Changed 1 file')
+    expect(patched.preview).toContain('  repl.ts')
+    // Identity is preserved so the selector's caches stay keyed on this row.
+    expect(patched.id).toBe(items[1]!.id)
+    expect(patched.label).toBe(items[1]!.label)
+    expect(patched.detail).toBe(items[1]!.detail)
+  })
+
+  test('applySessionText shows the cwd only for a session from another directory', () => {
+    const items = formatSessionItems(sessions, '/work')
+    const other = applySessionText(items[3]!, text(sessions[1]!, { user_prompts: ['ask'] }), '/work')
+    expect(other.preview?.[1]).toEndWith(' \u00b7 /other')
+  })
+
+  test('selectorReplaceItem updates both visible and unfiltered pools', () => {
+    const items = formatSessionItems(sessions, '/work')
+    const state = createSelectorState('Resume session', items)
+    const nextItem = { ...items[1]!, preview: ['filled'] }
+    const next = selectorReplaceItem(state, sessions[0]!.session_id, nextItem)
+    expect(next.items[1]!.preview).toEqual(['filled'])
+    expect(next.allItems[1]!.preview).toEqual(['filled'])
   })
 })

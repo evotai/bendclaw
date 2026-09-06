@@ -20,6 +20,32 @@ pub struct SessionWithText {
     /// to show only the user's side of the conversation cannot recover it from
     /// there.
     pub user_prompts: Vec<String>,
+    /// The first real user turn, kept even when `user_prompts` is trimmed to the
+    /// tail of a long session: it says what the session set out to do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_prompt: Option<String>,
+    /// Paths passed to edit/write tool calls, deduplicated in first-seen order.
+    /// What the session actually changed — the most reliable recognition
+    /// signal after the prompts themselves.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_paths: Vec<String>,
+}
+
+impl SessionWithText {
+    /// Derive every searchable and displayable field from one transcript.
+    ///
+    /// The single extraction point for both the resume list and its preview
+    /// pane: a second implementation elsewhere would let the same session read
+    /// differently depending on which load populated it.
+    pub fn extract(session: SessionMeta, entries: &[TranscriptEntry]) -> Self {
+        Self {
+            search_text: collect_search_text(&session, entries),
+            user_prompts: collect_user_prompts(entries),
+            first_prompt: collect_first_prompt(entries),
+            changed_paths: collect_changed_paths(entries),
+            session,
+        }
+    }
 }
 
 pub struct SessionSearcher {
@@ -92,7 +118,7 @@ const USER_PROMPT_MAX_CHARS: usize = 300;
 /// The session's real user turns, oldest first, newest-biased when truncated.
 /// Compaction's synthetic summary prompt is skipped — it is boilerplate the
 /// user never typed.
-pub fn collect_user_prompts(entries: &[TranscriptEntry]) -> Vec<String> {
+fn collect_user_prompts(entries: &[TranscriptEntry]) -> Vec<String> {
     let mut prompts: Vec<String> = Vec::new();
     for entry in entries {
         let TranscriptItem::User { text, .. } = &entry.item else {
@@ -115,7 +141,57 @@ pub fn collect_user_prompts(entries: &[TranscriptEntry]) -> Vec<String> {
     prompts
 }
 
-pub fn collect_search_text(session: &SessionMeta, entries: &[TranscriptEntry]) -> String {
+/// The first real user turn, or `None` when the session has none.
+fn collect_first_prompt(entries: &[TranscriptEntry]) -> Option<String> {
+    entries.iter().find_map(|entry| {
+        let TranscriptItem::User { text, .. } = &entry.item else {
+            return None;
+        };
+        if crate::compact::context_view::is_compact_summary_text(text) {
+            return None;
+        }
+        let text = normalize_ws(text);
+        (!text.is_empty()).then(|| clip_head(&text, USER_PROMPT_MAX_CHARS))
+    })
+}
+
+/// Distinct paths this session edited or wrote, capped so a long session's
+/// list stays a summary rather than a manifest.
+const CHANGED_PATH_LIMIT: usize = 32;
+
+fn collect_changed_paths(entries: &[TranscriptEntry]) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    for entry in entries {
+        let TranscriptItem::Assistant { content, .. } = &entry.item else {
+            continue;
+        };
+        for block in content {
+            let crate::types::AssistantBlock::ToolCall { name, input, .. } = block else {
+                continue;
+            };
+            if !matches!(name.as_str(), "edit" | "write" | "file_edit" | "file_write") {
+                continue;
+            }
+            let Some(path) = ["path", "file_path", "file"]
+                .iter()
+                .find_map(|key| input.get(key).and_then(|value| value.as_str()))
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+            else {
+                continue;
+            };
+            if !paths.iter().any(|seen| seen == path) {
+                paths.push(path.to_string());
+            }
+            if paths.len() == CHANGED_PATH_LIMIT {
+                return paths;
+            }
+        }
+    }
+    paths
+}
+
+fn collect_search_text(session: &SessionMeta, entries: &[TranscriptEntry]) -> String {
     let mut parts = Vec::new();
     parts.push(session.session_id.clone());
     if let Some(t) = &session.title {

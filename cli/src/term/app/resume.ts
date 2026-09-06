@@ -1,6 +1,6 @@
 import { padRight, relativeTime } from '../../render/format.js'
 import type { SessionMeta, SessionWithText } from '../../native/index.js'
-import type { SelectorItem } from '../selector.js'
+import { PREVIEW_SECTION_PREFIX, type SelectorItem } from '../selector.js'
 
 export const RESUME_SELECTOR_TITLE = 'Resume session  (Ctrl+D delete · twice)'
 
@@ -88,11 +88,23 @@ export function resolveSessionByPrefix(sessions: SessionMeta[], prefix: string):
   return { kind: 'matched', session: matches[0]! }
 }
 
+/** Latest user turns shown after `Started with`. The rest stay behind `⋮`. */
+const PREVIEW_LATEST_SHOWN = 3
+
+/** Paths named in the `Changed` section before the rest become `+N`. */
+const PREVIEW_CHANGED_PATHS_SHOWN = 3
+
 /**
- * Side-pane content for one session: a wall of near-identical titles is what
- * makes the resume list hard to read, so the pane shows the full title, one
- * compact identity line, and then the user's own turns — the fastest way to
- * recognize which conversation this was.
+ * Side-pane content for one session, organised by what identifies it fastest:
+ * the title and identity line, what it set out to do (`Started with`), where
+ * it left off (`Latest`), and what it actually touched (`Changed`). Sections
+ * are labelled entries so the pane can trim them by priority rather than by
+ * position when space is short.
+ *
+ * `text` is absent until that session's transcript has been read, so the pane
+ * starts as the identity block and fills in once it lands. Every field comes
+ * from the engine's own extraction, so a row reads the same whether its text
+ * arrived with the whole catalog or from focusing this one row.
  *
  * `source` already appears in the row and `cwd` in the group heading, so
  * neither is repeated here; a session from another cwd is the exception, since
@@ -100,20 +112,52 @@ export function resolveSessionByPrefix(sessions: SessionMeta[], prefix: string):
  */
 export function sessionPreviewLines(
   session: SessionMeta,
-  opts: { userPrompts?: string[]; showCwd?: boolean } = {},
+  text?: SessionWithText,
+  showCwd = false,
 ): string[] {
-  const facts = [shortModel(session), `${session.turns || 0} turns`, relativeTime(session.updated_at)]
-  if (opts.showCwd) facts.push(shortenSessionCwd(session.cwd))
-
+  const facts = [shortModel(session), `${session.turns || 0} turns`, sessionSpan(session)]
+  if (showCwd) facts.push(shortenSessionCwd(session.cwd))
   const lines = [sanitizeSessionTitle(session.title), facts.filter(Boolean).join(' · ')]
-  // Prompts arrive with the async full-text load, so the pane starts as the
-  // identity block and fills in once they land.
-  const prompts = opts.userPrompts ?? []
-  if (prompts.length > 0) {
-    lines.push('')
-    lines.push(...prompts.map(prompt => `› ${prompt}`))
+  if (!text) return lines
+
+  const prompts = text.user_prompts
+  const first = text.first_prompt ?? prompts[0]
+  // The opening turn is its own section; `Latest` is every turn after it so a
+  // one-turn session does not say the same thing twice.
+  const latest = first !== undefined && prompts[0] === first ? prompts.slice(1) : prompts
+  const latestShown = latest.slice(-PREVIEW_LATEST_SHOWN)
+  const sections: string[][] = []
+  if (first) sections.push([`${PREVIEW_SECTION_PREFIX}Started with`, `› ${first}`])
+  if (latestShown.length > 0) {
+    sections.push([
+      `${PREVIEW_SECTION_PREFIX}Latest`,
+      ...(latest.length > latestShown.length ? ['  ⋮'] : []),
+      ...latestShown.map(prompt => `› ${prompt}`),
+    ])
   }
+  const changed = text.changed_paths ?? []
+  if (changed.length > 0) {
+    const shown = changed.slice(0, PREVIEW_CHANGED_PATHS_SHOWN)
+    const more = changed.length - shown.length
+    const names = shown.map(path => path.split('/').pop() || path)
+    sections.push([
+      `${PREVIEW_SECTION_PREFIX}Changed ${changed.length} ${changed.length === 1 ? 'file' : 'files'}`,
+      `  ${names.join(' · ')}${more > 0 ? ` · +${more}` : ''}`,
+    ])
+  }
+  if (sections.length > 0) lines.push('', ...sections.flatMap((section, index) => index === 0 ? section : ['', ...section]))
   return lines
+}
+
+/**
+ * `2d ago → 1h ago` for a session that ran across time, or just the last
+ * activity when it was a single sitting: the span is what separates a long
+ * task from a quick question.
+ */
+function sessionSpan(session: SessionMeta): string {
+  const updated = relativeTime(session.updated_at)
+  const created = relativeTime(session.created_at)
+  return created && created !== updated ? `${created} → ${updated}` : updated
 }
 
 /**
@@ -165,46 +209,67 @@ function formatSessionItem(
   s: SessionMeta,
   label: string,
   otherCwd: boolean,
-  searchText: string,
-  preview: string[],
+  showSource: boolean,
+  text: SessionWithText | undefined,
 ): SelectorItem {
-  const source = padRight(s.source || '', 6)
+  // The source column only earns its space when it tells rows apart.
+  const source = showSource ? `${padRight(s.source || '', 6)} ` : ''
   const title = padRight(sanitizeSessionTitle(s.title), TITLE_COLUMN_WIDTH)
-  const turns = padRight(s.turns ? `[${s.turns} turns]` : '', 12)
+  const turns = padRight(s.turns ? `${s.turns} turns` : '', 10)
   const time = relativeTime(s.updated_at)
   const cwd = otherCwd ? `  ${shortenSessionCwd(s.cwd)}` : ''
   return {
     label,
     id: s.session_id,
-    detail: `${source} ${title} ${turns} ${time}${cwd}`,
-    searchText,
+    detail: `${source}${title} ${turns} ${time}${cwd}`,
+    // Transcript text is searchable once loaded; until then a row still matches
+    // on the metadata the list already displays.
+    searchText: text?.search_text
+      ?? `${s.session_id} ${s.title ?? ''} ${s.cwd} ${s.source} ${s.provider ?? ''} ${s.model}`,
     contextPrefix: otherCwd ? `${shortenSessionCwd(s.cwd)} · ` : undefined,
-    preview,
+    preview: sessionPreviewLines(s, text, otherCwd),
   }
 }
 
-export function formatSessionItems(sessions: SessionMeta[], currentCwd: string): SelectorItem[] {
+/** True when rows differ by source, so the column carries information. */
+function mixedSources(sessions: SessionMeta[]): boolean {
+  return new Set(sessions.map(session => session.source || '')).size > 1
+}
+
+/**
+ * The resume list. `sessionText` supplies whatever text has been loaded, so
+ * one formatter covers the metadata-only first paint, the focused row whose
+ * transcript just arrived, and the fully loaded catalog behind a typed filter.
+ */
+export function formatSessionItems(
+  sessions: SessionMeta[],
+  currentCwd: string,
+  sessionText: (sessionId: string) => SessionWithText | undefined = () => undefined,
+): SelectorItem[] {
   const labels = sessionIdLabels(sessions)
+  const showSource = mixedSources(sessions)
   return groupedSessionItems(sessions, currentCwd, (session, otherCwd) =>
     formatSessionItem(
       session,
       labels.get(session.session_id) ?? session.session_id,
       otherCwd,
-      `${session.session_id} ${session.title ?? ''} ${session.cwd} ${session.source} ${session.provider ?? ''} ${session.model}`,
-      sessionPreviewLines(session, { showCwd: otherCwd }),
+      showSource,
+      sessionText(session.session_id),
     ),
   )
 }
 
-export function formatSessionWithTextItems(items: SessionWithText[], currentCwd: string): SelectorItem[] {
-  const labels = sessionIdLabels(items)
-  return groupedSessionItems(items, currentCwd, (session, otherCwd) =>
-    formatSessionItem(
-      session,
-      labels.get(session.session_id) ?? session.session_id,
-      otherCwd,
-      session.search_text,
-      sessionPreviewLines(session, { userPrompts: session.user_prompts, showCwd: otherCwd }),
-    ),
-  )
+/**
+ * Re-render one row against newly loaded text, preserving its identity.
+ *
+ * Patching the single row keeps the other rows' object identity, which the
+ * selector's lowercased-search cache is keyed on: rebuilding the whole list
+ * would throw that away on every focus move.
+ */
+export function applySessionText(item: SelectorItem, text: SessionWithText, currentCwd: string): SelectorItem {
+  return {
+    ...item,
+    searchText: text.search_text,
+    preview: sessionPreviewLines(text, text, text.cwd !== currentCwd),
+  }
 }

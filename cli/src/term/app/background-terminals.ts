@@ -163,6 +163,17 @@ export class BackgroundTerminals {
     this.visibility.begin(this.processes)
   }
 
+  /**
+   * Park this run until live background work finishes.
+   *
+   * The current turn is over; leftover notices from already-finished work must
+   * not open a new one. A later poll that sees a live task still running is
+   * allowed to wake once that task completes — that is the natural next step.
+   */
+  parkUntilBackground(): void {
+    this.wakeArmed = false
+  }
+
   private panelProcesses(): BackgroundProcess[] { return this.visibility.visible(this.processes) }
   /**
    * Blocking waits as of the last poll.
@@ -597,6 +608,11 @@ export class BackgroundTerminals {
       if (this.announced.has(process.task_id)) continue
       this.announced.add(process.task_id)
       this.deps.commit('settled', settledNoticeMessage(process))
+      // A task finishing is the event a parked turn was waiting for, so it
+      // re-arms the wake. Waiting for an empty queue would deadlock instead:
+      // the notices an interrupt left behind keep `pending` above zero, and
+      // nothing drains them until the user types.
+      this.wakeArmed = true
     }
     // Forget ids the engine has reclaimed so the set cannot grow without bound
     // over a long session. A reclaimed task can never transition again.

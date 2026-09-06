@@ -7,8 +7,6 @@ use tokio::fs;
 
 use crate::error::EvotError;
 use crate::error::Result;
-use crate::search::collect_search_text;
-use crate::search::collect_user_prompts;
 use crate::search::SessionWithText;
 use crate::storage::Storage;
 use crate::types::FavoritesDocument;
@@ -730,36 +728,42 @@ impl Storage for FsStorage {
             {
                 continue;
             }
-            let entries: Vec<TranscriptEntry> = match self.transcript_path(&session.session_id) {
-                Ok(path) => match self.read_transcript(path).await {
-                    Ok(e) => e,
-                    Err(e) => {
-                        tracing::warn!(
-                            session_id = %session.session_id,
-                            "skipping transcript: {e}"
-                        );
-                        vec![]
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!(
-                        session_id = %session.session_id,
-                        "skipping session with invalid id: {e}"
-                    );
-                    vec![]
-                }
-            };
-            let search_text = collect_search_text(&session, &entries);
-            result.push(SessionWithText {
-                session,
-                search_text,
-                user_prompts: collect_user_prompts(&entries),
-            });
+            let entries = self.session_entries_for_text(&session.session_id).await;
+            result.push(SessionWithText::extract(session, &entries));
             if limit > 0 && result.len() == limit {
                 break;
             }
         }
 
         Ok(result)
+    }
+
+    async fn session_with_text(&self, session_id: &str) -> Result<Option<SessionWithText>> {
+        let Some(session) = self.get_session(session_id).await? else {
+            return Ok(None);
+        };
+        let entries = self.session_entries_for_text(session_id).await;
+        Ok(Some(SessionWithText::extract(session, &entries)))
+    }
+}
+
+impl FsStorage {
+    /// Transcript entries for text extraction, or an empty list when the file
+    /// is unreadable. A single corrupt transcript must not fail the listing it
+    /// appears in, so the session is kept with whatever metadata it has.
+    async fn session_entries_for_text(&self, session_id: &str) -> Vec<TranscriptEntry> {
+        match self.transcript_path(session_id) {
+            Ok(path) => match self.read_transcript(path).await {
+                Ok(entries) => entries,
+                Err(error) => {
+                    tracing::warn!(session_id = %session_id, "skipping transcript: {error}");
+                    Vec::new()
+                }
+            },
+            Err(error) => {
+                tracing::warn!(session_id = %session_id, "skipping session with invalid id: {error}");
+                Vec::new()
+            }
+        }
     }
 }

@@ -208,6 +208,24 @@ impl NapiAgent {
         serde_json::to_string(&items).map_err(|e| Error::from_reason(format!("serialize: {e}")))
     }
 
+    /// One session's text, for the resume pane's focused row. Returns `null`
+    /// when the session is gone.
+    #[napi]
+    pub async fn session_with_text(&self, session_id: String) -> Result<Option<String>> {
+        let item = self
+            .agent
+            .sessions()
+            .with_text(&session_id)
+            .await
+            .map_err(|e| Error::from_reason(format!("session with text: {e}")))?;
+        match item {
+            Some(item) => serde_json::to_string(&item)
+                .map(Some)
+                .map_err(|e| Error::from_reason(format!("serialize: {e}"))),
+            None => Ok(None),
+        }
+    }
+
     #[napi]
     pub async fn delete_session(&self, session_id: String) -> Result<bool> {
         self.agent

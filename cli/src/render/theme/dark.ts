@@ -46,14 +46,11 @@ export function darkTheme(): Theme {
     // while staying under `selectionBgHex`. Diff rows tint a touch stronger so
     // +/- read through the panel.
     panelBg: '#2a2e44',
-    // pi's lifecycle tints, rebuilt from evot's palette rather than pi's
-    // hexes: pending is the panel cooled and darkened, success leans on the
-    // teal accent instead of a pure green, error is a muted rose. All three
-    // stay low-chroma so body text on them keeps its contrast. Diff rows tint
-    // a touch stronger so +/- read through the card fill.
-    toolPendingBg: '#262838',
-    toolSuccessBg: '#243230',
-    toolErrorBg: '#3a2a32',
+    // One neutral tool fill: a cooled, darkened step of the panel. Lifecycle
+    // state lives in the status glyph, not the slab, so a transcript full of
+    // cards reads as one calm surface. Diff rows tint a touch stronger so +/-
+    // read through the card fill.
+    toolCardBg: '#262838',
     diffAddedBg: '#213a2f',
     diffRemovedBg: '#43262e',
 

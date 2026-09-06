@@ -513,7 +513,7 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     const rows = renderWithColumns(buildToolCard(call('done', { result: 'a\nb\nc', durationMs: 3 })), 40).split('\n')
     expect(rows[0]).toBe('')
     const body = rows.slice(1)
-    const fill = bgOpen(getTheme().toolSuccessBg)
+    const fill = bgOpen(getTheme().toolCardBg)
     expect(stripAnsi(body[0]!).trim()).toBe('')
     expect(stripAnsi(body[body.length - 1]!).trim()).toBe('')
     for (const row of body) {
@@ -527,26 +527,30 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     expect(stripAnsi(rows.join('\n'))).not.toContain('┃')
   })
 
-  test('the fill follows the lifecycle: pending → success / error', () => {
+  test('every lifecycle state shares one neutral fill; the glyph carries the outcome', () => {
     const theme = getTheme()
-    expect(render(buildToolCard(call('queued')))).toContain(bgOpen(theme.toolPendingBg))
-    expect(render(buildToolCard(call('running')))).toContain(bgOpen(theme.toolPendingBg))
-    expect(render(buildToolCard(call('done', { result: 'ok' })))).toContain(bgOpen(theme.toolSuccessBg))
-    expect(render(buildToolCard(call('error', { result: 'boom' })))).toContain(bgOpen(theme.toolErrorBg))
-    // A non-zero exit code is a failure even when the call itself settled.
-    expect(render(buildToolCard(call('done', { result: 'x', details: { exit_code: 1 } }))))
-      .toContain(bgOpen(theme.toolErrorBg))
+    const fill = bgOpen(theme.toolCardBg)
+    for (const card of [
+      buildToolCard(call('queued')),
+      buildToolCard(call('running')),
+      buildToolCard(call('done', { result: 'ok' })),
+      buildToolCard(call('error', { result: 'boom' })),
+      buildToolCard(call('done', { result: 'x', details: { exit_code: 1 } })),
+    ]) {
+      expect(render(card)).toContain(fill)
+    }
+    expect(stripAnsi(render(buildToolCard(call('done', { result: 'ok' }))))).toContain('✓')
+    expect(stripAnsi(render(buildToolCard(call('error', { result: 'boom' }))))).toContain('✗')
   })
 
-  test('the three fills are distinct and none is the user panel', () => {
+  test('the tool fill is distinct from the user panel', () => {
     const theme = getTheme()
-    const fills = new Set([theme.toolPendingBg, theme.toolSuccessBg, theme.toolErrorBg, theme.panelBg])
-    expect(fills.size).toBe(4)
+    expect(theme.toolCardBg).not.toBe(theme.panelBg)
   })
 
   test('the fill survives a failed body whose rows are red', () => {
     const rows = renderWithColumns(buildToolCard(call('error', { result: 'not found' })), 40).split('\n').slice(1)
-    const fill = bgOpen(getTheme().toolErrorBg)
+    const fill = bgOpen(getTheme().toolCardBg)
     const bodyRow = rows.find(r => stripAnsi(r).includes('not found'))!
     expect(bodyRow.startsWith(fill)).toBe(true)
     expect(bodyRow).toContain('\x1b[31m')
@@ -565,18 +569,18 @@ describe('tool cards: lifecycle-tinted slabs', () => {
       result: 'ok',
       details: { diff: '@@ -1,3 +1,3 @@\n ctx\n-old\n+new' },
     } as Parameters<typeof buildToolCard>[0]), 40).split('\n')
-    const added = rows.find(r => stripAnsi(r).includes('+new'))!
-    const removed = rows.find(r => stripAnsi(r).includes('-old'))!
+    const added = rows.find(r => /▎\s+\d+ new/.test(stripAnsi(r)))!
+    const removed = rows.find(r => /▎\s+\d+ old/.test(stripAnsi(r)))!
     const context = rows.find(r => stripAnsi(r).includes(' ctx'))!
     expect(added.startsWith(bgOpen(theme.diffAddedBg))).toBe(true)
     expect(removed.startsWith(bgOpen(theme.diffRemovedBg))).toBe(true)
-    expect(context.startsWith(bgOpen(theme.toolSuccessBg))).toBe(true)
+    expect(context.startsWith(bgOpen(theme.toolCardBg))).toBe(true)
     for (const row of [added, removed, context]) expect(stringWidth(stripAnsi(row))).toBe(40)
   })
 
   test('expanding keeps the card on the same fill, only the body grows', () => {
     const c = call('done', { result: 'a\nb\nc', durationMs: 3 })
-    const fill = bgOpen(getTheme().toolSuccessBg)
+    const fill = bgOpen(getTheme().toolCardBg)
     const collapsed = renderWithColumns(buildToolCard(c, false), 40)
     const expandedView = renderWithColumns(buildToolCard(c, true), 40)
     expect(collapsed).toContain(fill)

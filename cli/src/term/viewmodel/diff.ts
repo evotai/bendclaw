@@ -14,9 +14,12 @@ type Cell = { number: number; code: string; kind: 'add' | 'remove' | 'context' }
 export function buildDiffLines(patch: string, columns?: number): StyledLine[] {
   if (!columns || columns < SPLIT_DIFF_MIN_COLUMNS) {
     const theme = getTheme()
-    return colorizeUnifiedDiffRows(patch).flatMap(row =>
-      wrapTextWithAnsi(row.text, columns ?? 10000).map(text => ({
-        ...line(plain(text)),
+    return colorizeUnifiedDiffRows(patch, false).flatMap(row =>
+      wrapTextWithAnsi(row.text, Math.max(1, (columns ?? 10000) - 2)).map(text => ({
+        ...line(
+          row.kind === 'add' || row.kind === 'remove' ? colored('▎', row.kind === 'add' ? 'green' : 'red') : plain(' '),
+          plain(' '), plain(text),
+        ),
         bg: row.kind === 'add' ? theme.diffAddedBg : row.kind === 'remove' ? theme.diffRemovedBg : undefined,
       })),
     )
@@ -28,22 +31,21 @@ export function buildDiffLines(patch: string, columns?: number): StyledLine[] {
   const result: StyledLine[] = []
   const cell = (value: Cell | undefined, width: number, gutter: number): StyledLine[] => {
     if (!value) return [line(plain(' '.repeat(width)))]
-    const prefix = `${String(value.number).padStart(gutter)} ${value.kind === 'add' ? '+' : value.kind === 'remove' ? '-' : ' '} `
+    const prefix = `${String(value.number).padStart(gutter)} `
     const code = stripAnsi(value.code).replace(/\t/g, '    ').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
-    const fragments = wrapTextWithAnsi(code, Math.max(1, width - prefix.length))
+    const fragments = wrapTextWithAnsi(code, Math.max(1, width - 2 - prefix.length))
     return (fragments.length ? fragments : ['']).map((text, index) => {
       const content = (index === 0 ? prefix : ' '.repeat(prefix.length)) + text
-      const padded = content + ' '.repeat(Math.max(0, width - stringWidth(content)))
+      const padded = content + ' '.repeat(Math.max(0, width - 2 - stringWidth(content)))
       const theme = getTheme()
-      return line(value.kind === 'context' ? dim(padded) : {
-        ...colored(padded, value.kind === 'add' ? 'green' : 'red'),
-        bg: value.kind === 'add' ? theme.diffAddedBg : theme.diffRemovedBg,
-      })
+      if (value.kind === 'context') return line(plain('  '), dim(padded))
+      const color = value.kind === 'add' ? 'green' : 'red'
+      const bg = value.kind === 'add' ? theme.diffAddedBg : theme.diffRemovedBg
+      return line({ ...colored('▎', color), bg }, { ...colored(` ${padded}`, color), bg })
     })
   }
   for (const hunk of hunks) {
     if (result.length) result.push(line(dim('  …')))
-    result.push(line(dim('Before'.padEnd(leftWidth)), dim(' │ '), dim('After')))
     let old = hunk.oldStart
     let next = hunk.newStart
     const gutter = String(Math.max(old + hunk.oldLines, next + hunk.newLines)).length

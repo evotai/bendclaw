@@ -38,14 +38,11 @@ export interface Theme {
   cursorFgHex: string
 
   // Transcript blocks. The user message sits on `panelBg` behind a brand rail
-  // (opencode's UserMessage). Tool cards follow pi: each call is its own slab
-  // whose fill tracks the lifecycle — queued/running, succeeded, failed — so
-  // the tint alone says how a card ended. Diff rows inside a card swap the
-  // card fill for their own.
+  // (opencode's UserMessage). Tool cards share one neutral fill regardless of
+  // lifecycle; the status glyph carries success/failure. Diff rows inside a
+  // card swap the card fill for their own so +/- stay legible.
   panelBg: string
-  toolPendingBg: string
-  toolSuccessBg: string
-  toolErrorBg: string
+  toolCardBg: string
   diffAddedBg: string
   diffRemovedBg: string
 

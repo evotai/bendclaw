@@ -803,6 +803,21 @@ describe('BackgroundTerminals wake on completion', () => {
     expect(h.wakes()).toBe(1)
   })
 
+  test('a task finishing while idle wakes even though nothing is still running', () => {
+    // The completion notice is queued after the task leaves the live list.
+    // Gating the wake on runningCount would miss that moment entirely.
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+    h.setProcesses([proc({ status: 'completed', exit_code: 0 })])
+    const pending = harness({
+      processes: [proc({ status: 'completed', exit_code: 0 })],
+      pendingNotifications: () => 1,
+    })
+    pending.controller.refresh()
+    expect(pending.wakes()).toBe(1)
+  })
+
   test('nothing queued means no turn', () => {
     const h = harness({ processes: [proc()], pendingNotifications: () => 0 })
     h.controller.refresh()
@@ -924,5 +939,29 @@ describe('BackgroundTerminals wake arming', () => {
     pending = 1
     h.controller.refresh()
     expect(attempts).toBe(2)
+  })
+
+  test('parking skips leftover notices until live work finishes', () => {
+    // Esc ends the current turn. Notices already queued from earlier work
+    // must not open a model turn immediately; the still-running task's later
+    // completion is the natural wake.
+    let pending = 1
+    let busy = true
+    const h = harness({
+      processes: [proc()],
+      pendingNotifications: () => pending,
+      runInFlight: () => busy,
+    })
+    h.controller.refresh()
+    h.controller.parkUntilBackground()
+    busy = false
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+    // The old notice never drains. A later completion must still wake once.
+    pending = 2
+    h.setProcesses([proc({ status: 'completed', exit_code: 0 })])
+    h.controller.refresh()
+    h.controller.refresh()
+    expect(h.wakes()).toBe(1)
   })
 })

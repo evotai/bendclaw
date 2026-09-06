@@ -11,8 +11,6 @@ use async_trait::async_trait;
 
 use super::Storage;
 use crate::error::Result;
-use crate::search::collect_search_text;
-use crate::search::collect_user_prompts;
 use crate::search::SessionWithText;
 use crate::types::ListSessions;
 use crate::types::ListTranscriptEntries;
@@ -216,34 +214,41 @@ impl Storage for MemoryStorage {
             })
             .await?;
 
-        let entries: Vec<TranscriptEntry> = self
-            .entries
-            .lock()
-            .ok()
-            .map(|e| e.clone())
-            .unwrap_or_default();
-
         let mut result = Vec::new();
         for session in sessions {
-            let session_entries: Vec<_> = entries
-                .iter()
-                .filter(|entry| entry.session_id == session.session_id)
-                .cloned()
-                .collect();
+            let session_entries = self.session_entries(&session.session_id);
             if session.turns == 0 && session.title.is_none() && session_entries.is_empty() {
                 continue;
             }
-            let search_text = collect_search_text(&session, &session_entries);
-            result.push(SessionWithText {
-                session,
-                search_text,
-                user_prompts: collect_user_prompts(&session_entries),
-            });
+            result.push(SessionWithText::extract(session, &session_entries));
             if limit > 0 && result.len() == limit {
                 break;
             }
         }
 
         Ok(result)
+    }
+
+    async fn session_with_text(&self, session_id: &str) -> Result<Option<SessionWithText>> {
+        let Some(session) = self.get_session(session_id).await? else {
+            return Ok(None);
+        };
+        let entries = self.session_entries(session_id);
+        Ok(Some(SessionWithText::extract(session, &entries)))
+    }
+}
+
+impl MemoryStorage {
+    fn session_entries(&self, session_id: &str) -> Vec<TranscriptEntry> {
+        self.entries
+            .lock()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|entry| entry.session_id == session_id)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }

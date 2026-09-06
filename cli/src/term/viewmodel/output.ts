@@ -48,14 +48,9 @@ function panelInnerWidth(columns: number | undefined): number {
   return columns ? Math.max(1, columns - PANEL_PAD_LEFT - PANEL_PAD_RIGHT) : 0
 }
 
-/** Card fill for a tool call in the given lifecycle state. */
-function toolCardBg(state: ToolCardState): string {
-  const theme = getTheme()
-  switch (state) {
-    case 'pending': return theme.toolPendingBg
-    case 'success': return theme.toolSuccessBg
-    case 'error': return theme.toolErrorBg
-  }
+/** Card fill for a tool call. One fill for every state; status is shown on the glyph row. */
+function toolCardBg(_state: ToolCardState): string {
+  return getTheme().toolCardBg
 }
 
 /** Row fill for a diff row inside a card; context rows keep the card fill. */

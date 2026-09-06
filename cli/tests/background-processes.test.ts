@@ -3,6 +3,7 @@ import {
   backgroundProcessFingerprint,
   decideSessionSwitch,
   runningBackgroundCount,
+  shouldWakeForNotifications,
   stopAllMessage,
   stopOneMessage,
 } from '../src/term/app/background-processes.js'
@@ -21,6 +22,25 @@ function proc(overrides: Partial<BackgroundProcess> = {}): BackgroundProcess {
     ...overrides,
   }
 }
+
+describe('shouldWakeForNotifications', () => {
+  const ready = {
+    pending: 1,
+    hasSession: true,
+    runInFlight: false,
+    queuedMessages: 0,
+    overlayBlocking: false,
+  }
+
+  test('wakes when a queued notice has nobody else to carry it', () => {
+    expect(shouldWakeForNotifications(ready)).toBe(true)
+  })
+
+  test('does not wake while a run or queued message already owns the turn', () => {
+    expect(shouldWakeForNotifications({ ...ready, runInFlight: true })).toBe(false)
+    expect(shouldWakeForNotifications({ ...ready, queuedMessages: 1 })).toBe(false)
+  })
+})
 
 describe('runningBackgroundCount', () => {
   test('counts only backgrounded work', () => {

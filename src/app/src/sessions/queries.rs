@@ -53,6 +53,11 @@ impl SessionQueries {
         self.storage.list_sessions_with_text(limit).await
     }
 
+    /// One session's text, for the resume pane's focused row.
+    pub async fn with_text(&self, id: &str) -> Result<Option<crate::search::SessionWithText>> {
+        self.storage.session_with_text(id).await
+    }
+
     pub async fn find(&self, id: &str) -> Result<Option<SessionMeta>> {
         self.storage.get_session(id).await
     }

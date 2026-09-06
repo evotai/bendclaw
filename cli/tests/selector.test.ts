@@ -12,6 +12,7 @@ import {
   selectorFocusOn,
   selectorRemoveItem,
   warmSearchableText,
+  SELECTOR_VIEWPORT,
   type SelectorState,
 } from '../src/term/selector.js'
 import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
@@ -525,6 +526,29 @@ describe('preview pane', () => {
     expect(dividerColumns.size).toBe(1)
   })
 
+  test('keeps the same pane height when focus moves between short and long previews', () => {
+    const state = createSelectorState('Resume session', [
+      { label: 'aaaaaaaa', preview: ['short', 'm1 · 1 turn · 1h ago'] },
+      {
+        label: 'bbbbbbbb',
+        preview: [
+          'long session',
+          'm1 · 40 turns · 1h ago',
+          '',
+          '# Started with', '› the original goal',
+          '',
+          '# Latest', '› later turn 1', '› later turn 2', '› later turn 3',
+          '',
+          '# Changed 3 files', '  a.ts · b.ts · c.ts',
+        ],
+      },
+    ])
+    const height = (focus: number) => rows({ ...state, focusIndex: focus }, 120)
+      .filter(row => row.includes('│')).length
+    expect(height(0)).toBe(height(1))
+    expect(height(0)).toBeGreaterThanOrEqual(SELECTOR_VIEWPORT)
+  })
+
   test('stays within the terminal width without wrapping rows', () => {
     const wide = {
       label: 'cccccccc',
@@ -598,6 +622,38 @@ describe('preview pane', () => {
     const text = rows(state, 120).join('\n')
 
     expect(text).toContain('the turn that must stay visible')
+  })
+
+  test('sections trim by priority: Latest tail first, Changed dropped, Started with pinned', () => {
+    const sectioned = [
+      'sectioned session',
+      'm1 · 20 turns · 2d ago → 1h ago',
+      '',
+      '# Started with', '› the original goal',
+      '',
+      '# Latest', '› later turn 10', '› later turn 11', '› later turn 12',
+      '',
+      '# Changed 3 files', '  a.ts · b.ts · c.ts',
+    ]
+    const items = [
+      { label: 'hhhhhhhh', preview: sectioned },
+      ...Array.from({ length: 8 }, (_, i) => ({ label: `row-${i}`, preview: ['other'] })),
+    ]
+    const state = createSelectorState('Resume session', items)
+    const pane = rows(state, 160)
+      .filter(row => row.includes('│'))
+      .map(row => row.slice(row.indexOf('│') + 1).trim())
+
+    // The pinned opening ask survives; the list keeps its tail behind a cut and
+    // the optional Changed section is dropped before anything is truncated.
+    expect(pane).toContain('Started with')
+    expect(pane).toContain('› the original goal')
+    expect(pane).toContain('Latest')
+    expect(pane).toContain('⋮')
+    expect(pane).toContain('› later turn 12')
+    expect(pane).not.toContain('› later turn 10')
+    expect(pane).not.toContain('Changed 3 files')
+    expect(pane.indexOf('Started with')).toBeLessThan(pane.indexOf('Latest'))
   })
 
   test('caps one entry so a single long turn cannot fill the pane', () => {

@@ -6,7 +6,7 @@ import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { CURSOR_MARKER } from '../render-frame.js'
 import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'
-import { SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
+import { PREVIEW_SECTION_PREFIX, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import { HINT_SEPARATOR, formatChord, type Hint } from '../design/key-hints.js'
 import { getTheme } from '../../render/theme/index.js'
 import { buildSelectorRow } from './selector-row.js'
@@ -237,7 +237,11 @@ function highlightSpans(text: string, query: string, base: Partial<StyledSpan>):
   return spans.length > 0 ? spans : [{ text, ...base }]
 }
 
-export function buildSelectorBlocks(state: SelectorState, columns: number, active = true): ViewBlock[] {
+export function buildSelectorBlocks(
+  state: SelectorState,
+  columns: number,
+  active = true,
+): ViewBlock[] {
   const selectable = (items: SelectorItem[]) => items.filter(i => !i.header).length
   // A selector that supplies its own hints also owns its header: its counts live
   // in the subtitle and group headings, so the generic row tally beside the
@@ -288,10 +292,12 @@ export function buildSelectorBlocks(state: SelectorState, columns: number, activ
   const listLines = buildSelectorListLines(state)
   if (paneWidth > 0) {
     const preview = state.items[state.focusIndex]?.preview ?? []
+    // Height is the list viewport, not the focused preview: a short session
+    // would otherwise shrink the pane and jump the composer when focus moves.
     const paneRows = Math.max(listLines.length, PANE_MIN_ROWS)
     lines.push(...joinPaneColumns(
       listLines,
-      buildPreviewLines(preview, state.query, paneWidth, paneRows),
+      padPreviewLines(buildPreviewLines(preview, state.query, paneWidth, paneRows), paneRows),
       available - paneWidth - PANE_DIVIDER.length,
     ))
   } else {
@@ -418,8 +424,9 @@ const PANE_MAX_WIDTH = 52
 function selectorPaneWidth(state: SelectorState, columns: number): number {
   const focused = state.items[state.focusIndex]
   if (!focused?.preview || focused.preview.length === 0) return 0
-  const width = Math.min(PANE_MAX_WIDTH, Math.floor(columns / 3))
-  if (width < 24) return 0
+  // One width for every focused row, so moving between sessions does not
+  // slide the divider. Extra terminal columns stay with the list.
+  const width = Math.min(PANE_MAX_WIDTH, Math.max(24, Math.floor(columns / 3)))
   if (columns - width - PANE_DIVIDER.length < PANE_MIN_LIST_WIDTH) return 0
   return width
 }
@@ -440,15 +447,16 @@ const PANE_MAX_ENTRY_ROWS = 3
 
 /**
  * Render a preview into the pane. Entries before the first blank are the header
- * and stay pinned; the rest is the body.
+ * and stay pinned; the rest is the body, laid out as labelled sections.
  *
- * The body is windowed by entry, never by wrapped row: an entry leads with a
- * marker (`› `) that attributes the text, so cutting into the middle of one
- * leaves orphaned continuation rows that read as noise. Entries are ordered
- * oldest-first, so an overflowing body keeps its tail — the latest turns say
- * where the session left off. While filtering, the window moves to the first
- * matching entry instead, so the user can see why the row matched. Either cut
- * is marked with `⋮`.
+ * Sections trim by priority, not position. The first section (what the session
+ * set out to do) is pinned. The second is the list: when space is short it
+ * keeps its tail — the latest turns say where the session left off — or, while
+ * filtering, the run of entries from the first match so the user can see why
+ * the row matched; either cut is marked with `⋮`. Sections after the second
+ * are dropped whole before anything else is truncated. The body is windowed by
+ * entry, never by wrapped row, so a marker (`› `) is never orphaned from its
+ * text.
  */
 function buildPreviewLines(preview: string[], query: string, width: number, maxRows: number): StyledLine[] {
   const split = preview.indexOf('')
@@ -464,26 +472,78 @@ function buildPreviewLines(preview: string[], query: string, width: number, maxR
         : [heading ? bold(row) : dim(row)]
     )))
 
+  const sections = parsePreviewSections(body, width)
   // A blank row separates header from body, so the body's budget is one less.
   const budget = Math.max(0, maxRows - headerRows.length - 1)
-  const entries = body.map(entry => entry ? wrapPreviewEntry(entry, width) : [''])
-  const total = entries.reduce((sum, rows) => sum + rows.length, 0)
-  if (entries.length === 0 || budget === 0) return headerRows
-  if (total <= budget) {
-    return [
-      ...headerRows,
-      line(plain('')),
-      ...entries.flat().map(row => previewBodyLine(row, query)),
-    ]
+  if (sections.length === 0 || budget === 0) return headerRows
+  return [...headerRows, line(plain('')), ...layoutPreviewSections(sections, query, budget)]
+}
+
+interface PaneSection {
+  label?: string
+  /** Wrapped rows per entry. */
+  entries: string[][]
+}
+
+/** Split a body into labelled sections; a body without labels is one section. */
+function parsePreviewSections(body: string[], width: number): PaneSection[] {
+  const sections: PaneSection[] = []
+  for (const entry of body) {
+    if (entry.startsWith(PREVIEW_SECTION_PREFIX)) {
+      sections.push({ label: entry.slice(PREVIEW_SECTION_PREFIX.length), entries: [] })
+      continue
+    }
+    // Blank entries only separate sections; the layout re-inserts spacing.
+    if (!entry) continue
+    if (sections.length === 0) sections.push({ entries: [] })
+    sections[sections.length - 1]!.entries.push(wrapPreviewEntry(entry, width))
+  }
+  return sections.filter(section => section.entries.length > 0)
+}
+
+function sectionRows(section: PaneSection): number {
+  return (section.label ? 1 : 0) + section.entries.reduce((sum, rows) => sum + rows.length, 0)
+}
+
+function layoutPreviewSections(all: PaneSection[], query: string, budget: number): StyledLine[] {
+  let sections = all.map(section => ({ ...section, entries: [...section.entries], cut: false }))
+  const listIndex = sections.length > 1 ? 1 : 0
+  const total = () => sections.reduce((sum, section) => sum + sectionRows(section), 0) + Math.max(0, sections.length - 1)
+
+  // 1. Trim the list section to whole entries that fit, anchored on a filter
+  //    hit or on the tail. The `⋮` marker costs a row of the list's budget.
+  if (total() > budget) {
+    const list = sections[listIndex]!
+    const others = total() - sectionRows(list)
+    const room = Math.max(1, budget - others - (list.label ? 1 : 0) - 1)
+    const kept = selectPreviewEntries(list.entries, query, room)
+    list.cut = kept.length < list.entries.length || kept.some((rows, i) => rows !== list.entries[i])
+    list.entries = kept
+  }
+  // 2. Drop optional trailing sections whole.
+  while (total() > budget && sections.length > 2) sections = sections.slice(0, -1)
+  // 3. Last resort: truncate the pinned section's rows so something still shows.
+  if (total() > budget && sections.length > 0) {
+    const pinned = sections[0]!
+    const others = total() - sectionRows(pinned)
+    const room = Math.max(1, budget - others - (pinned.label ? 1 : 0))
+    pinned.entries = [pinned.entries.flat().slice(0, room)]
   }
 
-  // One row of the budget goes to the `⋮` marker so the cut is visible.
-  const visible = selectPreviewEntries(entries, query, budget - 1)
-  return [
-    ...headerRows,
-    line(dim('  ⋮')),
-    ...visible.map(row => previewBodyLine(row, query)),
-  ]
+  const lines: StyledLine[] = []
+  sections.forEach((section, index) => {
+    if (index > 0) lines.push(line(plain('')))
+    if (section.label) lines.push(line(dim(section.label)))
+    if (section.cut) lines.push(line(dim('  ⋮')))
+    const isList = index === listIndex && sections.length > 1
+    section.entries.forEach((rows, entryIndex) => {
+      // The pinned opening ask and the newest turn carry full contrast; the
+      // rest of the list and any path summary stay subdued.
+      const emphasized = index === 0 ? sections.length > 1 : isList && entryIndex === section.entries.length - 1
+      for (const row of rows) lines.push(previewBodyLine(row, query, emphasized))
+    })
+  })
+  return lines
 }
 
 /**
@@ -491,18 +551,20 @@ function buildPreviewLines(preview: string[], query: string, width: number, maxR
  * the latest turns. Walking forward from the chosen anchor keeps entries in
  * conversation order and stops before one would be cut in half.
  */
-function selectPreviewEntries(entries: string[][], query: string, budget: number): string[] {
+function selectPreviewEntries(entries: string[][], query: string, budget: number): string[][] {
   const anchor = previewAnchorEntry(entries, query, budget)
-  const rows: string[] = []
+  const kept: string[][] = []
+  let used = 0
   for (let i = anchor; i < entries.length; i++) {
     const entry = entries[i]!
-    if (rows.length + entry.length > budget) break
-    rows.push(...entry)
+    if (used + entry.length > budget) break
+    kept.push(entry)
+    used += entry.length
   }
   // A single entry taller than the whole budget still has to say something, so
   // it is truncated rather than dropped.
-  if (rows.length === 0) return (entries[anchor] ?? []).slice(0, budget)
-  return rows
+  if (kept.length === 0) return [(entries[anchor] ?? []).slice(0, budget)]
+  return kept
 }
 
 /** Index of the first entry to show: the earliest filter hit, else the tail. */
@@ -527,8 +589,9 @@ function previewAnchorEntry(entries: string[][], query: string, budget: number):
   return Math.min(anchor, entries.length - 1)
 }
 
-function previewBodyLine(row: string, query: string): StyledLine {
-  return line(...(query ? highlightSpans(row, query, { dim: true }) : [dim(row)]))
+function previewBodyLine(row: string, query: string, emphasized = false): StyledLine {
+  if (query) return line(...highlightSpans(row, query, emphasized ? {} : { dim: true }))
+  return line(emphasized ? plain(row) : dim(row))
 }
 
 /**
@@ -538,9 +601,14 @@ function previewBodyLine(row: string, query: string): StyledLine {
  */
 function wrapPreviewEntry(entry: string, width: number): string[] {
   const marker = /^(\S\s)/.exec(entry)?.[1]
-  const rows = marker
-    ? wrapTextWithAnsi(entry.slice(marker.length), Math.max(1, width - marker.length))
-      .map((row, index) => `${index === 0 ? marker : ' '.repeat(marker.length)}${row}`)
+  const indent = marker ? '' : (/^(\s+)/.exec(entry)?.[1] ?? '')
+  const lead = marker ?? indent
+  // A marker attributes only its first row; continuation rows indent under it
+  // so a wrapped turn still reads as one block. An indented entry keeps its
+  // indent on every row.
+  const rows = lead
+    ? wrapTextWithAnsi(entry.slice(lead.length), Math.max(1, width - lead.length))
+      .map((row, index) => `${index === 0 ? lead : marker ? ' '.repeat(marker.length) : indent}${row}`)
     : wrapTextWithAnsi(entry, width)
   if (rows.length <= PANE_MAX_ENTRY_ROWS) return rows
 
@@ -569,4 +637,10 @@ function joinPaneColumns(listLines: StyledLine[], paneLines: StyledLine[], listW
     result.push(line(...spans, plain(' '.repeat(padding)), dim(PANE_DIVIDER), ...right))
   }
   return result
+}
+
+/** Keep the pane the same height as the list, even when the preview is short. */
+function padPreviewLines(lines: StyledLine[], rows: number): StyledLine[] {
+  if (lines.length >= rows) return lines.slice(0, rows)
+  return [...lines, ...Array.from({ length: rows - lines.length }, () => line(plain('')))]
 }

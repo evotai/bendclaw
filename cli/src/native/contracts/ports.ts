@@ -30,6 +30,7 @@ export interface NativeAgent {
   pendingProcessNotifications(id: string): number
   killAllBackgroundProcessesNow(): number
   listSessionsWithText(limit: number | null): Promise<string>
+  sessionWithText(id: string): Promise<string | null>
   loadTranscript(id: string): Promise<string>
   loadContextTranscript(id: string): Promise<string>
   loadResumeTranscript(id: string): Promise<string>

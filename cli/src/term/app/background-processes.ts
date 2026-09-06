@@ -82,6 +82,12 @@ export function newlySettled(
  *   submit, and they outrank a synthetic turn.
  * - A modal overlay means the agent is waiting on the user, so seizing the turn
  *   would answer a question the user has not answered yet.
+ * - After the user interrupts, leftover notices from already-finished work
+ *   must not open a new turn by themselves. A background task that just
+ *   settled is the one case that still needs a wake, because its completion
+ *   is the next step of the same instruction. Checking `runningBackground`
+ *   would miss that moment: by the time the notice is queued, the task is
+ *   already off the live list.
  */
 export function shouldWakeForNotifications(input: {
   pending: number

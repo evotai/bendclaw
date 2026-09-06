@@ -17,6 +17,8 @@ fn session(id: &str, title: &str, text: &str) -> SessionWithText {
         session: meta,
         search_text: text.to_string(),
         user_prompts: vec![],
+        first_prompt: None,
+        changed_paths: vec![],
     }
 }
 

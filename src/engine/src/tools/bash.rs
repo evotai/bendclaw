@@ -349,6 +349,7 @@ impl AgentTool for BashTool {
         let started = Instant::now();
         let mut last_progress = Instant::now();
         let mut last_update = Instant::now();
+        let mut last_background_countdown = None;
         loop {
             if ctx.cancel.is_cancelled() {
                 if let Some(snapshot) = self.process_manager.stop(&task_id).await {
@@ -395,7 +396,17 @@ impl AgentTool for BashTool {
                 );
             }
 
-            if elapsed >= PROGRESS_INTERVAL && last_progress.elapsed() >= PROGRESS_INTERVAL {
+            if let Some(limit) = yield_time.map(|limit| limit.min(timeout)) {
+                let remaining = limit.saturating_sub(elapsed).as_secs_f64().ceil() as u64;
+                if last_background_countdown != Some(remaining) {
+                    if let Some(on_progress) = &ctx.on_progress {
+                        on_progress(format!(
+                            "Moves to background in {remaining}s; command keeps running."
+                        ));
+                    }
+                    last_background_countdown = Some(remaining);
+                }
+            } else if elapsed >= PROGRESS_INTERVAL && last_progress.elapsed() >= PROGRESS_INTERVAL {
                 if let Some(on_progress) = &ctx.on_progress {
                     on_progress(format!("Running... {}s", elapsed.as_secs()));
                 }

@@ -1,3 +1,4 @@
+import { buildDiffLines } from './diff.js'
 import type { OutputLine, ToolCardMembership, ToolCardState } from '../../render/output.js'
 import stringWidth from 'string-width'
 import { line, block, plain, dim, bold, colored, ansi, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
@@ -214,6 +215,10 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
       }
 
       case 'tool':
+        if (ol.diffText !== undefined) {
+          blocks.push(block(buildDiffLines(ol.diffText, wrapColumns)))
+          break
+        }
         if (ol.diffRow) {
           // Diff rows are fully styled by the diff renderer; bypass the
           // headline/status heuristics so a `  5 + code` row is not re-dimmed.
@@ -307,7 +312,7 @@ function paintToolCard(
   const bg = toolCardBg(card.state)
   for (let index = from; index < blocks.length; index++) {
     const b = blocks[index]!
-    b.lines = b.lines.map(l => panelRow(l.spans, columns, rowBg ?? bg))
+    b.lines = b.lines.map(l => panelRow(l.spans, columns, rowBg ?? l.bg ?? bg))
     b.marginTop = index === from && card.first ? 1 : 0
   }
   if (card.first) blocks[from]!.lines.unshift(panelRow([], columns, bg))

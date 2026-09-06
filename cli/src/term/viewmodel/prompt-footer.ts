@@ -10,7 +10,7 @@
 import stringWidth from 'string-width'
 import { line, block, plain, dim, colored, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
 import { finiteSize, spansWidth, truncateTailToWidth } from './width.js'
-import { BACKGROUND_PANEL_HINT_CHORD, BACKGROUND_PANEL_SHORTCUT_HINT } from '../app/background-panel.js'
+import { BACKGROUND_PANEL_HINT_CHORD } from '../app/background-panel.js'
 
 /** The subset of prompt state the footer reads. */
 export interface PromptFooterVM {
@@ -77,7 +77,7 @@ export function buildPromptFooterBlocks(
  *
  * ↓ is advertised whenever it is live, because it sits one key away from the
  * cursor. With text in the composer ↓ still moves the caret, so the chip falls
- * back to naming Ctrl+T rather than a key that would do something else.
+ * back to the count alone. Ctrl+T remains an unadvertised alternate shortcut.
  *
  * Narrowing sheds words in order of expendability: the gesture first, then the
  * word "background", and only then characters. Truncating the long label
@@ -93,9 +93,8 @@ function buildBackgroundChip(
   const noun = count === 1 ? 'shell' : 'shells'
   const label = `${count} background ${noun} running`
   const shortLabel = `${count} ${noun} running`
-  const chord = downAvailable ? BACKGROUND_PANEL_HINT_CHORD : BACKGROUND_PANEL_SHORTCUT_HINT
-  const hint = `${chord} to manage`
-  if (stringWidth(`${label} · ${hint}`) <= columns) {
+  const hint = `${BACKGROUND_PANEL_HINT_CHORD} to manage`
+  if (downAvailable && stringWidth(`${label} · ${hint}`) <= columns) {
     return line(colored(label, 'cyan'), dim(' · '), dim(hint))
   }
   if (stringWidth(label) <= columns) return line(colored(label, 'cyan'))

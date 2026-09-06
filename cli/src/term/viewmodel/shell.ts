@@ -1,5 +1,5 @@
 import type { OverlayState } from '../app/overlay-state.js'
-import { isCommandSelector } from '../app/selector-identity.js'
+import { isBackgroundSelector, isCommandSelector } from '../app/selector-identity.js'
 import type { SelectorState } from '../selector.js'
 import type { RenderFrame } from '../render-frame.js'
 import { buildCommandSelectorRegion } from './command-selector.js'
@@ -45,9 +45,12 @@ export function buildShellFrame(input: ShellSnapshot): RenderFrame {
     const surfaceLines = overlay.kind === 'selector'
       ? buildSelectorRegionLines(overlay.state, prompt.columns, prompt.rows)
       : buildAskRegionLines(overlay.state, prompt.columns)
+    const footerPrompt = overlay.kind === 'selector' && isBackgroundSelector(overlay.state)
+      ? { ...prompt, backgroundProcessCount: 0 }
+      : { ...prompt, backgroundPanelDownAvailable: false }
     return {
       ...base,
-      lines: [...contentLines, ...preEditorLines, ...surfaceLines, ...blocksToLines(buildPromptFooterBlocks(prompt))],
+      lines: [...contentLines, ...preEditorLines, ...surfaceLines, ...blocksToLines(buildPromptFooterBlocks(footerPrompt))],
       transientRows: surfaceLines.length,
     }
   }

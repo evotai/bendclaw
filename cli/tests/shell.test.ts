@@ -1,3 +1,4 @@
+import { createBackgroundPanelState } from '../src/term/app/background-panel.js'
 import { TermRenderer } from '../src/term/renderer.js'
 import { ScreenHarness } from './helpers/screen.js'
 import { describe, expect, test } from 'bun:test'
@@ -53,6 +54,17 @@ describe('shell composition', () => {
       expect(frame.transientRows).toBe(lines.length)
       expect(frame.stableViewport).toBeUndefined()
     }
+  })
+
+  test('background panel suppresses its duplicate entry hint, closing restores the down arrow', () => {
+    const input = snapshot()
+    input.prompt.backgroundProcessCount = 1
+    input.prompt.backgroundPanelDownAvailable = true
+    const open = buildShellFrame({ ...input, overlay: { kind: 'selector', state: createBackgroundPanelState([]) } })
+    expect(open.lines.join('\n')).not.toContain('to manage')
+    const closed = buildShellFrame(input)
+    expect(closed.lines.join('\n')).toContain('↓ to manage')
+    expect(closed.lines.join('\n')).not.toContain('ctrl+t')
   })
 
   test('help is a modal and closing it leaves the durable layout intact', () => {

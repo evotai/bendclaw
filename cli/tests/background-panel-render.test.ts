@@ -128,7 +128,7 @@ describe('background panel rendering', () => {
     const state = createBackgroundOutputState(proc(), output)
     const lines = buildSelectorRegionLines(state, 100, 24).map(stripAnsi)
 
-    expect(lines).toContain('sleep 30')
+    expect(lines).toContain('⌘ bash  sleep 30')
     expect(lines.some(line => line.trim() === 'line 30')).toBe(true)
     expect(lines.some(line => line.trim() === 'line 1')).toBe(false)
     expect(lines.join('\n')).toContain('Esc to back')

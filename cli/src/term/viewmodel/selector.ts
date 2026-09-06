@@ -30,7 +30,7 @@ export function buildSelectorRegionLines(
     // Walk back from focus to fill the viewport, accounting for activity rows.
     let first = state.focusIndex
     let cost = 0
-    for (let i = state.focusIndex; i >= start; i--) {
+    for (let i = Math.min(state.focusIndex, state.items.length - 1); i >= start; i--) {
       const item = state.items[i]!
       const height = item.activity ? 2 : 1
       if (cost + height > budget && cost > 0) break
@@ -77,9 +77,10 @@ function buildBackgroundOutputRegionLines(state: SelectorState, width: number, r
   const status = metadata.find(text => /^  [●✓✗■]/u.test(text)) ?? item?.detail ?? ''
   const warnings = metadata.filter(text => text.includes('output file was capped'))
   const header = [
-    styledLineToAnsi(line(bold(clipDisplayText(title, width)))),
-    ...buildOutputBlocks([{ id: 'background-status', kind: 'tool', text: status }], { columns: width })
-      .flatMap(block => block.lines).map(styledLineToAnsi),
+    ...buildOutputBlocks([
+      { id: 'background-title', kind: 'tool', text: `⌘ bash  ${clipDisplayText(title, Math.max(1, width - 8))}` },
+      { id: 'background-status', kind: 'tool', text: status },
+    ], { columns: width }).flatMap(block => block.lines).map(styledLineToAnsi),
     ...warnings.map(text => styledLineToAnsi(line(colored(clipDisplayText(text, width), 'yellow')))),
   ]
   const bodyBudget = Math.max(1, budget - header.length - 2)
@@ -89,9 +90,12 @@ function buildBackgroundOutputRegionLines(state: SelectorState, width: number, r
   const hints = state.hints ?? [{ keys: 'escape', action: 'back' }]
   return [
     ...header,
-    ...visible.map((text, index) => styledLineToAnsi(line(
-      index === visible.length - 1 ? plain(text) : dim(text),
-    ))),
+    ...visible.map((text, index) => {
+      if (text.trim() === '(no output yet)') {
+        return styledLineToAnsi(line(dim('  ↳ No stdout/stderr received yet')))
+      }
+      return styledLineToAnsi(line(index === visible.length - 1 ? plain(text) : dim(text)))
+    }),
     styledLineToAnsi(line(dim(position))),
     styledLineToAnsi(buildHintLine(hints)),
   ].map(text => wrapTextWithAnsi(text, width)[0] ?? '')

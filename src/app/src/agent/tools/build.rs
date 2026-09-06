@@ -49,7 +49,7 @@ fn build_bash_tool(
         // Only an interactive host can see the yield and detach earlier via
         // Ctrl+B; channel runs keep the timeout as their sole bound.
         if interactive {
-            bash = bash.with_foreground_wait(std::time::Duration::from_secs(30));
+            bash = bash.with_foreground_wait(std::time::Duration::from_secs(10));
         }
     }
     if let Some(dirs) = sandbox_dirs {

@@ -976,14 +976,14 @@ describe('prompt footer', () => {
     expect(lines[2]).toBe('')
   })
 
-  test('with text in the composer the chip names Ctrl+T instead', () => {
+  test('with text in the composer the chip stays quiet instead of advertising Ctrl+T', () => {
     // ↓ still moves the caret there, so advertising it would be a lie.
     const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
       columns: 100,
       backgroundProcessCount: 2,
       backgroundPanelDownAvailable: false,
     }))).map(stripAnsi)
-    expect(lines[0]).toBe('2 background shells running · ctrl+t to manage')
+    expect(lines[0]).toBe('2 background shells running')
   })
 
   test('a single shell reads in the singular', () => {

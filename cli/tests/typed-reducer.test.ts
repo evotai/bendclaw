@@ -1,3 +1,4 @@
+import { buildToolCard } from '../src/render/output.js'
 import { describe, expect, test } from 'bun:test'
 import { decodeQueryEvent, isHostToolEvent } from '../src/native/contracts/query-event.js'
 import { applyEvent } from '../src/term/app/reducer.js'
@@ -23,6 +24,30 @@ function queued() {
 }
 
 describe('typed run reducer', () => {
+  test('bash countdown updates in place and disappears when the tool finishes', () => {
+    const queuedState = apply(createInitialState('model', '/tmp'), 'assistant_tool_call', {
+      content_index: 0, tool_call_id: 'bash', tool_name: 'bash', phase: 'end', args: { command: 'sleep 30' },
+    })
+    let state = apply(queuedState, 'tool_started', {
+      tool_call_id: 'bash', tool_name: 'bash', args: { command: 'sleep 30' },
+    })
+    for (const remaining of [10, 9, 1]) {
+      const text = `Moves to background in ${remaining}s; command keeps running.`
+      state = apply(state, 'tool_progress', { tool_call_id: 'bash', tool_name: 'bash', text })
+      const tool = assistantToolCalls(state.currentAssistantContent)[0]!
+      expect(tool.progress).toBe(text)
+      const lines = buildToolCard(tool).map(line => line.text).join('\n')
+      expect(lines).toContain(text)
+      expect(lines.match(/Moves to background/g)).toHaveLength(1)
+    }
+    state = apply(state, 'tool_finished', {
+      tool_call_id: 'bash', tool_name: 'bash', content: 'Background task started', is_error: false,
+      details: { task_id: 'task', status: 'running' }, duration_ms: 10000,
+    })
+    const tool = assistantToolCalls(state.currentAssistantContent)[0]!
+    expect(buildToolCard(tool).map(line => line.text).join('\n')).not.toContain('Moves to background')
+  })
+
   test('current Rust payload fixtures flow through decoder, stream and reducer', () => {
     let state = createStreamMachineState(createInitialState('model', '/tmp'), createSpinnerState())
     for (const fixture of currentPayloads) {

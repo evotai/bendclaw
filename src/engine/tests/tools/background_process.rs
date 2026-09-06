@@ -2544,6 +2544,40 @@ async fn a_non_blocking_poll_is_never_counted_as_waiting() -> Result<(), Box<dyn
 // writes them into tool-result details and `output.ts` switches on the strings.
 // ---------------------------------------------------------------------------
 
+#[tokio::test]
+async fn foreground_countdown_precedes_yield_and_keeps_the_task_alive() -> Result<(), Box<dyn Error>>
+{
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new()
+        .with_process_manager(manager.clone())
+        .with_foreground_wait(Duration::from_secs(1));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut ctx = context("bash", dir.path());
+    ctx.on_progress = Some(Arc::new(move |text| {
+        let _ = tx.send(text);
+    }));
+    let run = bash.execute(serde_json::json!({"command": "sleep 30"}), ctx);
+    tokio::pin!(run);
+    // Observe the notice while execute is still waiting, not after it yields.
+    let notice = tokio::select! {
+        result = &mut run => return Err(format!("yielded before countdown: {result:?}").into()),
+        notice = rx.recv() => notice.ok_or("progress channel closed")?,
+    };
+    assert_eq!(notice, "Moves to background in 1s; command keeps running.");
+    let result = run.await?;
+    let snapshot = manager
+        .snapshot(task_id(&result)?)
+        .ok_or("task disappeared")?;
+    let status = snapshot.status;
+    manager.terminate_all_and_wait(Duration::from_secs(5)).await;
+    assert!(matches!(
+        status,
+        ProcessStatus::RunningBackground(BackgroundReason::YieldElapsed)
+    ));
+    Ok(())
+}
+
 #[test]
 fn every_background_reason_serializes_under_the_name_the_tui_matches() {
     // `output.ts` switches on these exact strings to say *why* a command went to

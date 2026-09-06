@@ -374,14 +374,14 @@ function insertToolStatus(lines: OutputLine[], status: OutputLine): void {
   lines.splice(callIndex < 0 ? 0 : callIndex + 1, 0, status)
 }
 
-/** One OutputLine per diff row, so the viewmodel can tint added/removed rows. */
+/** Keep each patch together so responsive layout also works across history-cache slices. */
 function diffOutputLines(diff: string): OutputLine[] {
-  return colorizeUnifiedDiffRows(diff).map(row => ({
+  return [{
     id: genId('tool-diff'),
-    kind: 'tool' as const,
-    text: row.text,
-    diffRow: row.kind,
-  }))
+    kind: 'tool',
+    text: colorizeUnifiedDiffRows(diff).map(row => row.text).join('\n'),
+    diffText: diff,
+  }]
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +403,8 @@ export interface OutputLine {
   /** Tool line that is one row of a rendered diff; added/removed rows get
    *  their own fill inside the card. */
   diffRow?: DiffRowKind
+  /** Original patch retained for responsive split/unified layout at render time. */
+  diffText?: string
   codeBlockId?: string
   codeLanguage?: string
   /** Visual spacer inserted between streamed markdown chunks. It creates a

@@ -54,7 +54,7 @@ export function formatDiff(oldText: string, newText: string, filename = ''): Dif
   for (let hi = 0; hi < patch.hunks.length; hi++) {
     if (hi > 0) output.push(style.ellipsis('  …'))
     const hunk = patch.hunks[hi]!
-    const lines = buildDiffLines(hunk.lines, hunk.oldStart)
+    const lines = buildDiffLines(hunk.lines, hunk.oldStart, hunk.newStart)
     const numWidth = gutterWidth(lines)
     for (const line of lines) {
       if (line.type === 'add') linesAdded++
@@ -73,6 +73,32 @@ export function colorizeUnifiedDiff(diff: string): string {
   return colorizeUnifiedDiffRows(diff).map(row => row.text).join('\n')
 }
 
+export interface DiffHunk {
+  oldStart: number
+  newStart: number
+  oldLines: number
+  newLines: number
+  lines: string[]
+}
+
+/** Display partial patches too: streaming previews need not match hunk counts yet. */
+export function parseDiffHunks(diff: string): DiffHunk[] {
+  const hunks: DiffHunk[] = []
+  let current: DiffHunk | undefined
+  for (const text of diff.split('\n')) {
+    const header = text.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
+    if (header) {
+      current = { oldStart: Number(header[1]), newStart: Number(header[3]), oldLines: Number(header[2] ?? 1), newLines: Number(header[4] ?? 1), lines: [] }
+      hunks.push(current)
+    } else if (text.startsWith('diff ') || text.startsWith('Index:')) {
+      current = undefined
+    } else if (current && /^[ +\-\\]/.test(text)) {
+      current.lines.push(text)
+    }
+  }
+  return hunks
+}
+
 export type DiffRowKind = 'add' | 'remove' | 'context' | 'ellipsis'
 
 export interface DiffRow {
@@ -87,41 +113,18 @@ export interface DiffRow {
  * opencode tints diff rows inside a tool block.
  */
 export function colorizeUnifiedDiffRows(diff: string): DiffRow[] {
-  const raw = diff.split('\n')
-  const body = raw.filter(l => !l.startsWith('---') && !l.startsWith('+++'))
+  const hunks = parseDiffHunks(diff)
   const output: DiffRow[] = []
-
-  // Group lines by hunk
-  const hunks: { header: string; lines: string[] }[] = []
-  let cur: { header: string; lines: string[] } | null = null
-  for (const line of body) {
-    if (line.startsWith('@@')) {
-      cur = { header: line, lines: [] }
-      hunks.push(cur)
-    } else if (cur) {
-      cur.lines.push(line)
-    } else {
-      // Lines before any @@ header — treat as a single hunk at line 1
-      if (!hunks.length || hunks[0]!.header !== '') {
-        cur = { header: '', lines: [] }
-        hunks.unshift(cur)
-      }
-      cur = hunks[0]!
-      cur.lines.push(line)
-    }
+  if (hunks.length === 0) {
+    return diff.split('\n').map(text => ({ text: style.context(text), kind: 'context' }))
   }
-
   for (let hi = 0; hi < hunks.length; hi++) {
     if (hi > 0) output.push({ text: style.ellipsis('  …'), kind: 'ellipsis' })
     const hunk = hunks[hi]!
-    const startLine = parseHunkStart(hunk.header)
-    const lines = buildDiffLines(hunk.lines, startLine)
+    const lines = buildDiffLines(hunk.lines.filter(line => !line.startsWith('\\')), hunk.oldStart, hunk.newStart)
     const numW = gutterWidth(lines)
-    for (const line of lines) {
-      output.push({ text: renderLine(line, numW), kind: line.type })
-    }
+    for (const line of lines) output.push({ text: renderLine(line, numW), kind: line.type })
   }
-
   return output
 }
 
@@ -129,25 +132,20 @@ export function colorizeUnifiedDiffRows(diff: string): DiffRow[] {
 // Internals
 // ---------------------------------------------------------------------------
 
-function parseHunkStart(header: string): number {
-  const m = header.match(/@@ -(\d+)/)
-  return m ? parseInt(m[1]!, 10) : 1
-}
-
 function gutterWidth(lines: DiffLine[]): number {
   const maxNum = Math.max(...lines.map(l => l.lineNum), 0)
   return Math.max(String(maxNum).length, 1)
 }
 
 /** Parse raw diff lines → structured DiffLines with line numbers + pairing. */
-function buildDiffLines(rawLines: string[], startLine: number): DiffLine[] {
+function buildDiffLines(rawLines: string[], startLine: number, newStartLine = startLine): DiffLine[] {
   const parsed = rawLines.map(raw => {
     if (raw.startsWith('+')) return { type: 'add' as const, code: raw.slice(1) }
     if (raw.startsWith('-')) return { type: 'remove' as const, code: raw.slice(1) }
     return { type: 'context' as const, code: raw.startsWith(' ') ? raw.slice(1) : raw }
   })
   const paired = pairChanges(parsed)
-  return assignLineNumbers(paired, startLine)
+  return assignLineNumbers(paired, startLine, newStartLine)
 }
 
 /** Pair adjacent remove→add sequences for word-level diff. */
@@ -177,13 +175,14 @@ function pairChanges(
 function assignLineNumbers(
   lines: { type: 'add' | 'remove' | 'context'; code: string; pairedCode?: string }[],
   startLine: number,
+  newStartLine: number,
 ): DiffLine[] {
   const dls: (DiffLine & { pairedCode?: string })[] = lines.map(l => ({
     type: l.type, code: l.code, lineNum: 0, pairedCode: l.pairedCode,
   }))
 
   let oldNum = startLine
-  let newNum = startLine
+  let newNum = newStartLine
   for (const dl of dls) {
     if (dl.type === 'context') { dl.lineNum = oldNum; oldNum++; newNum++ }
     else if (dl.type === 'remove') { dl.lineNum = oldNum; oldNum++ }

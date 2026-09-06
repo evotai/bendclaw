@@ -6,7 +6,7 @@
 // Message types
 // ---------------------------------------------------------------------------
 
-export type MessageRole = 'user' | 'assistant'
+export type MessageRole = 'user' | 'assistant' | 'system'
 
 export interface UIMessage {
   id: string

@@ -544,7 +544,7 @@ export function buildToolCall(
     id: genId('tool'),
     kind: 'tool',
     text: toolCallText(name, args, previewCommand, expanded, options),
-    commandMaxRows: name.toLowerCase() === 'bash' || isTaskTool(name) ? (expanded ? undefined : 2) : undefined,
+    commandMaxRows: name.toLowerCase() === 'bash' || isTaskTool(name) ? (expanded ? undefined : 1) : undefined,
   }]
   for (const reason of formatReasonLines(args)) {
     lines.push({ id: genId('tool'), kind: 'tool', text: `  ${reason}` })
@@ -937,8 +937,18 @@ export function messagesToOutputLines(messages: UIMessage[], expanded: boolean =
       lines.push(...buildCompactionLines(msg.compaction, expanded))
       continue
     }
+    if (msg.role === 'system') {
+      lines.push({ id: genId('system'), kind: 'system', text: msg.text })
+      continue
+    }
     if (msg.role === 'user') {
-      lines.push(...buildUserMessage(msg.text, msg.timestamp))
+      const userLines = buildUserMessage(msg.text, msg.timestamp)
+      // Replay uses zero for unavailable timestamps. Never display epoch time
+      // (08:00 AM in UTC+8) as though the user sent their message then.
+      if (!Number.isFinite(msg.timestamp) || msg.timestamp <= 0) {
+        for (const line of userLines) delete line.timestamp
+      }
+      lines.push(...userLines)
       continue
     }
 

@@ -159,7 +159,7 @@ describe('buildToolCall', () => {
     const lines = buildToolCall('bash', { command }, command)
     const card = lines[lines.length - 1]!
     expect(card.text).toBe(`⌘ bash  ${command}`)
-    expect(card.commandMaxRows).toBe(2)
+    expect(card.commandMaxRows).toBe(1)
   })
 
   test('regular tool call still surfaces reason lines up-front', () => {

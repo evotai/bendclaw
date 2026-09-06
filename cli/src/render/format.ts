@@ -363,7 +363,7 @@ export interface BashCommandDisplay {
  * Expanded: multi-line commands are shown in full under the header (newlines
  * preserved), matching readable shell transcript style rather than flattening.
  */
-export function formatBashCommandDisplay(command: unknown, expanded = false): BashCommandDisplay {
+export function formatBashCommandDisplay(command: unknown, expanded = false, fitToCard = false): BashCommandDisplay {
   if (typeof command !== 'string') return { headline: '', detailLines: [] }
   const normalized = command.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const trimmed = normalized.replace(/\n+$/, '')
@@ -383,12 +383,12 @@ export function formatBashCommandDisplay(command: unknown, expanded = false): Ba
 
   if (!multi) {
     const one = first.trim()
-    return { headline: expanded ? one : clipDisplayText(one, BASH_CMD_FIRST_LINE_MAX), detailLines: [] }
+    return { headline: expanded || fitToCard ? one : clipDisplayText(one, BASH_CMD_FIRST_LINE_MAX), detailLines: [] }
   }
 
   // Collapsed multi-line: first non-empty-ish line + shared expand hint.
   const headRaw = first.trim() || lines.find((l) => l.trim())?.trim() || ''
-  const head = clipDisplayText(headRaw, BASH_CMD_FIRST_LINE_MAX)
+  const head = fitToCard ? headRaw : clipDisplayText(headRaw, BASH_CMD_FIRST_LINE_MAX)
   return { headline: `${head} … ${expandLinesHint(lines.length)}`, detailLines: [] }
 }
 

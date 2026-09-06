@@ -2,7 +2,7 @@ import { buildDiffLines } from './diff.js'
 import type { OutputLine, ToolCardMembership, ToolCardState } from '../../render/output.js'
 import stringWidth from 'string-width'
 import { line, block, plain, dim, bold, colored, ansi, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
-import { spansWidth, wrapTextByWidth } from './width.js'
+import { spansWidth, wrapTextByWidth, truncateToWidth } from './width.js'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
 import { getTheme } from '../../render/theme/index.js'
@@ -222,11 +222,13 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         }
         blocks.push(ol.toolCodePreview
           ? buildToolCodePreviewBlock(ol.text, wrapColumns)
-          : buildToolBlock(ol.text, wrapColumns))
+          : buildToolBlock(ol.text, wrapColumns, ol.commandMaxRows))
         break
 
       case 'tool_result':
-        blocks.push(block([line(colored(ol.text, 'gray'))]))
+        blocks.push(ol.shellOutput
+          ? block(wrapToolLines(ol.text, wrapColumns).map(text => line(plain(text))))
+          : block([line(colored(ol.text, 'gray'))]))
         break
 
       case 'verbose':
@@ -318,12 +320,12 @@ function buildToolCodePreviewBlock(text: string, columns?: number): ViewBlock {
   return block(wrapToolLines(text, columns).map(part => line(plain(part))))
 }
 
-function buildToolBlock(text: string, columns?: number): ViewBlock {
+function buildToolBlock(text: string, columns?: number, maxRows?: number): ViewBlock {
   // Tool call line: `<glyph> <name>  <arg>` (no status mark — status lives on
   // the subordinate line below). Paint glyph cyan, name bold, arg dim. When the
   // line exceeds the terminal width, wrap the arg onto continuation lines so the
   // full command is always visible (the tail is never truncated).
-  const cardMatch = text.match(/^([⌘◫⌕⊕✎·✦◇]) (.+)$/u)
+  const cardMatch = text.match(/^([⌘◫⌕⊕✎·✦◇◷⊘]) (.+)$/u)
   if (cardMatch) {
     const glyph = cardMatch[1]!
     const rest = cardMatch[2]!.trimEnd()
@@ -339,11 +341,15 @@ function buildToolBlock(text: string, columns?: number): ViewBlock {
     if (avail > 0 && stringWidth(arg) > avail) {
       const chunks = wrapTextByWidth(arg, avail)
       const pad = ' '.repeat(prefixWidth)
-      const lines: StyledLine[] = chunks.map((c, k) =>
-        k === 0
-          ? line(colored(glyph, 'cyan', { bold: true }), bold(` ${name}`), dim(`  ${arg.slice(c.start, c.end)}`))
-          : line(dim(`${pad}${arg.slice(c.start, c.end)}`)),
-      )
+      const visible = maxRows ? chunks.slice(0, maxRows) : chunks
+      const lines: StyledLine[] = visible.map((c, k) => {
+        const fragment = arg.slice(c.start, c.end)
+        const shown = k === visible.length - 1 && visible.length < chunks.length
+          ? `${truncateToWidth(fragment, Math.max(0, avail - 1))}…` : fragment
+        return k === 0
+          ? line(colored(glyph, 'cyan', { bold: true }), bold(` ${name}`), dim(`  ${shown}`))
+          : line(dim(`${pad}${shown}`))
+      })
       return block(lines, 1)
     }
     return block([line(colored(glyph, 'cyan', { bold: true }), bold(` ${name}`), dim(`  ${arg}`))], 1)

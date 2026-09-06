@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 
-use super::task_label;
 use super::ProcessManager;
 use super::ProcessSnapshot;
 use super::PROGRESS_INTERVAL;
@@ -175,7 +174,7 @@ impl AgentTool for TaskOutputTool {
         // whole command: the bash card that started the task already printed it
         // in full, and repeating a long pipeline on every poll only wraps.
         match self.manager.summary(task_id) {
-            Some(summary) => Some(task_label(&summary.command)),
+            Some(summary) => Some(summary.command),
             // Unknown id (already forgotten, or a model typo): show the id
             // rather than nothing, so the card still says what was asked for.
             None => Some(task_id.to_string()),

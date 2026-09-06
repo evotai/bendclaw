@@ -1,3 +1,4 @@
+import { getTheme } from '../src/render/theme/index.js'
 import { expect, test } from 'bun:test'
 import { createPatch } from 'diff'
 import stripAnsi from 'strip-ansi'
@@ -32,19 +33,19 @@ test('long Unicode lines wrap within their own pane without losing content', () 
   expect(lines.join('').match(/🙂/g)).toHaveLength(90)
 })
 
-test('edit gutters use colored rails instead of signs, including wrapped rows', () => {
+test('edit gutters omit rails and signs while retaining diff fills and code', () => {
   const patch = createPatch('a', 'old - value\n', 'new + value ' + 'word '.repeat(60) + '\n')
   for (const width of [80, 140]) {
     const lines = buildDiffLines(patch, width)
-    const rails = lines.flatMap(row => row.spans.filter(span => span.text === '▎'))
-    expect(rails.some(span => span.fg === 'red')).toBe(true)
-    expect(rails.some(span => span.fg === 'green')).toBe(true)
+    const fills = lines.flatMap(row => [row.bg, ...row.spans.map(span => span.bg)])
+    expect(fills).toContain(getTheme().diffRemovedBg)
+    expect(fills).toContain(getTheme().diffAddedBg)
     const plain = blocksToLines([{ lines }]).map(stripAnsi)
     expect(plain.join('\n')).not.toMatch(/\d+\s+[+-]\s/)
     expect(plain.join('\n')).toContain('old - value')
     expect(plain.join('\n')).toContain('new + value')
     expect(plain.every(row => stringWidth(row) <= width)).toBe(true)
-    expect(rails.length).toBeGreaterThan(2)
+    expect(plain.join('\n')).not.toContain('▎')
   }
 })
 

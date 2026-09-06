@@ -154,13 +154,12 @@ describe('buildToolCall', () => {
     expect(all).not.toContain('… (+')
   })
 
-  test('long single-line bash command is truncated on the card header', () => {
+  test('long shell headings retain the command for width-aware card layout', () => {
     const command = 'x'.repeat(200)
     const lines = buildToolCall('bash', { command }, command)
     const card = lines[lines.length - 1]!
-    expect(card.text).toContain('⌘ bash')
-    expect(card.text.endsWith('…')).toBe(true)
-    expect(card.text.length).toBeLessThan(command.length)
+    expect(card.text).toBe(`⌘ bash  ${command}`)
+    expect(card.commandMaxRows).toBe(2)
   })
 
   test('regular tool call still surfaces reason lines up-front', () => {

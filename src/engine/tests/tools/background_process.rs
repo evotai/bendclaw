@@ -1143,9 +1143,10 @@ async fn task_tools_preview_the_command_they_act_on() -> Result<(), Box<dyn Erro
     let output = TaskOutputTool::new(manager.clone());
     let stop = TaskStopTool::new(manager.clone());
 
+    let command = format!("sleep 5 # {}", "full command preview ".repeat(10));
     let started = bash
         .execute(
-            serde_json::json!({"command": "sleep 5 # marker", "run_in_background": true}),
+            serde_json::json!({"command": command, "run_in_background": true}),
             context("bash", dir.path()),
         )
         .await?;
@@ -1156,11 +1157,11 @@ async fn task_tools_preview_the_command_they_act_on() -> Result<(), Box<dyn Erro
     let params = serde_json::json!({"task_id": id});
     assert_eq!(
         output.preview_command(&params).as_deref(),
-        Some("sleep 5 # marker")
+        Some(command.as_str())
     );
     assert_eq!(
         stop.preview_command(&params).as_deref(),
-        Some("sleep 5 # marker")
+        Some(command.as_str())
     );
 
     // Reap before returning. `Drop` only cancels tokens without awaiting the

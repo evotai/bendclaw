@@ -105,7 +105,7 @@ function toolPrimaryArg(
   const n = name.toLowerCase()
   if (n === 'bash') {
     const command = toolDraftText({ previewCommand, command: args?.command }, ['previewCommand', 'command'])
-    return formatBashCommandDisplay(command, expanded).headline
+    return formatBashCommandDisplay(command, expanded, true).headline
   }
   if (isTaskTool(name)) {
     // The engine resolves the task id to its command via preview_command, so
@@ -113,7 +113,7 @@ function toolPrimaryArg(
     // `task_output`. Falls back to the raw id when the task is already gone.
     const command = toolDraftText({ previewCommand, task_id: args?.task_id }, ['previewCommand', 'task_id'])
     if (!command) return ''
-    return formatBashCommandDisplay(command, expanded).headline
+    return formatBashCommandDisplay(command, expanded, true).headline
   }
 
   const { display: pathDisplay } = toolPathArg(args)
@@ -402,6 +402,10 @@ export interface OutputLine {
   toolCodePreview?: boolean
   /** Tool line that is one row of a rendered diff; added/removed rows get
    *  their own fill inside the card. */
+  /** Compact shell headings wrap up to this many rows. */
+  commandMaxRows?: number
+  /** Actual stdout/stderr, rather than metadata or a folding hint. */
+  shellOutput?: boolean
   diffRow?: DiffRowKind
   /** Original patch retained for responsive split/unified layout at render time. */
   diffText?: string
@@ -540,6 +544,7 @@ export function buildToolCall(
     id: genId('tool'),
     kind: 'tool',
     text: toolCallText(name, args, previewCommand, expanded, options),
+    commandMaxRows: name.toLowerCase() === 'bash' || isTaskTool(name) ? (expanded ? undefined : 2) : undefined,
   }]
   for (const reason of formatReasonLines(args)) {
     lines.push({ id: genId('tool'), kind: 'tool', text: `  ${reason}` })
@@ -554,7 +559,7 @@ export function buildToolCall(
   // Expanded multi-line bash: keep newlines instead of flattening into a wall.
   // Collapse hint matches expanded tool results / progress cards — but only
   // when the user explicitly expanded (not auto-expanded failures).
-  if (name.toLowerCase() === 'bash' && expanded) {
+  if ((name.toLowerCase() === 'bash' || isTaskTool(name)) && expanded) {
     const command = toolDraftText({ previewCommand, command: args?.command }, ['previewCommand', 'command'])
     const details = formatBashCommandDisplay(command, true).detailLines
     for (const detail of details) {
@@ -610,7 +615,7 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
   const lines = buildToolCall(
     call.name,
     args,
-    call.previewCommand,
+    isTaskTool(call.name) ? detailString(details, 'command') ?? call.previewCommand : call.previewCommand,
     expanded,
     { failed: settledFailed },
   )
@@ -732,8 +737,21 @@ export function buildToolResult(
   // at the end) capped at ERROR_PREVIEW_LINES; ctrl+o expands the rest and
   // collapses back to the preview.
   if (result) {
-    const formattedResult = formatToolResultContent(result)
-    if (isError && !expanded) {
+    const shell = name.toLowerCase() === 'bash' || isTaskTool(name)
+    // Only strip the known task envelope in compact mode. Expanded mode keeps
+    // the task id, output path and full result for diagnostics.
+    const body = !expanded && !isError && isTaskTool(name) && result.startsWith('Task ID:')
+      ? result.includes('\nOutput:\n') ? result.slice(result.indexOf('\nOutput:\n') + 9) : ''
+      : !expanded && !isError && details.backgrounded === true ? '' : result
+    const formattedResult = formatToolResultContent(body)
+    if (shell && !expanded && !isError) {
+      const output = formattedResult.replace(/\r\n/g, '\n').replace(/\n+$/, '')
+      const rows = output.trim() ? output.split('\n') : []
+      for (const text of rows.slice(-3)) {
+        lines.push({ id: genId('tool-res'), kind: 'tool_result', text: `  ${text}`, shellOutput: true })
+      }
+      if (rows.length > 3) lines.push(toolHintLine(`  … ${expandLinesHint(rows.length - 3)}`))
+    } else if (isError && !expanded) {
       const all = toolResultLines(formattedResult, true, name, true)
       const hidden = all.length - ERROR_PREVIEW_LINES
       if (hidden > 0) {

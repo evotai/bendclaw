@@ -523,7 +523,8 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     // pi's Box: the border cell stays blank so card content sits on the same
     // column as the rail-led user text. No rail glyph on tool cards.
     expect(stripAnsi(body[1]!).startsWith('  ⌘ bash')).toBe(true)
-    expect(stripAnsi(body[3]!)).toContain('ctrl+o to expand')
+    expect(stripAnsi(body[3]!)).toContain('a')
+    expect(stripAnsi(body.join('\n'))).not.toContain('ctrl+o to expand')
     expect(stripAnsi(rows.join('\n'))).not.toContain('┃')
   })
 
@@ -569,8 +570,8 @@ describe('tool cards: lifecycle-tinted slabs', () => {
       result: 'ok',
       details: { diff: '@@ -1,3 +1,3 @@\n ctx\n-old\n+new' },
     } as Parameters<typeof buildToolCard>[0]), 40).split('\n')
-    const added = rows.find(r => /▎\s+\d+ new/.test(stripAnsi(r)))!
-    const removed = rows.find(r => /▎\s+\d+ old/.test(stripAnsi(r)))!
+    const added = rows.find(r => /^\s*\d+ new\s*$/.test(stripAnsi(r)))!
+    const removed = rows.find(r => /^\s*\d+ old\s*$/.test(stripAnsi(r)))!
     const context = rows.find(r => stripAnsi(r).includes(' ctx'))!
     expect(added.startsWith(bgOpen(theme.diffAddedBg))).toBe(true)
     expect(removed.startsWith(bgOpen(theme.diffRemovedBg))).toBe(true)

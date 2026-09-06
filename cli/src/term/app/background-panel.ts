@@ -165,6 +165,7 @@ export function formatPanelItems(processes: BackgroundProcess[]): SelectorItem[]
 export function createBackgroundPanelState(processes: BackgroundProcess[]): SelectorState {
   return {
     ...createAppSelectorState('background', BACKGROUND_PANEL_TITLE, formatPanelItems(processes)),
+    presentation: 'background-list',
     subtitle: formatPanelSubtitle(processes),
     noFilter: true,
     emptyMessage: PANEL_EMPTY_MESSAGE,
@@ -290,6 +291,7 @@ export const OUTPUT_TAIL_LINES = 200
 export function createBackgroundOutputState(
   process: BackgroundProcess,
   output: string,
+  returnToPrompt = false,
 ): SelectorState {
   const safeOutput = sanitizeTerminalOutput(output)
   return {
@@ -302,8 +304,20 @@ export function createBackgroundOutputState(
     presentation: 'background-output',
     subtitle: process.task_id.slice(0, 8),
     noFilter: true,
-    hints: [{ keys: 'escape', action: 'back' }],
+    outputView: { returnToPrompt },
+    hints: backgroundOutputHints(process, returnToPrompt),
   }
+}
+
+/** Hints describe only actions available on this task. */
+export function backgroundOutputHints(process: BackgroundProcess, returnToPrompt = false) : Hint[] {
+  return [
+    { keys: 'escape', action: returnToPrompt ? 'close' : 'back' },
+    ...(isLiveStatus(process.status) ? [{ keys: 'x', action: 'stop' } satisfies Hint] : []),
+    { keys: ['up', 'down'], action: 'scroll' },
+    { keys: 'end', action: 'follow' },
+    { keys: 'c', action: 'command' },
+  ]
 }
 
 /** Strip terminal control sequences before command output enters the renderer. */
@@ -342,8 +356,18 @@ export function refreshBackgroundOutputState(
   process: BackgroundProcess,
   output: string,
 ): SelectorState {
-  const next = createBackgroundOutputState(process, output)
-  return { ...next, query: state.query }
+  const next = createBackgroundOutputState(process, output, state.outputView?.returnToPrompt)
+  // Freeze the captured body while reading older output. A moving file tail
+  // must not move the user's reading position (even when lines repeat).
+  if (state.outputView?.scrollOffset !== undefined) {
+    const previous = state.items[0]?.preview ?? []
+    const preview = next.items[0]?.preview
+    if (preview && previous.includes('')) {
+      const frozenBody = previous.slice(previous.indexOf('') + 1)
+      preview.splice(preview.indexOf('') + 1, Infinity, ...frozenBody)
+    }
+  }
+  return { ...next, query: state.query, outputView: state.outputView }
 }
 
 /** Transcript-compatible formatting shared by the live output renderer. */

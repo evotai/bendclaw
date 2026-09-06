@@ -1,4 +1,5 @@
 import { buildOutputBlocks } from './output.js'
+import { clipDisplayText } from '../../render/format.js'
 import { SELECTOR_OWNER } from '../app/selector-identity.js'
 import stringWidth from 'string-width'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
@@ -21,6 +22,32 @@ export function buildSelectorRegionLines(
   if (state.presentation === 'model') return ['', ...buildModelSelectorRegionLines(state, width, active)]
 
   const border = styledLineToAnsi(line(dim('─'.repeat(width))))
+  if (state.presentation === 'background-list') {
+    const budget = Math.max(1, Math.floor(rows) - 10)
+    const start = Math.min(state.scrollOffset, state.focusIndex)
+    const selected = state.items[state.focusIndex]
+    const visible: StyledLine[] = []
+    // Walk back from focus to fill the viewport, accounting for activity rows.
+    let first = state.focusIndex
+    let cost = 0
+    for (let i = state.focusIndex; i >= start; i--) {
+      const item = state.items[i]!
+      const height = item.activity ? 2 : 1
+      if (cost + height > budget && cost > 0) break
+      first = i
+      cost += height
+    }
+    for (let i = first; i < state.items.length && visible.length < budget; i++) {
+      const item = state.items[i]!
+      visible.push(item.header ? line(dim(`  ${item.label}`)) : buildSelectorRow(item, { highlighted: i === state.focusIndex, query: '' }))
+      if (item.activity && visible.length < budget) visible.push(line(dim(`    ↳ ${clipDisplayText(item.activity, Math.max(1, width - 6))}`)))
+    }
+    return ['', border,
+      styledLineToAnsi(line(bold(state.title), dim(state.subtitle ? ` · ${state.subtitle}` : ''))),
+      ...(visible.length ? visible : [line(dim(state.emptyMessage ?? 'No tasks'))]).map(styledLineToAnsi),
+      styledLineToAnsi(buildHintLine(selected?.hints ?? state.hints ?? [])), border,
+    ].map(text => wrapTextWithAnsi(text, width)[0] ?? '')
+  }
   if (state.presentation === 'background-output') {
     return ['', border, ...buildBackgroundOutputRegionLines(state, width, rows), border]
   }
@@ -28,39 +55,46 @@ export function buildSelectorRegionLines(
   return ['', border, ...blocksToLines(buildSelectorBlocks(state, width, active)), border]
 }
 
-/** Full-width, tail-following view for one background shell. */
+/** Bounded detail: metadata cannot consume the activity viewport or footer. */
 function buildBackgroundOutputRegionLines(state: SelectorState, width: number, rows: number): string[] {
   const item = state.items[0]
-  const preview = item?.preview ?? ['  (no output yet)']
+  const preview = item?.preview ?? ['', '(no output yet)']
   const split = preview.indexOf('')
   const metadata = split < 0 ? [] : preview.slice(0, split)
-  const body = split < 0 ? preview : preview.slice(split + 1)
-  // Keep metadata pinned and follow only the output body. A capped-file warning
-  // must never scroll away, or a partial log can be mistaken for the whole run.
-  // Reuse transcript tool styling: cyan glyph, bold name, subdued command,
-  // and lifecycle-colored status. Do not dim the entire metadata section.
-  const metadataRows = buildOutputBlocks(metadata.map((text, index) => ({
-    id: `background-metadata-${index}`, kind: 'tool' as const, text,
-  })), { columns: width }).flatMap(block => block.lines).map(styledLineToAnsi)
-  const wrappedBody = body.flatMap(entry =>
+  const body = state.outputView?.showCommand
+    ? metadata.filter(text => !/^  [●✓✗■]/u.test(text) && !text.includes('earlier line') && !text.includes('output file was capped'))
+    : split < 0 ? preview : preview.slice(split + 1)
+  const paused = state.outputView?.scrollOffset !== undefined
+  const end = Math.min(body.length, state.outputView?.scrollOffset ?? body.length)
+  const wrapBody = (entries: string[]) => entries.flatMap(entry =>
     wrapTextWithAnsi(entry, Math.max(1, width - 2)).map(text => `${width > 2 ? '  ' : ''}${text}`),
   )
-  const maxRows = Math.max(3, Math.min(18, Math.floor(rows) - 10))
-  const bodyBudget = Math.max(1, maxRows - metadataRows.length - 1)
-  const hidden = Math.max(0, wrappedBody.length - bodyBudget)
-  const visible = wrappedBody.slice(-bodyBudget)
-  const lines: StyledLine[] = [
-    line(colored(state.title, 'cyan', { bold: true })),
-    ...(state.subtitle ? [line(dim(state.subtitle))] : []),
-    line(plain('')),
-    ...metadataRows.map(text => line(plain(text))),
-    line(plain('')),
-    ...(hidden > 0 ? [line(dim(`  … ${hidden} earlier display lines`))] : []),
-    ...visible.map(text => line(plain(text))),
-    line(plain('')),
-    buildHintLine(state.hints ?? [{ keys: 'escape', action: 'back' }]),
+  const wrapped = wrapBody(body.slice(0, end))
+  // The outer renderer adds a leading blank and two borders. Leave those out
+  // of this budget; keep enough space for activity even on short terminals.
+  const budget = Math.max(4, Math.min(24, Math.floor(rows) - 4))
+  const title = item?.label ?? state.title
+  const status = metadata.find(text => /^  [●✓✗■]/u.test(text)) ?? item?.detail ?? ''
+  const warnings = metadata.filter(text => text.includes('output file was capped'))
+  const header = [
+    styledLineToAnsi(line(bold(clipDisplayText(title, width)))),
+    ...buildOutputBlocks([{ id: 'background-status', kind: 'tool', text: status }], { columns: width })
+      .flatMap(block => block.lines).map(styledLineToAnsi),
+    ...warnings.map(text => styledLineToAnsi(line(colored(clipDisplayText(text, width), 'yellow')))),
   ]
-  return blocksToLines([block(lines)])
+  const bodyBudget = Math.max(1, budget - header.length - 2)
+  const visible = wrapped.slice(-bodyBudget)
+  const hasEarlier = wrapped.length > visible.length || metadata.some(text => text.includes('earlier line'))
+  const position = paused ? 'Paused · End to follow' : hasEarlier ? '… earlier output · ↑ scroll' : ''
+  const hints = state.hints ?? [{ keys: 'escape', action: 'back' }]
+  return [
+    ...header,
+    ...visible.map((text, index) => styledLineToAnsi(line(
+      index === visible.length - 1 ? plain(text) : dim(text),
+    ))),
+    styledLineToAnsi(line(dim(position))),
+    styledLineToAnsi(buildHintLine(hints)),
+  ].map(text => wrapTextWithAnsi(text, width)[0] ?? '')
 }
 
 /** Mirrors pi's ModelSelectorComponent hierarchy and line geometry. */

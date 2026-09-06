@@ -31,6 +31,7 @@ import {
   focusedPanelTarget,
   refreshBackgroundOutputState,
   refreshBackgroundPanelState,
+  sanitizeTerminalOutput,
   shouldDownOpenPanel,
 } from './background-panel.js'
 
@@ -63,6 +64,8 @@ export interface BackgroundTerminalsDeps {
    * disk, and so the caller decides how much of a large file to pull in.
    */
   readOutput: (path: string) => string
+  /** Output-file notifications, independent of the process-status poll. */
+  watchOutput?: (path: string, changed: () => void, failed: (error: Error) => void) => () => void
   /** Opens the panel as a selector overlay. */
   openPanel: (state: SelectorState) => void
   /** Replaces the open panel's state, or closes it when null. */
@@ -92,6 +95,61 @@ export class BackgroundTerminals {
   private processes: BackgroundProcess[] = []
   private readonly visibility = new BackgroundVisibility()
   private visibleSession: string | null = null
+  private returnPanel: SelectorState | null = null
+  private stopOutputWatch: (() => void) | null = null
+  private watchedTask: string | null = null
+  private latestOutput = ''
+  private outputGeneration = 0
+
+  dispose(): void {
+    this.outputGeneration++
+    this.stopOutputWatch?.()
+    this.stopOutputWatch = null
+    this.watchedTask = null
+  }
+
+  private subscribeOutput(process: BackgroundProcess): void {
+    this.dispose()
+    this.watchedTask = process.task_id
+    const session = this.deps.sessionId()
+    const generation = this.outputGeneration
+    const active = () => generation === this.outputGeneration && session === this.deps.sessionId()
+      && this.deps.panelState()?.owner === SELECTOR_OWNER.backgroundOutput
+      && this.deps.panelState()?.items[0]?.id === process.task_id
+    const changed = () => {
+      if (!active()) {
+        if (generation === this.outputGeneration) this.dispose()
+        return
+      }
+      this.latestOutput = this.readOutput(process)
+      const state = this.deps.panelState()
+      if (state) this.refreshOutputView(state, this.processes)
+    }
+    const failed = (error: Error) => {
+      if (!active()) return
+      this.deps.commit('watch-error', `  Live output unavailable: ${this.deps.errorText(error)}`)
+      this.dispose()
+    }
+    try {
+      this.stopOutputWatch = this.deps.watchOutput?.(process.output_path, changed, failed) ?? null
+      // Subscribe before the initial read: no gap in which a write is missed.
+      changed()
+    } catch (error) {
+      failed(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  /** Read activity only while the list is open, never on idle spinner frames. */
+  private withActivity(state: SelectorState): SelectorState {
+    const items = state.items.map(item => {
+      const process = this.processes.find(process => process.task_id === item.id)
+      if (!process) return item
+      if (process.output_file_truncated) return { ...item, activity: 'Output file capped — preview is incomplete' }
+      const lines = sanitizeTerminalOutput(this.readOutput(process)).trimEnd().split('\n')
+      return { ...item, activity: lines.reverse().find(line => line.trim())?.trim() }
+    })
+    return { ...state, items, allItems: items }
+  }
 
   /** Called before starting a user run; existing live work remains visible. */
   beginRun(): void {
@@ -279,6 +337,7 @@ export class BackgroundTerminals {
    * alone never forces a repaint.
    */
   refresh(): void {
+    if (this.watchedTask && (!this.deps.panelOpen() || this.deps.panelState()?.owner !== SELECTOR_OWNER.backgroundOutput)) this.dispose()
     const previous = this.processes
     const previousWaits = this.blockingWaits
     const sessionId = this.deps.sessionId()
@@ -316,7 +375,7 @@ export class BackgroundTerminals {
           if (state.owner === SELECTOR_OWNER.backgroundOutput) {
             this.refreshOutputView(state, next)
           } else {
-            this.deps.updatePanel(refreshBackgroundPanelState(state, this.panelProcesses()))
+            this.deps.updatePanel(this.withActivity(refreshBackgroundPanelState(state, this.panelProcesses())))
           }
         }
       }
@@ -341,6 +400,7 @@ export class BackgroundTerminals {
   /** Open the panel, or close either background view when already active. */
   togglePanel(): void {
     if (this.deps.panelOpen()) {
+      this.dispose()
       this.deps.updatePanel(null)
       return
     }
@@ -349,7 +409,15 @@ export class BackgroundTerminals {
       return
     }
     this.refresh()
-    this.deps.openPanel(createBackgroundPanelState(this.panelProcesses()))
+    const processes = this.panelProcesses()
+    this.returnPanel = null
+    if (processes.length === 1) {
+      const process = processes[0]!
+      this.deps.openPanel(createBackgroundOutputState(process, this.readOutput(process), true))
+      this.subscribeOutput(process)
+    } else {
+      this.deps.openPanel(this.withActivity(createBackgroundPanelState(processes)))
+    }
   }
 
   /**
@@ -382,9 +450,43 @@ export class BackgroundTerminals {
     if (!state || !isBackgroundSelector(state)) return false
     if (state.owner === SELECTOR_OWNER.backgroundOutput) {
       if (event.type === 'escape') {
-        const taskId = state.items[0]?.id
-        const panel = createBackgroundPanelState(this.panelProcesses())
-        this.deps.updatePanel(taskId ? selectorFocusOn(panel, item => item.id === taskId) : panel)
+        this.dispose()
+        if (state.outputView?.returnToPrompt) {
+          this.deps.updatePanel(null)
+        } else {
+          const taskId = state.items[0]?.id
+          const panel = this.withActivity(this.returnPanel
+            ? refreshBackgroundPanelState(this.returnPanel, this.panelProcesses())
+            : createBackgroundPanelState(this.panelProcesses()))
+          this.deps.updatePanel(taskId ? selectorFocusOn(panel, item => item.id === taskId) : panel)
+        }
+        return true
+      }
+      if (event.type === 'char' && event.char === 'x') {
+        const target = focusedPanelTarget(state, this.processes)
+        if (target?.live) this.track(this.stopFromPanel(target.id))
+        return true
+      }
+      if (event.type === 'char' && event.char === 'c') {
+        this.deps.updatePanel({ ...state, outputView: { ...state.outputView, scrollOffset: undefined, showCommand: !state.outputView?.showCommand } })
+        return true
+      }
+      if (event.type === 'end') {
+        const next = { ...state, outputView: { ...state.outputView, scrollOffset: undefined } }
+        this.deps.updatePanel(next)
+        this.refreshOutputView(next, this.processes)
+        return true
+      }
+      if (['up', 'down', 'page-up', 'page-down', 'home'].includes(event.type)) {
+        const preview = state.items[0]?.preview ?? []
+        const count = state.outputView?.showCommand ? preview.indexOf('') : preview.length - preview.indexOf('') - 1
+        const previous = state.outputView?.scrollOffset ?? count
+        const delta = event.type === 'up' ? -1 : event.type === 'page-up' ? -10 : event.type === 'page-down' ? 10 : 1
+        const offset = event.type === 'home' ? 1 : Math.max(1, Math.min(count, previous + delta))
+        const follow = !state.outputView?.showCommand && delta > 0 && offset >= count && event.type !== 'home'
+        const next = { ...state, outputView: { ...state.outputView, scrollOffset: follow ? undefined : offset } }
+        this.deps.updatePanel(next)
+        if (follow) this.refreshOutputView(next, this.processes)
         return true
       }
       // Keep editor/navigation input out of the hidden composer, but let global
@@ -422,7 +524,9 @@ export class BackgroundTerminals {
   private openOutputView(taskId: string): void {
     const process = this.processes.find(candidate => candidate.task_id === taskId)
     if (!process) return
+    this.returnPanel = this.deps.panelState()
     this.deps.updatePanel(createBackgroundOutputState(process, this.readOutput(process)))
+    this.subscribeOutput(process)
   }
 
   /** Refresh an open live tail from the latest process snapshot and file. */
@@ -430,10 +534,11 @@ export class BackgroundTerminals {
     const taskId = state.items[0]?.id
     const process = processes.find(candidate => candidate.task_id === taskId)
     if (!process) {
-      this.deps.updatePanel(createBackgroundPanelState(this.panelProcesses()))
+      this.dispose()
+      this.deps.updatePanel(this.withActivity(createBackgroundPanelState(this.panelProcesses())))
       return
     }
-    const next = refreshBackgroundOutputState(state, process, this.readOutput(process))
+    const next = refreshBackgroundOutputState(state, process, this.latestOutput)
     const currentItem = state.items[0]
     const nextItem = next.items[0]
     const unchanged = state.subtitle === next.subtitle
@@ -581,6 +686,7 @@ export class BackgroundTerminals {
    * `fastExit`, which skips the async teardown that would otherwise stop them.
    */
   killAllNow(): number {
+    this.dispose()
     try {
       return this.deps.client.killAllBackgroundProcessesNow()
     } catch {

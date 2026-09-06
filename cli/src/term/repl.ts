@@ -1,5 +1,6 @@
 import { TermRenderer } from './renderer.js'
 import type { RenderFrame } from './render-frame.js'
+import { watchOutputFile } from './app/output-watch.js'
 import { readOutputTail } from './app/output-tail.js'
 import {
   enableRawMode,
@@ -1713,6 +1714,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     errorText,
     paintError: text => chalk.red(text),
     readOutput: path => readOutputTail(path),
+    watchOutput: watchOutputFile,
     openPanel: state => {
       overlay = { kind: 'selector', state }
       renderer.requestRender()

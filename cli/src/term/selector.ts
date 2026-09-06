@@ -3,6 +3,8 @@ import type { Hint } from './design/key-hints.js'
 export interface SelectorItem {
   label: string
   detail?: string
+  /** Optional subordinate activity line, not a side-pane preview. */
+  activity?: string
   /** Renders as a non-focusable group divider (e.g. a provider name). */
   header?: boolean
   /** Marks the active choice without mixing status into detail text. */
@@ -47,7 +49,13 @@ export interface SelectorState {
   subtitle?: string
   /** Model selection and live background output use dedicated editor-replacement
    * presentations instead of the generic titled selector. */
-  presentation?: 'model' | 'background-output'
+  presentation?: 'model' | 'background-list' | 'background-output'
+  /** Ephemeral state for an output detail: undefined offset follows the tail. */
+  outputView?: {
+    scrollOffset?: number
+    showCommand?: boolean
+    returnToPrompt?: boolean
+  }
   /** Wraps up/down navigation between the first and last focusable items. */
   circularNavigation?: boolean
   /** Session id armed for deletion, awaiting a confirming second keypress.

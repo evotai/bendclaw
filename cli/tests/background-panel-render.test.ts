@@ -2,8 +2,6 @@ import { describe, test, expect } from 'bun:test'
 import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
 import { buildSelectorRegionLines } from '../src/term/viewmodel/selector.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
-import { buildToolCall } from '../src/render/output.js'
-import { buildOutputBlocks } from '../src/term/viewmodel/output.js'
 import { createBackgroundOutputState, createBackgroundPanelState } from '../src/term/app/background-panel.js'
 import { selectorDown } from '../src/term/selector.js'
 import type { BackgroundProcess } from '../src/native/index.js'
@@ -130,10 +128,10 @@ describe('background panel rendering', () => {
     const state = createBackgroundOutputState(proc(), output)
     const lines = buildSelectorRegionLines(state, 100, 24).map(stripAnsi)
 
-    expect(lines).toContain('Background output')
+    expect(lines).toContain('sleep 30')
     expect(lines.some(line => line.trim() === 'line 30')).toBe(true)
     expect(lines.some(line => line.trim() === 'line 1')).toBe(false)
-    expect(lines).toContain('Esc to back')
+    expect(lines.join('\n')).toContain('Esc to back')
     expect(lines.every(line => line.length <= 100)).toBe(true)
 
     const short = buildSelectorRegionLines(state, 100, 12).map(stripAnsi)
@@ -141,33 +139,30 @@ describe('background panel rendering', () => {
     expect(short.some(line => line.trim() === 'line 30')).toBe(true)
   })
 
-  test('live output shares transcript headline styling and shows status only once', () => {
+  test('live output emphasizes activity without repeating the command', () => {
     const process = proc({ command: 'printf hello\nprintf world' })
     const state = createBackgroundOutputState(process, 'hello\nworld')
     const rendered = buildSelectorRegionLines(state, 80, 30)
-    const headline = blocksToLines(buildOutputBlocks(
-      buildToolCall('bash', { command: process.command }, undefined, true),
-      { columns: 80 },
-    )).find(text => stripAnsi(text).startsWith('⌘ bash'))
-    expect(headline).toBeDefined()
-    expect(rendered).toContain(headline!)
     const plain = rendered.map(stripAnsi)
     expect(plain.filter(text => text.includes('running ·'))).toHaveLength(1)
     expect(plain).toContain('  hello')
     expect(plain).toContain('  world')
-    expect(plain).toContain('  Output: /tmp/out.txt')
+    expect(plain.join('\n')).not.toContain('Output:')
     expect(plain.join('\n')).not.toContain('ctrl+o')
   })
 
-  test('long command continuations align with the shared tool headline', () => {
-    const command = 'echo ' + 'long-argument '.repeat(12)
-    const state = createBackgroundOutputState(proc({ command }), 'latest output')
-    const lines = buildSelectorRegionLines(state, 60, 40).map(stripAnsi)
-    const start = lines.findIndex(text => text.startsWith('⌘ bash'))
-    expect(start).toBeGreaterThan(0)
-    expect(lines[start + 1]).toStartWith('        ')
-    expect(lines.every(text => text.length <= 60)).toBe(true)
-    expect(lines).toContain('  latest output')
+  test('huge command metadata never pushes activity or navigation off screen', () => {
+    const command = 'echo ' + 'long-argument '.repeat(1200)
+    for (const rows of [10, 12, 24, 40]) {
+      const state = createBackgroundOutputState(proc({ command }), 'latest output')
+      const lines = buildSelectorRegionLines(state, 60, rows).map(stripAnsi)
+      expect(lines.length).toBeLessThanOrEqual(rows)
+      expect(lines.every(text => text.length <= 60)).toBe(true)
+      expect(lines).toContain('  latest output')
+      expect(lines.join('\n')).toContain('Esc')
+      const commandView = { ...state, outputView: { showCommand: true } }
+      expect(buildSelectorRegionLines(commandView, 60, rows).length).toBeLessThanOrEqual(rows)
+    }
   })
 
   test('capped-output warning stays pinned above a noisy tail', () => {

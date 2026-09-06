@@ -49,6 +49,8 @@ function harness(options: {
   let renders = 0
   let messageDetaches = 0
   let wakes = 0
+  let outputChanged: (() => void) | undefined
+  let outputReads = 0
   let blockingWaits = options.startingBlockingWaits ?? 0
 
   // Shared by both detach entry points so a test cannot pass for one and fail
@@ -104,7 +106,12 @@ function harness(options: {
     commit: (slot, text) => commits.push({ slot, text }),
     requestRender: () => { renders++ },
     errorText: err => (err instanceof Error ? err.message : String(err)),
+    watchOutput: (_path, changed) => {
+      outputChanged = changed
+      return () => { outputChanged = undefined }
+    },
     readOutput: () => {
+      outputReads++
       if (typeof options.output === 'function') return options.output()
       return options.output ?? ''
     },
@@ -130,12 +137,14 @@ function harness(options: {
     processes: () => processes,
     messageDetaches: () => messageDetaches,
     wakes: () => wakes,
+    outputChanged: () => outputChanged?.(),
+    outputReads: () => outputReads,
   }
 }
 
 describe('BackgroundTerminals.handlePromptDown', () => {
   test('renamed background views still refresh and route back to the list', () => {
-    const h = harness({ processes: [proc()], output: 'latest output' })
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })], output: 'latest output' })
     h.controller.togglePanel()
     const list = h.panel()
     if (!list) throw new Error('expected background list')
@@ -148,7 +157,7 @@ describe('BackgroundTerminals.handlePromptDown', () => {
     expect(h.panel()?.presentation).toBe('background-output')
     expect(h.panel()?.items[0]?.preview?.join('\n')).toContain('latest output')
     expect(h.controller.handlePanelKey({ type: 'escape' })).toBe(true)
-    expect(h.panel()?.presentation).toBeUndefined()
+    expect(h.panel()?.presentation).toBe('background-list')
     expect(h.panel()?.items[0]?.id).toBe(proc().task_id)
   })
 
@@ -212,12 +221,13 @@ describe('BackgroundTerminals.handlePromptDown', () => {
 })
 
 describe('BackgroundTerminals.togglePanel', () => {
-  test('opens the panel over the current task list', () => {
+  test('one task opens directly in detail and Esc returns to the prompt', () => {
     const h = harness({ processes: [proc()] })
     h.controller.togglePanel()
-    expect(h.panel()).not.toBeNull()
+    expect(h.panel()?.presentation).toBe('background-output')
     expect(h.panel()!.items).toHaveLength(1)
-    expect(h.panel()!.subtitle).toBe('1 active shell')
+    h.controller.handlePanelKey({ type: 'escape' })
+    expect(h.panel()).toBeNull()
   })
 
   test('a second press closes it, so one key round-trips', () => {
@@ -257,8 +267,8 @@ describe('BackgroundTerminals panel refresh', () => {
     h.controller.togglePanel()
     h.setProcesses([proc({ status: 'completed', exit_code: 0 })])
     h.controller.refresh()
-    expect(h.panel()!.items[0]!.detail).toBe('(exit 0 · 2s)')
-    expect(h.panel()!.subtitle).toBe('1 finished')
+    expect(h.panel()!.items[0]!.detail).toBe('exit 0 · 2s')
+    expect(h.panel()?.presentation).toBe('background-output')
   })
 
   test('a closed panel is not reopened by a poll', () => {
@@ -297,8 +307,8 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     expect(h.panel()).toBeNull()
   })
 
-  test('navigation keys are not consumed, so the selector still moves', () => {
-    const h = harness({ processes: [proc()] })
+  test('navigation keys in a multi-task list are left to the selector', () => {
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })] })
     h.controller.togglePanel()
     expect(h.controller.handlePanelKey({ type: 'down' })).toBe(false)
   })
@@ -313,19 +323,53 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     expect(h.texts()).toHaveLength(0)
   })
 
-  test('the output view refreshes its tail and status on each poll', () => {
+  test('output events update the view without waiting for the status poll', () => {
     let output = 'building…\n'
     const h = harness({ processes: [proc()], output: () => output })
     h.controller.togglePanel()
     h.controller.handlePanelKey({ type: 'enter' })
 
     output += 'done\n'
+    const reads = h.outputReads()
+    h.controller.refresh()
+    expect(h.outputReads()).toBe(reads)
+    expect(h.panel()?.items[0]?.preview).not.toContain('done')
+    h.outputChanged()
+    expect(h.panel()?.items[0]?.preview).toContain('done')
     h.setProcesses([proc({ status: 'completed', exit_code: 0, elapsed_ms: 2500 })])
     h.controller.refresh()
 
     expect(h.panel()?.items[0]?.preview).toContain('done')
     expect(h.panel()?.items[0]?.preview?.join('\n')).toContain('✓ · exit 0')
     expect(h.panel()?.subtitle).toBe('aaaaaaaa')
+  })
+
+  test('reading earlier output freezes the viewport while new output is received', () => {
+    let output = 'one\ntwo\nthree\n'
+    const h = harness({ processes: [proc()], output: () => output })
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'up' })
+    const offset = h.panel()?.outputView?.scrollOffset
+    output += 'four\n'
+    h.outputChanged()
+    expect(h.panel()?.outputView?.scrollOffset).toBe(offset)
+    expect(h.panel()?.items[0]?.preview).not.toContain('four')
+    h.controller.handlePanelKey({ type: 'end' })
+    expect(h.panel()?.outputView?.scrollOffset).toBeUndefined()
+    expect(h.panel()?.items[0]?.preview).toContain('four')
+    h.controller.handlePanelKey({ type: 'escape' })
+    const reads = h.outputReads()
+    h.outputChanged()
+    expect(h.outputReads()).toBe(reads)
+    expect(h.panel()).toBeNull()
+  })
+
+  test('latest list activity is subordinate text and does not change task identity', () => {
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })], output: 'first\nlatest\n' })
+    h.controller.togglePanel()
+    expect(h.panel()?.items[0]?.activity).toBe('latest')
+    expect(h.panel()?.items[0]?.id).toBe(proc().task_id)
+    expect(h.panel()?.items[0]?.preview).toBeUndefined()
   })
 
   test('esc returns from output to the list and keeps focus on the task', () => {
@@ -342,7 +386,7 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     expect(h.panel()?.items[0]?.id).toBe('bbbbbbbb-2222')
 
     expect(h.controller.handlePanelKey({ type: 'escape' })).toBe(true)
-    expect(h.panel()?.presentation).toBeUndefined()
+    expect(h.panel()?.presentation).toBe('background-list')
     expect(h.panel()?.items[h.panel()?.focusIndex ?? 0]?.id).toBe('bbbbbbbb-2222')
   })
 
@@ -433,11 +477,11 @@ describe('BackgroundTerminals panel entry', () => {
   })
 
   test('X stops every task from the panel', async () => {
-    const h = harness({ processes: [proc()] })
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })] })
     h.controller.togglePanel()
     h.controller.handlePanelKey({ type: 'char', char: 'X' })
     await h.controller.settled()
-    expect(h.texts().join('\n')).toContain('Stopped 1 background terminal')
+    expect(h.texts().join('\n')).toContain('Stopped 2 background terminals')
   })
 })
 

@@ -2,6 +2,8 @@ import { describe, test, expect } from 'bun:test'
 import { buildOverlayBlocks } from '../src/term/viewmodel/overlays.js'
 import { buildSelectorRegionLines } from '../src/term/viewmodel/selector.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
+import { buildToolCall } from '../src/render/output.js'
+import { buildOutputBlocks } from '../src/term/viewmodel/output.js'
 import { createBackgroundOutputState, createBackgroundPanelState } from '../src/term/app/background-panel.js'
 import { selectorDown } from '../src/term/selector.js'
 import type { BackgroundProcess } from '../src/native/index.js'
@@ -137,6 +139,35 @@ describe('background panel rendering', () => {
     const short = buildSelectorRegionLines(state, 100, 12).map(stripAnsi)
     expect(short.length).toBeLessThan(lines.length)
     expect(short.some(line => line.trim() === 'line 30')).toBe(true)
+  })
+
+  test('live output shares transcript headline styling and shows status only once', () => {
+    const process = proc({ command: 'printf hello\nprintf world' })
+    const state = createBackgroundOutputState(process, 'hello\nworld')
+    const rendered = buildSelectorRegionLines(state, 80, 30)
+    const headline = blocksToLines(buildOutputBlocks(
+      buildToolCall('bash', { command: process.command }, undefined, true),
+      { columns: 80 },
+    )).find(text => stripAnsi(text).startsWith('⌘ bash'))
+    expect(headline).toBeDefined()
+    expect(rendered).toContain(headline!)
+    const plain = rendered.map(stripAnsi)
+    expect(plain.filter(text => text.includes('running ·'))).toHaveLength(1)
+    expect(plain).toContain('  hello')
+    expect(plain).toContain('  world')
+    expect(plain).toContain('  Output: /tmp/out.txt')
+    expect(plain.join('\n')).not.toContain('ctrl+o')
+  })
+
+  test('long command continuations align with the shared tool headline', () => {
+    const command = 'echo ' + 'long-argument '.repeat(12)
+    const state = createBackgroundOutputState(proc({ command }), 'latest output')
+    const lines = buildSelectorRegionLines(state, 60, 40).map(stripAnsi)
+    const start = lines.findIndex(text => text.startsWith('⌘ bash'))
+    expect(start).toBeGreaterThan(0)
+    expect(lines[start + 1]).toStartWith('        ')
+    expect(lines.every(text => text.length <= 60)).toBe(true)
+    expect(lines).toContain('  latest output')
   })
 
   test('capped-output warning stays pinned above a noisy tail', () => {

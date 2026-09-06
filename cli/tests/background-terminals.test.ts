@@ -324,7 +324,8 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     h.controller.refresh()
 
     expect(h.panel()?.items[0]?.preview).toContain('done')
-    expect(h.panel()?.subtitle).toContain('exit 0')
+    expect(h.panel()?.items[0]?.preview?.join('\n')).toContain('✓ · exit 0')
+    expect(h.panel()?.subtitle).toBe('aaaaaaaa')
   })
 
   test('esc returns from output to the list and keeps focus on the task', () => {

@@ -300,7 +300,7 @@ export function createBackgroundOutputState(
       preview: formatLiveOutputView(process, safeOutput),
     }]),
     presentation: 'background-output',
-    subtitle: `${process.task_id.slice(0, 8)} · ${formatStatusDetail(process)}`,
+    subtitle: process.task_id.slice(0, 8),
     noFilter: true,
     hints: [{ keys: 'escape', action: 'back' }],
   }
@@ -320,11 +320,13 @@ export function formatLiveOutputView(process: BackgroundProcess, output: string)
   const all = normalized.length === 0 ? [] : normalized.split('\n')
   const visible = all.slice(-OUTPUT_TAIL_LINES)
   const hidden = all.length - visible.length
-  const body = visible.length === 0 ? ['  (no output yet)'] : visible
+  const body = visible.length === 0 ? ['(no output yet)'] : visible
   return [
-    ...buildToolCall('bash', { command: process.command }, undefined, true).map(line => line.text),
+    // The panel owns navigation: don't advertise the transcript's Ctrl+O here.
+    ...buildToolCall('bash', { command: sanitizeTerminalOutput(process.command) }, undefined, true)
+      .filter(line => line.kind === 'tool').map(line => line.text),
     `  ${STATUS_MARK[process.status]} · ${formatStatusDetail(process)}`,
-    `  ${process.output_path}`,
+    `  Output: ${sanitizeTerminalOutput(process.output_path)}`,
     ...(process.output_file_truncated
       ? ['  ⚠ output file was capped; earlier output was dropped']
       : []),

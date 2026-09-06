@@ -1,3 +1,4 @@
+import { buildOutputBlocks } from './output.js'
 import { SELECTOR_OWNER } from '../app/selector-identity.js'
 import stringWidth from 'string-width'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
@@ -36,8 +37,14 @@ function buildBackgroundOutputRegionLines(state: SelectorState, width: number, r
   const body = split < 0 ? preview : preview.slice(split + 1)
   // Keep metadata pinned and follow only the output body. A capped-file warning
   // must never scroll away, or a partial log can be mistaken for the whole run.
-  const metadataRows = metadata.flatMap(entry => wrapTextWithAnsi(entry, width))
-  const wrappedBody = body.flatMap(entry => wrapTextWithAnsi(entry, width))
+  // Reuse transcript tool styling: cyan glyph, bold name, subdued command,
+  // and lifecycle-colored status. Do not dim the entire metadata section.
+  const metadataRows = buildOutputBlocks(metadata.map((text, index) => ({
+    id: `background-metadata-${index}`, kind: 'tool' as const, text,
+  })), { columns: width }).flatMap(block => block.lines).map(styledLineToAnsi)
+  const wrappedBody = body.flatMap(entry =>
+    wrapTextWithAnsi(entry, Math.max(1, width - 2)).map(text => `${width > 2 ? '  ' : ''}${text}`),
+  )
   const maxRows = Math.max(3, Math.min(18, Math.floor(rows) - 10))
   const bodyBudget = Math.max(1, maxRows - metadataRows.length - 1)
   const hidden = Math.max(0, wrappedBody.length - bodyBudget)
@@ -46,7 +53,7 @@ function buildBackgroundOutputRegionLines(state: SelectorState, width: number, r
     line(colored(state.title, 'cyan', { bold: true })),
     ...(state.subtitle ? [line(dim(state.subtitle))] : []),
     line(plain('')),
-    ...metadataRows.map(text => line(dim(text))),
+    ...metadataRows.map(text => line(plain(text))),
     line(plain('')),
     ...(hidden > 0 ? [line(dim(`  … ${hidden} earlier display lines`))] : []),
     ...visible.map(text => line(plain(text))),

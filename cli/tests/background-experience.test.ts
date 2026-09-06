@@ -6,14 +6,14 @@ import { createBackgroundOutputState } from '../src/term/app/background-panel.js
 import stringWidth from 'string-width'
 import { clipDisplayText } from '../src/render/format.js'
 
-test('background task wait names the agent interrupt target and hides old usage', () => {
+test('background task wait advertises release only and hides old usage', () => {
   const state = setSpinnerPhase(createSpinnerState(), 'executing', 'task_output')
   const text = stripAnsi(formatSpinnerLine(state, state.phaseStartedAt + 120000, { inputTokens: 100, outputTokens: 40 }, {
     interaction: resolveRunInteraction({ active: true, owner: state, blockingWaits: 1 }),
   }))
   expect(text).toContain('Waiting for task result')
   expect(text).toContain('to release wait')
-  expect(text).toContain('esc twice to interrupt')
+  expect(text).not.toContain('esc twice to interrupt')
   expect(text).not.toContain('interrupt agent')
   expect(text).not.toContain('↑')
   expect(text).not.toContain('↓')

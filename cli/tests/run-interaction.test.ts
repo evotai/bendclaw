@@ -23,7 +23,8 @@ test('status hints and key routing share the same capabilities for every state',
     const status = runStatusPresentation(interaction)
     expect(interaction.kind).toBe(kind)
     expect(status.showUsage).toBe(usage)
-    expect(status.hint.includes('esc twice')).toBe(interruptible)
+    expect(status.hint.includes('esc twice')).toBe(interruptible && interaction.backgroundAction === null)
+    expect(status.hint.includes('to background') || status.hint.includes('to release wait')).toBe(interaction.backgroundAction !== null)
     const route = (event: { type: 'escape' } | { type: 'ctrl'; key: string }) => decideReplControl({
       event, interaction, overlay: { kind: 'none' }, editor: createEditorState(),
       isLoading: input.active, hasStream: Boolean(input.owner), exitHint: false,
@@ -39,7 +40,7 @@ test('two Esc presses belong to one operation and expire after five seconds', ()
   const controller = new RunInteraction(() => now)
   const run = { active: true, owner, blockingWaits: 1 }
   expect(controller.requestInterrupt(run)).toBe('confirm')
-  expect(runStatusPresentation(controller.snapshot(run)).hint).toContain('background task keeps running')
+  expect(runStatusPresentation(controller.snapshot(run)).hint).toBe(' · esc again to interrupt')
   expect(controller.requestInterrupt(run)).toBe('interrupt')
   expect(controller.snapshot(run).interruptPending).toBe(false)
   expect(controller.requestInterrupt(run)).toBe('confirm')
@@ -49,6 +50,23 @@ test('two Esc presses belong to one operation and expire after five seconds', ()
   controller.clear()
   expect(controller.snapshot(run).interruptPending).toBe(false)
   expect(controller.requestInterrupt({ active: false, owner: null, backgroundTasks: 1 })).toBe('unavailable')
+})
+
+test('confirmation temporarily replaces the primary hint and expiry restores it', () => {
+  let now = 0
+  const controller = new RunInteraction(() => now)
+  for (const run of [
+    { active: true, owner, foregroundTasks: 1 },
+    { active: true, owner, blockingWaits: 1 },
+  ]) {
+    controller.clear()
+    const normal = runStatusPresentation(controller.snapshot(run)).hint
+    expect(normal).not.toContain('esc')
+    expect(controller.requestInterrupt(run)).toBe('confirm')
+    expect(runStatusPresentation(controller.snapshot(run)).hint).toBe(' · esc again to interrupt')
+    now += 5000
+    expect(runStatusPresentation(controller.snapshot(run)).hint).toBe(normal)
+  }
 })
 
 test('overlay and queued-message precedence is preserved', () => {

@@ -331,7 +331,7 @@ describe('formatSpinnerLine', () => {
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: { ...resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }), interruptPending: true } }))
     expect(line).toContain('esc again to interrupt')
     expect(line).not.toContain('interrupt agent')
-    expect(line).toContain('to background')
+    expect(line).not.toContain('to background')
     expect(line).not.toContain('esc to interrupt')
   })
 
@@ -341,7 +341,7 @@ describe('formatSpinnerLine', () => {
     // wait, so it has to be the thing the line names.
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }) }))
-    expect(line).toContain('esc twice to interrupt')
+    expect(line).not.toContain('esc twice to interrupt')
     expect(line).toContain('ctrl+b to background')
     expect(line).not.toContain('auto-background')
   })

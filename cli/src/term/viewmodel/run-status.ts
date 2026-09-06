@@ -8,19 +8,21 @@ export function runStatusPresentation(state: RunInteractionState): {
   showUsage: boolean
   allowSlowWarning: boolean
 } {
-  const hints: string[] = []
-  if (state.interruptTarget) {
-    const target = state.interruptTarget === 'compaction' ? ' compaction' : ''
-    hints.push(`${state.interruptPending ? 'esc again' : 'esc twice'} to interrupt${target}`)
-    if (state.kind === 'waiting-task' && state.interruptPending) hints.push('background task keeps running')
-  }
-  if (state.backgroundAction) {
-    hints.push(`${backgroundChord()} to ${state.backgroundAction === 'background-shell' ? 'background' : 'release wait'}`)
+  // Show the next useful action, not every supported key. Confirmation wins
+  // over backgrounding; hiding Esc here never disables its actual binding.
+  let hint = ''
+  const target = state.interruptTarget === 'compaction' ? ' compaction' : ''
+  if (state.interruptTarget && state.interruptPending) {
+    hint = `esc again to interrupt${target}`
+  } else if (state.backgroundAction) {
+    hint = `${backgroundChord()} to ${state.backgroundAction === 'background-shell' ? 'background' : 'release wait'}`
+  } else if (state.interruptTarget) {
+    hint = `esc twice to interrupt${target}`
   }
   return {
     label: state.kind === 'waiting-task' ? 'Waiting for task result…'
       : state.kind === 'waiting-background' ? 'Background task running · resumes when finished' : undefined,
-    hint: hints.length ? ` · ${hints.join(' · ')}` : '',
+    hint: hint ? ` · ${hint}` : '',
     showUsage: state.showUsage,
     allowSlowWarning: state.allowSlowWarning,
   }

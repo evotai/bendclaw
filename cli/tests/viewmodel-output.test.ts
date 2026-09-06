@@ -523,8 +523,7 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     // pi's Box: the border cell stays blank so card content sits on the same
     // column as the rail-led user text. No rail glyph on tool cards.
     expect(stripAnsi(body[1]!).startsWith('  ⌘ bash')).toBe(true)
-    expect(stripAnsi(body[3]!)).toContain('a')
-    expect(stripAnsi(body.join('\n'))).not.toContain('ctrl+o to expand')
+    expect(stripAnsi(body[3]!)).toContain('ctrl+o to expand')
     expect(stripAnsi(rows.join('\n'))).not.toContain('┃')
   })
 

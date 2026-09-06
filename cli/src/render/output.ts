@@ -402,10 +402,8 @@ export interface OutputLine {
   toolCodePreview?: boolean
   /** Tool line that is one row of a rendered diff; added/removed rows get
    *  their own fill inside the card. */
-  /** Compact shell headings wrap up to this many rows. */
+  /** Width-aware compact command budget; expanded cards have no row limit. */
   commandMaxRows?: number
-  /** Actual stdout/stderr, rather than metadata or a folding hint. */
-  shellOutput?: boolean
   diffRow?: DiffRowKind
   /** Original patch retained for responsive split/unified layout at render time. */
   diffText?: string
@@ -544,7 +542,7 @@ export function buildToolCall(
     id: genId('tool'),
     kind: 'tool',
     text: toolCallText(name, args, previewCommand, expanded, options),
-    commandMaxRows: name.toLowerCase() === 'bash' || isTaskTool(name) ? (expanded ? undefined : 1) : undefined,
+    commandMaxRows: name.toLowerCase() === 'bash' || isTaskTool(name) ? (expanded ? undefined : 2) : undefined,
   }]
   for (const reason of formatReasonLines(args)) {
     lines.push({ id: genId('tool'), kind: 'tool', text: `  ${reason}` })
@@ -740,18 +738,15 @@ export function buildToolResult(
     const shell = name.toLowerCase() === 'bash' || isTaskTool(name)
     // Only strip the known task envelope in compact mode. Expanded mode keeps
     // the task id, output path and full result for diagnostics.
-    const body = !expanded && !isError && isTaskTool(name) && result.startsWith('Task ID:')
+    const body = !expanded && !isError && !taskFailed && isTaskTool(name) && result.startsWith('Task ID:')
       ? result.includes('\nOutput:\n') ? result.slice(result.indexOf('\nOutput:\n') + 9) : ''
       : !expanded && !isError && details.backgrounded === true ? '' : result
     const formattedResult = formatToolResultContent(body)
-    if (shell && !expanded && !isError) {
+    if (shell && !expanded && !isError && !taskFailed) {
       const output = formattedResult.replace(/\r\n/g, '\n').replace(/\n+$/, '')
       const rows = output.trim() ? output.split('\n') : []
-      for (const text of rows.slice(-3)) {
-        lines.push({ id: genId('tool-res'), kind: 'tool_result', text: `  ${text}`, shellOutput: true })
-      }
-      if (rows.length > 3) lines.push(toolHintLine(`  … ${expandLinesHint(rows.length - 3)}`))
-    } else if (isError && !expanded) {
+      if (rows.length > 0) lines.push(toolHintLine(`  … ${expandLinesHint(rows.length)}`))
+    } else if ((isError || taskFailed) && !expanded) {
       const all = toolResultLines(formattedResult, true, name, true)
       const hidden = all.length - ERROR_PREVIEW_LINES
       if (hidden > 0) {

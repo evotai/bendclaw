@@ -226,9 +226,7 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         break
 
       case 'tool_result':
-        blocks.push(ol.shellOutput
-          ? block(wrapToolLines(ol.text, wrapColumns).map(text => line(plain(text))))
-          : block([line(colored(ol.text, 'gray'))]))
+        blocks.push(block([line(colored(ol.text, 'gray'))]))
         break
 
       case 'verbose':
@@ -323,8 +321,8 @@ function buildToolCodePreviewBlock(text: string, columns?: number): ViewBlock {
 function buildToolBlock(text: string, columns?: number, maxRows?: number): ViewBlock {
   // Tool call line: `<glyph> <name>  <arg>` (no status mark — status lives on
   // the subordinate line below). Paint glyph cyan, name bold, arg dim. When the
-  // line exceeds the terminal width, wrap the arg onto continuation lines so the
-  // full command is always visible (the tail is never truncated).
+  // line exceeds the terminal width, wrap the arg with aligned continuations.
+  // Compact shell headings have a row budget; expanded headings show it all.
   const cardMatch = text.match(/^([⌘◫⌕⊕✎·✦◇◷⊘]) (.+)$/u)
   if (cardMatch) {
     const glyph = cardMatch[1]!

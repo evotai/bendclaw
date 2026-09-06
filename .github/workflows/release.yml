@@ -3,6 +3,11 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      release_date:
+        description: 'Release date (YYYY-MM-DD); empty uses the current UTC date'
+        type: string
+        required: false
+        default: ''
       prerelease:
         description: 'Create as beta prerelease'
         type: boolean
@@ -48,9 +53,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          YEAR="$(date -u +%Y)"
-          MONTH="$(date -u +%-m)"
-          DAY="$(date -u +%-d)"
+          RELEASE_DATE="${RELEASE_DATE:-$(date -u +%F)}"
+          if [[ ! "${RELEASE_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+             [[ "$(date -u -d "${RELEASE_DATE}" +%F)" != "${RELEASE_DATE}" ]]; then
+            echo 'Invalid release_date: expected a valid YYYY-MM-DD date' >&2
+            exit 1
+          fi
+          YEAR="$(date -u -d "${RELEASE_DATE}" +%Y)"
+          MONTH="$(date -u -d "${RELEASE_DATE}" +%-m)"
+          DAY="$(date -u -d "${RELEASE_DATE}" +%-d)"
           BASE="${YEAR}.${MONTH}.${DAY}"
           PREV="$(
             gh release list --limit 100 --json tagName --jq '.[].tagName' \
@@ -107,6 +118,7 @@ jobs:
           esac
           echo "semver=${SEMVER}" >> "${GITHUB_OUTPUT}"
         env:
+          RELEASE_DATE: ${{ inputs.release_date }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Capture release metadata

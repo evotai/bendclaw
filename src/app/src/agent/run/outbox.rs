@@ -1,9 +1,9 @@
-//! Bounded live delivery, independent of transcript persistence.
+//! Live delivery for the UI stream, independent of transcript persistence.
 //!
-//! Overflow is not silent loss: cancel the producer, deliver an explicit error
-//! after all accepted events, and reserve a slot for final run statistics. We
-//! keep draining the engine for persistence/cleanup rather than blocking it on
-//! a consumer that may never read again. No delta/progress reordering or merging.
+//! Persistence is the source of truth, so a slow consumer must never cancel
+//! the run. Bursty streaming deltas coalesce into fewer events (same order,
+//! same content), and large payloads wait for the consumer instead of growing
+//! without bound. Delivery ends only when the consumer is gone.
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -13,56 +13,76 @@ use tokio_util::sync::CancellationToken;
 
 use super::control::RunControl;
 use super::event::RunEvent;
-use super::event::RunEventContext;
 use super::event::RunEventPayload;
+use super::event::ToolCallStreamPhase;
 
-const MAX_PENDING_EVENTS: usize = 256;
+/// Once more than this many events are queued, adjacent deltas merge.
+const COALESCE_AFTER_EVENTS: usize = 64;
+/// Queue memory before the producer waits for the consumer to drain.
 const MAX_PENDING_BYTES: usize = 8 * 1024 * 1024;
 
-// Count serialized bytes without copying tool/model data into a JSON buffer.
-// The terminal event is reserved separately and may be larger.
-struct WireSize(usize);
-impl std::io::Write for WireSize {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self.0.saturating_add(bytes.len());
-        if self.0 > MAX_PENDING_BYTES {
-            return Err(std::io::Error::other("event delivery budget exceeded"));
+fn event_bytes(event: &RunEvent) -> usize {
+    // Content dominates. Fixed headroom covers ids, timestamps and field names.
+    256 + match &event.payload {
+        RunEventPayload::AssistantDelta { delta, .. } => delta.len(),
+        RunEventPayload::AssistantToolCall { delta, args, .. } => {
+            delta.as_ref().map_or(0, String::len)
+                + args.as_ref().map_or(0, |value| value.to_string().len())
         }
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        payload => serde_json::to_vec(payload).map_or(MAX_PENDING_BYTES, |bytes| bytes.len()),
     }
 }
-fn event_bytes(event: &RunEvent) -> usize {
-    // RunEvent's compatibility serializer builds a Value tree; count borrowed
-    // fields instead, with fixed headroom for the envelope's JSON field names.
-    let mut size = WireSize(256);
-    let fields = (
-        &event.event_id,
-        &event.run_id,
-        &event.session_id,
-        &event.created_at,
-        &event.payload,
-    );
-    match serde_json::to_writer(&mut size, &fields) {
-        Ok(()) => size.0,
-        Err(_) => MAX_PENDING_BYTES + 1,
+
+fn coalesce(last: &mut RunEvent, next: &RunEvent) -> bool {
+    match (&mut last.payload, &next.payload) {
+        (
+            RunEventPayload::AssistantDelta {
+                content_index,
+                content_type,
+                delta,
+            },
+            RunEventPayload::AssistantDelta {
+                content_index: next_index,
+                content_type: next_type,
+                delta: next_delta,
+            },
+        ) if content_index == next_index
+            && std::mem::discriminant(content_type) == std::mem::discriminant(next_type) =>
+        {
+            delta.push_str(next_delta);
+            true
+        }
+        (
+            RunEventPayload::AssistantToolCall {
+                tool_call_id,
+                phase: ToolCallStreamPhase::Delta,
+                delta: Some(delta),
+                ..
+            },
+            RunEventPayload::AssistantToolCall {
+                tool_call_id: next_id,
+                phase: ToolCallStreamPhase::Delta,
+                delta: Some(next_delta),
+                ..
+            },
+        ) if tool_call_id == next_id => {
+            delta.push_str(next_delta);
+            true
+        }
+        _ => false,
     }
 }
 
 struct State {
     events: VecDeque<(RunEvent, usize)>,
     pending_bytes: usize,
-    overflowed: bool,
-    finished: bool,
     sender_closed: bool,
 }
 struct Shared {
     state: Mutex<State>,
     ready: Notify,
+    drained: Notify,
     receiver_closed: CancellationToken,
-    control: RunControl,
 }
 
 #[derive(Debug)]
@@ -71,51 +91,66 @@ pub struct DeliveryClosed;
 pub struct EventSender(Arc<Shared>);
 pub struct EventReceiver(Arc<Shared>);
 
-pub fn event_channel(control: RunControl) -> (EventSender, EventReceiver) {
+pub fn event_channel(_control: RunControl) -> (EventSender, EventReceiver) {
     let shared = Arc::new(Shared {
         state: Mutex::new(State {
             events: VecDeque::new(),
             pending_bytes: 0,
-            overflowed: false,
-            finished: false,
             sender_closed: false,
         }),
         ready: Notify::new(),
+        drained: Notify::new(),
         receiver_closed: CancellationToken::new(),
-        control,
     });
     (EventSender(shared.clone()), EventReceiver(shared))
 }
 
 impl EventSender {
+    /// Queue an event. `Err` means the consumer is gone. Never cancels the run.
     pub fn send(&self, event: RunEvent) -> Result<(), DeliveryClosed> {
-        let finished = matches!(event.payload, RunEventPayload::RunFinished { .. });
-        let bytes = if finished { 0 } else { event_bytes(&event) };
+        let bytes = event_bytes(&event);
         let mut state = self.0.state.lock();
-        if self.0.receiver_closed.is_cancelled() || state.finished {
+        if self.0.receiver_closed.is_cancelled() {
             return Err(DeliveryClosed);
         }
-        if finished {
-            state.finished = true;
-        } else if state.overflowed {
-            return Err(DeliveryClosed);
-        } else if state.events.len() >= MAX_PENDING_EVENTS
-            || state.pending_bytes.saturating_add(bytes) > MAX_PENDING_BYTES
-        {
-            state.overflowed = true;
-            state.events.push_back((RunEventContext::new(&event.run_id, &event.session_id, event.turn).event(
-                RunEventPayload::Error { message: "Run cancelled: event consumer is too slow or output exceeded the delivery budget. Resume the session to read persisted output.".into() },
-            ), 0));
-            drop(state);
-            self.0.control.abort();
-            self.0.ready.notify_one();
-            return Err(DeliveryClosed);
+        if state.events.len() >= COALESCE_AFTER_EVENTS {
+            if let Some((last, last_bytes)) = state.events.back_mut() {
+                if coalesce(last, &event) {
+                    let added = bytes.saturating_sub(256);
+                    *last_bytes = last_bytes.saturating_add(added);
+                    state.pending_bytes = state.pending_bytes.saturating_add(added);
+                    drop(state);
+                    self.0.ready.notify_one();
+                    return Ok(());
+                }
+            }
         }
         state.pending_bytes = state.pending_bytes.saturating_add(bytes);
         state.events.push_back((event, bytes));
         drop(state);
         self.0.ready.notify_one();
         Ok(())
+    }
+
+    /// Wait while queued bytes exceed the budget. Returns immediately once the
+    /// consumer is gone, so a closed UI never blocks the engine.
+    pub async fn wait_for_capacity(&self) {
+        loop {
+            let drained = self.0.drained.notified();
+            if self.0.receiver_closed.is_cancelled()
+                || self.0.state.lock().pending_bytes <= MAX_PENDING_BYTES
+            {
+                return;
+            }
+            tokio::select! {
+                _ = drained => {}
+                _ = self.0.receiver_closed.cancelled() => return,
+            }
+        }
+    }
+
+    pub fn over_budget(&self) -> bool {
+        self.0.state.lock().pending_bytes > MAX_PENDING_BYTES
     }
 
     pub async fn closed(&self) {
@@ -136,6 +171,8 @@ impl EventReceiver {
                 let mut state = self.0.state.lock();
                 if let Some((event, bytes)) = state.events.pop_front() {
                     state.pending_bytes = state.pending_bytes.saturating_sub(bytes);
+                    drop(state);
+                    self.0.drained.notify_waiters();
                     return Some(event);
                 }
                 if state.sender_closed {

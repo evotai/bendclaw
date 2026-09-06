@@ -282,6 +282,11 @@ async fn drive_one_turn(
         let event = match pending_events.pop_front() {
             Some(event) => event,
             None => {
+                // Backpressure: a slow but live consumer pauses the engine read
+                // instead of cancelling the run. A closed consumer returns at once.
+                if !consumer_closed && tx.over_budget() {
+                    tx.wait_for_capacity().await;
+                }
                 let event = tokio::select! {
                     _ = tx.closed(), if !consumer_closed => {
                         consumer_closed = true;
@@ -429,8 +434,8 @@ async fn drive_one_turn(
                 if !consumer_closed && tx.send(event).is_err() {
                     consumer_closed = true;
                     control.abort();
-                    // Continue consuming cancellation/final events so transcript
-                    // and usage persistence finish before signalling completion.
+                    // The UI is gone. Continue consuming cancellation/final
+                    // events so transcript and usage persistence finish.
                 }
             }
         }

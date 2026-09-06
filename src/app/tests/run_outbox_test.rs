@@ -1,45 +1,102 @@
 use evot::agent::run::outbox::event_channel;
+use evot::agent::AssistantContentType;
 use evot::agent::RunControl;
 use evot::agent::RunEventContext;
 use evot::agent::RunEventPayload;
+use evot::agent::ToolCallStreamPhase;
 
-#[tokio::test]
-async fn slow_consumer_is_cancelled_with_error_and_reserved_terminal_event() {
-    let control = RunControl::new();
-    let (tx, mut rx) = event_channel(control.clone());
-    let context = RunEventContext::new("run", "session", 1);
-    let mut accepted = 0;
-    for _ in 0..1000 {
-        if tx.send(context.started()).is_ok() {
-            accepted += 1;
-        }
-    }
-    assert_eq!(accepted, 256);
-    assert!(control.is_cancelled());
-    assert!(tx
-        .send(context.finished("done".into(), Default::default(), 1, 1, 0, vec![]))
-        .is_ok());
-    assert!(tx.send(context.started()).is_err());
-    drop(tx);
-    let mut events = Vec::new();
-    while let Some(event) = rx.recv().await {
-        events.push(event);
-    }
-    assert_eq!(events.len(), 258);
-    assert!(events[..256]
-        .iter()
-        .all(|event| matches!(event.payload, RunEventPayload::RunStarted { .. })));
-    assert!(
-        matches!(&events[256].payload, RunEventPayload::Error { message } if message.contains("consumer is too slow"))
-    );
-    assert!(matches!(
-        events[257].payload,
-        RunEventPayload::RunFinished { .. }
-    ));
+fn text_delta(context: &RunEventContext, index: usize, text: &str) -> evot::agent::RunEvent {
+    context.event(RunEventPayload::AssistantDelta {
+        content_index: index,
+        content_type: AssistantContentType::Text,
+        delta: text.into(),
+    })
+}
+
+fn tool_delta(context: &RunEventContext, id: &str, text: &str) -> evot::agent::RunEvent {
+    context.event(RunEventPayload::AssistantToolCall {
+        content_index: 0,
+        tool_call_id: id.into(),
+        tool_name: "edit".into(),
+        phase: ToolCallStreamPhase::Delta,
+        delta: Some(text.into()),
+        args: None,
+    })
 }
 
 #[tokio::test]
-async fn byte_budget_is_bounded_and_released_when_drained() {
+async fn a_slow_consumer_never_cancels_the_run_and_loses_no_content() {
+    let control = RunControl::new();
+    let (tx, mut rx) = event_channel(control.clone());
+    let context = RunEventContext::new("run", "session", 1);
+    for index in 0..5000 {
+        assert!(tx
+            .send(tool_delta(&context, "call-1", &format!("{index},")))
+            .is_ok());
+    }
+    assert!(!control.is_cancelled());
+    assert!(!tx.over_budget());
+    drop(tx);
+    let mut joined = String::new();
+    let mut count = 0;
+    while let Some(event) = rx.recv().await {
+        count += 1;
+        match event.payload {
+            RunEventPayload::AssistantToolCall {
+                tool_call_id,
+                phase: ToolCallStreamPhase::Delta,
+                delta: Some(delta),
+                ..
+            } => {
+                assert_eq!(tool_call_id, "call-1");
+                joined.push_str(&delta);
+            }
+            other => panic!("unexpected payload: {other:?}"),
+        }
+    }
+    let expected: String = (0..5000).map(|index| format!("{index},")).collect();
+    assert_eq!(joined, expected);
+    assert!(count < 5000, "bursty deltas should coalesce");
+}
+
+#[tokio::test]
+async fn coalescing_preserves_boundaries_between_unrelated_events() {
+    let (tx, mut rx) = event_channel(RunControl::new());
+    let context = RunEventContext::new("run", "session", 1);
+    for index in 0..64 {
+        assert!(tx
+            .send(text_delta(&context, 0, &format!("a{index}")))
+            .is_ok());
+    }
+    assert!(tx.send(text_delta(&context, 0, "-tail")).is_ok());
+    assert!(tx.send(text_delta(&context, 1, "other-index")).is_ok());
+    assert!(tx.send(tool_delta(&context, "call-a", "{")).is_ok());
+    assert!(tx.send(tool_delta(&context, "call-b", "[")).is_ok());
+    assert!(tx.send(context.started()).is_ok());
+    drop(tx);
+    let mut events = Vec::new();
+    while let Some(event) = rx.recv().await {
+        events.push(event.payload);
+    }
+    assert_eq!(events.len(), 68);
+    assert!(
+        matches!(&events[63], RunEventPayload::AssistantDelta { delta, .. } if delta == "a63-tail")
+    );
+    assert!(matches!(&events[64], RunEventPayload::AssistantDelta {
+        content_index: 1,
+        ..
+    }));
+    assert!(
+        matches!(&events[65], RunEventPayload::AssistantToolCall { tool_call_id, .. } if tool_call_id == "call-a")
+    );
+    assert!(
+        matches!(&events[66], RunEventPayload::AssistantToolCall { tool_call_id, .. } if tool_call_id == "call-b")
+    );
+    assert!(matches!(events[67], RunEventPayload::RunStarted { .. }));
+}
+
+#[tokio::test]
+async fn byte_pressure_waits_for_the_consumer_instead_of_cancelling() {
     let context = RunEventContext::new("r", "s", 1);
     let control = RunControl::new();
     let (tx, mut rx) = event_channel(control.clone());
@@ -49,16 +106,23 @@ async fn byte_budget_is_bounded_and_released_when_drained() {
         })
     };
     assert!(tx.send(large()).is_ok());
-    assert!(rx.recv().await.is_some());
     assert!(tx.send(large()).is_ok());
+    assert!(tx.over_budget());
     assert!(!control.is_cancelled());
-    assert!(tx.send(large()).is_err());
-    assert!(control.is_cancelled());
-    drop(tx);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), tx.wait_for_capacity())
+            .await
+            .is_err()
+    );
     assert!(rx.recv().await.is_some());
     assert!(
-        matches!(rx.recv().await.map(|e| e.payload), Some(RunEventPayload::Error { message }) if message.contains("delivery budget"))
+        tokio::time::timeout(std::time::Duration::from_secs(1), tx.wait_for_capacity())
+            .await
+            .is_ok()
     );
+    assert!(!control.is_cancelled());
+    drop(tx);
+    assert!(rx.recv().await.is_some());
     assert!(rx.recv().await.is_none());
 }
 
@@ -82,6 +146,11 @@ async fn receiver_drop_releases_sender_and_pending_read_wakes_on_sender_drop() {
     drop(rx);
     assert!(
         tokio::time::timeout(std::time::Duration::from_secs(1), tx.closed())
+            .await
+            .is_ok()
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), tx.wait_for_capacity())
             .await
             .is_ok()
     );

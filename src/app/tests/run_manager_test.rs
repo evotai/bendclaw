@@ -21,32 +21,63 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 struct FloodingProvider;
 
+fn flooded_message() -> evot_engine::Message {
+    evot_engine::Message::Assistant {
+        content: vec![evot_engine::Content::Text {
+            text: "fixture".repeat(1024),
+        }],
+        stop_reason: evot_engine::StopReason::Stop,
+        model: "fixture".into(),
+        provider: "test".into(),
+        usage: Default::default(),
+        timestamp: evot_engine::now_ms(),
+        error_message: None,
+        response_id: None,
+    }
+}
+
 #[async_trait::async_trait]
 impl StreamProvider for FloodingProvider {
+    // Real HTTP providers stream through the bounded path. Model it directly so
+    // the run-level behaviour under test is outbox coalescing, not the legacy
+    // unbounded bridge's own backlog guard.
+    async fn stream_bounded(
+        &self,
+        _config: StreamConfig,
+        tx: tokio::sync::mpsc::Sender<StreamEvent>,
+        cancel: CancellationToken,
+    ) -> Result<StreamOutcome, ProviderError> {
+        let _ = tx.send(StreamEvent::Start).await;
+        for _ in 0..1024 {
+            if cancel.is_cancelled() {
+                return Err(ProviderError::Cancelled);
+            }
+            if tx
+                .send(StreamEvent::TextDelta {
+                    content_index: 0,
+                    delta: "fixture".into(),
+                })
+                .await
+                .is_err()
+            {
+                return Err(ProviderError::Cancelled);
+            }
+        }
+        Ok(StreamOutcome::complete(flooded_message()))
+    }
+
     async fn stream(
         &self,
         _config: StreamConfig,
-        tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
-        cancel: CancellationToken,
+        _tx: tokio::sync::mpsc::UnboundedSender<StreamEvent>,
+        _cancel: CancellationToken,
     ) -> Result<StreamOutcome, ProviderError> {
-        let _ = tx.send(StreamEvent::Start);
-        for _ in 0..1024 {
-            if cancel.is_cancelled() {
-                break;
-            }
-            let _ = tx.send(StreamEvent::TextDelta {
-                content_index: 0,
-                delta: "fixture".into(),
-            });
-            tokio::task::yield_now().await;
-        }
-        cancel.cancelled().await;
         Err(ProviderError::Cancelled)
     }
 }
 
 #[tokio::test]
-async fn unread_event_overflow_cancels_run_and_persists_cleanup_without_consumer() -> TestResult {
+async fn unread_event_burst_coalesces_without_cancelling_the_run() -> TestResult {
     let dir = tempfile::tempdir()?;
     let mut config = Config::new(dir.path().to_path_buf());
     config.providers.insert("test".into(), ProviderProfile {
@@ -80,18 +111,22 @@ async fn unread_event_overflow_cancels_run_and_persists_cleanup_without_consumer
         }
     })
     .await?;
-    assert!(run.handle().is_cancelled());
+    assert!(!run.handle().is_cancelled());
     assert!(!agent.sessions().transcript(&id).await?.is_empty());
     let mut kinds = Vec::new();
-    let mut overflow = false;
+    let mut text = String::new();
     while let Some(event) = run.next().await {
-        if let evot::agent::RunEventPayload::Error { message } = &event.payload {
-            overflow |= message.contains("consumer is too slow");
+        match &event.payload {
+            evot::agent::RunEventPayload::Error { message } => {
+                return Err(format!("unexpected error event: {message}").into())
+            }
+            evot::agent::RunEventPayload::AssistantDelta { delta, .. } => text.push_str(delta),
+            _ => {}
         }
         kinds.push(event.kind_str().to_string());
     }
-    assert!(overflow);
-    assert!(kinds.len() <= 258);
+    assert_eq!(text, "fixture".repeat(1024));
+    assert!(kinds.len() < 1024, "unread deltas should coalesce");
     assert_eq!(kinds.last().map(String::as_str), Some("run_finished"));
     Ok(())
 }

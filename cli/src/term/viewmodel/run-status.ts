@@ -10,8 +10,8 @@ export function runStatusPresentation(state: RunInteractionState): {
 } {
   const hints: string[] = []
   if (state.interruptTarget) {
-    const target = state.interruptTarget === 'compaction' ? 'compaction' : 'agent'
-    hints.push(`${state.interruptPending ? 'esc again' : 'esc twice'} to interrupt ${target}`)
+    const target = state.interruptTarget === 'compaction' ? ' compaction' : ''
+    hints.push(`${state.interruptPending ? 'esc again' : 'esc twice'} to interrupt${target}`)
     if (state.kind === 'waiting-task' && state.interruptPending) hints.push('background task keeps running')
   }
   if (state.backgroundAction) {

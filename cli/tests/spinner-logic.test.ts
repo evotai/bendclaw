@@ -174,7 +174,7 @@ describe('formatSpinnerLine', () => {
     }, { model: 'claude-fable-5' }))
     expect(line).toContain('claude-fable-5 quota unavailable · retrying in 29m42s')
     expect(line).not.toContain('cache')
-    expect(line).toContain('esc twice to interrupt agent')
+    expect(line).toContain('esc twice to interrupt')
     expect(line).not.toContain('slow')
     const expired = stripAnsi(formatSpinnerLine(state, now + 1_800_000, undefined, { model: 'claude-fable-5' }))
     expect(expired).toContain('claude-fable-5 quota unavailable · retrying…')
@@ -192,7 +192,7 @@ describe('formatSpinnerLine', () => {
     }))
     expect(line).toContain('Upstream unavailable · retrying in 42s')
     expect(line).not.toContain('cache')
-    expect(line).toContain('esc twice to interrupt agent')
+    expect(line).toContain('esc twice to interrupt')
     expect(line).not.toContain('slow')
   })
 
@@ -319,16 +319,18 @@ describe('formatSpinnerLine', () => {
     expect(line).toContain('2.5s')
   })
 
-  test('contains esc twice to interrupt agent hint', () => {
+  test('contains esc twice to interrupt hint without agent wording', () => {
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now()))
-    expect(line).toContain('esc twice to interrupt agent')
+    expect(line).toContain('esc twice to interrupt')
+    expect(line).not.toContain('interrupt agent')
   })
 
   test('an armed interrupt asks for the confirming esc in place', () => {
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: { ...resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }), interruptPending: true } }))
     expect(line).toContain('esc again to interrupt')
+    expect(line).not.toContain('interrupt agent')
     expect(line).toContain('to background')
     expect(line).not.toContain('esc to interrupt')
   })
@@ -339,7 +341,7 @@ describe('formatSpinnerLine', () => {
     // wait, so it has to be the thing the line names.
     const state = createSpinnerState()
     const line = stripAnsi(formatSpinnerLine(state, Date.now(), undefined, { interaction: resolveRunInteraction({ active: true, owner: state, foregroundTasks: 1 }) }))
-    expect(line).toContain('esc twice to interrupt agent')
+    expect(line).toContain('esc twice to interrupt')
     expect(line).toContain('ctrl+b to background')
     expect(line).not.toContain('auto-background')
   })

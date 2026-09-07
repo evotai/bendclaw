@@ -17,30 +17,81 @@ function repeatCount(n: number): number {
 /** Standards-backed grapheme segmentation for safe Unicode truncation. */
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
+const CLUSTER_SENSITIVE = /[\p{Mark}\p{Extended_Pictographic}\p{Regional_Indicator}\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Surrogate}\u200d\u1100-\u11ff\ufe00-\ufe0f]/v
+
+const WIDE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x3000, 0x3029],
+  [0x3030, 0x303e],
+  [0x3041, 0x3096],
+  [0x30a0, 0x30ff],
+  [0x3400, 0x4dbf],
+  [0x4e00, 0x9fff],
+  [0xac00, 0xd7a3],
+  [0xf900, 0xfaff],
+  [0xff01, 0xff60],
+  [0xffe0, 0xffe6],
+]
+
+const NARROW_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x0020, 0x007e],
+  [0x00a1, 0x00ac],
+  [0x00ae, 0x00ff],
+  [0x0100, 0x017f],
+  [0x2010, 0x2029],
+  [0x202f, 0x205e],
+]
+
+function inRanges(cp: number, ranges: ReadonlyArray<readonly [number, number]>): boolean {
+  for (const [lo, hi] of ranges) {
+    if (cp < lo) return false
+    if (cp <= hi) return true
+  }
+  return false
+}
+
+function simpleCodePointWidth(cp: number): number | null {
+  if (cp >= 0x20 && cp <= 0x7e) return 1
+  if (inRanges(cp, WIDE_RANGES)) return 2
+  if (inRanges(cp, NARROW_RANGES)) return 1
+  return null
+}
+
+export function displayWidth(s: string): number {
+  if (CLUSTER_SENSITIVE.test(s)) return stringWidth(s)
+  let width = 0
+  for (const char of s) {
+    const cp = char.codePointAt(0)
+    if (cp === undefined) return stringWidth(s)
+    const w = simpleCodePointWidth(cp)
+    if (w === null) return stringWidth(s)
+    width += w
+  }
+  return width
+}
+
+function truncateToWidth(s: string, budget: number): string {
+  let out = ''
+  let used = 0
+  for (const { segment } of graphemeSegmenter.segment(s)) {
+    const size = displayWidth(segment)
+    if (used + size > budget) break
+    out += segment
+    used += size
+  }
+  return out
+}
+
 export function padRight(s: string, n: number): string {
   n = repeatCount(n)
 
-  // Session rows are overwhelmingly ASCII. Keep that path allocation-free,
-  // and delegate every other script to string-width rather than maintaining a
-  // partial Unicode table that mismeasures Indic and decomposed Hangul text.
   if (/^[\x20-\x7e]*$/.test(s)) {
     if (s.length <= n) return s + ' '.repeat(n - s.length)
     return s.slice(0, Math.max(0, n - 1)) + '…'
   }
 
-  const width = stringWidth(s)
+  const width = displayWidth(s)
   if (width <= n) return s + ' '.repeat(n - width)
-
-  const budget = n - 1
-  let truncated = ''
-  let truncatedWidth = 0
-  for (const { segment } of graphemeSegmenter.segment(s)) {
-    const segmentWidth = stringWidth(segment)
-    if (truncatedWidth + segmentWidth > budget) break
-    truncated += segment
-    truncatedWidth += segmentWidth
-  }
-  return truncated + '…'
+  return truncateToWidth(s, n - 1) + '…'
 }
 
 export function relativeTime(iso: string): string {
@@ -324,17 +375,9 @@ export function summarizeInline(value: string, maxChars: number): string {
 
 export function clipDisplayText(text: string, columns: number): string {
   const width = Math.max(0, Math.floor(columns))
-  if (stringWidth(text) <= width) return text
+  if (displayWidth(text) <= width) return text
   if (width === 0) return ''
-  let result = ''
-  let used = 0
-  for (const { segment } of graphemeSegmenter.segment(text)) {
-    const size = stringWidth(segment)
-    if (used + size > width - 1) break
-    result += segment
-    used += size
-  }
-  return result + '…'
+  return truncateToWidth(text, width - 1) + '…'
 }
 
 /** Max visible columns for the first line of a collapsed bash command. */

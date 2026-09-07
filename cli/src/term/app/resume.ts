@@ -2,7 +2,7 @@ import { padRight, relativeTime } from '../../render/format.js'
 import type { SessionMeta, SessionWithText } from '../../native/index.js'
 import { PREVIEW_SECTION_PREFIX, type SelectorItem } from '../selector.js'
 
-export const RESUME_SELECTOR_TITLE = 'Resume session  (Ctrl+D delete · twice)'
+export const RESUME_SELECTOR_TITLE = 'Resume session  (ctrl+r rename · ctrl+d delete twice)'
 
 /**
  * Stem of the synthetic user message compaction injects ahead of a summary.
@@ -117,7 +117,7 @@ export function sessionPreviewLines(
 ): string[] {
   const facts = [shortModel(session), `${session.turns || 0} turns`, sessionSpan(session)]
   if (showCwd) facts.push(shortenSessionCwd(session.cwd))
-  const lines = [sanitizeSessionTitle(session.title), facts.filter(Boolean).join(' · ')]
+  const lines = [sanitizeSessionTitle(session.custom_title ?? session.title), facts.filter(Boolean).join(' · ')]
   if (!text) return lines
 
   const prompts = text.user_prompts
@@ -214,18 +214,26 @@ function formatSessionItem(
 ): SelectorItem {
   // The source column only earns its space when it tells rows apart.
   const source = showSource ? `${padRight(s.source || '', 6)} ` : ''
-  const title = padRight(sanitizeSessionTitle(s.title), TITLE_COLUMN_WIDTH)
+  const title = padRight(sanitizeSessionTitle(s.custom_title ?? s.title), TITLE_COLUMN_WIDTH)
   const turns = padRight(s.turns ? `${s.turns} turns` : '', 10)
   const time = relativeTime(s.updated_at)
   const cwd = otherCwd ? `  ${shortenSessionCwd(s.cwd)}` : ''
   return {
     label,
     id: s.session_id,
+    renameTitle: s.custom_title ?? s.title ?? '',
+    hints: [
+      { keys: ['up', 'down'], action: 'move' },
+      { keys: 'enter', action: 'resume' },
+      { keys: 'ctrl+r', action: 'rename' },
+      { keys: 'ctrl+d', action: 'delete' },
+      { keys: 'escape', action: 'close' },
+    ],
     detail: `${source}${title} ${turns} ${time}${cwd}`,
     // Transcript text is searchable once loaded; until then a row still matches
     // on the metadata the list already displays.
-    searchText: text?.search_text
-      ?? `${s.session_id} ${s.title ?? ''} ${s.cwd} ${s.source} ${s.provider ?? ''} ${s.model}`,
+    searchText: `${s.custom_title ?? ''} ${s.title ?? ''} ${text?.search_text
+      ?? `${s.session_id} ${s.cwd} ${s.source} ${s.provider ?? ''} ${s.model}`}`,
     contextPrefix: otherCwd ? `${shortenSessionCwd(s.cwd)} · ` : undefined,
     preview: sessionPreviewLines(s, text, otherCwd),
   }
@@ -269,7 +277,7 @@ export function formatSessionItems(
 export function applySessionText(item: SelectorItem, text: SessionWithText, currentCwd: string): SelectorItem {
   return {
     ...item,
-    searchText: text.search_text,
+    searchText: `${text.custom_title ?? ''} ${text.title ?? ''} ${text.search_text}`,
     preview: sessionPreviewLines(text, text, text.cwd !== currentCwd),
   }
 }

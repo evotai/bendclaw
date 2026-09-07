@@ -19,6 +19,17 @@ describe('native result contracts', () => {
     expect(r.decodeResult('[{"future_item":{"anything":[false]}}]', r.transcript)).toEqual([{ future_item: { anything: [false] } }])
   })
 
+  test('user-named session metadata remains compatible with the legacy addon contract', () => {
+    const current = { ...legacy.session, schema_version: 1, custom_title: 'Production alerts' }
+    expect(r.sessionMeta.read(current, '$')).toBe(current)
+    const legacyReader = object({
+      session_id: text, cwd: text, model: text, title: nullable(text),
+      turns: uint, created_at: text, updated_at: text,
+    })
+    expect(legacyReader.read(current, '$').title).toBe(legacy.session.title)
+    expect(() => r.sessionMeta.read({ ...current, custom_title: 123 }, '$')).toThrow()
+  })
+
   test('session text keeps the legacy shape readable in both directions', () => {
     const old = legacy.sessionWithText
     expect(r.sessionWithText.read(old, '$')).toBe(old)

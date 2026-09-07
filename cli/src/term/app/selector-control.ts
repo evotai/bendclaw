@@ -1,3 +1,4 @@
+import { editSessionName } from './session-rename-editor.js'
 import type { KeyEvent } from '../input.js'
 import {
   selectorBackspace,
@@ -21,9 +22,10 @@ export type SelectorControlAction =
   | { kind: 'delete-session'; sessionId: string; label: string; state: SelectorState }
   | { kind: 'queue-edit'; entry: ManagedQueuedPrompt }
   | { kind: 'queue-remove'; entry: ManagedQueuedPrompt; state: SelectorState }
+  | { kind: 'rename-session'; sessionId: string; title: string; state: SelectorState }
   | { kind: 'none' }
 
-const RESUME_DELETE_CONFIRM = 'Press Ctrl+D / Del again to delete'
+const RESUME_DELETE_CONFIRM = 'Press ctrl+d / delete again to delete'
 
 /** Drop an armed delete so a stray confirming keypress cannot delete a session. */
 function disarmDelete(state: SelectorState): SelectorState {
@@ -33,6 +35,20 @@ function disarmDelete(state: SelectorState): SelectorState {
 }
 
 export function handleSelectorControl(state: SelectorState, event: KeyEvent): SelectorControlAction {
+  if (state.owner === SELECTOR_OWNER.resume && state.rename) {
+    const edit = editSessionName(state.rename, event)
+    if (edit.kind === 'cancel') return { kind: 'update', state: { ...state, rename: undefined } }
+    const next = { ...state, rename: edit.value }
+    return edit.kind === 'save'
+      ? { kind: 'rename-session', sessionId: edit.value.sessionId, title: edit.title, state: next }
+      : { kind: 'update', state: next }
+  }
+  if (event.type === 'ctrl' && event.key === 'r' && state.owner === SELECTOR_OWNER.resume) {
+    const item = selectorSelect(state)
+    if (!item?.id || item.header || item.focusable === false) return { kind: 'none' }
+    const text = item.renameTitle ?? ''
+    return { kind: 'update', state: { ...disarmDelete(state), rename: { sessionId: item.id, text, cursor: [...text].length } } }
+  }
   switch (event.type) {
     case 'up':
     case 'shift-tab': {

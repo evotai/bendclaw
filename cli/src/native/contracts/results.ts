@@ -5,6 +5,8 @@ import { array, boolean, nullable, object, oneOf, optional, tagged, text, uint, 
 export interface SessionMeta {
   session_id: string
   title?: string | null
+  custom_title?: string | null
+  schema_version?: number
   model: string
   provider?: string
   thinking_level?: string | null
@@ -63,7 +65,7 @@ const integer: Schema<number> = { read(value, path) {
   return value
 } }
 const sessionFields = {
-  session_id: text, title: optional(nullable(text)), model: text, provider: optional(text),
+  session_id: text, title: optional(nullable(text)), custom_title: optional(nullable(text)), schema_version: optional(uint), model: text, provider: optional(text),
   thinking_level: optional(nullable(text)), cwd: text, source: optional(text), turns: uint,
   created_at: text, updated_at: text,
 }

@@ -162,7 +162,7 @@ describe('repl selector control', () => {
     expect(first.kind).toBe('update')
     if (first.kind !== 'update') return
     expect(first.state.pendingDeleteId).toBe('session-one')
-    expect(first.state.subtitle).toBe('Press Ctrl+D / Del again to delete')
+    expect(first.state.subtitle).toBe('Press ctrl+d / delete again to delete')
     expect(first.state.items.map(i => i.label)).toEqual(['one', 'two'])
 
     const second = handleSelectorControl(first.state, key('delete'))

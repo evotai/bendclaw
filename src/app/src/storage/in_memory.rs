@@ -45,11 +45,31 @@ impl MemoryStorage {
 
 #[async_trait]
 impl Storage for MemoryStorage {
-    async fn save_session(&self, session: SessionMeta) -> Result<()> {
-        if let Ok(mut map) = self.sessions.lock() {
-            map.insert(session.session_id.clone(), session);
+    async fn save_session(&self, mut session: SessionMeta) -> Result<()> {
+        let mut map = self
+            .sessions
+            .lock()
+            .map_err(|e| crate::error::EvotError::Store(e.to_string()))?;
+        if let Some(current) = map.get(&session.session_id) {
+            session.custom_title = current.custom_title.clone();
         }
+        session.schema_version = 1;
+        map.insert(session.session_id.clone(), session);
         Ok(())
+    }
+
+    async fn rename_session(&self, session_id: &str, title: &str) -> Result<SessionMeta> {
+        let title = super::session_title::validate(title)?;
+        let mut map = self
+            .sessions
+            .lock()
+            .map_err(|e| crate::error::EvotError::Store(e.to_string()))?;
+        let session = map
+            .get_mut(session_id)
+            .ok_or_else(|| crate::error::EvotError::Session("session no longer exists".into()))?;
+        session.custom_title = Some(title);
+        session.schema_version = 1;
+        Ok(session.clone())
     }
 
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMeta>> {

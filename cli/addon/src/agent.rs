@@ -227,6 +227,16 @@ impl NapiAgent {
     }
 
     #[napi]
+    pub async fn rename_session(&self, session_id: String, title: String) -> Result<String> {
+        let session = self
+            .agent
+            .rename_session(&session_id, &title)
+            .await
+            .map_err(|e| Error::from_reason(format!("rename session: {e}")))?;
+        serde_json::to_string(&session).map_err(|e| Error::from_reason(format!("serialize: {e}")))
+    }
+
+    #[napi]
     pub async fn delete_session(&self, session_id: String) -> Result<bool> {
         self.agent
             .delete_session(&session_id)

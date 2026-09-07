@@ -21,6 +21,7 @@ export function createResumeWindow(items: SelectorItem[], initialQuery?: string)
   return {
     ...state,
     listFocused: false,
+    lowercaseHints: true,
     ...(state.query.length === 0 && state.items.length === 0 && state.allItems.some(item => !item.header)
       ? { emptyMessage: 'No sessions in current cwd · type to search all sessions' }
       : {}),

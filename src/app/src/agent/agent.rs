@@ -962,6 +962,15 @@ impl Agent {
         SessionQueries::new(self.storage())
     }
 
+    pub async fn rename_session(
+        &self,
+        session_id: &str,
+        title: &str,
+    ) -> Result<crate::types::SessionMeta> {
+        let _lifecycle = self.session_lifecycle_gate(session_id).lock().await;
+        self.storage.rename_session(session_id, title).await
+    }
+
     pub async fn delete_session(&self, session_id: &str) -> Result<bool> {
         let _lifecycle = self.session_lifecycle_gate(session_id).lock().await;
         self.abort_run_and_wait_for_completion(session_id).await?;

@@ -253,7 +253,7 @@ async function loadOptions() {
 }
 
 function sessionLabel(session) {
-  return session.title || session.user_prompts?.[0] || "Untitled session";
+  return session.custom_title || session.title || session.user_prompts?.[0] || "Untitled session";
 }
 
 function workspaceName(cwd) {
@@ -278,7 +278,7 @@ function setSession(id, meta = {}, { locked } = {}) {
   currentSessionId = id || null;
   const session = sessions.find((item) => item.session_id === id);
   const cwd = meta.cwd || session?.cwd || "";
-  $("sessionTitle").textContent = meta.title || (session ? sessionLabel(session) : id ? "Session " + id.slice(0, 8) : "New chat");
+  $("sessionTitle").textContent = meta.custom_title || meta.title || (session ? sessionLabel(session) : id ? "Session " + id.slice(0, 8) : "New chat");
   $("sessionMeta").textContent = cwd || (id ? id : "Start a new session");
   const trace = $("traceLink");
   trace.hidden = !id;

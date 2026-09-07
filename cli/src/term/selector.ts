@@ -4,6 +4,7 @@ import type { Hint } from './design/key-hints.js'
 export const PREVIEW_SECTION_PREFIX = '# '
 
 export interface SelectorItem {
+  renameTitle?: string
   label: string
   detail?: string
   /** Compact provenance label, independent of search match snippets. */
@@ -46,7 +47,16 @@ export interface SelectorItem {
   headerCount?: number
 }
 
+export interface SelectorRenameState {
+  sessionId: string
+  text: string
+  cursor: number
+  saving?: boolean
+  error?: string
+}
+
 export interface SelectorState {
+  rename?: SelectorRenameState
   /** Opaque host-owned identity. Generic navigation preserves but never interprets it. */
   owner?: symbol
   items: SelectorItem[]
@@ -56,6 +66,8 @@ export interface SelectorState {
    *  the list slides one row at a time instead of recentering (droid-style). */
   scrollOffset: number
   title: string
+  /** Keep shortcut hints lowercase on session browsing/editing surfaces. */
+  lowercaseHints?: boolean
   /** Optional secondary context displayed below the title. */
   subtitle?: string
   /** Model selection and live background output use dedicated editor-replacement

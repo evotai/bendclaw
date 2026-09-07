@@ -60,15 +60,6 @@ impl FsStorage {
         self.root_dir.join("favorites.json")
     }
 
-    async fn write_json<T: serde::Serialize>(&self, path: PathBuf, value: &T) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let json = serde_json::to_string_pretty(value)?;
-        fs::write(path, json).await?;
-        Ok(())
-    }
-
     async fn read_json<T: serde::de::DeserializeOwned>(&self, path: &Path) -> Result<Option<T>> {
         match fs::read_to_string(path).await {
             Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
@@ -504,8 +495,23 @@ fn validate_transcript_batch(entries: &[TranscriptEntry], session_id: &str) -> R
 #[async_trait]
 impl Storage for FsStorage {
     async fn save_session(&self, session: SessionMeta) -> Result<()> {
-        self.write_json(self.session_meta_path(&session.session_id)?, &session)
-            .await
+        let path = self.session_meta_path(&session.session_id)?;
+        tokio::task::spawn_blocking(move || {
+            super::session_meta::update(&path, super::session_meta::Edit::Save(Box::new(session)))
+        })
+        .await
+        .map_err(|e| EvotError::Store(e.to_string()))??;
+        Ok(())
+    }
+
+    async fn rename_session(&self, session_id: &str, title: &str) -> Result<SessionMeta> {
+        let path = self.session_meta_path(session_id)?;
+        let title = crate::storage::session_title::validate(title)?;
+        tokio::task::spawn_blocking(move || {
+            super::session_meta::update(&path, super::session_meta::Edit::Rename(title))
+        })
+        .await
+        .map_err(|e| EvotError::Store(e.to_string()))?
     }
 
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMeta>> {

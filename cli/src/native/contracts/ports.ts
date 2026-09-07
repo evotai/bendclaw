@@ -19,6 +19,7 @@ export interface NativeAgent {
   query(prompt: string, sessionId: string | null, mode: string | null, content: string | null, hostSpecs: string | null): Promise<NativeSubmitOutcome>
   createSession(): Promise<string>
   listSessions(limit: number | null): Promise<string>
+  renameSession(id: string, title: string): Promise<string>
   deleteSession(id: string): Promise<boolean>
   backgroundProcesses(id: string): string
   stopBackgroundProcess(id: string, task: string): Promise<string | null>

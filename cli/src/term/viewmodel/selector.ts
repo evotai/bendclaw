@@ -1,3 +1,4 @@
+import { buildSessionRenameLines } from './session-rename.js'
 import { buildOutputBlocks } from './output.js'
 import { clipDisplayText } from '../../render/format.js'
 import { SELECTOR_OWNER } from '../app/selector-identity.js'
@@ -23,6 +24,9 @@ export function buildSelectorRegionLines(
   if (state.presentation === 'model') return ['', ...buildModelSelectorRegionLines(state, width, active)]
 
   const border = styledLineToAnsi(line(dim('─'.repeat(width))))
+  if (state.owner === SELECTOR_OWNER.resume && state.rename) {
+    return ['', border, ...buildSessionRenameLines(state.rename, width), border]
+  }
   if (state.presentation === 'skill') {
     return ['', border, ...buildSkillSelectorLines(state, width, rows, active), border]
   }
@@ -314,7 +318,7 @@ export function buildSelectorBlocks(
   // hint list keep their hand-written lines below.
   const hints = state.items[state.focusIndex]?.hints ?? state.hints
   if (hints) {
-    lines.push(buildHintLine(hints))
+    lines.push(buildHintLine(hints, state.lowercaseHints))
   } else if (state.owner === SELECTOR_OWNER.queue) {
     lines.push(line(
       colored('enter', 'cyan'), dim(' edit   '),
@@ -338,11 +342,12 @@ export function buildSelectorBlocks(
  * The key is coloured and the rest dimmed, so the line scans as a row of keys
  * rather than a sentence.
  */
-function buildHintLine(hints: Hint[]): StyledLine {
+function buildHintLine(hints: Hint[], lowercase = false): StyledLine {
   const spans: StyledSpan[] = []
   for (const hint of hints) {
     if (spans.length > 0) spans.push(dim(HINT_SEPARATOR))
-    spans.push(colored(formatChord(hint.keys), 'cyan'), dim(` to ${hint.action}`))
+    const chord = formatChord(hint.keys)
+    spans.push(colored(lowercase ? chord.toLowerCase() : chord, 'cyan'), dim(` to ${hint.action}`))
   }
   return line(...spans)
 }

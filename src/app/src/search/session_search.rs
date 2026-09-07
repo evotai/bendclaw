@@ -65,6 +65,10 @@ impl SessionSearcher {
         }
 
         let fields = [
+            (
+                "custom_title",
+                session.custom_title.as_deref().unwrap_or(""),
+            ),
             ("title", session.title.as_deref().unwrap_or("")),
             ("cwd", &session.cwd),
             ("source", &session.source),
@@ -194,6 +198,9 @@ fn collect_changed_paths(entries: &[TranscriptEntry]) -> Vec<String> {
 fn collect_search_text(session: &SessionMeta, entries: &[TranscriptEntry]) -> String {
     let mut parts = Vec::new();
     parts.push(session.session_id.clone());
+    if let Some(t) = &session.custom_title {
+        parts.push(t.clone());
+    }
     if let Some(t) = &session.title {
         parts.push(t.clone());
     }

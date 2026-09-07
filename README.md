@@ -66,6 +66,12 @@ evot -c        # continue the latest session in this directory
 
 > In the TUI: `/help` lists all commands.
 
+## Session names
+
+Open `/sessions` (or `/resume`), select a session, and press `ctrl+r` to rename it.
+Use `enter` to save or `esc` to cancel. Names are searchable and stay unchanged as
+the conversation continues. Renaming does not change session activity order.
+
 ## External session hooks
 
 Evot can emit generic session lifecycle events to an external executable without embedding integration-specific code:

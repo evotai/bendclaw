@@ -130,8 +130,8 @@ describe('repl resume helpers', () => {
     })) as SessionWithText[]
     const byId = new Map(withText.map(row => [row.session_id, row]))
     const items = formatSessionItems(withText, '/work', id => byId.get(id))
-    expect(items[1]!.searchText).toBe('current full text body')
-    expect(items[3]!.searchText).toBe('other full text body')
+    expect(items[1]!.searchText).toContain('current full text body')
+    expect(items[3]!.searchText).toContain('other full text body')
     expect(items[3]!.contextPrefix).toBe('/other · ')
   })
 
@@ -230,7 +230,7 @@ describe('repl resume helpers', () => {
   })
 
   test('resume title shows the portable Ctrl+D delete shortcut', () => {
-    expect(RESUME_SELECTOR_TITLE).toBe('Resume session  (Ctrl+D delete · twice)')
+    expect(RESUME_SELECTOR_TITLE).toBe('Resume session  (ctrl+r rename · ctrl+d delete twice)')
   })
 
   test('sanitizeSessionTitle hides compaction boilerplate titles', () => {
@@ -260,7 +260,7 @@ describe('repl resume helpers', () => {
     })
     const patched = applySessionText(items[1]!, loaded, '/work')
 
-    expect(patched.searchText).toBe('full body')
+    expect(patched.searchText).toContain('full body')
     expect(patched.preview).toContain('# Started with')
     expect(patched.preview).toContain('\u203a ask')
     expect(patched.preview).toContain('# Latest')

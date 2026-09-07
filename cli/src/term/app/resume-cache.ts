@@ -64,6 +64,16 @@ export class ResumeSessionCache {
     this.textRows = text
   }
 
+  rename(session: SessionMeta): void {
+    if (this.disposed) return
+    const rows = (this.rows ?? []).map(row => row.session_id === session.session_id ? session : row)
+    if (!rows.some(row => row.session_id === session.session_id)) rows.push(session)
+    const complete = this.full
+    // Drop every text snapshot/in-flight load; stale search text contains the old name.
+    this.replace(rows, complete)
+    this.onLoaded(rows)
+  }
+
   invalidate(): void {
     this.generation++
     this.rows = null

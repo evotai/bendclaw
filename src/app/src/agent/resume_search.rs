@@ -86,7 +86,7 @@ pub fn format_results(query: &str, response: &str, sessions: &[SessionWithText])
         let Some(hit) = sessions.iter().find(|s| s.session.session_id == id) else {
             continue;
         };
-        let title = hit.session.title.as_deref().unwrap_or("(untitled)");
+        let title = hit.session.display_title().unwrap_or("(untitled)");
         out.push_str(&format!("- {id} — {title} — {reason}\n"));
         count += 1;
         if count == MAX_RESULTS {
@@ -114,7 +114,7 @@ pub fn literal_results(query: &str, sessions: &[SessionWithText]) -> Option<Stri
     let mut out = String::new();
     for hit in matches {
         let id = &hit.session.session_id;
-        let title = hit.session.title.as_deref().unwrap_or("(untitled)");
+        let title = hit.session.display_title().unwrap_or("(untitled)");
         out.push_str(&format!("- {id} — {title} — exact text match\n"));
     }
     Some(format!(

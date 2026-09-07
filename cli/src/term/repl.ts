@@ -127,6 +127,7 @@ import {
   shortenSessionCwd,
 } from './app/resume.js'
 import { findPreviousSession, shouldPreloadStartupSessions, selectResumeMessages, resumeElidedLine, reloadResumeModel } from './app/session-view.js'
+import { saveSessionRename } from './app/session-rename.js'
 import { handleSelectorControl } from './app/selector-control.js'
 import { decideReplControl, type ReplControlAction } from './app/repl-control.js'
 import { replaceOrPushStatusLine } from './app/status-line.js'
@@ -558,7 +559,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     limit?: number,
   ): boolean {
     const current = currentResumeCommandWindowState(generation)
-    if (!current) return false
+    if (!current || current.rename) return false
     const visibleSessions = limit === undefined ? sessions : sessions.slice(0, limit)
     const items = formatSessionItems(visibleSessions, agent.cwd, id => resumeCache.sessionText(id))
     const {
@@ -702,7 +703,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
         return resumeCache.text().then(sessionsWithText => {
           const current = currentResumeCommandWindowState(generation)
-          if (!current) return
+          if (!current || current.rename) return
           const fullItems = formatSessionItems(sessionsWithText, agent.cwd, id => resumeCache.sessionText(id))
           if (updateResumeCommandWindow(generation, selectorExpandItems(current, fullItems))) {
             enrichedResumeTextGeneration = generation
@@ -748,6 +749,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
    * which on a large history left the pane empty long enough to look broken.
    */
   function loadFocusedResumePreview(state: SelectorState): void {
+    if (state.rename) return
     const focused = state.items[state.focusIndex]
     if (!focused || focused.header || !focused.id) return
     const id = focused.id
@@ -757,7 +759,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const stillFocused = surface?.state.items[surface.state.focusIndex]
       // Focus moved on, or the list was replaced: a later focus reloads from
       // the cache, so there is nothing to reconcile here.
-      if (!surface || !stillFocused || stillFocused.id !== id) return
+      if (!surface || surface.state.rename || !stillFocused || stillFocused.id !== id) return
       surface.apply(selectorReplaceItem(surface.state, id, applySessionText(stillFocused, text, agent.cwd)))
       renderer.requestRender()
     })
@@ -859,7 +861,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function activateCommandWindow(event: KeyEvent): boolean {
-    if (event.type !== 'up' && event.type !== 'down') return false
+    if (event.type !== 'up' && event.type !== 'down'
+      && !(event.type === 'ctrl' && event.key === 'r' && commandWindowPreview?.kind === 'selector' && commandWindowPreview.trigger === 'resume')) return false
     if (!commandWindowPreview) return false
 
     const preview = commandWindowPreview
@@ -3308,7 +3311,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     resumeCache.all().then(allSessions => {
       const current = activeState()
-      if (!current) return
+      if (!current || current.rename) return
       if (allSessions.length === 0) {
         invalidateExplicitResumeSelector()
         overlay = { kind: 'none' }
@@ -3514,7 +3517,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       case 'update':
         overlay = { kind: 'selector', state: action.state }
         renderer.requestRender()
-        if (action.state.owner === SELECTOR_OWNER.resume) {
+        if (action.state.owner === SELECTOR_OWNER.resume && !action.state.rename) {
           if (focusedCommandWindowGeneration !== null) {
             scheduleFocusedResumeEnrichment(
               focusedCommandWindowGeneration,
@@ -3560,6 +3563,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         } catch (err) {
           commitSystem('sys-model-err', chalk.red(`  Failed to switch model: ${errorText(err)}`))
         }
+        renderer.requestRender()
+        return
+      }
+      case 'rename-session': {
+        overlay = { kind: 'selector', state: action.state }
+        cancelResumeSearchEnrichment()
+        const token = action.state.rename
+        if (token) void saveSessionRename({
+          renameSession: (id, title) => agent.renameSession(id, title),
+          current: () => overlay.kind === 'selector' && overlay.state.owner === SELECTOR_OWNER.resume ? overlay.state : undefined,
+          publish: state => { overlay = { kind: 'selector', state }; renderer.requestRender() },
+          cache: resumeCache,
+          cwd: agent.cwd,
+        }, token, action.title)
         renderer.requestRender()
         return
       }

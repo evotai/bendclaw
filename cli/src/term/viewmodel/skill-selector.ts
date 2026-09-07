@@ -35,8 +35,8 @@ export function buildSkillSelectorLines(state: SelectorState, width: number, row
     if (index === start && child) list.push(muted(clip(`    ${item.group}/`, listWidth)))
     const groupOpen = item.expanded !== undefined && (item.expanded || Boolean(state.query.trim()))
     const prefix = item.expanded !== undefined ? (groupOpen ? '▾ ' : '▸ ') : child ? '    ' : ''
-    // The parent badge applies to its indented children; avoid a wall of badges.
-    const badge = item.badge && !child ? ` [${item.badge}]` : ''
+    // Official source is already shown by the section heading; children inherit parent badges.
+    const badge = item.badge && item.badge !== 'official' && !child ? ` [${item.badge}]` : ''
     const label = clip(prefix + item.label, listWidth - 2 - badge.length)
     let text = styledLineToAnsi(buildSelectorRow({ ...item, label, detail: undefined }, {
       highlighted: index === state.focusIndex, query: state.query,

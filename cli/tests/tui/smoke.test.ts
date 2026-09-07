@@ -402,6 +402,33 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
     }
   }, 60_000)
 
+  test('ctrl+r renames a session and the new name is searchable after reopening', async () => {
+    const session = await startEvot(true)
+    try {
+      session.checkpoint()
+      session.write('/sessions\x0d')
+      await session.waitFor('smoke resume fixture')
+      session.checkpoint()
+      session.write('\x12')
+      await session.waitFor('Rename session')
+      session.write('\x15production alerts\x0d')
+      await session.waitFor('Session renamed')
+      session.checkpoint()
+      session.write('\x1b')
+      await session.waitFor('Enter a coding task')
+      session.checkpoint()
+      session.write('/sessions\x0d')
+      await session.waitFor('production alerts')
+      session.checkpoint()
+      session.write('production')
+      const filtered = await session.waitFor('production alerts')
+      expect(filtered).toContain(SEEDED_SESSION_ID.slice(0, 8))
+      session.write('\x1b')
+    } finally {
+      await session.kill()
+    }
+  }, 60_000)
+
   test('resume preview stays responsive through rapid typing and deletion', async () => {
     const session = await startEvot(true)
     try {

@@ -11,6 +11,13 @@ use crate::types::VariableRecord;
 #[async_trait]
 pub trait Storage: Send + Sync {
     async fn save_session(&self, session: SessionMeta) -> Result<()>;
+    /// Update only the user-owned name, preserving activity and automatic title.
+    async fn rename_session(&self, session_id: &str, title: &str) -> Result<SessionMeta> {
+        let _ = (session_id, title);
+        Err(crate::error::EvotError::Store(
+            "session rename is not supported by this backend".into(),
+        ))
+    }
     async fn get_session(&self, session_id: &str) -> Result<Option<SessionMeta>>;
     async fn list_sessions(&self, params: ListSessions) -> Result<Vec<SessionMeta>>;
     async fn list_sessions_with_text(&self, limit: usize) -> Result<Vec<SessionWithText>>;

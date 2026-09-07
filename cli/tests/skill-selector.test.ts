@@ -92,7 +92,7 @@ describe('skill browser', () => {
     const detailLine = lines.find(row => row.includes('Browse, research'))
     expect(detailLine?.split('│')[1]).toContain('Browse, research')
     expect(lines.filter(row => row.includes('│')).every(row => row.indexOf('│') === 42)).toBe(true)
-    expect(text).toContain('[official]')
+    expect(text).not.toContain('[official]')
     expect(text).toContain('Browse, research, and automate the web')
     expect(text).toContain("opencli: What's new on my Twitter timeline?")
     expect(text).not.toContain('installed')
@@ -108,6 +108,8 @@ describe('skill browser', () => {
     const text = render(focused).join('\n')
     expect(text).toContain('lark/')
     expect(text).toContain('❯     member-9')
+    expect(text).toContain('Official')
+    expect(text).not.toContain('[official]')
     expect(text).toContain('lark-member-9')
   })
 
@@ -116,6 +118,9 @@ describe('skill browser', () => {
     const focused = selectorFocusOn(state, item => item.id === 'opencli')
     const text = render(focused, 60).join('\n')
     expect(text).not.toContain('│')
+    expect(text).toContain('Official')
+    expect(text).toContain('Custom')
+    expect(text).not.toContain('[official]')
     expect(text).toContain('Browse, research, and automate the web')
     expect(text).toContain("opencli: What's new on my Twitter timeline?")
     for (const width of [1, 10, 30, 60, 76, 100]) {

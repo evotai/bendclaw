@@ -134,6 +134,10 @@ export class Agent {
     return decodeResult(json, results.sessions)
   }
 
+  async renameSession(sessionId: string, title: string): Promise<SessionMeta> {
+    return decodeResult(await this.raw.renameSession(sessionId, title), results.sessionMeta)
+  }
+
   async deleteSession(sessionId: string): Promise<boolean> {
     return this.raw.deleteSession(sessionId)
   }

@@ -76,6 +76,7 @@ mod session_locator_test;
 mod session_observability_test;
 #[path = "session_queries_test.rs"]
 mod session_queries_test;
+mod session_rename_test;
 mod session_service_test;
 #[path = "session_test.rs"]
 mod session_test;

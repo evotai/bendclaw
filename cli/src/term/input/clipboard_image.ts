@@ -1,7 +1,16 @@
 /**
  * Read image from system clipboard.
- * macOS: osascript → save PNG to temp → read as base64
+ * macOS: osascript → save PNG to temp → read bytes
  * Linux: xclip / wl-paste
+ *
+ * Reading is split in two stages because extracting a multi-megabyte image
+ * costs hundreds of milliseconds, which is long enough to stall the composer:
+ *
+ *   probeClipboardImage() — cheap "is there an image, how big is it"
+ *   readClipboardImage()  — the expensive byte extraction
+ *
+ * The caller inserts its placeholder after the probe and loads the bytes in the
+ * background, so a large paste shows up immediately instead of after a freeze.
  */
 
 import { execFile } from 'child_process'
@@ -13,11 +22,16 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20 MB
+export const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20 MB
 
 export interface ClipboardImage {
   base64: string
   mediaType: string
+}
+
+export interface ClipboardImageProbe {
+  /** Byte size when the platform reports it cheaply, else null. */
+  byteLength: number | null
 }
 
 function tempPath(): string {
@@ -25,26 +39,39 @@ function tempPath(): string {
   return join(tmpdir(), `evot_clipboard_${suffix}.png`)
 }
 
-export async function getImageFromClipboard(): Promise<ClipboardImage | null> {
-  if (process.platform === 'darwin') return getImageMacOS()
-  if (process.platform === 'linux') return getImageLinux()
+/**
+ * Detect an image on the clipboard without paying for its bytes.
+ * Returns null when the clipboard holds no image.
+ */
+export async function probeClipboardImage(): Promise<ClipboardImageProbe | null> {
+  if (process.platform === 'darwin') return probeMacOS()
+  if (process.platform === 'linux') return probeLinux()
   return null
 }
 
-async function getImageMacOS(): Promise<ClipboardImage | null> {
-  // Check if clipboard contains image data without reading the full payload.
-  // "clipboard info for «class PNGf»" returns a small text description
-  // (e.g. "«class PNGf», 123456") instead of dumping the raw bytes.
+/** Extract clipboard image bytes. Callers should probe first. */
+export async function readClipboardImage(): Promise<ClipboardImage | null> {
+  if (process.platform === 'darwin') return readMacOS()
+  if (process.platform === 'linux') return readLinux()
+  return null
+}
+
+async function probeMacOS(): Promise<ClipboardImageProbe | null> {
+  // "clipboard info for «class PNGf»" returns a short description such as
+  // "«class PNGf», 4202348" rather than dumping the raw bytes.
   try {
     const { stdout } = await execFileAsync('osascript', [
       '-e', 'clipboard info for «class PNGf»',
     ], { timeout: 3000 })
-    // If the clipboard has no PNG data, osascript errors or returns empty
     if (!stdout || !stdout.includes('PNGf')) return null
+    const size = /,\s*(\d+)/.exec(stdout)
+    return { byteLength: size ? parseInt(size[1]!, 10) : null }
   } catch {
     return null
   }
+}
 
+async function readMacOS(): Promise<ClipboardImage | null> {
   const path = tempPath()
   try {
     await execFileAsync('osascript', [
@@ -70,12 +97,32 @@ async function getImageMacOS(): Promise<ClipboardImage | null> {
   }
 }
 
-async function getImageLinux(): Promise<ClipboardImage | null> {
-  // Try xclip first, then wl-paste
-  for (const [cmd, args] of [
-    ['xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']],
-    ['wl-paste', ['--type', 'image/png']],
-  ] as const) {
+const LINUX_READERS = [
+  ['xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']],
+  ['wl-paste', ['--type', 'image/png']],
+] as const
+
+const LINUX_PROBES = [
+  ['xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o']],
+  ['wl-paste', ['--list-types']],
+] as const
+
+async function probeLinux(): Promise<ClipboardImageProbe | null> {
+  // Listing offered types is cheap; neither tool reports a size, so the byte
+  // limit is enforced after extraction.
+  for (const [cmd, args] of LINUX_PROBES) {
+    try {
+      const { stdout } = await execFileAsync(cmd, [...args], { timeout: 3000 })
+      if (stdout && stdout.includes('image/png')) return { byteLength: null }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+async function readLinux(): Promise<ClipboardImage | null> {
+  for (const [cmd, args] of LINUX_READERS) {
     try {
       const result = await execFileAsync(cmd, [...args], {
         encoding: 'buffer',

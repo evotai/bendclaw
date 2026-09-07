@@ -110,7 +110,11 @@ import {
   deleteRefBackspace,
   resolveSubmitText,
 } from './input/paste_refs.js'
-import { getImageFromClipboard } from './input/clipboard_image.js'
+import {
+  probeClipboardImage,
+  readClipboardImage,
+  MAX_IMAGE_SIZE_BYTES,
+} from './input/clipboard_image.js'
 import { getTextFromClipboard } from './input/clipboard_text.js'
 import { InputImageHistory } from './input/image-history.js'
 import { storeImage, formatImageSourceText } from './input/image_store.js'
@@ -135,6 +139,7 @@ import { AuthWatcher } from './app/auth-watch.js'
 import { RunInteraction, type RunInteractionInput } from './app/run-interaction.js'
 import { ManualCompaction } from './app/manual-compaction.js'
 import { busySubmissionAction } from './app/busy-submission.js'
+import { PendingImages } from './app/pending-images.js'
 import { mergeQueuedIntoEditorText } from './app/queue-restore.js'
 import { BackgroundTerminals } from './app/background-terminals.js'
 import { isBackgroundPanelShortcut } from './app/background-panel.js'
@@ -938,6 +943,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // Paste ref state
   const pastedChunks = new Map<number, string>()
   const pastedImages = new Map<number, { id: number; base64: string; mediaType: string; filePath?: string }>()
+  // Images whose bytes are still being extracted. The ref is already visible in
+  // the composer, so a submit has to await these before reading pastedImages.
+  const pendingImages = new PendingImages()
   let nextPasteId = 1
 
   // Update info
@@ -1844,24 +1852,75 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   }
 
-  /** Try to paste image from clipboard (Ctrl+V). */
-  async function tryPasteImage() {
-    const img = await getImageFromClipboard()
-    if (img) {
-      const id = nextPasteId++
+  /**
+   * Show the ref for a detected clipboard image, then load its bytes in the
+   * background. Extracting a large image costs hundreds of milliseconds, so
+   * waiting for it before drawing made the composer look frozen.
+   */
+  function beginImagePaste(): void {
+    const id = nextPasteId++
+    const ref = formatImageRef(id)
+    mutateEditor(state => insertText(state, ref))
+    renderer.requestRender()
+
+    const load = (async () => {
+      const img = await readClipboardImage()
+      // The ref can be gone by now: deleted, cleared, or already submitted.
+      // Dropping the bytes is correct, and re-adding them would resurrect an
+      // image the user removed.
+      if (!getEditorText(editor).includes(ref)) return
+      if (!img) {
+        removeImageRef(id, ref)
+        return
+      }
       // Store to disk immediately so images survive past session memory
       const filePath = await storeImage(img.base64, img.mediaType)
-      pastedImages.set(id, { id, base64: img.base64, mediaType: img.mediaType, filePath: filePath ?? undefined })
-      mutateEditor(state => insertText(state, formatImageRef(id)))
-      renderer.requestRender()
-    }
+      if (!getEditorText(editor).includes(ref)) return
+      pastedImages.set(id, {
+        id,
+        base64: img.base64,
+        mediaType: img.mediaType,
+        filePath: filePath ?? undefined,
+      })
+    })()
+
+    pendingImages.track(id, load)
+  }
+
+  /** Drop a ref whose bytes never arrived, leaving no dead placeholder behind. */
+  function removeImageRef(id: number, ref: string): void {
+    pastedImages.delete(id)
+    mutateEditor(state => {
+      // A ref never spans lines, so exactly one line changes.
+      const lineIndex = state.lines.findIndex(line => line.includes(ref))
+      if (lineIndex === -1) return state
+      const line = state.lines[lineIndex]!
+      const start = line.indexOf(ref)
+      const lines = [...state.lines]
+      lines[lineIndex] = line.slice(0, start) + line.slice(start + ref.length)
+      // Text after the ref slides left; a cursor sitting there must follow it.
+      const cursorCol = state.cursorLine === lineIndex && state.cursorCol > start
+        ? Math.max(start, state.cursorCol - ref.length)
+        : state.cursorCol
+      return { ...state, lines, cursorCol, preferredVisualCol: undefined }
+    })
+    renderer.requestRender()
+  }
+
+  /** Try to paste image from clipboard (Ctrl+V). */
+  async function tryPasteImage() {
+    const probe = await probeClipboardImage()
+    if (!probe) return
+    if (probe.byteLength !== null && probe.byteLength > MAX_IMAGE_SIZE_BYTES) return
+    beginImagePaste()
   }
 
   /** Paste clipboard contents (Cmd+V). Image wins when both are present. */
   async function tryPasteClipboard() {
-    const img = await getImageFromClipboard()
-    if (img) {
-      await tryPasteImage()
+    const probe = await probeClipboardImage()
+    if (probe) {
+      if (probe.byteLength !== null && probe.byteLength > MAX_IMAGE_SIZE_BYTES) return
+      beginImagePaste()
       return
     }
     const text = await getTextFromClipboard()
@@ -1869,6 +1928,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       insertPaste(text)
       renderer.requestRender()
     }
+  }
+
+  /**
+   * Run a submit once every image in the draft has its bytes. Submitting while
+   * a load is in flight would silently send the ref as plain text.
+   */
+  function withDraftImages(submit: () => void): void {
+    pendingImages.gate(
+      getEditorText(editor),
+      () => {
+        if (destroyed) return
+        submit()
+      },
+      () => renderer.requestRender(),
+    )
   }
 
   /** Build content blocks for images. Returns blocks and resolved image IDs. */
@@ -2255,7 +2329,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         toggleExpanded()
         return true
       case 'loading-enter':
-        handleLoadingEnter()
+        withDraftImages(handleLoadingEnter)
         return true
       case 'loading-char':
         if (event.type === 'char' || event.type === 'shift-char') {
@@ -2656,34 +2730,39 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           renderer.requestRender()
           return
         }
-        const displayText = getDisplayText()
-        const historyText = getHistoryText()
-        const imageResult = buildImageContentBlocks()
-        const imageBlocks = imageResult?.blocks ?? null
-        // expandedText: only strip image refs that have resolved data.
-        // Unresolved ones (e.g. from history) stay as [Image #N] text markers.
-        const expandedText = imageResult
-          ? getExpandedText(imageResult.resolvedIds)
-          : getExpandedText()
-        // Allow image-only or text-only submissions
-        if (!expandedText && !imageBlocks) return
-        if (historyText) saveInputHistory(historyText)
-        clearAll()
-        renderer.requestRender()
-        if (isSlashCommand(expandedText || rawText)) {
-          handleSlashInput(expandedText || rawText)
-        } else if (logMode) {
-          // In log mode, send to forked agent
-          runLogQuery(logMode, expandedText)
-        } else {
-          commitLines(buildUserMessage(displayText))
-          if (imageBlocks) {
-            const contentJson = JSON.stringify(imageBlocks)
-            runQuery('', contentJson)
+        withDraftImages(() => {
+          // Re-read: keys keep dispatching while a pending image load parks the
+          // submit, so text captured before the wait can already be stale.
+          const submitRaw = getEditorText(editor).trim()
+          const displayText = getDisplayText()
+          const historyText = getHistoryText()
+          const imageResult = buildImageContentBlocks()
+          const imageBlocks = imageResult?.blocks ?? null
+          // expandedText: only strip image refs that have resolved data.
+          // Unresolved ones (e.g. from history) stay as [Image #N] text markers.
+          const expandedText = imageResult
+            ? getExpandedText(imageResult.resolvedIds)
+            : getExpandedText()
+          // Allow image-only or text-only submissions
+          if (!expandedText && !imageBlocks) return
+          if (historyText) saveInputHistory(historyText)
+          clearAll()
+          renderer.requestRender()
+          if (isSlashCommand(expandedText || submitRaw)) {
+            handleSlashInput(expandedText || submitRaw)
+          } else if (logMode) {
+            // In log mode, send to forked agent
+            runLogQuery(logMode, expandedText)
           } else {
-            runQuery(expandedText)
+            commitLines(buildUserMessage(displayText))
+            if (imageBlocks) {
+              const contentJson = JSON.stringify(imageBlocks)
+              runQuery('', contentJson)
+            } else {
+              runQuery(expandedText)
+            }
           }
-        }
+        })
         break
       }
       case 'shift-enter':

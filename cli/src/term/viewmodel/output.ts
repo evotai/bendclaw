@@ -125,12 +125,12 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
         // what says "you said this" — no glyph, no bold — so a wrapped or
         // multi-line message reads as one slab.
         const cols = initialContext.columns
-        const { panelBg, brandHex } = getTheme()
+        const { panelBg, panelFg, panelMutedFg, brandHex } = getTheme()
         const availWidth = panelInnerWidth(cols)
         const row = (...spans: StyledSpan[]): StyledLine => panelRow(spans, cols, panelBg, brandHex)
         const userLines: StyledLine[] = [row()]
         if (ol.timestamp !== undefined) {
-          userLines.push(row(dim(formatClock(ol.timestamp))))
+          userLines.push(row({ text: formatClock(ol.timestamp), hex: panelMutedFg }))
         }
         // Shift+Enter and pasted input carry hard newlines. Each logical line is
         // wrapped on its own so every rendered row is a complete panel row:
@@ -143,10 +143,10 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
           }
           if (availWidth > 0) {
             for (const c of wrapTextByWidth(segment, availWidth)) {
-              userLines.push(row(plain(segment.slice(c.start, c.end))))
+              userLines.push(row({ text: segment.slice(c.start, c.end), hex: panelFg }))
             }
           } else {
-            userLines.push(row(plain(segment)))
+            userLines.push(row({ text: segment, hex: panelFg }))
           }
         }
         userLines.push(row())

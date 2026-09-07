@@ -34,6 +34,8 @@ export function lightTheme(): Theme {
 
     // Pale periwinkle panel, a few points off white; diff rows a shade deeper.
     panelBg: '#eceef8',
+    panelFg: '#252a3a',
+    panelMutedFg: '#5b6070',
     // One neutral tool fill, a pale wash a step off the panel.
     toolCardBg: '#eceef5',
     diffAddedBg: '#d3ecdc',

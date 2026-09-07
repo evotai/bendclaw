@@ -42,6 +42,9 @@ export interface Theme {
   // lifecycle; the status glyph carries success/failure. Diff rows inside a
   // card swap the card fill for their own so +/- stay legible.
   panelBg: string
+  /** User-message foregrounds paired with panelBg; never inherit terminal ink. */
+  panelFg: string
+  panelMutedFg: string
   toolCardBg: string
   diffAddedBg: string
   diffRemovedBg: string

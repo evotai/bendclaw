@@ -46,6 +46,8 @@ export function darkTheme(): Theme {
     // while staying under `selectionBgHex`. Diff rows tint a touch stronger so
     // +/- read through the panel.
     panelBg: '#2a2e44',
+    panelFg: '#e5e7ef',
+    panelMutedFg: '#a6adbf',
     // One neutral tool fill: a cooled, darkened step of the panel. Lifecycle
     // state lives in the status glyph, not the slab, so a transcript full of
     // cards reads as one calm surface. Diff rows tint a touch stronger so +/-

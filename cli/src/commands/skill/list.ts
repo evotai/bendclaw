@@ -1,6 +1,7 @@
 import { dirname } from 'path'
 
 import { readSourceRecord } from './install.js'
+import { readSkillDisplay } from './display.js'
 import { builtinSkillsRoot, resolveSkillsDirs, skillsRoot } from './paths.js'
 import { renderSkillList, tildify, type SkillListView, type SkillUnitView } from './render.js'
 import { getSkillEntries, type SkillEntry } from './scan.js'
@@ -52,7 +53,10 @@ export function skillListView(
     const name = entry.group ?? entry.name
     const key = `${unitDir}\u0000${origin}`
     const label = entry.group ? `${entry.group}/` : entry.name
-    const unit = byKey.get(key) ?? { name, label, origin, official, members: [] }
+    const unit = byKey.get(key) ?? {
+      name, label, origin, official, members: [],
+      ...(official ? readSkillDisplay(unitDir, name) : {}),
+    }
     if (entry.group) unit.members.push(entry.name)
     byKey.set(key, unit)
   }

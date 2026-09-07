@@ -18,6 +18,8 @@ import { getTheme } from '../../render/theme/index.js'
 import { sectionHeaderLines, SECTION_MUTED } from '../../render/section.js'
 import { renderCommandNotice } from '../../render/command-notice.js'
 import { OFFICIAL_URL } from './source.js'
+import type { SkillDisplayResult } from './display.js'
+import { wrapTextWithAnsi } from '../../render/wrap.js'
 
 const INDENT = 2
 const MEMBER_INDENT = 4
@@ -39,7 +41,7 @@ export function tildify(dir: string): string {
 // Model
 // ---------------------------------------------------------------------------
 
-export interface SkillUnitView {
+export interface SkillUnitView extends SkillDisplayResult {
   /** Unit label: the group directory name, or a lone skill's own name. */
   name: string
   /** Display form of `name`. Directory groups carry a trailing `/`. */
@@ -97,7 +99,7 @@ function renderRow(row: Row, labelWidth: number, originWidth: number): string {
   return `${head}${labelPad}${muted(row.origin)}${originPad}${muted(row.count)}`
 }
 
-/** Shared categorized inventory used by the startup banner and `/skill list`. */
+/** Detailed categorized inventory for `/skill list`. */
 export function renderSkillInventoryLines(view: SkillListView, width: number): string[] {
   if (view.units.length === 0) return []
 
@@ -133,6 +135,61 @@ export function renderSkillInventoryLines(view: SkillListView, width: number): s
   }
 
   return lines
+}
+
+/** Startup is a usage guide; `/skill list` remains the detailed inventory. */
+export function renderSkillStartupLines(view: SkillListView, width: number): string[] {
+  if (view.units.length === 0) return []
+  const columns = Math.max(1, width)
+  const theme = getTheme()
+  const official = view.units.filter(unit => unit.official)
+  const custom = view.units.filter(unit => !unit.official)
+  const lines = [...sectionHeaderLines('Skills', columns), '']
+  const labelWidth = Math.max(0, ...official.map(unit => stringWidth(unit.label)))
+  const textColumn = MEMBER_INDENT + labelWidth + COLUMN_GAP
+  // Stack on narrow terminals instead of leaving a tiny description column.
+  const inline = columns - textColumn >= 40
+  const appendText = (text: string, indent: number, paint: (text: string) => string): void => {
+    const padding = ' '.repeat(Math.min(indent, columns - 1))
+    for (const line of wrapTextWithAnsi(text, columns - padding.length)) {
+      lines.push(padding + paint(line))
+    }
+  }
+
+  if (official.length) {
+    lines.push(`  ${theme.accent.paint('Official')} ${muted('· auto-updated')}`)
+    for (const [index, unit] of official.entries()) {
+      if (index > 0) lines.push('')
+      const head = `${' '.repeat(MEMBER_INDENT)}${theme.brandBold.paint(unit.label)}`
+      const indent = inline ? textColumn : MEMBER_INDENT + COLUMN_GAP
+      if (unit.display) {
+        if (inline) {
+          const summary = wrapTextWithAnsi(unit.display.summary, columns - textColumn)
+          lines.push(head + ' '.repeat(labelWidth - stringWidth(unit.label) + COLUMN_GAP) +
+            theme.text.paint(summary[0] ?? ''))
+          for (const line of summary.slice(1)) lines.push(' '.repeat(textColumn) + theme.text.paint(line))
+        } else {
+          lines.push(head)
+          appendText(unit.display.summary, indent, theme.text.paint)
+        }
+        appendText(`"${unit.display.example}"`, indent, text => chalk.hex(theme.mutedHex)(text))
+      } else {
+        lines.push(head)
+      }
+      if (unit.warning) appendText(unit.warning, indent, text => theme.accent.paint(text))
+    }
+    if (custom.length) lines.push('')
+  }
+
+  if (custom.length) {
+    // Retain the existing Custom rows, including their origin and group count.
+    const rows = view.units.map(toRow)
+    const customLabelWidth = Math.max(...rows.map(rowLabelWidth))
+    const originWidth = Math.max(0, ...rows.filter(row => row.count).map(row => stringWidth(row.origin)))
+    lines.push(...sectionHeaderLines('Custom', columns))
+    for (const unit of custom) lines.push(renderRow(toRow(unit), customLabelWidth, originWidth))
+  }
+  return lines.flatMap(line => wrapTextWithAnsi(line, columns))
 }
 
 /** The `/skill list` block: shared inventory plus its management hint. */

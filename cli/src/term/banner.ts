@@ -2,7 +2,7 @@ import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import chalk from 'chalk'
-import { renderSkillInventoryLines, skillListView } from '../commands/skill.js'
+import { renderSkillStartupLines, skillListView } from '../commands/skill.js'
 import type { SkillListView } from '../commands/skill/render.js'
 import type { ConfigInfo } from '../native/index.js'
 import { getTheme } from '../render/theme/index.js'
@@ -74,7 +74,7 @@ function renderSection(title: string, values: string[], columns: number): string
 function renderSkillSection(view: SkillListView, columns: number): string[] {
   if (view.units.length === 0) return []
 
-  return renderSkillInventoryLines(view, columns)
+  return renderSkillStartupLines(view, columns)
 }
 
 function appendBlock(lines: string[], block: string[]): void {

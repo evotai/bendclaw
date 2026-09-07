@@ -16,6 +16,7 @@ export {
   renderProgress,
   renderRemoved,
   renderSkillInventoryLines,
+  renderSkillStartupLines,
   renderSkillList,
   tildify,
   type OperationView,

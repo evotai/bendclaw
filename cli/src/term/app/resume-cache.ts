@@ -21,8 +21,11 @@ export const RESUME_PREVIEW_ROWS = 20
 export class ResumeSessionCache {
   private rows: SessionMeta[] | null = null
   private textRows: SessionWithText[] | null = null
+  /** By-id view of `textRows`, so the list formatter avoids a scan per row. */
+  private textIndex: Map<string, SessionWithText> | null = null
   private full = false
   private generation = 0
+  private textGeneration = 0
   private disposed = false
   private previewLoad: Promise<SessionMeta[]> | null = null
   private fullLoad: Promise<SessionMeta[]> | null = null
@@ -38,14 +41,22 @@ export class ResumeSessionCache {
   get complete(): boolean { return this.full }
 
   /**
+   * Bumped whenever known text changes, so memoized rows can be reused while it
+   * holds still. Formatted rows depend on this text, not only on the metadata.
+   */
+  get textVersion(): number { return this.textGeneration }
+
+  /**
    * Text known for one session, from either load path.
    *
    * The list formatter reads this, so a row renders the same whether its text
    * arrived with the whole catalog or from focusing that single row.
    */
   sessionText(sessionId: string): SessionWithText | undefined {
-    return this.textRows?.find(row => row.session_id === sessionId)
-      ?? this.focusedText.get(sessionId)
+    if (this.textRows !== null && this.textIndex === null) {
+      this.textIndex = new Map(this.textRows.map(row => [row.session_id, row]))
+    }
+    return this.textIndex?.get(sessionId) ?? this.focusedText.get(sessionId)
   }
 
   replace(rows: SessionMeta[], complete = false): void {
@@ -62,6 +73,8 @@ export class ResumeSessionCache {
     const complete = this.full
     this.replace(rows, complete)
     this.textRows = text
+    this.textIndex = null
+    this.textGeneration++
   }
 
   rename(session: SessionMeta): void {
@@ -76,8 +89,10 @@ export class ResumeSessionCache {
 
   invalidate(): void {
     this.generation++
+    this.textGeneration++
     this.rows = null
     this.textRows = null
+    this.textIndex = null
     this.full = false
     this.previewLoad = null
     this.fullLoad = null
@@ -139,6 +154,8 @@ export class ResumeSessionCache {
     const load = this.client.listSessionsWithText(0).then(rows => {
       if (generation !== this.generation) return this.textRows ?? []
       this.textRows = rows
+      this.textIndex = null
+      this.textGeneration++
       this.rows = rows
       this.full = true
       this.onLoaded(rows)
@@ -166,6 +183,7 @@ export class ResumeSessionCache {
     const load = this.client.sessionWithText(sessionId).then(row => {
       if (generation !== this.generation || row === null) return null
       this.focusedText.set(sessionId, row)
+      this.textGeneration++
       if (this.focusedText.size > FOCUSED_TEXT_LIMIT) {
         const oldest = this.focusedText.keys().next()
         if (!oldest.done) this.focusedText.delete(oldest.value)

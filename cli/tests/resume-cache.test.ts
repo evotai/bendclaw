@@ -181,3 +181,70 @@ describe('resume cache ownership', () => {
     expect(cache.sessionText('s39')).toBeDefined()
   })
 })
+
+describe('resume cache text version', () => {
+  test('holds still while nothing changes, so formatted rows can be reused', async () => {
+    const f = fixture()
+    const start = f.cache.textVersion
+    const full = f.cache.all()
+    f.metadata[0]!.result.resolve([row('a'), row('b')])
+    await full
+    // Metadata alone does not change known text.
+    expect(f.cache.textVersion).toBe(start)
+    expect(f.cache.textVersion).toBe(start)
+  })
+
+  test('advances when the full text catalog lands', async () => {
+    const f = fixture()
+    const before = f.cache.textVersion
+    const load = f.cache.text()
+    f.text[0]!.resolve([{ ...row('a'), search_text: 'hello', user_prompts: ['hello'] }])
+    await load
+    expect(f.cache.textVersion).not.toBe(before)
+    expect(f.cache.sessionText('a')?.search_text).toBe('hello')
+  })
+
+  test('advances when one focused row loads its text', async () => {
+    const cache = new ResumeSessionCache({
+      listSessions: () => Promise.resolve([]),
+      listSessionsWithText: () => Promise.resolve([]),
+      sessionWithText: sessionId => Promise.resolve({ ...row(sessionId), search_text: 'focused', user_prompts: [] }),
+    })
+    const before = cache.textVersion
+    await cache.loadSessionText('a')
+    expect(cache.textVersion).not.toBe(before)
+  })
+
+  test('advances on invalidation and removal, so stale rows cannot be reused', async () => {
+    const f = fixture()
+    const load = f.cache.text()
+    f.text[0]!.resolve([
+      { ...row('a'), search_text: 'a text', user_prompts: [] },
+      { ...row('b'), search_text: 'b text', user_prompts: [] },
+    ])
+    await load
+
+    const loaded = f.cache.textVersion
+    f.cache.remove('a')
+    expect(f.cache.textVersion).not.toBe(loaded)
+    // Removed rows are gone from the by-id lookup too, not just the list.
+    expect(f.cache.sessionText('a')).toBeUndefined()
+    expect(f.cache.sessionText('b')?.search_text).toBe('b text')
+
+    const removed = f.cache.textVersion
+    f.cache.invalidate()
+    expect(f.cache.textVersion).not.toBe(removed)
+  })
+
+  test('a rename drops stale text containing the old name', async () => {
+    const f = fixture()
+    const load = f.cache.text()
+    f.text[0]!.resolve([{ ...row('a'), search_text: 'old name', user_prompts: [] }])
+    await load
+
+    const before = f.cache.textVersion
+    f.cache.rename({ ...row('a'), title: 'new name' })
+    expect(f.cache.textVersion).not.toBe(before)
+    expect(f.cache.sessionText('a')).toBeUndefined()
+  })
+})

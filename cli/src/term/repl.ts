@@ -157,6 +157,7 @@ import { transcriptToMessages } from '../session/transcript.js'
 import { GitInfoProvider } from './git-info.js'
 import { isHostToolEvent } from '../native/contracts/query-event.js'
 import { ResumeSessionCache } from './app/resume-cache.js'
+import { ResumeItemCache } from './app/resume-items.js'
 import { CloudSync } from './app/cloud-sync.js'
 import { prepareResume } from './app/prepare-resume.js'
 import { campaignContent, refreshCampaigns } from './app/campaigns.js'
@@ -308,6 +309,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   let preloadedSessions: SessionMeta[] = []
   const resumeCache = new ResumeSessionCache(agent, rows => { preloadedSessions = rows })
   resources.add(() => resumeCache.dispose())
+  // Reuses formatted rows across the rekey that every `/sessions` keystroke
+  // performs, which also preserves the selector's lowercased-search cache.
+  const resumeItems = new ResumeItemCache()
+  resources.add(() => resumeItems.clear())
   /** Invalidates callbacks belonging to an explicitly submitted `/resume`. */
   let explicitResumeSelectorGeneration = 0
   // Assigned after configInfo below, which decides the premium intake filter.
@@ -541,9 +546,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     // Keep every keystroke bounded: the composer preview is recognition aid,
     // not the full search surface. Never format transcript text here, and cap
     // metadata work to the same recent-session budget used at startup.
-    const recent = (resumeCache.metadata ?? []).slice(0, 20)
-    if (recent.length > 0) {
-      const items = formatSessionItems(recent, agent.cwd, id => resumeCache.sessionText(id))
+    const snapshot = resumeCache.metadata ?? []
+    if (snapshot.length > 0) {
+      const items = resumeItems.format(
+        { sessions: snapshot, cwd: agent.cwd, textVersion: resumeCache.textVersion, limit: 20 },
+        id => resumeCache.sessionText(id),
+      )
       return resumeSelectorState(items)
     }
     if (resumeCache.complete) {
@@ -565,8 +573,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   ): boolean {
     const current = currentResumeCommandWindowState(generation)
     if (!current || current.rename) return false
-    const visibleSessions = limit === undefined ? sessions : sessions.slice(0, limit)
-    const items = formatSessionItems(visibleSessions, agent.cwd, id => resumeCache.sessionText(id))
+    const items = resumeItems.format(
+      { sessions, cwd: agent.cwd, textVersion: resumeCache.textVersion, limit },
+      id => resumeCache.sessionText(id),
+    )
     const {
       emptyMessage: _loadingMessage,
       subtitle: _loadingSubtitle,
@@ -709,7 +719,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         return resumeCache.text().then(sessionsWithText => {
           const current = currentResumeCommandWindowState(generation)
           if (!current || current.rename) return
-          const fullItems = formatSessionItems(sessionsWithText, agent.cwd, id => resumeCache.sessionText(id))
+          const fullItems = resumeItems.format(
+            { sessions: sessionsWithText, cwd: agent.cwd, textVersion: resumeCache.textVersion },
+            id => resumeCache.sessionText(id),
+          )
           if (updateResumeCommandWindow(generation, selectorExpandItems(current, fullItems))) {
             enrichedResumeTextGeneration = generation
             // Transcript text just became searchable. Lowercase it in idle

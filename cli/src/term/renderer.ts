@@ -433,21 +433,9 @@ export class TermRenderer {
     let viewportTop = prevViewportTop
     let hardwareCursorRow = this.hardwareCursorRow
 
-    // Re-anchor a shrunk frame. Differential shrink clears the vacated rows but
-    // leaves the viewport where the taller frame put it, so the trailing edge
-    // stops short of the bottom row by exactly the number of rows lost — an
-    // interrupt that discards N rows of thinking lifts the composer N rows.
-    // Restoring the invariant used everywhere else (trailing edge on the bottom
-    // row) needs the window moved up over the buffer, which cannot be expressed
-    // as an in-place patch; the other shrink escape hatches below repaint too.
-    if (
-      rendered.bottomAnchor
-      && newLines.length >= height
-      && newLines.length - height < prevViewportTop
-    ) {
-      fullRender(true, 'bottom_anchor_reanchor')
-      return
-    }
+    // A visible shrink may lift the composer. Preserve physical scrollback
+    // rather than clearing/replaying history just to put the footer at bottom.
+    // The off-viewport/deletion guards below still handle unaddressable edits.
 
     const computeLineDiff = (targetRow: number): number => {
       const currentScreenRow = hardwareCursorRow - prevViewportTop
@@ -612,10 +600,17 @@ export class TermRenderer {
         finalCursorRow = newLines.length - 1
       }
       const extraLines = this.previousLines.length - newLines.length
-      for (let i = newLines.length; i < this.previousLines.length; i++) {
-        buffer += `\r\n${CLEAR_LINE}`
+      // These rows were already addressable in the previous frame. Moving
+      // down clears them in place; CRLF at its last row would scroll history
+      // unnecessarily and shift the reading position even without a full clear.
+      const clearStartOffset = newLines.length === 0 ? 0 : 1
+      if (clearStartOffset > 0) buffer += '\x1b[1B'
+      for (let i = 0; i < extraLines; i++) {
+        buffer += `\r${CLEAR_LINE}`
+        if (i < extraLines - 1) buffer += '\x1b[1B'
       }
-      buffer += `\x1b[${extraLines}A`
+      const moveBack = extraLines - 1 + clearStartOffset
+      if (moveBack > 0) buffer += `\x1b[${moveBack}A`
     }
 
     buffer += SYNC_END

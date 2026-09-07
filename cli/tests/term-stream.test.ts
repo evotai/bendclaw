@@ -1067,7 +1067,8 @@ describe('term stream machine', () => {
     }
     const write = buildToolCard(writeCall)
     const writeText = write.map(line => line.text).join('\n')
-    expect(writeText).toContain('✎ write  src/a.txt\n  ○ · generating 12 lines')
+    expect(writeText).toContain('✎ write  src/a.txt\n\n  line 1')
+    expect(write.at(-1)?.text).toBe('  ○ · generating 12 lines')
     expect(writeText).toContain('  line 1')
     expect(writeText).toContain('  line 10')
     expect(writeText).not.toContain('  line 11')
@@ -1133,7 +1134,7 @@ describe('term stream machine', () => {
     expect(text).toContain('const two = 2')
   })
 
-  test('running write keeps the streamed content preview until the diff arrives', () => {
+  test('running write keeps its content layout when the diff arrives', () => {
     const base = {
       id: 'call-write-running',
       name: 'write',
@@ -1149,16 +1150,15 @@ describe('term stream machine', () => {
     expect(noDiff).toContain('● · running')
     expect(noDiff).toContain('const one = 1')
 
-    // Once the authoritative diff arrives it replaces the content preview.
+    // The authoritative diff must not reformat code already in scrollback.
     const withDiff = stripAnsi(buildToolCard({
       ...base,
       details: { diff: '@@ -0,0 +1,2 @@\n+const one = 1\n+const two = 2', preview: true },
     }).map(line => line.text).join('\n'))
-    expect(withDiff).toContain('+const one = 1')
-    expect(withDiff.split('const two = 2').length).toBe(2)
+    expect(withDiff).toBe(noDiff)
   })
 
-  test('oversized write content renders a plain (unhighlighted) preview', () => {
+  test('oversized write lines skip highlighting without recoloring the preceding lines', () => {
     const content = `const first = 1\n${'x'.repeat(250 * 1024)}`
     const card = buildToolCard({
       id: 'call-write-huge',
@@ -1168,8 +1168,8 @@ describe('term stream machine', () => {
       argsComplete: false,
     })
     const previewLines = card.filter(line => line.toolCodePreview)
-    expect(previewLines[0]?.text).toBe('  const first = 1')
-    expect(previewLines.every(line => !line.text.includes('\x1b['))).toBe(true)
+    expect(stripAnsi(previewLines[0]?.text ?? '')).toBe('  const first = 1')
+    expect(previewLines[1]?.text.includes('\x1b[')).toBe(false)
   })
 
   test('write preview sanitizes terminal controls from model output', () => {

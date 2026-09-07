@@ -199,8 +199,9 @@ export function highlightCodeLine(line: string, lang: string | undefined): strin
 
 /**
  * Highlight a complete source fragment while preserving cross-line grammar
- * state (block comments, template strings, heredocs, etc.). Write-tool previews
- * use this for their stable prefix and once arguments are complete.
+ * state (block comments, template strings, heredocs, etc.). Used for complete
+ * Markdown code blocks; streaming write cards use line-local coloring so later
+ * tokens cannot recolor rows already in terminal scrollback.
  */
 export function highlightCode(text: string, lang: string | undefined): string {
   const resolved = resolveLanguage(lang)

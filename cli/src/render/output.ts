@@ -11,7 +11,7 @@
 import { providerFailurePresentation } from '../provider/error-presentation.js'
 import { renderMarkdown, renderThinkingMarkdown } from './markdown.js'
 import { colorizeUnifiedDiffRows, type DiffRowKind } from './diff.js'
-import { highlightCode, highlightCodeLine } from '../markdown/render/ansi.js'
+import { highlightCodeLine } from '../markdown/render/ansi.js'
 import { truncate, formatDuration, formatElapsed, toolResultLines, formatBashCommandDisplay, expandLinesHint, COLLAPSE_HINT, summarizeInline } from './format.js'
 import { formatCompactionCompleted } from './verbose.js'
 import type { UICompaction, UIMessage, UIToolCall } from '../term/app/types.js'
@@ -172,19 +172,15 @@ function lineCount(text: string): number {
 }
 
 const WRITE_PREVIEW_LINES = 10
-const WRITE_STREAM_CONTEXT_LINES = 50
 const WRITE_PREVIEW_CACHE_LIMIT = 64
-// Above this size, skip syntax highlighting entirely: a synchronous full-file
-// highlight of a huge generated file would stall the event loop for seconds.
+// Skip highlighting an oversized line: deterministic across stream/cache
+// boundaries, without a full-file highlighter blocking the render loop.
 const WRITE_HIGHLIGHT_MAX_BYTES = 200 * 1024
 
 type WritePreviewCache = {
   path: string
   language: string | undefined
   rawContent: string
-  argsComplete: boolean
-  /** Content exceeded WRITE_HIGHLIGHT_MAX_BYTES — render unhighlighted. */
-  plain: boolean
   displayLines: string[]
   highlightedLines: string[]
 }
@@ -229,40 +225,24 @@ function allWritePreviewLines(content: string): string[] {
   return content ? normalizeWritePreviewText(content).split('\n') : []
 }
 
-function highlightWriteLines(lines: string[], language: string | undefined): string[] {
-  const highlighted = highlightCode(lines.join('\n'), language).split('\n')
-  // The highlighter must preserve line structure; if it ever reflows newlines,
-  // fall back to per-line highlighting so display/highlight arrays stay in
-  // lockstep (trim and slice below index both arrays by the same offsets).
-  if (highlighted.length !== lines.length) {
-    return lines.map(line => highlightCodeLine(line, language))
-  }
-  return highlighted
-}
-
-function rebuildWritePreview(path: string, content: string, argsComplete: boolean): WritePreviewCache {
+function rebuildWritePreview(path: string, content: string): WritePreviewCache {
   const language = writeLanguage(path)
   const displayLines = allWritePreviewLines(content)
-  const plain = content.length > WRITE_HIGHLIGHT_MAX_BYTES
   return {
     path,
     language,
     rawContent: content,
-    argsComplete,
-    plain,
     displayLines,
-    highlightedLines: plain ? [...displayLines] : highlightWriteLines(displayLines, language),
+    // Line-local coloring deliberately trades multiline syntax precision for
+    // stable scrollback bytes, including after cache eviction/session restore.
+    highlightedLines: displayLines.map(line => highlightWritePreviewLine(line, language)),
   }
 }
 
-function refreshWritePreviewPrefix(cache: WritePreviewCache): void {
-  const count = Math.min(WRITE_STREAM_CONTEXT_LINES, cache.displayLines.length)
-  if (count === 0) return
-  const highlighted = highlightWriteLines(cache.displayLines.slice(0, count), cache.language)
-  for (let index = 0; index < count; index++) {
-    cache.highlightedLines[index] = highlighted[index]
-      ?? highlightCodeLine(cache.displayLines[index] ?? '', cache.language)
-  }
+function highlightWritePreviewLine(line: string, language: string | undefined): string {
+  // A per-line cap is deterministic: crossing the total file-size threshold
+  // must not strip colors from rows that have already entered scrollback.
+  return line.length > WRITE_HIGHLIGHT_MAX_BYTES ? line : highlightCodeLine(line, language)
 }
 
 function cachedWritePreview(call: UIToolCall, path: string, content: string): WritePreviewCache {
@@ -271,15 +251,11 @@ function cachedWritePreview(call: UIToolCall, path: string, content: string): Wr
     !cache
     || cache.path !== path
     || !content.startsWith(cache.rawContent)
-    || (call.argsComplete === true && !cache.argsComplete)
   ) {
-    // Final arguments are authoritative: rebuild the complete fragment once so
-    // cross-line syntax state is exact before execution begins.
-    cache = rebuildWritePreview(path, content, call.argsComplete === true)
+    cache = rebuildWritePreview(path, content)
   } else if (content.length > cache.rawContent.length) {
-    // Highlight the receiving/new lines cheaply, then refresh the first 50 as
-    // one source fragment so block comments and multiline strings stay correct.
-    // This mirrors pi's bounded streaming strategy.
+    // Only the receiving/new lines change. Neither argsComplete nor execution
+    // completion recolors the immutable prefix of an expanded card.
     const delta = normalizeWritePreviewText(content.slice(cache.rawContent.length))
     cache.rawContent = content
     if (cache.displayLines.length === 0) {
@@ -288,9 +264,8 @@ function cachedWritePreview(call: UIToolCall, path: string, content: string): Wr
     }
     const parts = delta.split('\n')
     const last = cache.displayLines.length - 1
-    const { plain, language } = cache
-    const highlightLine = (line: string): string =>
-      plain ? line : highlightCodeLine(line, language)
+    const { language } = cache
+    const highlightLine = (line: string): string => highlightWritePreviewLine(line, language)
     cache.displayLines[last] += parts[0] ?? ''
     cache.highlightedLines[last] = highlightLine(cache.displayLines[last]!)
     for (let index = 1; index < parts.length; index++) {
@@ -298,7 +273,6 @@ function cachedWritePreview(call: UIToolCall, path: string, content: string): Wr
       cache.displayLines.push(line)
       cache.highlightedLines.push(highlightLine(line))
     }
-    if (!cache.plain) refreshWritePreviewPrefix(cache)
   }
 
   writePreviewCache.delete(call.id)
@@ -312,8 +286,8 @@ function cachedWritePreview(call: UIToolCall, path: string, content: string): Wr
 }
 
 /**
- * Streamed content preview for a write call: shown while arguments stream
- * (queued) and while the tool is running until the authoritative diff arrives.
+ * Stable write body across argument streaming, execution and completion.
+ * Authoritative results describe the outcome below it, never replace it.
  */
 function appendWriteContentPreview(lines: OutputLine[], call: UIToolCall, expanded?: boolean): void {
   const name = call.name.toLowerCase()
@@ -618,6 +592,30 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
     expanded,
     { failed: settledFailed },
   )
+
+  const write = call.name.toLowerCase() === 'write' || call.name.toLowerCase() === 'file_write'
+  if (write && typeof call.args.content === 'string') {
+    // All mutable metadata follows the code. A long preview's headline and
+    // completed rows can then stay in native scrollback unchanged.
+    appendWriteContentPreview(lines, call, expanded)
+    if (call.status === 'queued') {
+      lines.push(toolStatusLine('○', [call.argsComplete ? 'ready' : toolDraftSummary(call)]))
+    } else if (call.status === 'running') {
+      lines.push(toolStatusLine('●', runningStatusParts(call.name, args)))
+      if (call.progress && !call.progress.startsWith('__evot_spill_event__ ')) {
+        for (const text of toolResultLines(formatToolResultContent(call.progress), false, call.name, expanded)) {
+          lines.push({ id: genId('tool-progress'), kind: 'tool_result', text: `  ${text}` })
+        }
+      }
+    } else {
+      // Keep the submitted content, not a replacement diff layout. Preserve
+      // authoritative success/error metadata and result text at the tail.
+      lines.push(...buildToolResult(call.name, { ...args, diff: undefined }, call.status,
+        call.result, call.durationMs, expanded, details))
+    }
+    return stampToolCard(lines, call.status === 'queued' || call.status === 'running'
+      ? 'pending' : settledFailed ? 'error' : 'success')
+  }
 
   if (call.status === 'queued') {
     const summary = call.argsComplete ? 'ready' : toolDraftSummary(call)

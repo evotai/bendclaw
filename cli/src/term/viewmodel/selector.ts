@@ -9,6 +9,7 @@ import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from '.
 import { PREVIEW_SECTION_PREFIX, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import { HINT_SEPARATOR, formatChord, type Hint } from '../design/key-hints.js'
 import { getTheme } from '../../render/theme/index.js'
+import { buildSkillSelectorLines } from './skill-selector.js'
 import { buildSelectorRow } from './selector-row.js'
 
 /** Render a selector in pi's editorContainer position, never as a modal. */
@@ -22,6 +23,9 @@ export function buildSelectorRegionLines(
   if (state.presentation === 'model') return ['', ...buildModelSelectorRegionLines(state, width, active)]
 
   const border = styledLineToAnsi(line(dim('─'.repeat(width))))
+  if (state.presentation === 'skill') {
+    return ['', border, ...buildSkillSelectorLines(state, width, rows, active), border]
+  }
   if (state.presentation === 'background-list') {
     const budget = Math.max(1, Math.floor(rows) - 10)
     const start = Math.min(state.scrollOffset, state.focusIndex)

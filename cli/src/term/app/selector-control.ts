@@ -10,6 +10,7 @@ import {
   type SelectorState,
 } from '../selector.js'
 import { decideQueueSelectorAction, type ManagedQueuedPrompt } from './queue-manage.js'
+import { toggleSkillGroup } from './skill-window.js'
 import { SELECTOR_OWNER } from './selector-identity.js'
 
 export type SelectorControlAction =
@@ -66,6 +67,10 @@ export function handleSelectorControl(state: SelectorState, event: KeyEvent): Se
 }
 
 function selectAction(state: SelectorState): SelectorControlAction {
+  if (state.owner === SELECTOR_OWNER.skill) {
+    const next = toggleSkillGroup(state)
+    return next ? { kind: 'update', state: next } : { kind: 'none' }
+  }
   // Only explicitly owned actionable lists can dispatch business operations.
   // Skill/background/unknown lists must never fall through to model selection.
   if (state.owner !== SELECTOR_OWNER.model

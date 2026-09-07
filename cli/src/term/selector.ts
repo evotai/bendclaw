@@ -6,6 +6,10 @@ export const PREVIEW_SECTION_PREFIX = '# '
 export interface SelectorItem {
   label: string
   detail?: string
+  /** Compact provenance label, independent of search match snippets. */
+  badge?: string
+  /** Skill package row; children stay searchable while collapsed. */
+  expanded?: boolean
   /** Optional subordinate activity line, not a side-pane preview. */
   activity?: string
   /** Renders as a non-focusable group divider (e.g. a provider name). */
@@ -56,7 +60,7 @@ export interface SelectorState {
   subtitle?: string
   /** Model selection and live background output use dedicated editor-replacement
    * presentations instead of the generic titled selector. */
-  presentation?: 'model' | 'background-list' | 'background-output'
+  presentation?: 'model' | 'skill' | 'background-list' | 'background-output'
   /** Ephemeral state for an output detail: undefined offset follows the tail. */
   outputView?: {
     scrollOffset?: number
@@ -500,6 +504,7 @@ function restoreGroupHeaders(allItems: SelectorItem[], matched: SelectorItem[]):
   const matchedGroups = new Set(matched.flatMap(item => item.group ? [item.group] : []))
   return allItems.flatMap(item => {
     if (item.header) return item.group && matchedGroups.has(item.group) ? [item] : []
+    if (item.expanded !== undefined && item.group && matchedGroups.has(item.group)) return [item]
     const hit = matchedByKey.get(item.id ?? item.label)
     return hit ? [hit] : []
   })

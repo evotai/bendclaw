@@ -133,10 +133,11 @@ describe('startup skill guide', () => {
     expect(lines.join('\n')).not.toContain('lark-im')
   })
 
-  test('Custom rows stay identical to the detailed inventory', () => {
+  test('Custom startup rows omit markers but retain inventory alignment and origins', () => {
     const view = displayView()
     const custom = (lines: string[]) => lines.slice(lines.indexOf('  [Custom]'))
-    expect(custom(plain(view))).toEqual(custom(renderSkillInventoryLines(view, 100).map(stripAnsi)))
+    expect(custom(plain(view))).toEqual(custom(renderSkillInventoryLines(view, 100).map(stripAnsi)).map(row => row.replace(/^  [○●] /, '    ')))
+    expect(custom(plain(view)).join('\n')).not.toMatch(/[○●]/)
     const detailed = renderSkillInventoryLines(view, 100).map(stripAnsi).join('\n')
     expect(detailed).toContain('32 · 3 units')
     expect(detailed).toContain('@abcdef0')

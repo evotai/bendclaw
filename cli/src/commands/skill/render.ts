@@ -89,9 +89,10 @@ function rowLabelWidth(row: Row): number {
   return stringWidth(row.label)
 }
 
-function renderRow(row: Row, labelWidth: number, originWidth: number): string {
+function renderRow(row: Row, labelWidth: number, originWidth: number, showMarker = true): string {
   const theme = getTheme()
-  const head = `${' '.repeat(INDENT)}${theme.accent.paint(row.marker)} ${theme.brandBold.paint(row.label)}`
+  const prefix = showMarker ? `${theme.accent.paint(row.marker)} ` : '  '
+  const head = `${' '.repeat(INDENT)}${prefix}${theme.brandBold.paint(row.label)}`
   if (!row.origin && !row.count) return head
   const labelPad = ' '.repeat(labelWidth - rowLabelWidth(row) + COLUMN_GAP)
   if (!row.count) return `${head}${labelPad}${muted(row.origin)}`
@@ -182,12 +183,12 @@ export function renderSkillStartupLines(view: SkillListView, width: number): str
   }
 
   if (custom.length) {
-    // Retain the existing Custom rows, including their origin and group count.
+    // Startup rows omit markers, retaining alignment, origin and group count.
     const rows = view.units.map(toRow)
     const customLabelWidth = Math.max(...rows.map(rowLabelWidth))
     const originWidth = Math.max(0, ...rows.filter(row => row.count).map(row => stringWidth(row.origin)))
     lines.push(...sectionHeaderLines('Custom', columns))
-    for (const unit of custom) lines.push(renderRow(toRow(unit), customLabelWidth, originWidth))
+    for (const unit of custom) lines.push(renderRow(toRow(unit), customLabelWidth, originWidth, false))
   }
   return lines.flatMap(line => wrapTextWithAnsi(line, columns))
 }

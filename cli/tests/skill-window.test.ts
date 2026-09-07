@@ -14,13 +14,14 @@ describe('skill command window', () => {
     ])
 
     expect(state.title).toBe(SKILL_SELECTOR_TITLE)
-    expect(state.subtitle).toBe('2 installed · /skill list for sources and management')
-    expect(state.items.map(item => item.label)).toEqual(['review', 'deploy'])
-    expect(state.items[1]?.detail).toBe('in cloud/')
-    expect(state.items[1]?.searchText).toContain('/skills/cloud/deploy')
+    expect(state.subtitle).toBeUndefined()
+    expect(state.presentation).toBe('skill')
+    expect(state.items.map(item => item.label)).toEqual(['review', 'cloud/'])
+    expect(state.allItems[2]?.searchText).toContain('cloud')
+    expect(state.allItems[2]?.searchText).not.toContain('/skills/cloud/deploy')
     expect(state.hints).toEqual([
       { keys: ['up', 'down'], action: 'move' },
-      { keys: 'type', action: 'filter' },
+      { keys: 'type', action: 'search' },
       { keys: 'escape', action: 'close' },
     ])
   })
@@ -30,11 +31,11 @@ describe('skill command window', () => {
       { name: 'review', dir: '/skills/review' },
       { name: 'deploy', dir: '/skills/cloud/deploy', group: 'cloud' },
     ])
-    const action = handleSelectorControl(state, { type: 'char', char: 'c' })
+    const action = handleSelectorControl(state, { type: 'char', char: 'cloud' })
 
     expect(action.kind).toBe('update')
     if (action.kind === 'update') {
-      expect(action.state.items.map(item => item.label)).toEqual(['deploy'])
+      expect(action.state.items.map(item => item.label)).toEqual(['cloud/', 'deploy'])
     }
   })
 

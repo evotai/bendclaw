@@ -61,8 +61,9 @@ describe('renderBanner', () => {
     expect(banner).toContain('[Context]')
     expect(banner).toContain('AGENTS.md')
     expect(banner).toContain('[Skills]')
-    expect(banner).toContain('○ skill-00')
-    expect(banner).toContain('○ skill-11')
+    expect(banner).toContain('    skill-00')
+    expect(banner).toContain('    skill-11')
+    expect(banner).not.toContain('○')
     expect(banner).not.toContain('Directory')
     expect(banner).not.toContain('Model')
     expect(banner).not.toContain('available')
@@ -116,7 +117,8 @@ describe('renderBanner', () => {
       skillsDirs: [skillsDir],
     }))
 
-    expect(banner).toContain('● lark/')
+    expect(banner).toContain('    lark/')
+    expect(banner).not.toContain('●')
     expect(banner).toMatch(/lark\/[\s\S]*\b3\b/)
     expect(banner).not.toContain('lark-im')
     // The label matches `/skill list`, so the trailing slash marks the group.

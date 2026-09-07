@@ -133,6 +133,24 @@ function collectHints(node: Node | undefined, into: Requires): void {
   }
 }
 
+/** Human-readable description; supports inline and YAML block scalars. */
+export function parseSkillDescription(content: string): string | undefined {
+  const lines = splitFrontmatter(content)
+  if (!lines) return undefined
+  const index = lines.findIndex(line => /^description:\s*/.test(line))
+  if (index < 0) return undefined
+  const value = lines[index]!.replace(/^description:\s*/, '').trim()
+  if (/^[>|][-+]?\d?$/.test(value)) {
+    const body: string[] = []
+    for (const line of lines.slice(index + 1)) {
+      if (line && !/^\s/.test(line)) break
+      body.push(line.trim())
+    }
+    return body.join(' ').trim() || undefined
+  }
+  return unquote(value) || undefined
+}
+
 export function parseRequires(content: string): Requires {
   const result: Requires = { env: [], bins: [], envHints: {} }
   const lines = splitFrontmatter(content)

@@ -96,11 +96,11 @@ export function formatStatusDetail(process: BackgroundProcess): string {
   }
 }
 
-/** Body text when nothing has run in this session yet. */
+/** Body text when no task is still running. */
 export const PANEL_EMPTY_MESSAGE = 'No tasks currently running'
 
 /**
- * Count line under the title. Counts live tasks only, finished ones separately.
+ * Count line under the title. Counts live tasks only.
  *
  * "active" is deliberately broader than the footer chip's "background shells
  * running": this counts `running` and `running_foreground` alike, because the
@@ -111,54 +111,21 @@ export const PANEL_EMPTY_MESSAGE = 'No tasks currently running'
  * and repeating it two rows apart reads like two different statements.
  */
 export function formatPanelSubtitle(processes: BackgroundProcess[]): string | undefined {
-  if (processes.length === 0) return undefined
   const live = processes.filter(process => isLiveStatus(process.status)).length
-  const done = processes.length - live
-  const parts: string[] = []
-  if (live > 0) parts.push(`${live} active ${live === 1 ? 'shell' : 'shells'}`)
-  if (done > 0) parts.push(`${done} finished`)
-  return parts.join(' · ')
+  return live > 0 ? `${live} active ${live === 1 ? 'shell' : 'shells'}` : undefined
 }
 
-/** Group labels. Live work sits above finished work, newest task last. */
-export const SHELLS_GROUP = 'Shells'
-export const COMPLETED_GROUP = 'Completed'
-
-/**
- * Selector rows for the panel, live tasks first and finished tasks below.
- *
- * A single group carries no heading: with only running shells on screen the
- * label would state what the panel title already says. The heading appears as
- * soon as the list splits, where it earns its row by separating the two.
- */
+/** Only live tasks occupy the management panel. */
 export function formatPanelItems(processes: BackgroundProcess[]): SelectorItem[] {
   const live = processes.filter(process => isLiveStatus(process.status))
-  const done = processes.filter(process => !isLiveStatus(process.status))
-  const running = live.length
-
-  const row = (process: BackgroundProcess, group: string): SelectorItem => ({
+  return live.map((process): SelectorItem => ({
     label: formatCommandLabel(process.command),
     detail: `(${formatStatusDetail(process)})`,
     id: process.task_id,
-    group,
-    // Hints ride on the row so moving the cursor onto a finished task drops
-    // `x to stop` without any extra bookkeeping.
-    hints: backgroundPanelHints(
-      { id: process.task_id, live: isLiveStatus(process.status) },
-      running,
-    ),
+    hints: backgroundPanelHints({ id: process.task_id, live: true }, live.length),
     // The full command and id stay searchable even though the row is truncated.
     searchText: `${process.command} ${process.task_id}`,
-  })
-
-  const split = live.length > 0 && done.length > 0
-  const header = (label: string, size: number): SelectorItem[] =>
-    split ? [{ label, headerCount: size, header: true, focusable: false, group: label }] : []
-
-  return [
-    ...(live.length > 0 ? [...header(SHELLS_GROUP, live.length), ...live.map(p => row(p, SHELLS_GROUP))] : []),
-    ...(done.length > 0 ? [...header(COMPLETED_GROUP, done.length), ...done.map(p => row(p, COMPLETED_GROUP))] : []),
-  ]
+  }))
 }
 
 /** Open the panel over the current task list. */
@@ -177,10 +144,8 @@ export function createBackgroundPanelState(processes: BackgroundProcess[]): Sele
 /**
  * Refresh an open panel in place.
  *
- * Focus follows the task id rather than the row index, so a task finishing or
- * being removed under the cursor cannot silently redirect the next keypress at
- * a different task. A finishing task moves between groups, which shifts every
- * index around it — matching on id is what keeps the cursor on the same shell.
+ * Preserve a surviving task's focus by id; when it finishes, focus the nearest
+ * remaining live row.
  */
 export function refreshBackgroundPanelState(
   state: SelectorState,

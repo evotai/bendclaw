@@ -1,9 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import {
   BACKGROUND_PANEL_TITLE,
-  COMPLETED_GROUP,
   PANEL_EMPTY_MESSAGE,
-  SHELLS_GROUP,
   backgroundPanelHints,
   createBackgroundOutputState,
   createBackgroundPanelState,
@@ -117,18 +115,18 @@ describe('formatPanelSubtitle', () => {
     expect(formatPanelSubtitle([proc()])).toBe('1 active shell')
   })
 
-  test('finished tasks are counted separately from live ones', () => {
+  test('finished tasks are excluded from the count', () => {
     const subtitle = formatPanelSubtitle([
       proc(),
       proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
       proc({ task_id: 'c', status: 'failed', exit_code: 1 }),
     ])
-    expect(subtitle).toBe('1 active shell · 2 finished')
+    expect(subtitle).toBe('1 active shell')
   })
 
   test('a list with no live work omits the active clause', () => {
     expect(formatPanelSubtitle([proc({ status: 'completed', exit_code: 0 })]))
-      .toBe('1 finished')
+      .toBeUndefined()
   })
 })
 
@@ -160,33 +158,34 @@ describe('formatPanelItems', () => {
     expect(items.some(item => item.header)).toBe(false)
   })
 
-  test('a mixed list splits into Shells above Completed', () => {
+  test('a mixed list contains only live tasks without headings', () => {
     const items = formatPanelItems([
       proc({ task_id: 'a' }),
       proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
+      proc({ task_id: 'c', status: 'failed', exit_code: 1 }),
+      proc({ task_id: 'd', status: 'killed' }),
+      proc({ task_id: 'e', status: 'running_foreground' }),
     ])
-    expect(items.map(item => item.header ? item.label : item.id))
-      .toEqual([SHELLS_GROUP, 'a', COMPLETED_GROUP, 'b'])
+    expect(items.map(item => item.id)).toEqual(['a', 'e'])
+    expect(items.some(item => item.header)).toBe(false)
   })
 
-  test('group headings carry their row count and are not focusable', () => {
+  test('terminal statuses alone leave no rows', () => {
     const items = formatPanelItems([
-      proc({ task_id: 'a' }),
-      proc({ task_id: 'b' }),
+      proc({ task_id: 'a', status: 'completed', exit_code: 0 }),
+      proc({ task_id: 'b', status: 'failed', exit_code: 1 }),
       proc({ task_id: 'c', status: 'killed' }),
     ])
-    const header = items.find(item => item.label === SHELLS_GROUP)
-    expect(header?.headerCount).toBe(2)
-    expect(header?.focusable).toBe(false)
+    expect(items).toEqual([])
   })
 
-  test('live work sorts above finished work regardless of input order', () => {
+  test('finished work is hidden regardless of input order', () => {
     const items = formatPanelItems([
       proc({ task_id: 'done', status: 'completed', exit_code: 0 }),
       proc({ task_id: 'live' }),
     ])
     const ids = items.filter(item => !item.header).map(item => item.id)
-    expect(ids).toEqual(['live', 'done'])
+    expect(ids).toEqual(['live'])
   })
 
   test('a running row advertises stop, a finished row does not', () => {
@@ -273,14 +272,16 @@ describe('refreshBackgroundPanelState', () => {
     expect(refreshed.items[refreshed.focusIndex]!.id).toBe('b')
   })
 
-  test('a status change is reflected without moving focus', () => {
+  test('the last live task finishing leaves an empty panel', () => {
     const opened = createBackgroundPanelState([proc({ task_id: 'a' })])
     const refreshed = refreshBackgroundPanelState(
       opened,
       [proc({ task_id: 'a', status: 'completed', exit_code: 0 })],
     )
-    expect(refreshed.items[0]!.detail).toBe('(exit 0 · 2s)')
-    expect(refreshed.subtitle).toBe('1 finished')
+    expect(refreshed.items).toEqual([])
+    expect(refreshed.allItems).toEqual([])
+    expect(refreshed.subtitle).toBeUndefined()
+    expect(refreshed.emptyMessage).toBe(PANEL_EMPTY_MESSAGE)
     expect(refreshed.focusIndex).toBe(0)
   })
 
@@ -291,6 +292,25 @@ describe('refreshBackgroundPanelState', () => {
     ]))
     const refreshed = refreshBackgroundPanelState(opened, [proc({ task_id: 'a' })])
     expect(refreshed.focusIndex).toBe(0)
+  })
+
+  test('a finishing task before focus disappears without changing the selected id', () => {
+    const a = proc({ task_id: 'a' })
+    const b = proc({ task_id: 'b' })
+    const opened = selectorDown(createBackgroundPanelState([a, b]))
+    const refreshed = refreshBackgroundPanelState(opened, [{ ...a, status: 'completed' }, b])
+    expect(refreshed.items.map(item => item.id)).toEqual(['b'])
+    expect(refreshed.items[refreshed.focusIndex]?.id).toBe('b')
+    expect(refreshed.subtitle).toBe('1 active shell')
+  })
+
+  test('a focused task finishing selects the surviving live task', () => {
+    const a = proc({ task_id: 'a' })
+    const b = proc({ task_id: 'b' })
+    const opened = selectorDown(createBackgroundPanelState([a, b]))
+    const refreshed = refreshBackgroundPanelState(opened, [a, { ...b, status: 'failed' }])
+    expect(refreshed.items.map(item => item.id)).toEqual(['a'])
+    expect(refreshed.items[refreshed.focusIndex]?.id).toBe('a')
   })
 
   test('an emptied list leaves focus in range', () => {
@@ -322,7 +342,7 @@ describe('focusedPanelTarget', () => {
   test('a finished task is not a stop target', () => {
     const done = proc({ task_id: 'a', status: 'completed', exit_code: 0 })
     const state = createBackgroundPanelState([done])
-    expect(focusedPanelTarget(state, [done])).toEqual({ id: 'a', live: false })
+    expect(focusedPanelTarget(state, [done])).toBeNull()
   })
 
   test('an empty list has no target', () => {

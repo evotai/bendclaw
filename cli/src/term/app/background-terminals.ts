@@ -29,6 +29,7 @@ import {
   createBackgroundPanelState,
   decideBackgroundPanelAction,
   focusedPanelTarget,
+  isLiveStatus,
   refreshBackgroundOutputState,
   refreshBackgroundPanelState,
   sanitizeTerminalOutput,
@@ -422,7 +423,7 @@ export class BackgroundTerminals {
     this.refresh()
     const processes = this.panelProcesses()
     this.returnPanel = null
-    if (processes.length === 1) {
+    if (processes.length === 1 && isLiveStatus(processes[0]!.status)) {
       const process = processes[0]!
       this.deps.openPanel(createBackgroundOutputState(process, this.readOutput(process), true))
       this.subscribeOutput(process)

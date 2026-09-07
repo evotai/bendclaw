@@ -31,13 +31,13 @@ function render(processes: BackgroundProcess[], moves = 0): string[] {
 }
 
 describe('background panel rendering', () => {
-  test('leads with the title and the active/finished counts', () => {
+  test('leads with the title and only the active count', () => {
     const lines = render([
       proc({ task_id: 'a' }),
       proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
     ])
     expect(lines[1]).toBe('Background')
-    expect(lines[2]).toBe('1 active shell · 1 finished')
+    expect(lines[2]).toBe('1 active shell')
   })
 
   test('the title carries no generic row tally', () => {
@@ -59,20 +59,16 @@ describe('background panel rendering', () => {
       .toBe('↑/↓ to select · Enter to view output · x to stop · Esc to close')
   })
 
-  test('a focused running row offers stop; a finished row does not', () => {
-    const running = render([
+  test('navigation cannot select a finished task', () => {
+    const processes = [
       proc({ task_id: 'a' }),
-      proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
-    ])
-    expect(running[running.length - 1]).toContain('x to stop')
-
-    // Rows: Shells header, a, Completed header, b — two moves lands on b.
-    const finished = render([
-      proc({ task_id: 'a' }),
-      proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
-    ], 1)
-    expect(finished[finished.length - 1]).not.toContain('x to stop')
-    expect(finished[finished.length - 1]).toContain('Enter to view output')
+      proc({ task_id: 'b', command: 'finished command', status: 'completed', exit_code: 0 }),
+    ]
+    for (const moves of [0, 1, 2]) {
+      const lines = render(processes, moves)
+      expect(lines[lines.length - 1]).toContain('x to stop')
+      expect(lines.join('\n')).not.toContain('finished command')
+    }
   })
 
   test('stop all is only advertised with more than one live shell', () => {
@@ -88,25 +84,28 @@ describe('background panel rendering', () => {
     expect(text).not.toContain('Completed')
   })
 
-  test('a mixed list shows bold group headings with counts', () => {
-    const lines = render([
-      proc({ task_id: 'a' }),
+  test('finished history does not add any rendered rows', () => {
+    const active = proc({ task_id: 'a' })
+    const processes = [
+      active,
       proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
       proc({ task_id: 'c', status: 'failed', exit_code: 1 }),
-    ])
-    expect(lines).toContain('  Shells (1)')
-    expect(lines).toContain('  Completed (2)')
+      proc({ task_id: 'd', status: 'killed' }),
+    ]
+    expect(render(processes)).toEqual(render([active]))
+    expect(buildSelectorRegionLines(createBackgroundPanelState(processes), 100, 24))
+      .toEqual(buildSelectorRegionLines(createBackgroundPanelState([active]), 100, 24))
   })
 
-  test('groups are separated by a blank line, not a divider rule', () => {
-    const lines = render([
-      proc({ task_id: 'a' }),
-      proc({ task_id: 'b', status: 'completed', exit_code: 0 }),
-    ])
-    const completedAt = lines.indexOf('  Completed (1)')
-    expect(completedAt).toBeGreaterThan(0)
-    expect(lines[completedAt - 1]).toBe('')
-    expect(lines.join('\n')).not.toContain('──')
+  test('finished-only history renders the same empty panel as no history', () => {
+    const processes = [
+      proc({ status: 'completed', exit_code: 0 }),
+      proc({ task_id: 'failed', status: 'failed', exit_code: 1 }),
+      proc({ task_id: 'killed', status: 'killed' }),
+    ]
+    expect(render(processes)).toEqual(render([]))
+    expect(buildSelectorRegionLines(createBackgroundPanelState(processes), 100, 24))
+      .toEqual(buildSelectorRegionLines(createBackgroundPanelState([]), 100, 24))
   })
 
   test('the focused row is marked and rows carry a parenthesised status', () => {

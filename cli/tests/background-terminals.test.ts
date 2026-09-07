@@ -230,6 +230,17 @@ describe('BackgroundTerminals.togglePanel', () => {
     expect(h.panel()).toBeNull()
   })
 
+  test('finished history never opens directly in detail', () => {
+    for (const status of ['completed', 'failed', 'killed'] as const) {
+      const h = harness({ processes: [proc({ status })] })
+      h.controller.togglePanel()
+      expect(h.panel()?.presentation).toBe('background-list')
+      expect(h.panel()?.items).toEqual([])
+      expect(h.panel()?.subtitle).toBeUndefined()
+      expect(h.panel()?.emptyMessage).toBe('No tasks currently running')
+    }
+  })
+
   test('a second press closes it, so one key round-trips', () => {
     const h = harness({ processes: [proc()] })
     h.controller.togglePanel()
@@ -269,6 +280,22 @@ describe('BackgroundTerminals panel refresh', () => {
     h.controller.refresh()
     expect(h.panel()!.items[0]!.detail).toBe('exit 0 · 2s')
     expect(h.panel()?.presentation).toBe('background-output')
+  })
+
+  test('the management list drops settled tasks while retaining their records', () => {
+    const a = proc({ task_id: 'a' })
+    const b = proc({ task_id: 'b' })
+    const h = harness({ processes: [a, b] })
+    h.controller.togglePanel()
+    h.setProcesses([{ ...a, status: 'completed' }, b])
+    h.controller.refresh()
+    expect(h.panel()?.items.map(item => item.id)).toEqual(['b'])
+    expect(h.panel()?.subtitle).toBe('1 active shell')
+    h.setProcesses([{ ...a, status: 'completed' }, { ...b, status: 'failed' }])
+    h.controller.refresh()
+    expect(h.panel()?.items).toEqual([])
+    expect(h.panel()?.subtitle).toBeUndefined()
+    expect(h.panel()?.emptyMessage).toBe('No tasks currently running')
   })
 
   test('a closed panel is not reopened by a poll', () => {

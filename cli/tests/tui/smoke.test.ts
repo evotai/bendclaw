@@ -376,14 +376,14 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       // installed-skill inventory and the composer keeps keyboard focus.
       session.checkpoint()
       session.write('/ski')
-      const preview = await session.waitFor('installed · /skill list for sources and management')
+      const preview = await session.waitFor('Search skills…')
       expect(preview).toContain('Skills')
       expect(preview).toContain('/ski')
       expect(preview).not.toContain('\x1b[2J')
 
       // The first arrow focuses and navigates without replacing or clearing
-      // the selector/composer frame. Enter is intentionally inert in this
-      // read-only inventory; management stays explicit via `/skill ...`.
+      // the selector/composer frame. Enter on an individual skill is inert;
+      // package rows may expand in place. Management stays explicit via `/skill ...`.
       session.checkpoint()
       session.write('\x1b[B')
       await Bun.sleep(100)
@@ -513,7 +513,10 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       // arms first and interrupts on the confirming press.
       session.checkpoint()
       session.write('\x1b')
-      await session.waitFor('esc again to interrupt')
+      // Retry status can wrap this hint at the PTY's 80-column boundary.
+      // Accept physical whitespace, but still require the armed state before
+      // confirming: removing this wait would hide interrupt regressions.
+      await session.waitFor(/esc\s+again\s+to\s+interrupt/)
       session.write('\x1b')
       await session.waitFor('Interrupted.')
 

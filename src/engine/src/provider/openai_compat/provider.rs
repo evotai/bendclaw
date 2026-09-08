@@ -78,6 +78,13 @@ impl OpenAiCompatProvider {
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {}", config.api_key));
 
+        // Session identity is independent of upstream prompt-cache support.
+        if let Some(session_id) = config.prompt_cache_key.as_deref() {
+            if !session_id.is_empty() {
+                builder = builder.header("session-id", session_id);
+            }
+        }
+
         // Add any extra headers from model config
         for (k, v) in model_config.headers() {
             builder = builder.header(k, v);

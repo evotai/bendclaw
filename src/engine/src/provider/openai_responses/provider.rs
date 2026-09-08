@@ -67,7 +67,7 @@ impl OpenAiResponsesProvider {
             config.model, url
         );
 
-        let mut response = send(&url, model_config, &config.api_key, &body).await?;
+        let mut response = send(&url, model_config, &config, &body).await?;
 
         // A native compaction blob can become invalid after an upstream account
         // or compatibility boundary. On semantic client rejection, retry once
@@ -84,7 +84,7 @@ impl OpenAiResponsesProvider {
                 let mut fallback = config.clone();
                 fallback.messages = messages;
                 let fallback_body = request::build_request_body(&fallback);
-                response = send(&url, model_config, &config.api_key, &fallback_body).await?;
+                response = send(&url, model_config, &fallback, &fallback_body).await?;
             }
         }
 
@@ -106,14 +106,20 @@ impl OpenAiResponsesProvider {
 async fn send(
     url: &str,
     model_config: &ModelConfig,
-    api_key: &str,
+    config: &StreamConfig,
     body: &serde_json::Value,
 ) -> Result<reqwest::Response, ProviderError> {
     let client = crate::provider::error::new_client()?;
     let mut builder = client
         .post(url)
         .header("content-type", "application/json")
-        .header("authorization", format!("Bearer {api_key}"));
+        .header("authorization", format!("Bearer {}", config.api_key));
+    // Preserve session identity even when the body omits prompt_cache_key.
+    if let Some(session_id) = config.prompt_cache_key.as_deref() {
+        if !session_id.is_empty() {
+            builder = builder.header("session-id", session_id);
+        }
+    }
     for (key, value) in model_config.headers() {
         builder = builder.header(key, value);
     }

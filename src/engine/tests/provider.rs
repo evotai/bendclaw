@@ -28,4 +28,7 @@ mod stream_sink;
 #[path = "provider/legacy_bridge.rs"]
 mod legacy_bridge;
 
+#[path = "provider/session_header.rs"]
+mod session_header;
+
 mod fixtures;

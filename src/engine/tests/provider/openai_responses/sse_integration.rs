@@ -85,6 +85,7 @@ async fn rejected_compaction_replay_retries_once_with_fallback_text(
     let config = StreamConfigBuilder::openai()
         .model("gpt-5.5")
         .model_config(model)
+        .prompt_cache_key("session-replay-123")
         .messages(vec![Message::Assistant {
             content: vec![Content::Thinking {
                 thinking: "portable fallback".into(),
@@ -119,6 +120,16 @@ async fn rejected_compaction_replay_retries_once_with_fallback_text(
         .await
         .ok_or("request recording unavailable")?;
     assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get("session-id")
+                .ok_or("missing session header")?
+                .to_str()?,
+            "session-replay-123",
+        );
+    }
     let first: serde_json::Value = serde_json::from_slice(&requests[0].body)?;
     let second: serde_json::Value = serde_json::from_slice(&requests[1].body)?;
     assert_eq!(first["input"][0]["type"], "compaction");

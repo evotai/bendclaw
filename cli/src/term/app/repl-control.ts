@@ -98,6 +98,14 @@ export function decideReplControl(input: ReplControlInput): ReplControlAction[] 
   // ctrl+o toggles expanded view in both loading and idle states
   if (event.type === 'ctrl' && event.key === 'o') return actions.concat({ kind: 'toggle-expanded' })
 
+  // A visible completion owns confirmation/navigation even during a run.
+  // Otherwise loading-enter submits the draft before the editor can accept
+  // the selected path or command.
+  if (editor.completion && editor.completion.items.length > 0
+    && (event.type === 'enter' || event.type === 'tab' || event.type === 'up' || event.type === 'down')) {
+    return actions.concat({ kind: 'normal-key' })
+  }
+
   if (isLoading) {
     if (event.type === 'enter') return actions.concat({ kind: 'loading-enter' })
     if (event.type === 'char' || event.type === 'shift-char') return actions.concat({ kind: 'loading-char' })

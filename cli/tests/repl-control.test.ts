@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { decideReplControl } from '../src/term/app/repl-control.js'
-import { createEditorState, insertText } from '../src/term/input/editor.js'
+import { acceptCompletion, createEditorState, getEditorText, insertText, showCompletions } from '../src/term/input/editor.js'
 import { createSelectorState } from '../src/term/selector.js'
 
 const editor = createEditorState()
@@ -186,6 +186,43 @@ describe('repl control', () => {
 
   test('ask overlay delegates key', () => {
     expect(kinds({ ...base, event: { type: 'char', char: 'y' }, overlay: askUser })).toEqual(['ask-key'])
+  })
+
+  test('completion confirmation and navigation outrank submission both idle and loading', () => {
+    for (const isLoading of [false, true]) {
+      for (const type of ['enter', 'tab', 'up', 'down'] as const) {
+        expect(kinds({ ...base, isLoading, hasStream: isLoading, editor: completionEditor, event: { type } }))
+          .toEqual(['normal-key'])
+      }
+    }
+  })
+
+  test('enter selects a relative path during a run; only the next enter submits', () => {
+    const draft = 'favicon icon要是 ../evot'
+    const pathEditor = showCompletions(insertText(createEditorState(), draft), [
+      { label: '../evot-site/', value: '../evot-site/' },
+      { label: '../evot/', value: '../evot/' },
+    ], draft.indexOf('../'))
+    const input = { ...base, isLoading: true, hasStream: true, event: { type: 'enter' as const }, editor: pathEditor }
+    expect(kinds(input)).toEqual(['normal-key'])
+    const accepted = acceptCompletion(pathEditor)
+    expect(getEditorText(accepted)).toBe('favicon icon要是 ../evot-site/')
+    expect(accepted.completion).toBeNull()
+    expect(kinds({ ...input, editor: accepted })).toEqual(['loading-enter'])
+  })
+
+  test('empty completion notice does not swallow enter during a run', () => {
+    const editor = showCompletions(textEditor, [], 0, 5, 'No matches')
+    expect(kinds({ ...base, editor, isLoading: true, event: { type: 'enter' } })).toEqual(['loading-enter'])
+  })
+
+  test('overlays retain priority over an editor completion', () => {
+    for (const isLoading of [false, true]) {
+      for (const [overlay, action] of [[help, 'close-overlay'], [selector, 'selector-key'], [askUser, 'ask-key']] as const) {
+        expect(kinds({ ...base, overlay, isLoading, editor: completionEditor, event: { type: 'enter' } }))
+          .toEqual([action])
+      }
+    }
   })
 
   test('loading enter/char/paste have loading actions', () => {

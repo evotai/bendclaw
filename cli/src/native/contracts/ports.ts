@@ -29,6 +29,7 @@ export interface NativeAgent {
   blockingTaskWaits(id: string): number
   releaseBlockingTaskWaits(id: string): number
   pendingProcessNotifications(id: string): number
+  pendingProcessWakeNotifications(id: string): number
   killAllBackgroundProcessesNow(): number
   listSessionsWithText(limit: number | null): Promise<string>
   sessionWithText(id: string): Promise<string | null>

@@ -965,6 +965,23 @@ describe('prompt footer', () => {
     expect(footer).toStartWith('…')
   })
 
+  test('idle background stop hint shares the count row and confirmation takes priority over management', () => {
+    for (const [hint, columns] of [
+      ['esc twice to stop all', 100],
+      ['esc again to stop all 2 tasks', 100],
+      ['esc again to stop all 2 tasks', 40],
+      ['Stopping…', 40],
+    ] as const) {
+      const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
+        columns, backgroundProcessCount: 2, backgroundPanelDownAvailable: true,
+        backgroundStopHint: hint,
+      }))).map(stripAnsi)
+      expect(lines[0]).toContain(hint)
+      expect(lines[0]).toStartWith('2 ')
+      expect(stringWidth(lines[0]!)).toBeLessThanOrEqual(columns)
+    }
+  })
+
   test('footer chip advertises ↓ while the composer is empty', () => {
     const lines = blocksToLines(buildPromptFooterBlocks(defaultInput({
       columns: 100,

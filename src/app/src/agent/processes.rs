@@ -160,6 +160,12 @@ impl ProcessRegistry {
             .unwrap_or(0)
     }
 
+    pub fn pending_wake_notifications(&self, session_id: &str) -> usize {
+        self.get(session_id)
+            .map(|manager| manager.pending_wake_notifications())
+            .unwrap_or_default()
+    }
+
     pub async fn stop_all_background(&self, session_id: &str) -> Vec<ProcessSummary> {
         match self.get(session_id) {
             Some(manager) => manager.stop_all_background(PROCESS_SHUTDOWN_TIMEOUT).await,

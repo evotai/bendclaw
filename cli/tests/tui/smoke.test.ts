@@ -157,11 +157,16 @@ async function startEvot(
   seedSession = false,
   seedOtherCwd = false,
   seedPreviewCacheMiss = false,
+  providerUrl?: string,
 ): Promise<Session> {
   // Isolate HOME as well as EVOT_HOME: some TS and Rust stores use ~/.evotai.
   // This must also protect developer state when testing an older compiled binary.
   const isolatedHome = mkdtempSync(join(tmpdir(), 'evot-smoke-home-'))
   const stateHome = seedSmokeHome(isolatedHome)
+  if (providerUrl) {
+    const path = join(stateHome, 'evot.env')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('http://127.0.0.1:1/v1', providerUrl))
+  }
   if (seedSession) seedResumeSession(stateHome)
   if (seedOtherCwd) {
     seedResumeSession(stateHome, {
@@ -621,6 +626,44 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       expect(session.historyEntries()).toEqual(['echo smoke test'])
     } finally {
       await session.kill()
+    }
+  }, 60_000)
+
+  test('Esc stops the reply first, then confirms background stop in the footer without waking again', async () => {
+    let requests = 0
+    const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => {
+      requests++
+      if (requests === 1) {
+        const chunk = { id: 'fixture', model: 'smoke-model', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'bg-1', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: 'sleep 30', run_in_background: true }) } }] }, finish_reason: 'tool_calls' }] }
+        return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } })
+      }
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(': waiting\n\n')) } }), { headers: { 'content-type': 'text/event-stream' } })
+    } })
+    let session: Session | undefined
+    try {
+      session = await startEvot(false, false, false, `http://127.0.0.1:${server.port}/v1`)
+      session.write('start a background task\x0d')
+      await session.waitFor('1 background shell running')
+      session.checkpoint()
+      session.write('\x1b')
+      await session.waitFor(/esc\s+again\s+to\s+interrupt/)
+      session.checkpoint()
+      session.write('\x1b')
+      await session.waitFor('Interrupted.')
+      await session.waitFor(/esc\s+twice\s+to\s+stop\s+all/)
+      expect(stripAnsi(session.outputSince())).toContain('1 background shell running')
+      session.checkpoint()
+      session.write('\x1b')
+      await session.waitFor(/esc\s+again\s+to\s+stop\s+all\s+1\s+task/)
+      session.checkpoint()
+      const beforeStop = requests
+      session.write('\x1b')
+      await session.waitFor('Stopped 1 background terminal.')
+      await Bun.sleep(1200)
+      expect(requests).toBe(beforeStop)
+    } finally {
+      if (session) await session.kill()
+      await server.stop(true)
     }
   }, 60_000)
 

@@ -263,6 +263,7 @@ export interface SpinnerStats {
 export interface SpinnerFormatOptions {
   /** Shared capabilities from the run interaction controller. */
   interaction?: RunInteractionState
+  hideInteractionHint?: boolean
   /** Requested model, used to identify long quota waits. */
   model?: string
 }
@@ -337,7 +338,7 @@ export function formatSpinnerLine(
     ? `waiting ${humanDuration(Math.max(0, now - state.recoveryStartedAt))}` : humanDuration(elapsed)
   label = presentation.label ?? label
   const tokenSuffix = presentation.showUsage ? formatSpinnerTokenSuffix(state, now, stats) : ''
-  const interruptHint = presentation.hint
+  const interruptHint = options.hideInteractionHint ? '' : presentation.hint
 
   if (slow) {
     return `\x1b[31m${char}\x1b[0m \x1b[31m${label}\x1b[0m\x1b[2m (${status}${tokenSuffix})${interruptHint}\x1b[0m`

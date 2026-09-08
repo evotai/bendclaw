@@ -91,6 +91,7 @@ struct ProcessTombstone {
 struct ProcessNotification {
     task_id: String,
     text: String,
+    wakes_agent: bool,
 }
 
 /// Who asked for a stop. Only the attribution differs; the kill path is shared.
@@ -418,11 +419,13 @@ impl ProcessManager {
             {
                 let mut state = task.state.lock();
                 state.exit_code = Some(exit_code);
-                state.status = forced_status.unwrap_or(if exit_code == 0 {
-                    ProcessStatus::Completed
-                } else {
-                    ProcessStatus::Failed
-                });
+                state.status = forced_status
+                    .or_else(|| state.requested_status.clone())
+                    .unwrap_or(if exit_code == 0 {
+                        ProcessStatus::Completed
+                    } else {
+                        ProcessStatus::Failed
+                    });
                 state.finished_at = Some(Instant::now());
                 state.global_permit.take();
             }
@@ -435,6 +438,7 @@ impl ProcessManager {
                     notifications.push(ProcessNotification {
                         task_id: task.id.clone(),
                         text: format_notification(&snapshot),
+                        wakes_agent: !state.stopped_by_user,
                     });
                 }
             }
@@ -635,6 +639,9 @@ impl ProcessManager {
             .collect::<Vec<_>>();
         for task in &tasks {
             let mut state = task.state.lock();
+            if state.status.is_terminal() {
+                continue;
+            }
             state.requested_status = Some(ProcessStatus::Killed);
             state.stopped_by_user = true;
             task.cancel.cancel();
@@ -860,6 +867,15 @@ impl ProcessManager {
     /// would drop the text on the floor, since a poll has no turn to put it in.
     pub fn pending_notifications(&self) -> usize {
         self.inner.notifications.lock().len()
+    }
+
+    pub fn pending_wake_notifications(&self) -> usize {
+        self.inner
+            .notifications
+            .lock()
+            .iter()
+            .filter(|notification| notification.wakes_agent)
+            .count()
     }
 
     pub async fn terminate_all_and_wait(&self, timeout: Duration) {

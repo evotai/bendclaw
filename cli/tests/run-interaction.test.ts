@@ -23,7 +23,7 @@ test('status hints and key routing share the same capabilities for every state',
     const status = runStatusPresentation(interaction)
     expect(interaction.kind).toBe(kind)
     expect(status.showUsage).toBe(usage)
-    expect(status.hint.includes('esc twice')).toBe(interruptible && interaction.backgroundAction === null)
+    expect(status.hint.includes('esc twice')).toBe((interruptible || interaction.interruptTarget === 'background') && interaction.backgroundAction === null)
     expect(status.hint.includes('to background') || status.hint.includes('to release wait')).toBe(interaction.backgroundAction !== null)
     const route = (event: { type: 'escape' } | { type: 'ctrl'; key: string }) => decideReplControl({
       event, interaction, overlay: { kind: 'none' }, editor: createEditorState(),
@@ -31,6 +31,7 @@ test('status hints and key routing share the same capabilities for every state',
       logMode: false, hasQueuedPrompt: false,
     }).map(action => action.kind)
     expect(route({ type: 'escape' }).includes('interrupt')).toBe(interruptible)
+    expect(route({ type: 'escape' }).includes('stop-background')).toBe(interaction.interruptTarget === 'background')
     expect(route({ type: 'ctrl', key: 'b' }).includes('reclaim-turn')).toBe(interaction.backgroundAction !== null)
   }
 })
@@ -67,6 +68,42 @@ test('confirmation temporarily replaces the primary hint and expiry restores it'
     now += 5000
     expect(runStatusPresentation(controller.snapshot(run)).hint).toBe(normal)
   }
+})
+
+test('background confirmations are scoped separately from replies, sessions and live tasks', () => {
+  let now = 0
+  const controller = new RunInteraction(() => now)
+  const run = { active: true, owner, backgroundTasks: 2, backgroundOwner: 'session:a,b' }
+  const idle = { ...run, active: false, owner: null }
+  expect(controller.requestInterrupt(run)).toBe('confirm')
+  expect(controller.requestInterrupt(run)).toBe('interrupt')
+  expect(controller.requestInterrupt(idle)).toBe('confirm')
+  expect(runStatusPresentation(controller.snapshot(idle)).hint).toBe(' · esc again to stop all 2 background tasks')
+  expect(controller.requestInterrupt(idle)).toBe('interrupt')
+
+  expect(controller.requestInterrupt(idle)).toBe('confirm')
+  now += 5000
+  expect(controller.snapshot(idle).interruptPending).toBe(false)
+  expect(controller.requestInterrupt(idle)).toBe('confirm')
+  expect(controller.requestInterrupt({ ...idle, backgroundOwner: 'other-session:a,b' })).toBe('confirm')
+  expect(controller.requestInterrupt({ ...idle, backgroundOwner: 'other-session:a,c' })).toBe('confirm')
+  expect(controller.requestInterrupt({ ...idle, backgroundStopping: true })).toBe('unavailable')
+  expect(controller.requestInterrupt(idle)).toBe('confirm')
+  expect(controller.requestInterrupt({ ...run, owner: {} })).toBe('confirm')
+  expect(controller.requestInterrupt(idle)).toBe('confirm')
+})
+
+test('idle background stop preserves drafts and respects modal and completion priority', () => {
+  const input = {
+    interaction: resolveRunInteraction({ active: false, owner: null, backgroundTasks: 2 }),
+    event: { type: 'escape' as const }, overlay: { kind: 'none' as const },
+    editor: { ...createEditorState(), lines: ['keep this draft'] },
+    isLoading: false, hasStream: false, exitHint: false, logMode: false, hasQueuedPrompt: false,
+  }
+  expect(decideReplControl(input)).toEqual([{ kind: 'stop-background' }])
+  expect(input.editor.lines).toEqual(['keep this draft'])
+  expect(decideReplControl({ ...input, overlay: { kind: 'help' } })).toEqual([{ kind: 'close-overlay' }])
+  expect(decideReplControl({ ...input, interaction: resolveRunInteraction({ active: false, owner: null, backgroundTasks: 2, backgroundStopping: true }) })).toEqual([])
 })
 
 test('overlay and queued-message precedence is preserved', () => {

@@ -1,13 +1,3 @@
-/**
- * Background terminal management for the TUI.
- *
- * Owns the polled task list, the interactive panel (`ctrl+t` or `↓` on an empty
- * composer), and the session-switch gate. Every gesture lives in the panel —
- * there are no slash commands for background work, so the list has exactly one
- * presentation. Kept outside `startRepl` so the whole interaction can be driven
- * in tests without a terminal or a live agent.
- */
-
 import { BackgroundVisibility } from './background-visibility.js'
 import { SELECTOR_OWNER, isBackgroundSelector } from './selector-identity.js'
 import type { BackgroundProcess } from '../../native/index.js'
@@ -44,7 +34,7 @@ export interface BackgroundTerminalsClient {
   backgroundForegroundProcesses(sessionId: string): number
   backgroundForegroundProcessesForMessage(sessionId: string): number
   blockingTaskWaits(sessionId: string): number
-  pendingProcessNotifications(sessionId: string): number
+  pendingProcessWakeNotifications(sessionId: string): number
   releaseBlockingTaskWaits(sessionId: string): number
   killAllBackgroundProcessesNow(): number
 }
@@ -215,6 +205,26 @@ export class BackgroundTerminals {
    * of guessing at microtask counts.
    */
   private pending: Promise<void> = Promise.resolve()
+  private readonly stoppingSessions = new Set<string>()
+
+  isStopping(): boolean {
+    const id = this.deps.sessionId()
+    return id !== null && this.stoppingSessions.has(id)
+  }
+
+  stopTarget(): string | null {
+    const id = this.deps.sessionId()
+    if (!id || this.visibleSession !== id || this.runningCount() === 0) return null
+    return JSON.stringify([id, this.processes.filter(process => process.status === 'running')
+      .map(process => process.task_id).sort()])
+  }
+
+  stopAll(confirmedTarget?: string | null): void {
+    if (confirmedTarget !== undefined && (!confirmedTarget || confirmedTarget !== this.stopTarget())) return
+    const taskIds = confirmedTarget === undefined ? undefined
+      : this.processes.filter(process => process.status === 'running').map(process => process.task_id)
+    this.track(this.stopBackgroundTasks(taskIds))
+  }
 
   constructor(deps: BackgroundTerminalsDeps) {
     this.deps = deps
@@ -227,7 +237,7 @@ export class BackgroundTerminals {
 
   /** Footer count: backgrounded work only. */
   runningCount(): number {
-    return runningBackgroundCount(this.processes)
+    return this.visibleSession === this.deps.sessionId() ? runningBackgroundCount(this.processes) : 0
   }
 
   /** Shells still being waited on in the foreground. */
@@ -348,23 +358,27 @@ export class BackgroundTerminals {
    * moved. Elapsed time is excluded from the change key, so a ticking clock
    * alone never forces a repaint.
    */
-  refresh(): void {
+  refresh(allowWake = true): void {
     if (this.watchedTask && (!this.deps.panelOpen() || this.deps.panelState()?.owner !== SELECTOR_OWNER.backgroundOutput)) this.dispose()
     const previous = this.processes
     const previousWaits = this.blockingWaits
     const sessionId = this.deps.sessionId()
     if (!sessionId) {
       this.processes = []
+      this.visibleSession = null
+      this.announced.clear()
       this.blockingWaits = 0
       if (previous.length > 0 || previousWaits > 0) this.deps.requestRender()
       return
     }
+    const sessionChanged = this.visibleSession !== sessionId
     try {
       const next = this.deps.client.backgroundProcesses(sessionId)
-      if (this.visibleSession !== sessionId) {
+      if (sessionChanged) {
         this.visibleSession = sessionId
         this.visibility.begin(next)
         this.announced.clear()
+        this.wakeArmed = true
       }
       this.processes = next
       // Read in the same poll as the list so both halves of `canReclaimTurn()`
@@ -391,7 +405,7 @@ export class BackgroundTerminals {
           }
         }
       }
-      this.announceSettled(previous, next)
+      this.announceSettled(sessionChanged ? [] : previous, next)
       if (
         backgroundProcessFingerprint(previous) !== backgroundProcessFingerprint(next)
         // The ctrl+b hint is derived from this, so a change has to repaint even
@@ -402,10 +416,15 @@ export class BackgroundTerminals {
       }
       // Last in the poll: opening a turn re-enters the REPL, so every field
       // above is already settled before control leaves this method.
-      this.maybeWake(sessionId)
+      if (allowWake) this.maybeWake(sessionId)
     } catch {
-      // A session can disappear during clear/delete/resume. Keep the last known
-      // list and let the next poll recover rather than blanking the footer.
+      if (!allowWake || sessionChanged) {
+        this.visibleSession = null
+        this.processes = []
+        this.blockingWaits = 0
+        this.announced.clear()
+        this.deps.requestRender()
+      }
     }
   }
 
@@ -519,7 +538,7 @@ export class BackgroundTerminals {
         this.track(this.stopFromPanel(action.taskId))
         return true
       case 'stop-all':
-        this.track(this.stopAllFromPanel())
+        this.stopAll()
         return true
     }
   }
@@ -571,30 +590,79 @@ export class BackgroundTerminals {
   /** Stop one task from the panel, reporting the outcome in the transcript. */
   private async stopFromPanel(taskId: string): Promise<void> {
     const sessionId = this.deps.sessionId()
-    if (!sessionId) return
+    if (!sessionId || this.isStopping()) return
+    this.stoppingSessions.add(sessionId)
+    this.deps.requestRender()
     try {
       const stopped = await this.deps.client.stopBackgroundProcess(sessionId, taskId)
-      // Claimed before the refresh below observes the transition: the panel is
-      // reporting this stop itself, and the poll must not say it again.
-      this.announced.add(taskId)
-      if (stopped) this.deps.commit('stop', stopOneMessage(stopped))
+      if (sessionId !== this.deps.sessionId()) return
+      if (stopped) {
+        const alreadyAnnounced = this.announced.has(stopped.task_id)
+        if (!isLiveStatus(stopped.status)) this.announced.add(stopped.task_id)
+        const finishedNaturally = !stopped.stopped_by_user && (stopped.status === 'completed' || stopped.status === 'failed')
+        if (finishedNaturally) this.wakeArmed = true
+        if (!alreadyAnnounced) this.deps.commit('stop', finishedNaturally ? settledNoticeMessage(stopped) : stopOneMessage(stopped))
+      }
     } catch (err) {
-      this.deps.commit('error', this.paint(`  Could not stop ${taskId.slice(0, 8)}: ${this.deps.errorText(err)}`))
+      if (sessionId === this.deps.sessionId()) {
+        this.deps.commit('error', this.paint(`  Could not stop ${taskId.slice(0, 8)}: ${this.deps.errorText(err)}`))
+      }
+    } finally {
+      this.stoppingSessions.delete(sessionId)
+      if (sessionId === this.deps.sessionId()) {
+        this.refresh()
+        this.deps.requestRender()
+      }
     }
-    this.refresh()
   }
 
-  private async stopAllFromPanel(): Promise<void> {
+  private async stopBackgroundTasks(taskIds?: string[]): Promise<void> {
     const sessionId = this.deps.sessionId()
-    if (!sessionId) return
+    if (!sessionId || this.isStopping()) return
+    this.stoppingSessions.add(sessionId)
+    this.deps.requestRender()
     try {
-      const stopped = await this.deps.client.stopAllBackgroundProcesses(sessionId)
-      for (const process of stopped) this.announced.add(process.task_id)
-      this.deps.commit('stop-all', stopAllMessage(stopped.length))
+      const stopped: BackgroundProcess[] = []
+      let failed = 0
+      if (taskIds) {
+        const results = await Promise.allSettled(taskIds.map(id => this.deps.client.stopBackgroundProcess(sessionId, id)))
+        if (sessionId !== this.deps.sessionId()) return
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'fulfilled') {
+            if (result.value) stopped.push(result.value)
+          } else {
+            failed++
+            this.deps.commit('error', this.paint(`  Could not stop ${taskIds[index]}: ${this.deps.errorText(result.reason)}`))
+          }
+        }
+      } else {
+        stopped.push(...await this.deps.client.stopAllBackgroundProcesses(sessionId))
+      }
+      if (sessionId !== this.deps.sessionId()) return
+      for (const process of stopped) {
+        if (!isLiveStatus(process.status)) this.announced.add(process.task_id)
+        if (!process.stopped_by_user && (process.status === 'completed' || process.status === 'failed')) this.wakeArmed = true
+      }
+      const stillRunning = stopped.filter(process => isLiveStatus(process.status)).length
+      const killed = stopped.filter(process => process.status === 'killed').length
+      this.deps.commit('stop-all', failed > 0
+        ? `  ■ Stopped ${killed} background terminal${killed === 1 ? '' : 's'} · ${failed} stop requests failed · ${stillRunning} still running.`
+        : stillRunning > 0
+        ? `  ■ Stopped ${killed} background terminal${killed === 1 ? '' : 's'} · ${stillRunning} still running.`
+        : killed === 0 && stopped.length > 0
+          ? '  Background terminals already finished.'
+          : stopAllMessage(killed))
     } catch (err) {
-      this.deps.commit('error', this.paint(`  Could not stop background terminals: ${this.deps.errorText(err)}`))
+      if (sessionId === this.deps.sessionId()) {
+        this.deps.commit('error', this.paint(`  Could not stop background terminals: ${this.deps.errorText(err)}`))
+      }
+    } finally {
+      this.stoppingSessions.delete(sessionId)
+      if (sessionId === this.deps.sessionId()) {
+        this.refresh()
+        this.deps.requestRender()
+      }
     }
-    this.refresh()
   }
 
   /**
@@ -609,11 +677,7 @@ export class BackgroundTerminals {
       if (this.announced.has(process.task_id)) continue
       this.announced.add(process.task_id)
       this.deps.commit('settled', settledNoticeMessage(process))
-      // A task finishing is the event a parked turn was waiting for, so it
-      // re-arms the wake. Waiting for an empty queue would deadlock instead:
-      // the notices an interrupt left behind keep `pending` above zero, and
-      // nothing drains them until the user types.
-      this.wakeArmed = true
+      if (!process.stopped_by_user) this.wakeArmed = true
     }
     // Forget ids the engine has reclaimed so the set cannot grow without bound
     // over a long session. A reclaimed task can never transition again.
@@ -629,26 +693,14 @@ export class BackgroundTerminals {
     return (this.deps.paintError ?? ((value: string) => value))(text)
   }
 
-  /**
-   * Open a turn when a finished task left a result nobody will receive.
-   *
-   * This is what keeps a multi-step instruction alive across a long task: the
-   * engine queues the completion notice, and without a turn to carry it the
-   * queue sits untouched until the user types, so "run the build, then fix what
-   * breaks" would stop after the build.
-   *
-   * The queue itself is the trigger, not the settled transition, so this fires
-   * exactly once per batch — `build_turn` drains it, and the next poll sees
-   * zero. A host that supplies no `wakeForNotifications` never wakes.
-   */
   private maybeWake(sessionId: string): void {
     const wake = this.deps.wakeForNotifications
-    if (!wake) return
+    if (!wake || this.isStopping()) return
     // Guarded like the blocking-wait probe: a failing count must not abandon
     // the poll, and must not be read as "something is pending".
     let pending = 0
     try {
-      pending = this.deps.client.pendingProcessNotifications(sessionId)
+      pending = this.deps.client.pendingProcessWakeNotifications(sessionId)
     } catch {
       return
     }

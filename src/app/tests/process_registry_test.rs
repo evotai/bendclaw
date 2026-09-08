@@ -61,6 +61,7 @@ async fn unknown_sessions_report_nothing_rather_than_failing() -> TestResult {
     assert_eq!(registry.blocking_waiters("missing"), 0);
     assert_eq!(registry.release_blocking_waiters("missing"), 0);
     assert_eq!(registry.pending_notifications("missing"), 0);
+    assert_eq!(registry.pending_wake_notifications("missing"), 0);
     assert!(registry.stop_background("missing", "task").await?.is_none());
     assert!(registry.stop_all_background("missing").await.is_empty());
     registry.retire("missing").await;

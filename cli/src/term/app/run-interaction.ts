@@ -11,13 +11,17 @@ export interface RunInteractionInput {
   foregroundTasks?: number
   blockingWaits?: number
   backgroundTasks?: number
+  backgroundOwner?: string | null
+  backgroundStopping?: boolean
 }
 
 export interface RunInteractionState {
   kind: 'idle' | 'active' | 'waiting-task' | 'waiting-background' | 'retrying' | 'local-operation' | 'compacting'
-  interruptTarget: 'agent' | 'compaction' | null
+  interruptTarget: 'agent' | 'compaction' | 'background' | null
   backgroundAction: 'background-shell' | 'release-wait' | null
   interruptPending: boolean
+  backgroundTasks?: number
+  backgroundStopping?: boolean
   showUsage: boolean
   allowSlowWarning: boolean
 }
@@ -32,8 +36,10 @@ export function resolveRunInteraction(input: RunInteractionInput): RunInteractio
     : ['retrying', 'quota_waiting', 'outage_waiting'].includes(input.phase ?? '') ? 'retrying'
     : 'active'
   const owned = input.owner !== null && input.owner !== undefined
-  const interruptTarget = !owned || kind === 'idle' || kind === 'waiting-background' || kind === 'local-operation'
-    ? null : kind === 'compacting' ? 'compaction' : 'agent'
+  const interruptTarget = kind === 'waiting-background'
+    ? input.backgroundStopping ? null : 'background'
+    : !owned || kind === 'idle' || kind === 'local-operation'
+      ? null : kind === 'compacting' ? 'compaction' : 'agent'
   return {
     kind,
     interruptTarget,
@@ -41,6 +47,8 @@ export function resolveRunInteraction(input: RunInteractionInput): RunInteractio
       : (input.foregroundTasks ?? 0) > 0 ? 'background-shell'
       : (input.blockingWaits ?? 0) > 0 ? 'release-wait' : null,
     interruptPending: false,
+    backgroundTasks: input.backgroundTasks ?? 0,
+    backgroundStopping: input.backgroundStopping ?? false,
     showUsage: kind === 'active',
     allowSlowWarning: kind === 'active' || kind === 'local-operation' || kind === 'compacting',
   }
@@ -49,16 +57,22 @@ export function resolveRunInteraction(input: RunInteractionInput): RunInteractio
 /** Owns only the operation-scoped confirmation; side effects remain with the host. */
 export class RunInteraction {
   private readonly confirmation: InterruptConfirmation
+  private target: RunInteractionState['interruptTarget'] = null
+  private owner: unknown = null
   constructor(now = Date.now) { this.confirmation = new InterruptConfirmation(now) }
 
   snapshot(input: RunInteractionInput): RunInteractionState {
     const state = resolveRunInteraction(input)
-    return { ...state, interruptPending: state.interruptTarget !== null && this.confirmation.pending(input.owner) }
+    const owner = state.interruptTarget === 'background' ? input.backgroundOwner : input.owner
+    if (this.target !== state.interruptTarget || this.owner !== owner) this.confirmation.clear()
+    this.target = state.interruptTarget
+    this.owner = owner
+    return { ...state, interruptPending: state.interruptTarget !== null && this.confirmation.pending(owner) }
   }
 
   requestInterrupt(input: RunInteractionInput): 'unavailable' | 'confirm' | 'interrupt' {
-    if (this.snapshot(input).interruptTarget === null) return 'unavailable'
-    return this.confirmation.press(input.owner) ? 'interrupt' : 'confirm'
+    if (this.snapshot(input).interruptTarget === null || this.owner == null) return 'unavailable'
+    return this.confirmation.press(this.owner) ? 'interrupt' : 'confirm'
   }
 
   clear(): void { this.confirmation.clear() }

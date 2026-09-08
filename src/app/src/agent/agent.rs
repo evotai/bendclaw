@@ -1032,6 +1032,10 @@ impl Agent {
         self.processes.pending_notifications(session_id)
     }
 
+    pub fn pending_process_wake_notifications(&self, session_id: &str) -> usize {
+        self.processes.pending_wake_notifications(session_id)
+    }
+
     pub async fn stop_all_background_processes(
         &self,
         session_id: &str,

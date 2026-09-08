@@ -12,7 +12,11 @@ export function runStatusPresentation(state: RunInteractionState): {
   // over backgrounding; hiding Esc here never disables its actual binding.
   let hint = ''
   const target = state.interruptTarget === 'compaction' ? ' compaction' : ''
-  if (state.interruptTarget && state.interruptPending) {
+  if (state.interruptTarget === 'background') {
+    hint = state.interruptPending
+      ? `esc again to stop all ${state.backgroundTasks ?? 0} background tasks`
+      : 'esc twice to stop all background tasks'
+  } else if (state.interruptTarget && state.interruptPending) {
     hint = `esc again to interrupt${target}`
   } else if (state.backgroundAction) {
     hint = `${backgroundChord()} to ${state.backgroundAction === 'background-shell' ? 'background' : 'release wait'}`
@@ -21,7 +25,9 @@ export function runStatusPresentation(state: RunInteractionState): {
   }
   return {
     label: state.kind === 'waiting-task' ? 'Waiting for task result…'
-      : state.kind === 'waiting-background' ? 'Background task running · resumes when finished' : undefined,
+      : state.kind === 'waiting-background'
+        ? state.backgroundStopping ? 'Stopping background tasks…' : 'Background task running · resumes when finished'
+        : undefined,
     hint: hint ? ` · ${hint}` : '',
     showUsage: state.showUsage,
     allowSlowWarning: state.allowSlowWarning,

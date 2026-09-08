@@ -1447,7 +1447,8 @@ async fn a_user_stop_notifies_the_model_and_names_the_user() -> Result<(), Box<d
     assert_eq!(stopped.status.as_str(), "killed");
     assert!(stopped.stopped_by_user);
 
-    // The notification must survive: swallowing it is what hid the stop.
+    assert_eq!(manager.pending_notifications(), 1);
+    assert_eq!(manager.pending_wake_notifications(), 0);
     let notifications = manager.take_notifications();
     assert_eq!(notifications.len(), 1);
     let notification = &notifications[0];
@@ -1462,6 +1463,50 @@ async fn a_user_stop_notifies_the_model_and_names_the_user() -> Result<(), Box<d
         notification.contains("only re-run it if the user explicitly asks"),
         "got: {notification}"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn wake_notifications_exclude_cancellations_without_dropping_mixed_results(
+) -> Result<(), Box<dyn Error>> {
+    let dir = tempfile::tempdir()?;
+    let manager = Arc::new(ProcessManager::new());
+    let bash = BashTool::new().with_process_manager(manager.clone());
+    let cancelled = bash
+        .execute(
+            serde_json::json!({"command": "sleep 30", "run_in_background": true}),
+            context("bash", dir.path()),
+        )
+        .await?;
+    manager
+        .stop_by_user(task_id(&cancelled)?)
+        .await
+        .ok_or("task disappeared")?;
+    assert_eq!(manager.pending_notifications(), 1);
+    assert_eq!(manager.pending_wake_notifications(), 0);
+
+    for command in ["exit 0", "exit 7"] {
+        let result = bash
+            .execute(
+                serde_json::json!({"command": command, "run_in_background": true}),
+                context("bash", dir.path()),
+            )
+            .await?;
+        let id = task_id(&result)?;
+        manager
+            .wait(id, Duration::from_secs(3))
+            .await
+            .ok_or("task disappeared")?;
+    }
+    assert_eq!(manager.pending_notifications(), 3);
+    assert_eq!(manager.pending_wake_notifications(), 2);
+    let notices = manager.take_notifications();
+    assert_eq!(notices.len(), 3);
+    assert!(notices
+        .iter()
+        .any(|text| text.contains("cancelled by the user")));
+    assert_eq!(manager.pending_notifications(), 0);
+    assert_eq!(manager.pending_wake_notifications(), 0);
     Ok(())
 }
 
@@ -1522,6 +1567,8 @@ async fn stop_all_attributes_every_task_to_the_user() -> Result<(), Box<dyn Erro
         );
     }
 
+    assert_eq!(manager.pending_notifications(), 3);
+    assert_eq!(manager.pending_wake_notifications(), 0);
     // One notification per task, each naming the user. Previously all three
     // were suppressed, so the model saw nothing at all.
     let notifications = manager.take_notifications();

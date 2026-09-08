@@ -1,4 +1,7 @@
 import { describe, test, expect } from 'bun:test'
+import { RunInteraction } from '../src/term/app/run-interaction.js'
+import { decideReplControl } from '../src/term/app/repl-control.js'
+import { createEditorState } from '../src/term/input/editor.js'
 import { BackgroundTerminals } from '../src/term/app/background-terminals.js'
 import { isBackgroundSelector } from '../src/term/app/selector-identity.js'
 import type { SelectorState } from '../src/term/selector.js'
@@ -26,7 +29,7 @@ function proc(overrides: Partial<BackgroundProcess> = {}): BackgroundProcess {
  */
 function harness(options: {
   processes?: BackgroundProcess[]
-  sessionId?: string | null
+  sessionId?: string | null | (() => string)
   output?: string | (() => string)
   stopOne?: (taskId: string) => Promise<BackgroundProcess | null>
   stopAll?: () => Promise<BackgroundProcess[]>
@@ -74,14 +77,15 @@ function harness(options: {
         if (options.stopOne) return options.stopOne(taskId)
         const target = processes.find(candidate => candidate.task_id === taskId)
         if (!target) return null
-        const stopped = { ...target, status: 'killed' as const }
+        const stopped = { ...target, status: 'killed' as const, stopped_by_user: true }
         processes = processes.map(candidate => candidate.task_id === taskId ? stopped : candidate)
         return stopped
       },
       stopAllBackgroundProcesses: async () => {
         if (options.stopAll) return options.stopAll()
         const live = processes.filter(candidate => candidate.status === 'running')
-        processes = processes.map(candidate => ({ ...candidate, status: 'killed' as const }))
+          .map(candidate => ({ ...candidate, status: 'killed' as const, stopped_by_user: true }))
+        processes = processes.map(candidate => live.find(stopped => stopped.task_id === candidate.task_id) ?? candidate)
         return live
       },
       backgroundForegroundProcesses: () => detachForeground(),
@@ -100,9 +104,9 @@ function harness(options: {
         return released
       },
       killAllBackgroundProcessesNow: () => processes.length,
-      pendingProcessNotifications: () => options.pendingNotifications?.() ?? 0,
+      pendingProcessWakeNotifications: () => options.pendingNotifications?.() ?? 0,
     },
-    sessionId: () => (options.sessionId === undefined ? 'session-1' : options.sessionId),
+    sessionId: () => typeof options.sessionId === 'function' ? options.sessionId() : (options.sessionId === undefined ? 'session-1' : options.sessionId),
     commit: (slot, text) => commits.push({ slot, text }),
     requestRender: () => { renders++ },
     errorText: err => (err instanceof Error ? err.message : String(err)),
@@ -489,7 +493,7 @@ describe('BackgroundTerminals.handlePanelKey', () => {
     h.controller.togglePanel()
     h.controller.handlePanelKey({ type: 'char', char: 'x' })
     await h.controller.settled()
-    expect(h.panel()!.items[0]!.detail).toContain('stopped')
+    expect(h.panel()!.items[0]!.detail).toContain('cancelled by user')
   })
 })
 
@@ -928,6 +932,181 @@ describe('BackgroundTerminals wake on completion', () => {
     h.controller.refresh()
     h.controller.refresh()
     expect(pending).toBe(0)
+  })
+})
+
+describe('BackgroundTerminals layered stop', () => {
+  test('confirmed background stop never expands to a task admitted after the snapshot', async () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    const target = h.controller.stopTarget()
+    h.setProcesses([proc(), proc({ task_id: 'new-task' })])
+    h.controller.stopAll(target)
+    await h.controller.settled()
+    expect(h.processes().find(task => task.task_id === 'new-task')?.status).toBe('running')
+    expect(h.processes().find(task => task.task_id === 'aaaaaaaa-1111')?.status).toBe('killed')
+  })
+
+  test('fresh stop confirmation rejects changed or unreadable task lists without waking', () => {
+    let unavailable = false
+    let listed = [proc()]
+    const h = harness({ onList: () => {
+      if (unavailable) throw new Error('unavailable')
+      return listed
+    }, pendingNotifications: () => 1 })
+    h.controller.refresh(false)
+    const confirmation = new RunInteraction()
+    const input = () => ({ active: false, owner: null, backgroundTasks: h.controller.runningCount(), backgroundOwner: h.controller.stopTarget() })
+    expect(confirmation.requestInterrupt(input())).toBe('confirm')
+    listed = [proc(), proc({ task_id: 'new-task' })]
+    h.controller.refresh(false)
+    expect(confirmation.requestInterrupt(input())).toBe('confirm')
+    unavailable = true
+    h.controller.refresh(false)
+    expect(confirmation.requestInterrupt(input())).toBe('unavailable')
+    expect(h.controller.stopTarget()).toBeNull()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a timed-out stop still announces its later settlement', async () => {
+    const h = harness({ processes: [proc()], stopOne: async () => proc({ stopped_by_user: true }) })
+    h.controller.refresh()
+    h.controller.stopAll(h.controller.stopTarget())
+    await h.controller.settled()
+    expect(h.texts().join('\n')).toContain('1 still running')
+    h.setProcesses([proc({ status: 'killed', stopped_by_user: true })])
+    h.controller.refresh()
+    expect(h.texts().join('\n')).toContain('was cancelled by the user')
+  })
+
+  test('individual failures do not prevent stopping other confirmed tasks', async () => {
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })], stopOne: async id => {
+      if (id === 'second') throw new Error('signal refused')
+      return proc({ status: 'killed', stopped_by_user: true })
+    } })
+    h.controller.refresh()
+    h.controller.stopAll(h.controller.stopTarget())
+    await h.controller.settled()
+    expect(h.texts().join('\n')).toContain('signal refused')
+    expect(h.texts().join('\n')).toContain('Stopped 1 background terminal · 1 stop requests failed')
+    expect(h.texts().join('\n')).not.toContain('No background terminals running')
+  })
+
+  test('panel stop and status poll do not announce the same settled task twice', async () => {
+    let resolveStop: (task: BackgroundProcess) => void = () => { throw new Error('not started') }
+    const h = harness({ processes: [proc()], stopOne: () => new Promise(resolve => { resolveStop = resolve }) })
+    h.controller.togglePanel()
+    h.controller.handlePanelKey({ type: 'char', char: 'x' })
+    const stopped = proc({ status: 'killed', stopped_by_user: true })
+    h.setProcesses([stopped])
+    h.controller.refresh()
+    resolveStop(stopped)
+    await h.controller.settled()
+    expect(h.texts()).toHaveLength(1)
+  })
+
+  test('two Esc stop only the reply; the next pair stops background work without a panel', async () => {
+    const h = harness({ processes: [proc()] })
+    h.controller.refresh()
+    const interaction = new RunInteraction()
+    const owner = {}
+    let active = true
+    let aborts = 0
+    const esc = () => {
+      const input = { active, owner: active ? owner : null, backgroundTasks: h.controller.runningCount(), backgroundOwner: h.controller.stopTarget() }
+      const actions = decideReplControl({
+        event: { type: 'escape' }, interaction: interaction.snapshot(input),
+        overlay: { kind: 'none' }, editor: createEditorState(), isLoading: active,
+        hasStream: active, exitHint: false, logMode: false, hasQueuedPrompt: false,
+      })
+      for (const action of actions) {
+        if (interaction.requestInterrupt(input) !== 'interrupt') continue
+        if (action.kind === 'interrupt') {
+          aborts++
+          active = false
+          interaction.clear()
+          h.controller.parkUntilBackground()
+        } else if (action.kind === 'stop-background') h.controller.stopAll(input.backgroundOwner)
+      }
+    }
+    esc()
+    expect(aborts).toBe(0)
+    esc()
+    expect(aborts).toBe(1)
+    expect(h.processes()[0]?.status).toBe('running')
+    esc()
+    expect(h.processes()[0]?.status).toBe('running')
+    esc()
+    await h.controller.settled()
+    expect(h.processes()[0]?.status).toBe('killed')
+    expect(h.panel()).toBeNull()
+    expect(h.wakes()).toBe(0)
+  })
+
+  test('a natural completion racing stop still wakes a parked model', async () => {
+    let pending = 1
+    let active = true
+    const h = harness({ processes: [proc()], pendingNotifications: () => pending, runInFlight: () => active,
+      stopOne: async () => {
+        const done = proc({ status: 'completed', exit_code: 0 })
+        h.setProcesses([done])
+        pending = 2
+        return done
+      },
+    })
+    h.controller.togglePanel()
+    h.controller.parkUntilBackground()
+    active = false
+    h.controller.handlePanelKey({ type: 'char', char: 'x' })
+    await h.controller.settled()
+    expect(h.wakes()).toBe(1)
+  })
+
+  test('bulk stop is single-flight and reports unfinished tasks honestly', async () => {
+    let resolveStop: (tasks: BackgroundProcess[]) => void = () => { throw new Error('stop not started') }
+    let calls = 0
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })], stopAll: () => {
+      calls++
+      return new Promise(resolve => { resolveStop = resolve })
+    } })
+    h.controller.refresh()
+    h.controller.stopAll()
+    h.controller.stopAll()
+    expect(calls).toBe(1)
+    expect(h.controller.isStopping()).toBe(true)
+    resolveStop([proc({ status: 'killed', stopped_by_user: true }), proc({ task_id: 'second' })])
+    await h.controller.settled()
+    expect(h.controller.isStopping()).toBe(false)
+    expect(h.texts().join('\n')).toContain('Stopped 1 background terminal · 1 still running')
+  })
+
+  test('late stop results cannot write into a different session', async () => {
+    let session = 'one'
+    let resolveStop: (tasks: BackgroundProcess[]) => void = () => { throw new Error('stop not started') }
+    const h = harness({ sessionId: () => session, processes: [proc()], stopAll: () => new Promise(resolve => { resolveStop = resolve }) })
+    h.controller.refresh()
+    const target = h.controller.stopTarget()
+    h.controller.stopAll()
+    session = 'two'
+    h.controller.refresh()
+    expect(h.controller.stopTarget()).not.toBe(target)
+    resolveStop([proc({ status: 'killed', stopped_by_user: true })])
+    await h.controller.settled()
+    expect(h.texts()).toEqual([])
+  })
+
+  test('user cancellation cannot rearm old results, but a natural completion still can', () => {
+    let active = true
+    const h = harness({ processes: [proc(), proc({ task_id: 'second' })], pendingNotifications: () => 1, runInFlight: () => active })
+    h.controller.refresh()
+    h.controller.parkUntilBackground()
+    active = false
+    h.setProcesses([proc({ status: 'killed', stopped_by_user: true }), proc({ task_id: 'second' })])
+    h.controller.refresh()
+    expect(h.wakes()).toBe(0)
+    h.setProcesses([proc({ status: 'killed', stopped_by_user: true }), proc({ task_id: 'second', status: 'completed' })])
+    h.controller.refresh()
+    expect(h.wakes()).toBe(1)
   })
 })
 

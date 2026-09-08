@@ -311,6 +311,11 @@ impl NapiAgent {
     }
 
     #[napi]
+    pub fn pending_process_wake_notifications(&self, session_id: String) -> u32 {
+        self.agent.pending_process_wake_notifications(&session_id) as u32
+    }
+
+    #[napi]
     pub async fn stop_all_background_processes(&self, session_id: String) -> Result<String> {
         serialize_process_summaries(self.agent.stop_all_background_processes(&session_id).await)
     }

@@ -172,6 +172,51 @@ integration('live NAPI ConfigInfo contract', () => {
     }
   }, 15_000)
 
+  test('user cancellation stays readable but cannot wake an idle model across the native bridge', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'evot-background-wake-'))
+    let requests = 0
+    const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => {
+      requests++
+      const choice = requests === 1
+        ? { index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'bg-1', type: 'function', function: { name: 'bash', arguments: JSON.stringify({ command: 'sleep 30', run_in_background: true }) } }] }, finish_reason: 'tool_calls' }
+        : { index: 0, delta: { role: 'assistant', content: 'Background task started.' }, finish_reason: 'stop' }
+      return new Response(`data: ${JSON.stringify({ id: 'fixture', model: 'smoke-model', choices: [choice] })}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } })
+    } })
+    let child: ReturnType<typeof Bun.spawn> | undefined
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    try {
+      const root = seedSmokeHome(home)
+      const envPath = join(root, 'evot.env')
+      await Bun.write(envPath, (await Bun.file(envPath).text()).replace('http://127.0.0.1:1/v1', `http://127.0.0.1:${server.port}/v1`))
+      child = Bun.spawn([process.execPath, '--eval', `
+        const { Agent } = await import('./src/native/index.ts');
+        const agent = await Agent.create();
+        try {
+          const session = await agent.createSession();
+          const id = session.session_id;
+          const stream = await agent.query('start background work', id, 'interactive');
+          for await (const event of stream) {}
+          if (agent.backgroundProcesses(id).filter(task => task.status === 'running').length !== 1) throw new Error('missing background task');
+          await agent.stopAllBackgroundProcesses(id);
+          if (agent.pendingProcessNotifications(id) !== 1) throw new Error('cancellation notice was lost');
+          if (agent.pendingProcessWakeNotifications(id) !== 0) throw new Error('cancellation can wake model');
+          if (agent.pendingProcessWakeNotifications('missing') !== 0) throw new Error('unknown session has notifications');
+          console.log('cancelled without wake');
+        } finally { agent.killAllBackgroundProcessesNow(); }
+      `], { cwd: join(import.meta.dir, '..'), env: smokeEnvironment(home), stdout: 'pipe', stderr: 'pipe' })
+      const handle = child
+      deadline = setTimeout(() => handle.kill(), 10_000)
+      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
+      expect(code, stderr).toBe(0)
+      expect(stdout.trim()).toBe('cancelled without wake')
+    } finally {
+      if (deadline) clearTimeout(deadline)
+      if (child) { child.kill(); await child.exited }
+      await server.stop(true)
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   test('current Rust writer reaches the validated TypeScript reader', async () => {
     const home = mkdtempSync(join(tmpdir(), 'evot-config-contract-'))
     try {

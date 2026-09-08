@@ -255,6 +255,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       foregroundTasks: backgroundTerminals.foregroundCount(),
       blockingWaits: backgroundTerminals.blockingWaitCount(),
       backgroundTasks: backgroundTerminals.runningCount(),
+      backgroundOwner: backgroundTerminals.stopTarget(),
+      backgroundStopping: backgroundTerminals.isStopping(),
     }
   }
   const runOwnership = new RunOwnership()
@@ -1166,6 +1168,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   renderer.requestRender()
 
   function getPromptVM(): PromptVMInput {
+    const interaction = runInteraction.snapshot(runInteractionInput())
+    const backgroundStopHint = overlay.kind !== 'none' || editor.completion ? undefined
+      : interaction.kind === 'waiting-background' && interaction.backgroundStopping ? 'Stopping…'
+      : interaction.interruptTarget === 'background'
+        ? interaction.interruptPending ? `esc again to stop all ${interaction.backgroundTasks} task${interaction.backgroundTasks === 1 ? '' : 's'}` : 'esc twice to stop all'
+        : undefined
     return promptFromSnapshot({
       editor,
       session: appState,
@@ -1180,6 +1188,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       rows: renderer.termRows,
       gitBranch: gitInfo.getBranch(),
       backgroundProcessCount: backgroundTerminals.runningCount(),
+      backgroundStopHint,
     })
   }
 
@@ -1399,7 +1408,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         // No per-call usage belongs to a wait: nothing is being spent while the
         // agent is parked.
         undefined,
-        { model: appState.model, interaction: runInteraction.snapshot(runInteractionInput()) },
+        { model: appState.model, interaction: runInteraction.snapshot(runInteractionInput()), hideInteractionHint: true },
       )
       spinnerBlock = {
         lines: wrapTextWithAnsi(waitText, renderer.termCols).map(text => ({ spans: [{ text }] })),
@@ -2157,6 +2166,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function handleKey(event: KeyEvent) {
+    if (event.type !== 'escape' || overlay.kind !== 'none' || editor.completion || editingQueuedPrompt) {
+      runInteraction.clear()
+    }
     // Typing keeps focus in the composer while refreshing the formal window
     // above it. Up/down is the explicit gesture that promotes that same state.
     if (activateCommandWindow(event)) return
@@ -2257,6 +2269,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         }
         if (wasForeground) {
           commitSystem('sys-reclaim-turn', '  ● Shell moved to background; it keeps running.')
+        }
+        renderer.requestRender()
+        return true
+      }
+      case 'stop-background': {
+        backgroundTerminals.refresh(false)
+        const input = runInteractionInput()
+        if (runInteraction.requestInterrupt(input) === 'interrupt') {
+          backgroundTerminals.stopAll(input.backgroundOwner ?? null)
         }
         renderer.requestRender()
         return true

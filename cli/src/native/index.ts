@@ -190,6 +190,10 @@ export class Agent {
     return this.raw.pendingProcessNotifications(sessionId)
   }
 
+  pendingProcessWakeNotifications(sessionId: string): number {
+    return this.raw.pendingProcessWakeNotifications(sessionId)
+  }
+
   /** Kill every background process synchronously. Safe to call before fastExit,
    *  which skips the async teardown that would otherwise stop them. */
   killAllBackgroundProcessesNow(): number {

@@ -9,7 +9,7 @@
 
 import stringWidth from 'string-width'
 import { line, block, plain, dim, colored, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
-import { finiteSize, spansWidth, truncateTailToWidth } from './width.js'
+import { finiteSize, spansWidth, truncateTailToWidth, truncateToWidth } from './width.js'
 import { BACKGROUND_PANEL_HINT_CHORD } from '../app/background-panel.js'
 
 /** The subset of prompt state the footer reads. */
@@ -26,6 +26,7 @@ export interface PromptFooterVM {
   contextTokens: number
   contextWindow: number
   backgroundProcessCount: number
+  backgroundStopHint?: string
   /**
    * True when ↓ at the prompt opens the background panel.
    *
@@ -55,6 +56,7 @@ export function buildPromptFooterBlocks(
     input.backgroundProcessCount,
     input.backgroundPanelDownAvailable,
     finiteSize(input.columns, 80),
+    input.backgroundStopHint,
   )
   if (chip) blocks.push(block([chip]))
   blocks.push(
@@ -88,12 +90,21 @@ function buildBackgroundChip(
   count: number,
   downAvailable: boolean,
   columns: number,
+  stopHint?: string,
 ): StyledLine | null {
   if (count <= 0) return null
   const noun = count === 1 ? 'shell' : 'shells'
   const label = `${count} background ${noun} running`
   const shortLabel = `${count} ${noun} running`
   const hint = `${BACKGROUND_PANEL_HINT_CHORD} to manage`
+  if (stopHint) {
+    const manage = downAvailable ? ` · ${hint}` : ''
+    const full = `${label} · ${stopHint}${manage}`
+    const compact = `${count} bg · ${stopHint}`
+    const text = stringWidth(full) <= columns ? full : stringWidth(`${label} · ${stopHint}`) <= columns
+      ? `${label} · ${stopHint}` : compact
+    return line(colored(truncateToWidth(text, columns), stopHint.includes('again') ? 'yellow' : 'cyan'))
+  }
   if (downAvailable && stringWidth(`${label} · ${hint}`) <= columns) {
     return line(colored(label, 'cyan'), dim(' · '), dim(hint))
   }

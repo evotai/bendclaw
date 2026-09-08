@@ -16,7 +16,7 @@ function rows(call: UIToolCall, expanded = true): string[] {
   return blocksToLines(buildOutputBlocks(buildToolCard(call, expanded), { columns: 100 }))
 }
 
-test('ordinary terminal: expanded write append, ready, running, diff and completion preserve native reading position', async () => {
+test('ordinary terminal: write streaming preserves reading position and completion replaces the preview once', async () => {
   const screen = new ScreenHarness(100, 24)
   const traces: RendererTraceEntry[] = []
   const renderer = new TermRenderer({ stdout: screen.stdout, trace: entry => traces.push(entry) })
@@ -49,18 +49,28 @@ test('ordinary terminal: expanded write append, ready, running, diff and complet
       { argsComplete: true },
       { status: 'running' as const },
       { details: { diff: '@@ -0,0 +1 @@\n+authoritative preview', preview: true } },
-      { status: 'done' as const, result: 'Wrote content', durationMs: 12 },
     ]) {
       call = { ...call, ...change }
       await paint(renderer, screen)
       expect(screen.terminal.buffer.active.viewportY).toBe(readingTop)
       expect(screen.viewport()).toEqual(readingRows)
     }
-    // Flushing the partial through the same history pipeline changes no rows.
+    expect(traces.every(e => e.branch === 'differential_update' || e.branch === 'no_change')).toBe(true)
+    expect(traces.flatMap(e => e.ansiWrites).join('')).not.toContain('\x1b[3J')
+
+    // Completion deliberately changes layouts once. If the preview is already
+    // in native scrollback, the renderer must replay it to remove those rows.
+    call = { ...call, status: 'done', result: 'Wrote content', durationMs: 12 }
+    await paint(renderer, screen)
+    const completedRows = screen.viewport()
+    const completedTop = screen.terminal.buffer.active.viewportY
+    traces.length = 0
+    // Committing the final card must not trigger another replay.
     committed = rows(call)
     await paint(renderer, screen)
-    expect(screen.viewport()).toEqual(readingRows)
-    expect(traces.every(e => e.branch === 'differential_update' || e.branch === 'no_change')).toBe(true)
+    expect(screen.viewport()).toEqual(completedRows)
+    expect(screen.terminal.buffer.active.viewportY).toBe(completedTop)
+    expect(traces.every(e => e.branch === 'no_change')).toBe(true)
     const ansi = traces.flatMap(e => e.ansiWrites).join('')
     expect(ansi).not.toContain('\x1b[3J')
     expect(ansi).not.toContain('\x1b[?1049h')
@@ -68,12 +78,14 @@ test('ordinary terminal: expanded write append, ready, running, diff and complet
     const buffer = screen.terminal.buffer.active
     const all = Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)?.translateToString(true) ?? '')
     expect(all.filter(line => line === 'history 0')).toHaveLength(1)
+    expect(all.join('\n')).toContain('authoritative preview')
+    expect(all.join('\n')).not.toContain('const value')
   } finally {
     renderer.destroy()
   }
 })
 
-test('write prefix is deterministic across completion, failure, alias and cache reconstruction', () => {
+test('write preview is deterministic until a successful diff replaces it, including after cache reconstruction', () => {
   for (const name of ['write', 'file_write']) {
     let call: UIToolCall = { id: `stable-${name}`, name, status: 'queued', argsComplete: false,
       args: { path: 'a.ts', content: '/* comment\nconst first = 1;\n' } }
@@ -83,10 +95,11 @@ test('write prefix is deterministic across completion, failure, alias and cache 
     for (const status of ['running', 'done', 'error'] as const) {
       const completed = { ...call, status, argsComplete: true, result: status === 'error' ? 'Permission denied' : 'Wrote content', details: { diff: '@@ -1 +1 @@\n-old\n+new' } }
       const rendered = rows(completed)
-      expect(rendered.slice(0, prefix.length)).toEqual(prefix)
+      if (status !== 'done') expect(rendered.slice(0, prefix.length)).toEqual(prefix)
+      else expect(buildToolCard(completed).some(line => line.toolCodePreview)).toBe(false)
       // A different id forces a fresh cache: same bytes after reload/eviction.
       expect(rows({ ...completed, id: `fresh-${name}-${status}` })).toEqual(rendered)
-      expect(buildToolCard(completed).some(line => line.diffText)).toBe(false)
+      expect(buildToolCard(completed).some(line => line.diffText)).toBe(status === 'done')
       if (status === 'error') expect(rendered.join('\n')).toContain('Permission denied')
     }
   }
@@ -99,6 +112,8 @@ test('write progress stays below the stable body and result metadata is not lost
   expect(running.findIndex(line => line.text.includes('Flushing file'))).toBeGreaterThan(running.findIndex(line => line.toolCodePreview))
   const done = buildToolCard({ ...base, status: 'done', durationMs: 12, result: 'Saved', details: { created: true, bytes: 7 } })
   expect(done.map(line => line.text).join('\n')).toContain('created 7 B · 12ms')
+  expect(done.some(line => line.toolCodePreview)).toBe(true)
+  expect(done.some(line => line.diffText)).toBe(false)
   expect(done.map(line => line.text).join('\n')).toContain('Saved')
   expect(buildToolCard({ ...base, progress: '__evot_spill_event__ secret' }).some(line => line.text.includes('__evot_spill_event__'))).toBe(false)
 })

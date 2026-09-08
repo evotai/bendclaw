@@ -578,6 +578,40 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     for (const row of [added, removed, context]) expect(stringWidth(stripAnsi(row))).toBe(40)
   })
 
+  test('completed writes replace retained content with one authoritative diff', () => {
+    for (const name of ['write', 'file_write']) {
+      for (const expanded of [false, true]) {
+        for (const created of [false, true]) {
+          const diff = created ? '@@ -0,0 +1 @@\n+new' : '@@ -1 +1 @@\n-old\n+new'
+          const call = {
+            id: `write-diff-${name}-${expanded}-${created}`, name,
+            args: { path: 'a.txt', content: 'new\n' }, status: 'done' as const,
+            result: 'Wrote 4 bytes to a.txt', details: { created, bytes: 4, diff },
+          }
+          const card = buildToolCard(call, expanded)
+          const previewIndex = card.findIndex(row => row.toolCodePreview)
+          const diffIndex = card.findIndex(row => row.diffText === diff)
+          expect(previewIndex).toBe(-1)
+          expect(diffIndex).toBeGreaterThan(-1)
+          expect(card.filter(row => row.diffText)).toHaveLength(1)
+          const rows = renderWithColumns(card, 40).split('\n')
+          const added = rows.find(row => /^\s*1 new\s*$/.test(stripAnsi(row))) ?? ''
+          expect(added.startsWith(bgOpen(getTheme().diffAddedBg))).toBe(true)
+          if (!created) {
+            const removed = rows.find(row => /^\s*1 old\s*$/.test(stripAnsi(row))) ?? ''
+            expect(removed.startsWith(bgOpen(getTheme().diffRemovedBg))).toBe(true)
+          }
+          for (const failed of [
+            { ...call, status: 'error' as const },
+            { ...call, details: { ...call.details, error: true } },
+          ]) {
+            expect(buildToolCard(failed, expanded).some(row => row.diffText)).toBe(false)
+          }
+        }
+      }
+    }
+  })
+
   test('expanding keeps the card on the same fill, only the body grows', () => {
     const c = call('done', { result: 'a\nb\nc', durationMs: 3 })
     const fill = bgOpen(getTheme().toolCardBg)

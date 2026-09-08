@@ -286,8 +286,8 @@ function cachedWritePreview(call: UIToolCall, path: string, content: string): Wr
 }
 
 /**
- * Stable write body across argument streaming, execution and completion.
- * Authoritative results describe the outcome below it, never replace it.
+ * Stable write preview while arguments stream and the tool executes.
+ * Successful completion replaces it with the authoritative diff when available.
  */
 function appendWriteContentPreview(lines: OutputLine[], call: UIToolCall, expanded?: boolean): void {
   const name = call.name.toLowerCase()
@@ -594,7 +594,8 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
   )
 
   const write = call.name.toLowerCase() === 'write' || call.name.toLowerCase() === 'file_write'
-  if (write && typeof call.args.content === 'string') {
+  const showFinalDiff = call.status === 'done' && !settledFailed && !!diff
+  if (write && typeof call.args.content === 'string' && !showFinalDiff) {
     // All mutable metadata follows the code. A long preview's headline and
     // completed rows can then stay in native scrollback unchanged.
     appendWriteContentPreview(lines, call, expanded)
@@ -608,9 +609,9 @@ export function buildToolCard(call: UIToolCall, expanded?: boolean, _now = Date.
         }
       }
     } else {
-      // Keep the submitted content, not a replacement diff layout. Preserve
-      // authoritative success/error metadata and result text at the tail.
-      lines.push(...buildToolResult(call.name, { ...args, diff: undefined }, call.status,
+      // No successful diff is available. Keep the submitted content with the
+      // outcome below it, including on failure.
+      lines.push(...buildToolResult(call.name, args, call.status,
         call.result, call.durationMs, expanded, details))
     }
     return stampToolCard(lines, call.status === 'queued' || call.status === 'running'

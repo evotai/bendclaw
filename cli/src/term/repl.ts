@@ -3760,9 +3760,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
   }
 
-  function applyDetectedTheme(scheme: 'dark' | 'light'): void {
+  function applyDetectedTheme(
+    scheme: 'dark' | 'light',
+    source: 'osc11-background' | 'color-scheme',
+  ): void {
     // Committed history is pre-painted ANSI; a scheme change must rebuild it.
-    if (!setDetectedThemeScheme(scheme)) return
+    if (!setDetectedThemeScheme(scheme, source)) return
     resetHistoryCache()
     partialBlocksMemo = null
     renderer.requestRender(true)
@@ -3770,11 +3773,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   function handleTerminalControl(event: TerminalControlEvent): void {
     if (event.type === 'osc11-background') {
-      applyDetectedTheme(schemeFromRgbColor(event.rgb))
+      applyDetectedTheme(schemeFromRgbColor(event.rgb), event.type)
       return
     }
     if (event.type === 'color-scheme') {
-      applyDetectedTheme(event.scheme)
+      applyDetectedTheme(event.scheme, event.type)
+      // Mode 2031 may signal a palette change. Refresh the actual background
+      // rather than replacing it with a possibly OS-derived scheme report.
+      process.stdout.write('\x1b]11;?\x07')
       return
     }
     enhancedKeyboard?.handleControl(event)

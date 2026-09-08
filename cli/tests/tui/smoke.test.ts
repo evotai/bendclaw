@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { smokeEnvironment, seedSmokeHome } from '../helpers/smoke-home.js'
 import { getTheme } from '../../src/render/theme/index.js'
+import { ScreenHarness } from '../helpers/screen.js'
 
 const EVOT_BIN = process.env.EVOT_TEST_BIN || join(import.meta.dirname, '..', '..', 'dist', 'evot')
 const canRun = process.platform !== 'win32' && existsSync(EVOT_BIN) && !!spawnSync('python3', ['--version']).stdout
@@ -65,6 +66,8 @@ type Session = {
    * proportional to how long the TUI actually takes.
    */
   waitFor: (match: string | RegExp, timeoutMs?: number) => Promise<string>
+  /** Match the physical screen, including rows retained by differential rendering. */
+  waitForScreen: (match: string | RegExp, timeoutMs?: number) => Promise<string>
   checkpoint: () => void
   persistedSessionCount: () => number
   historyEntries: () => string[]
@@ -182,17 +185,22 @@ async function startEvot(
   })
   let all = ''
   let seen = 0
-  child.stdout!.on('data', (chunk: Buffer) => { all += chunk.toString('utf-8') })
+  const screen = new ScreenHarness()
+  child.stdout!.on('data', (chunk: Buffer) => {
+    all += chunk.toString('utf-8')
+    screen.stdout.write(chunk)
+  })
   child.stderr!.on('data', (chunk: Buffer) => { all += chunk.toString('utf-8') })
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
   const outputSince = () => all.slice(seen)
-  const waitFor = async (match: string | RegExp, timeoutMs = DEFAULT_WAIT_MS): Promise<string> => {
+  const waitForOutput = async (match: string | RegExp, timeoutMs = DEFAULT_WAIT_MS, physicalScreen = false): Promise<string> => {
     const matches = (text: string) =>
       typeof match === 'string' ? text.includes(match) : match.test(text)
     const deadline = Date.now() + timeoutMs
     for (;;) {
-      const text = stripAnsi(outputSince())
+      if (physicalScreen) await screen.settle()
+      const text = physicalScreen ? screen.viewport().join('\n') : stripAnsi(outputSince())
       if (matches(text)) return text
       if (Date.now() >= deadline) {
         // Surface what did arrive: a bare timeout says nothing about whether the
@@ -206,6 +214,9 @@ async function startEvot(
     }
   }
 
+  const waitFor = (match: string | RegExp, timeoutMs?: number) => waitForOutput(match, timeoutMs)
+  const waitForScreen = (match: string | RegExp, timeoutMs?: number) => waitForOutput(match, timeoutMs, true)
+
   const kill = async (): Promise<void> => {
     seen = all.length
     child.stdin!.write('\x03')
@@ -213,6 +224,7 @@ async function startEvot(
     child.stdin!.write('\x03')
     await wait(500)
     child.kill('SIGKILL')
+    screen.terminal.dispose()
     rmSync(isolatedHome, { recursive: true, force: true })
   }
   // Readiness failures must not leave a subprocess or its temporary home behind.
@@ -226,6 +238,7 @@ async function startEvot(
     write: data => { child.stdin!.write(data) },
     outputSince,
     waitFor,
+    waitForScreen,
     checkpoint: () => { seen = all.length },
     persistedSessionCount: () => {
       const sessionsDir = join(stateHome, 'sessions')
@@ -545,10 +558,10 @@ describe.skipIf(!canRun)('evot binary smoke (PTY)', () => {
       // arms first and interrupts on the confirming press.
       session.checkpoint()
       session.write('\x1b')
-      // Retry status can wrap this hint at the PTY's 80-column boundary.
-      // Accept physical whitespace, but still require the armed state before
-      // confirming: removing this wait would hide interrupt regressions.
-      await session.waitFor(/esc\s+again\s+to\s+interrupt/)
+      // A retry hint can wrap after `esc`. Differential rendering may only
+      // write `again to interrupt`, retaining `esc` from an earlier frame.
+      // Assert the actual screen, not contiguous bytes in the output stream.
+      await session.waitForScreen(/esc\s+again\s+to\s+interrupt/)
       session.write('\x1b')
       await session.waitFor('Interrupted.')
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { TermRenderer } from '../src/term/renderer.js'
 import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import { ScreenHarness } from './helpers/screen.js'
+import stripAnsi from 'strip-ansi'
 
 async function renderFrame(renderer: TermRenderer): Promise<void> {
   renderer.requestRender()
@@ -19,6 +20,31 @@ async function renderFrame(renderer: TermRenderer): Promise<void> {
  * without clearing native scrollback merely to keep the footer at bottom.
  */
 describe('composer placement on a real screen', () => {
+  test('a wrapped interrupt hint remains visible when its prefix is not rewritten', async () => {
+    const screen = new ScreenHarness(80, 24)
+    const writes: string[] = []
+    const renderer = new TermRenderer({ stdout: screen.stdout, trace: entry => writes.push(...entry.ansiWrites) })
+    let armed = false
+    renderer.init()
+    renderer.setRenderCallback(() => ({
+      lines: ['Connection interrupted · retrying · esc', armed ? 'again to interrupt' : 'twice to interrupt', `> ${CURSOR_MARKER}`],
+    }))
+    try {
+      await renderFrame(renderer)
+      await screen.settle()
+      writes.length = 0
+      armed = true
+      await renderFrame(renderer)
+      await screen.settle()
+      const hint = /esc\s+again\s+to\s+interrupt/
+      expect(stripAnsi(writes.join(''))).not.toMatch(hint)
+      expect(screen.viewport().join('\n')).toMatch(hint)
+    } finally {
+      renderer.destroy()
+      screen.terminal.dispose()
+    }
+  })
+
   test('a fresh short session keeps the composer just below its content', async () => {
     const screen = new ScreenHarness(80, 24)
     const renderer = new TermRenderer({ stdout: screen.stdout })

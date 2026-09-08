@@ -245,8 +245,10 @@ async fn drive_one_turn(
     let mut pending_events = VecDeque::new();
     let mut consumer_closed = false;
 
-    // First user content is part of this turn's transcript record.
-    let mut turn_transcripts: Vec<TranscriptItem> = vec![TranscriptItem::user_from_content(&input)];
+    // MessageEnd is the single persistence boundary for admitted user inputs,
+    // including the initial prompt. Do not pre-insert it ahead of a possible
+    // pre-prompt compaction, or duplicate it when its engine event arrives.
+    let mut turn_transcripts: Vec<TranscriptItem> = Vec::new();
     let mut saved_count: usize = 0;
     let mut expected_seq = transcript_seq;
     let mut transcript_rebased = false;

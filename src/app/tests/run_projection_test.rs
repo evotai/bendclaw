@@ -140,10 +140,24 @@ fn assistant_completion_and_engine_end_keep_distinct_persistence_roles() {
         matches!(ended.as_slice(), [RuntimeEvent::EngineCompleted { last_text, usage, transcript_count: 1 }]
         if last_text == "answer" && usage.output == 5 && usage.cache_write == 3)
     );
-    assert!(map_agent_event(&AgentEvent::MessageEnd {
-        message: AgentMessage::Llm(Message::user("user"))
+    // The same engine boundary admits initial, steering and follow-up inputs.
+    // MessageStart and AgentEnd must not persist them a second time.
+    let user = AgentMessage::Llm(Message::user("also check for new issues"));
+    assert!(map_agent_event(&AgentEvent::MessageStart {
+        message: user.clone(),
     })
     .is_empty());
+    assert!(matches!(map_agent_event(&AgentEvent::MessageEnd {
+        message: user.clone(),
+    }).as_slice(), [RuntimeEvent::Transcript(evot::types::TranscriptItem::User { text, .. })]
+        if text == "also check for new issues"));
+    assert!(matches!(
+        map_agent_event(&AgentEvent::AgentEnd {
+            messages: vec![user],
+        })
+        .as_slice(),
+        [RuntimeEvent::EngineCompleted { .. }]
+    ));
 }
 
 #[test]

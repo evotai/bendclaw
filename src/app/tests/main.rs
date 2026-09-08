@@ -62,6 +62,7 @@ mod run_projection_test;
 mod run_queue_test;
 #[path = "run_registry_test.rs"]
 mod run_registry_test;
+mod run_user_persistence_test;
 #[path = "schema_compat_test.rs"]
 mod schema_compat_test;
 #[path = "search_test.rs"]

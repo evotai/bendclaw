@@ -212,6 +212,15 @@ pub fn map_agent_event(event: &evot_engine::AgentEvent) -> Vec<RuntimeEvent> {
                         error_message: error_message.clone(),
                     }),
                 ]
+            } else if matches!(
+                message,
+                evot_engine::AgentMessage::Llm(evot_engine::Message::User { .. })
+            ) {
+                // Initial prompts and admitted steering/follow-up messages share
+                // this boundary. Persist all of them in engine order, once.
+                vec![RuntimeEvent::Transcript(transcript_from_agent_message(
+                    message,
+                ))]
             } else {
                 vec![]
             }

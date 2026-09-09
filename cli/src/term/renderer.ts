@@ -295,7 +295,7 @@ export class TermRenderer {
     // Before the first natural bottom contact, short frames retain their normal
     // flow position. Screen overlays still do their own temporary composition.
     let newLines = rendered.overlay
-      ? this.compositeOverlay(baseLines, rendered.overlay, width, height)
+      ? this.compositeOverlay(baseLines.map(line => line.replaceAll(CURSOR_MARKER, '')), rendered.overlay, width, height)
       : baseLines
     const cursorPos = this.extractCursorPosition(newLines, height)
     newLines = this.applyLineResets(newLines)
@@ -387,7 +387,7 @@ export class TermRenderer {
 
     // --- Full render helper (kept in lockstep with pi-tui) ---
     const fullRender = (clear: boolean, branch: string): void => {
-      let buffer = SYNC_START
+      let buffer = SYNC_START + HIDE_CURSOR
       if (clear) buffer += CLEAR_SCREEN_AND_SCROLLBACK
       for (let i = 0; i < newLines.length; i++) {
         if (i > 0) buffer += '\r\n'
@@ -481,7 +481,7 @@ export class TermRenderer {
     // All changes are in deleted lines (content shrunk)
     if (firstChanged >= newLines.length) {
       if (this.previousLines.length > newLines.length) {
-        let buffer = SYNC_START
+        let buffer = SYNC_START + HIDE_CURSOR
         // Move to end of new content (clamp to 0 for empty content)
         const targetRow = Math.max(0, newLines.length - 1)
         if (targetRow < prevViewportTop) {
@@ -554,7 +554,7 @@ export class TermRenderer {
     }
 
     // --- Build differential update buffer ---
-    let buffer = SYNC_START
+    let buffer = SYNC_START + HIDE_CURSOR
     const prevViewportBottom = prevViewportTop + height - 1
     const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged
 
@@ -672,24 +672,25 @@ export class TermRenderer {
 
   private extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
     const viewportTop = Math.max(0, lines.length - height)
-    for (let row = lines.length - 1; row >= viewportTop; row--) {
+    let position: { row: number; col: number } | null = null
+    for (let row = lines.length - 1; row >= 0; row--) {
       const line = lines[row]
       const markerIndex = line.indexOf(CURSOR_MARKER)
-      if (markerIndex !== -1) {
-        const beforeMarker = line.slice(0, markerIndex)
-        const col = stringWidth(stripAnsi(beforeMarker))
-        lines[row] = line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length)
-        return { row, col }
+      if (markerIndex === -1) continue
+      if (!position && row >= viewportTop) {
+        const col = stringWidth(stripAnsi(line.slice(0, markerIndex)))
+        // Do not let CHA clamp an off-row marker onto unrelated text at the
+        // terminal edge. Layout must provide an addressable cursor cell.
+        if (col < this.termCols) position = { row, col }
       }
+      // Internal hints must never escape, including hidden history markers or
+      // multiple markers left by a composite frame. Last visible owner wins.
+      lines[row] = line.replaceAll(CURSOR_MARKER, '')
     }
-    return null
+    return position
   }
 
-  /**
-   * Park the terminal's own cursor on the caret cell but keep it hidden: input
-   * methods anchor their preedit window to the reported position, while the
-   * prompt paints the visible caret itself.
-   */
+  /** Position the terminal-owned cursor, also anchoring IME composition. */
   private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
     if (!cursorPos || totalLines <= 0) {
       this.write(HIDE_CURSOR)
@@ -702,7 +703,7 @@ export class TermRenderer {
     if (rowDelta > 0) buffer += `\x1b[${rowDelta}B`
     else if (rowDelta < 0) buffer += `\x1b[${-rowDelta}A`
     buffer += `\x1b[${targetCol + 1}G`
-    buffer += HIDE_CURSOR
+    buffer += SHOW_CURSOR
     this.write(buffer)
     this.hardwareCursorRow = targetRow
   }

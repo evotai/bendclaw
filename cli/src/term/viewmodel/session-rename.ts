@@ -15,7 +15,7 @@ export function buildSessionRenameLines(state: SessionRenameState, width: number
   return [
     theme.accentBold.paint('Rename session'),
     '',
-    `  Name  ${theme.text.paint(before)}${state.saving ? '' : CURSOR_MARKER + theme.accent.paint('▌')}${theme.text.paint(after)}`,
+    `  Name  ${theme.text.paint(before)}${state.saving ? '' : CURSOR_MARKER}${theme.text.paint(after)}`,
     '',
     theme.thinkText.paint(state.saving ? 'Saving…' : state.error ?? 'enter save · esc cancel · ctrl+u clear'),
   ].map(text => wrapTextWithAnsi(text, Math.max(1, width))[0] ?? '')

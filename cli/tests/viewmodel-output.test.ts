@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { buildOutputBlocks } from '../src/term/viewmodel/output.js'
 import { blocksToLines, styledLineToAnsi, paintBackground, line, colored, dim } from '../src/term/viewmodel/types.js'
-import { buildUserMessage, buildAssistantLines, buildToolCard, type OutputLine } from '../src/render/output.js'
+import { buildUserMessage, buildAssistantLines, buildToolCard, resolveWritePreviewLanguage, type OutputLine } from '../src/render/output.js'
 import { getTheme } from '../src/render/theme/index.js'
 import { assistantMessageToOutputLines } from '../src/render/assistant.js'
 import { colorizeUnifiedDiff } from '../src/render/diff.js'
@@ -243,6 +243,68 @@ describe('buildOutputBlocks', () => {
 
     expect(result).toContain(highlighted)
     expect(result).not.toContain('\x1b[2m')
+  })
+
+  test('collapsed write rows truncate at terminal width; expanded rows retain the full source', () => {
+    for (const name of ['write', 'file_write']) {
+      for (const columns of [12, 40, 80, 160]) {
+        for (const status of ['queued', 'running', 'done', 'error'] as const) {
+          const content = 'const value = "' + '中文👩‍💻e\u0301'.repeat(50) + 'END_OF_SOURCE";'
+          const call = { id: `long-${name}-${columns}-${status}`, name, status, args: { path: 'a.js', content } }
+          const compact = buildToolCard(call)
+          const preview = compact.filter(row => row.toolCodePreview)
+          expect(preview).toHaveLength(1)
+          expect(preview[0]?.toolCodePreviewTruncate).toBe(true)
+          // Keep the original text for expansion/resizing, not a truncated cache.
+          expect(stripAnsi(preview[0]?.text ?? '')).toContain('END_OF_SOURCE')
+          const compactRows = blocksToLines(buildOutputBlocks(preview, { columns }))
+          expect(compactRows).toHaveLength(1)
+          expect(stripAnsi(compactRows.join(''))).toContain('…')
+          expect(stripAnsi(compactRows.join(''))).not.toContain('END_OF_SOURCE')
+          for (const row of compactRows) expect(stringWidth(stripAnsi(row))).toBeLessThanOrEqual(columns)
+          if (columns >= 40) expect(stripAnsi(compactRows.join(''))).toContain('ctrl+o to expand')
+          const expanded = buildToolCard(call, true).filter(row => row.toolCodePreview)
+          expect(expanded[0]?.toolCodePreviewTruncate).toBe(false)
+          const expandedRows = blocksToLines(buildOutputBlocks(expanded, { columns }))
+          expect(expandedRows.length).toBeGreaterThan(1)
+          expect(stripAnsi(expandedRows.join('')).replace(/\s/g, '')).toContain('END_OF_SOURCE')
+        }
+      }
+    }
+  })
+
+  test('collapsed previews remain bounded at one column and without a viewport width', () => {
+    const call = { id: 'tiny-preview', name: 'write', status: 'queued' as const, args: { path: 'x.txt', content: '界'.repeat(10_000) } }
+    const preview = buildToolCard(call).filter(row => row.toolCodePreview)
+    for (const columns of [1, 2, 3, undefined]) {
+      const rows = blocksToLines(buildOutputBlocks(preview.map(row => ({ ...row, toolCard: undefined })), { columns }))
+      expect(rows).toHaveLength(1)
+      expect(stringWidth(stripAnsi(rows[0] ?? ''))).toBeLessThanOrEqual(columns ?? 80)
+    }
+    const restored = JSON.parse(JSON.stringify(call))
+    expect(renderWithColumns(buildToolCard(restored), 40)).toBe(renderWithColumns(buildToolCard(call), 40))
+  })
+
+  test('a growing single-line write does not grow the collapsed card', () => {
+    const content = 'x'.repeat(200)
+    const call = { id: 'growing-long-line', name: 'write', status: 'queued' as const, args: { path: 'a.txt', content } }
+    const before = renderWithColumns(buildToolCard(call), 80)
+    const after = renderWithColumns(buildToolCard({ ...call, args: { ...call.args, content: content + 'y'.repeat(100_000) } }), 80)
+    expect(after).toBe(before)
+  })
+
+  test('ANSI source truncates without leaking color into the hint or splitting graphemes', () => {
+    const preview: OutputLine = {
+      id: 'colored-long-preview', kind: 'tool', toolCodePreview: true, toolCodePreviewTruncate: true,
+      text: '  \x1b[31m' + '中文👩‍💻'.repeat(100) + '\x1b[39m',
+    }
+    const output = renderWithColumns([preview], 40)
+    expect(output).toContain('\x1b[31m')
+    expect(output).toContain('ctrl+o to expand')
+    expect(stringWidth(stripAnsi(output))).toBeLessThanOrEqual(40)
+    expect(stripAnsi(output)).not.toContain('\ufffd')
+    // A wider viewport reuses the original row and reveals more source.
+    expect(stripAnsi(renderWithColumns([preview], 160)).length).toBeGreaterThan(stripAnsi(output).length)
   })
 
   test('long diff line wraps instead of truncating', () => {
@@ -636,6 +698,152 @@ describe('tool cards: lifecycle-tinted slabs', () => {
     const ansi = renderWithColumns([{ id: 't1', kind: 'tool', text: '⌘ bash  ls -la' }], 40)
     expect(ansi).not.toContain('\x1b[48;2;')
     expect(stripAnsi(ansi)).toContain('⌘ bash  ls -la')
+  })
+})
+
+describe('write preview language before the path streams in', () => {
+  const previewBody = (args: Record<string, unknown>, id: string): string => {
+    const card = buildToolCard({ id, name: 'write', status: 'queued', argsComplete: false, args })
+    return card.filter(row => row.toolCodePreview).map(row => row.text).join('\n')
+  }
+
+  test('recognizes complete source lines, not ambiguous receiving fragments', () => {
+    const cases = [
+      ["import * as THREE from 'three';\n", 'javascript'],
+      ['const a = 1;\n', 'javascript'],
+      ['def main():\n', 'python'],
+      ['import os\n', 'python'],
+      ['fn main() {\n', 'rust'],
+      ['package main\n', 'go'],
+      ['<!DOCTYPE html>\n', 'html'],
+      ['#!/usr/bin/env node\n', 'javascript'],
+      ['#!/usr/bin/python3\n', 'python'],
+      ['#!/bin/bash\n', 'bash'],
+    ] as const
+    for (const [content, language] of cases) {
+      expect(resolveWritePreviewLanguage('', content)).toBe(language)
+      expect(resolveWritePreviewLanguage('', content.trimEnd())).toBeUndefined()
+    }
+    expect(resolveWritePreviewLanguage('', '{"a":1}')).toBe('json')
+  })
+
+  test('a known path never uses content detection, even for unknown extensions', () => {
+    expect(resolveWritePreviewLanguage('a.py', "import * as x from 'y'")).toBe('python')
+    expect(resolveWritePreviewLanguage('notes.txt', 'const a = 1;\n')).toBe('plaintext')
+    expect(resolveWritePreviewLanguage('notes.custom', 'const a = 1;\n')).toBeUndefined()
+    expect(resolveWritePreviewLanguage('LICENSE', 'const a = 1;\n')).toBeUndefined()
+    expect(resolveWritePreviewLanguage('styles.css', '')).toBe('css')
+  })
+
+  test('prose, unsupported interpreters and open comments stay plain', () => {
+    for (const content of [
+      '', 'Just some notes about the release.\n', 'Create a new account.\n',
+      'import instructions for users\n', '# Frontend\n\nNo build step.\n',
+      '```js\nconst a = 1;\n', '{"a":1', '#!/usr/bin/ruby\n',
+      '#!/some/node-folder/custom\n', '/*\nimport os\n', '<!--\nconst a = 1;\n',
+    ]) expect(resolveWritePreviewLanguage('', content)).toBeUndefined()
+  })
+
+  test('block comment bodies cannot determine the language', () => {
+    for (const header of [
+      '/*\nimport os\n*/', '<!--\nimport os\n-->',
+      '/* one */ /* two */', '// license',
+    ]) {
+      expect(resolveWritePreviewLanguage('', `${header}\nconst a = 1;\n`)).toBe('javascript')
+    }
+    expect(resolveWritePreviewLanguage('', '/* license */ const a = 1;\n')).toBe('javascript')
+  })
+
+  test('detection never uses content beyond the bounded sample', () => {
+    const json = JSON.stringify({ value: 'x'.repeat(8192) })
+    expect(resolveWritePreviewLanguage('', json)).toBeUndefined()
+    expect(resolveWritePreviewLanguage('', `${' '.repeat(4096)}const a = 1;\n`)).toBeUndefined()
+    expect(resolveWritePreviewLanguage('', `const a = "${'x'.repeat(8192)}";\n`)).toBeUndefined()
+    expect(resolveWritePreviewLanguage('', 'import os\n' + 'x'.repeat(8192))).toBe('python')
+  })
+
+  test('all stream boundaries agree with fresh cache reconstruction', () => {
+    const content = "import x from 'x';\nconst a = 1;\n"
+    for (let end = 1; end <= content.length; end++) {
+      const prefix = content.slice(0, end)
+      if (!prefix.includes('\n')) expect(resolveWritePreviewLanguage('', prefix)).toBeUndefined()
+      else expect(resolveWritePreviewLanguage('', prefix)).toBe('javascript')
+      expect(previewBody({ content: prefix }, 'stream-boundary'))
+        .toBe(previewBody({ content: prefix }, `fresh-boundary-${end}`))
+    }
+  })
+
+  test('replacement, path arrival and independent calls cannot retain a stale guess', () => {
+    const id = 'replace-language'
+    expect(previewBody({ content: '{"a":1}' }, id)).toContain('\x1b[')
+    expect(previewBody({ content: 'plain text\n' }, id)).not.toContain('\x1b[')
+    expect(previewBody({ content: '{"a":1}' }, id)).toContain('\x1b[')
+    expect(previewBody({ content: '{"a":1}', path: 'a.unknown' }, id)).not.toContain('\x1b[')
+    expect(previewBody({ content: '{"a":1}', path: 'a.txt' }, id)).not.toContain('\x1b[')
+    expect(previewBody({ content: '{"a":1}' }, 'independent-json')).toContain('\x1b[')
+    expect(previewBody({ content: 'plain text\n' }, id)).toBe(previewBody({ content: 'plain text\n' }, 'fresh-plain'))
+  })
+
+  test('eviction and failed calls do not change inferred preview output', () => {
+    const args = { content: '{"a":1}' }
+    const original = previewBody(args, 'evicted-preview')
+    for (let i = 0; i < 70; i++) previewBody({ content: 'other\n' }, `eviction-${i}`)
+    expect(previewBody(args, 'evicted-preview')).toBe(original)
+    for (const name of ['write', 'file_write']) {
+      const card = buildToolCard({
+        id: `failed-${name}`, name, args, status: 'error', result: 'Permission denied',
+        details: { diff: '@@ -0,0 +1 @@\n+not written' },
+      })
+      expect(card.filter(row => row.toolCodePreview).map(row => row.text).join('\n')).toBe(original)
+      expect(card.some(row => row.diffText)).toBe(false)
+    }
+  })
+
+  test('real JavaScript colors survive content-first streaming and cache reconstruction', () => {
+    // cli-highlight has its own chalk instance. Isolate FORCE_COLOR before
+    // module loading instead of depending on this test process's TTY/global state.
+    const moduleUrl = new URL('../src/render/output.ts', import.meta.url).href
+    const code = `
+      import { buildToolCard } from ${JSON.stringify(moduleUrl)};
+      const preview = (id, args) => buildToolCard({ id, name: 'write', status: 'queued', argsComplete: false, args })
+        .filter(row => row.toolCodePreview).map(row => row.text).join('\\n');
+      const content = "import x from 'x';\\n";
+      const partial = preview('stream', { content: 'import x' });
+      const streamed = preview('stream', { content });
+      const fresh = preview('fresh', { content });
+      const known = preview('known', { content, path: 'file.js' });
+      const plain = preview('stream', { content, path: 'file.unknown' });
+      console.log(JSON.stringify({ partial, streamed, fresh, known, plain }));
+    `
+    const result = Bun.spawnSync([process.execPath, '-e', code], {
+      env: { ...process.env, FORCE_COLOR: '3', NO_COLOR: undefined },
+      stdout: 'pipe', stderr: 'pipe', timeout: 10_000,
+    })
+    expect(result.exitCode).toBe(0)
+    const output = JSON.parse(result.stdout.toString())
+    expect(output.partial).not.toContain('\x1b[')
+    expect(output.streamed).toContain('\x1b[')
+    expect(output.streamed).toBe(output.fresh)
+    expect(output.streamed).toBe(output.known)
+    expect(output.plain).not.toContain('\x1b[')
+    expect(stripAnsi(output.streamed)).toBe(output.plain)
+  })
+
+  test('the resolved language drives the preview colors', () => {
+    // JSON uses the renderer's own highlighter, so the assertion holds in tests
+    // where cli-highlight's bundled chalk has no colour level.
+    const complete = previewBody({ content: '{"a":1}' }, 'sniff-json')
+    expect(complete).toContain('\x1b[')
+    expect(stripAnsi(complete)).toContain('{"a":1}')
+
+    const prose = previewBody({ content: 'Just some notes about the release.\n' }, 'sniff-prose')
+    expect(prose).not.toContain('\x1b[')
+  })
+
+  test('a later chunk can establish the provisional language', () => {
+    // The first fragment is incomplete JSON; the finished object is not.
+    expect(previewBody({ content: '{"a":1' }, 'sniff-grow')).not.toContain('\x1b[')
+    expect(previewBody({ content: '{"a":1}' }, 'sniff-grow')).toContain('\x1b[')
   })
 })
 

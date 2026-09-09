@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll } from 'bun:test'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 import {
   createAskState,
   askUp,
@@ -59,7 +60,7 @@ const multiQuestion = [
 
 function renderAskVM(state: ReturnType<typeof createAskState>): string {
   const lines = blocksToLines(buildOverlayBlocks({ kind: 'ask-user', state }, 80))
-  return lines.map(l => stripAnsi(l)).join('\n')
+  return lines.map(l => stripAnsi(l).replaceAll(CURSOR_MARKER, '')).join('\n')
 }
 
 describe('createAskState', () => {
@@ -415,7 +416,7 @@ describe('renderAsk via viewmodel', () => {
     state = askDown(state)
     state = askDown(state)
     const text = renderAskVM(state)
-    expect(text).toContain('3.  Type something.')
+    expect(text).toContain('3. Type something.')
   })
 
   test('submit review warns when questions are unanswered', () => {
@@ -459,13 +460,13 @@ describe('renderAsk via viewmodel', () => {
     const blocks = buildOverlayBlocks({ kind: 'ask-user', state }, 80)
     const otherLine = blocks.flatMap(b => b.lines).find(l => l.spans.some(s => s.text.includes('Type something.')))
     const spans = otherLine?.spans ?? []
-    const cursorIndex = spans.findIndex(span => span.text === ' ' && span.inverse === true)
+    const cursorIndex = spans.findIndex(span => span.text === CURSOR_MARKER)
     const placeholderIndex = spans.findIndex(span => span.text === 'Type something.')
 
     expect(cursorIndex).toBeGreaterThan(-1)
     expect(placeholderIndex).toBeGreaterThan(-1)
     expect(cursorIndex).toBeLessThan(placeholderIndex)
-    expect(spans.map(span => span.text).join('')).toContain('3.  Type something.')
+    expect(spans.map(span => span.text).join('')).toContain(`3. ${CURSOR_MARKER}Type something.`)
   })
 
   test('selected other shows label, green checkmark, and custom text', () => {
@@ -496,6 +497,24 @@ describe('renderAsk via viewmodel', () => {
 })
 
 describe('Other field cursor movement', () => {
+  test('native cursor movement and deletion preserve complete Unicode graphemes', () => {
+    for (const grapheme of ['好', '👩🏽‍💻', 'e\u0301']) {
+      let state = askDown(askDown(createAskState(singleQuestion)))
+      state = askTypeChar(state, `a${grapheme}b`)
+      state = askCursorLeft(state)
+      expect(state.uiStates.get(0)?.otherCursor).toBe(1 + grapheme.length)
+      state = askCursorLeft(state)
+      expect(state.uiStates.get(0)?.otherCursor).toBe(1)
+      expect(blocksToLines(buildOverlayBlocks({ kind: 'ask-user', state }, 80)).join(''))
+        .toContain(`a${CURSOR_MARKER}${grapheme}b`)
+      expect(askDelete(state).uiStates.get(0)?.otherText).toBe('ab')
+      state = askCursorRight(state)
+      expect(state.uiStates.get(0)?.otherCursor).toBe(1 + grapheme.length)
+      state = askBackspace(state)
+      expect(state.uiStates.get(0)?.otherText).toBe('ab')
+      expect(state.uiStates.get(0)?.otherCursor).toBe(1)
+    }
+  })
   test('left/right moves cursor within Other text', () => {
     let state = createAskState(singleQuestion)
     // Navigate to Other (last option)

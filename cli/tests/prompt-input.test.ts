@@ -23,7 +23,6 @@ function defaultPromptVM(overrides?: Partial<PromptVMInput>): PromptVMInput {
     cursorLine: 0,
     cursorCol: 0,
     active: true,
-    caretVisible: true,
     model: 'test-model',
     provider: '',
     thinkingLevel: '',
@@ -237,7 +236,8 @@ describe('renderPrompt', () => {
   test('contains the caret', () => {
     const lines = blocksToLines(buildPromptBlocks(defaultPromptVM()))
     const joined = lines.join('\n')
-    expect(joined).toContain('▍')
+    expect(joined).toContain('\x1b_pi:c\x07')
+    expect(joined).not.toContain('▍')
   })
 
   test('contains border', () => {

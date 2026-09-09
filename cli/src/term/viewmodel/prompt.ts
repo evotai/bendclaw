@@ -12,7 +12,6 @@ import stringWidth from 'string-width'
 import { COMMANDS, HIDDEN_COMMANDS } from '../../commands/index.js'
 import { getTheme } from '../../render/theme/index.js'
 import type { CompletionMenu } from '../input/editor.js'
-import { nextGraphemeBoundary } from '../input/grapheme.js'
 import { CURSOR_MARKER } from '../render-frame.js'
 import { atLeastHeight, atLeastWidth, heightTier, widthTier } from './breakpoints.js'
 import { createFrame } from './frame.js'
@@ -31,8 +30,6 @@ export interface PromptVMInput extends PromptFooterVM {
   rows: number
   placeholder: boolean
   exitHint: boolean
-  /** Blink phase of the end-of-line caret; the on-character block never blinks. */
-  caretVisible: boolean
 }
 
 export interface PromptLayoutOptions {
@@ -48,13 +45,6 @@ const KNOWN_COMMANDS = new Set(
 /** Completion viewport height: taller terminals get more candidates. */
 const COMPLETION_ROWS_COMPACT = 5
 const COMPLETION_ROWS_TALL = 12
-
-/**
- * Three-eighths block (U+258D): the end-of-line caret. Thin enough to read as
- * a caret rather than a filled cell, and wide enough to survive fonts that
- * render the one-eighth bar as a hairline or drop it entirely.
- */
-const CARET = '▍'
 
 /** Share of the terminal the editor may grow to before it starts scrolling. */
 const MAX_INPUT_ROWS_RATIO = 0.3
@@ -187,14 +177,10 @@ function buildInputLines(
     const active = input.active && lineIndex === input.cursorLine
     if (active && text === '' && input.lines.length === 1 && input.placeholder) {
       cursorIndex = lines.length
-      // The caret occupies 1 column; the rest is hint.
+      // The native cursor sits on the first hint cell without inserting text.
       const full = atLeastWidth(widthTier(columns), 'md') ? mode.hint : mode.shortHint
-      const hint = truncateToWidth(` ${full}`, Math.max(0, contentWidth - 1))
-      lines.push(line(
-        plain(CURSOR_MARKER),
-        caret(input.caretVisible),
-        ...(hint ? [dim(hint)] : []),
-      ))
+      const hint = truncateToWidth(full, contentWidth)
+      lines.push(line(plain(CURSOR_MARKER), ...(hint ? [dim(hint)] : [])))
       continue
     }
 
@@ -228,25 +214,10 @@ function buildInputLines(
       // Style the whole chunk before splitting, otherwise a command straddling
       // the cursor is scored as two fragments and loses its brand hue.
       const styled = styleInputText(textChunk)
-      const graphemeEnd = nextGraphemeBoundary(textChunk, cursorCol)
-      const onChar = cursorCol < textChunk.length
       const [before, rest] = splitSpansAt(styled, cursorCol)
-      const spans: StyledSpan[] = [...before, plain(CURSOR_MARKER)]
-      if (onChar) {
-        // The cursor sits on a character: flip that cell to a solid block so
-        // the glyph stays visible and the line width is unchanged — no extra
-        // column, no word split.
-        const [onSpans, after] = splitSpansAt(rest, graphemeEnd - cursorCol)
-        spans.push(...onSpans.map(cursorBlock), ...after)
-      } else {
-        // At the end of the line there is nothing to sit on, so draw a thin
-        // bar in the caret column instead.
-        spans.push(caret(input.caretVisible))
-      }
-      // The hint is advisory, so it yields to the terminal edge rather than
-      // overflowing it: `getGhostHint` can return the full command list, which
-      // is far wider than a narrow terminal. The bar costs one column when shown.
-      const ghostBudget = contentWidth - stringWidth(textChunk) - (onChar ? 0 : 1)
+      // Position only: the terminal owns shape, color, blink and wide-cell fill.
+      const spans: StyledSpan[] = [...before, plain(CURSOR_MARKER), ...rest]
+      const ghostBudget = contentWidth - stringWidth(textChunk)
       const ghost = rawGhost ? truncateToWidth(rawGhost, Math.max(0, ghostBudget)) : ''
       if (ghost) spans.push(dim(ghost))
       lines.push(line(...spans))
@@ -340,29 +311,6 @@ function styleInputText(text: string): StyledSpan[] {
 function blurred(span: StyledSpan): StyledSpan {
   const { hex: _hex, bold: _bold, ...rest } = span
   return { ...rest, dim: true }
-}
-
-/**
- * The end-of-line caret: a thin vertical bar in the cursor hue. Used only
- * where there is no character to sit on, so it reads as "type here" without an
- * `❯` prefix. Mid-line, `cursorBlock` highlights the character instead.
- *
- * On the blink's off phase the bar becomes a space, so the column stays claimed
- * and nothing after it shifts.
- */
-function caret(visible = true): StyledSpan {
-  if (!visible) return plain(' ')
-  return { text: CARET, hex: getTheme().cursorHex, bold: true }
-}
-
-/**
- * Recolour a span as the cell the cursor sits on: a solid block of the cursor
- * hue with contrasting text. Unlike inserting a bar, this keeps the glyph
- * visible and does not shift the rest of the line by a column.
- */
-function cursorBlock(span: StyledSpan): StyledSpan {
-  const { cursorHex, cursorFgHex } = getTheme()
-  return { ...span, hex: cursorFgHex, fg: undefined, bg: cursorHex, dim: false, bold: true }
 }
 
 /**

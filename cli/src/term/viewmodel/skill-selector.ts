@@ -78,7 +78,7 @@ export function buildSkillSelectorLines(state: SelectorState, width: number, row
     body.push(...list, ...(details.length ? ['', ...details.map(text => `  ${text}`)] : []))
   }
   const focused = active && state.listFocused !== true
-  const cursor = focused ? CURSOR_MARKER + theme.accent.paint('▌') : ''
+  const cursor = focused ? CURSOR_MARKER : ''
   const search = state.query ? theme.text.paint(clip(state.query, width - 4)) : muted('Search skills…')
   return [
     theme.accentBold.paint('Skills'),

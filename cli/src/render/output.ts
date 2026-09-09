@@ -225,8 +225,60 @@ function allWritePreviewLines(content: string): string[] {
   return content ? normalizeWritePreviewText(content).split('\n') : []
 }
 
-function rebuildWritePreview(path: string, content: string): WritePreviewCache {
-  const language = writeLanguage(path)
+const WRITE_LANGUAGE_SAMPLE_LIMIT = 4096
+
+/** Bounded, provisional detection only while the target path is unavailable. */
+function sniffWriteLanguage(content: string): string | undefined {
+  const head = content.slice(0, WRITE_LANGUAGE_SAMPLE_LIMIT)
+  // Never parse an entire growing file every frame. Complete, small JSON is
+  // the only case that does not require a newline-terminated source line.
+  if (content.length <= WRITE_LANGUAGE_SAMPLE_LIMIT && /^[\s]*[\[{]/.test(head)) {
+    try {
+      JSON.parse(head)
+      return 'json'
+    } catch {
+      return undefined
+    }
+  }
+
+  // A receiving line is ambiguous: `import x` might become a JS from-import.
+  // Ignore it (and a line cut by the sample limit) until its newline arrives.
+  const lines = head.split('\n').slice(0, -1)
+  let commentEnd: string | undefined
+  for (const raw of lines) {
+    let first = raw.trim()
+    if (commentEnd) {
+      const end = first.indexOf(commentEnd)
+      if (end < 0) continue
+      first = first.slice(end + commentEnd.length).trim()
+      commentEnd = undefined
+    }
+    while (first.startsWith('/*') || first.startsWith('<!--')) {
+      commentEnd = first.startsWith('/*') ? '*/' : '-->'
+      const end = first.indexOf(commentEnd, first.startsWith('/*') ? 2 : 4)
+      if (end < 0) break
+      first = first.slice(end + commentEnd.length).trim()
+      commentEnd = undefined
+    }
+    if (commentEnd || !first || first.startsWith('//') || /^#(?:\s|$)/.test(first)) continue
+
+    // Recognize only supported interpreters, not arbitrary executable paths.
+    if (/^#!\s*\/\S*\/(?:env\s+)?(?:node|nodejs)(?:\s|$)/.test(first)) return 'javascript'
+    if (/^#!\s*\/\S*\/(?:env\s+)?python[\d.]*(?:\s|$)/.test(first)) return 'python'
+    if (/^#!\s*\/\S*\/(?:env\s+)?(?:sh|bash|zsh)(?:\s|$)/.test(first)) return 'bash'
+    if (/^<!doctype\s+html\s*>$/i.test(first)) return 'html'
+    if (/^(?:import\s+(?:.+\s+from\s+)?['"][^'"]+['"]\s*;?|(?:export\s+)?(?:const|let|var)\s+[$\w]+\s*=.+;)\s*$/.test(first)) return 'javascript'
+    if (/^(?:import\s+[\w.]+(?:\s+as\s+\w+)?|from\s+[\w.]+\s+import\s+[\w*, ]+|(?:async\s+)?def\s+\w+\([^\n]*\)\s*:|class\s+\w+(?:\([^\n]*\))?\s*:)\s*$/.test(first)) return 'python'
+    if (/^(?:pub\s+)?fn\s+\w+\([^\n]*\)(?:\s*->\s*[^{}]+)?\s*\{$/.test(first)) return 'rust'
+    if (/^package\s+\w+$/.test(first)) return 'go'
+    // Do not scan past an unknown line: prose or a code fence must not turn
+    // into code merely because a later paragraph contains a keyword.
+    return undefined
+  }
+  return undefined
+}
+
+function rebuildWritePreview(path: string, content: string, language: string | undefined): WritePreviewCache {
   const displayLines = allWritePreviewLines(content)
   return {
     path,
@@ -239,6 +291,12 @@ function rebuildWritePreview(path: string, content: string): WritePreviewCache {
   }
 }
 
+/** Same args produce the same language after streaming, eviction or replay.
+ * Any supplied path is authoritative; unknown extensions remain plain. */
+export function resolveWritePreviewLanguage(path: string, content: string): string | undefined {
+  return path ? writeLanguage(path) : sniffWriteLanguage(content)
+}
+
 function highlightWritePreviewLine(line: string, language: string | undefined): string {
   // A per-line cap is deterministic: crossing the total file-size threshold
   // must not strip colors from rows that have already entered scrollback.
@@ -247,12 +305,14 @@ function highlightWritePreviewLine(line: string, language: string | undefined): 
 
 function cachedWritePreview(call: UIToolCall, path: string, content: string): WritePreviewCache {
   let cache = writePreviewCache.get(call.id)
+  const language = resolveWritePreviewLanguage(path, content)
   if (
     !cache
     || cache.path !== path
+    || cache.language !== language
     || !content.startsWith(cache.rawContent)
   ) {
-    cache = rebuildWritePreview(path, content)
+    cache = rebuildWritePreview(path, content, language)
   } else if (content.length > cache.rawContent.length) {
     // Only the receiving/new lines change. Neither argsComplete nor execution
     // completion recolors the immutable prefix of an expanded card.
@@ -305,7 +365,10 @@ function appendWriteContentPreview(lines: OutputLine[], call: UIToolCall, expand
   const shown = expanded ? visibleLines : visibleLines.slice(0, WRITE_PREVIEW_LINES)
   lines.push({ id: genId('tool-preview-space'), kind: 'tool', text: '' })
   for (const text of shown) {
-    lines.push({ id: genId('tool-preview'), kind: 'tool', text: `  ${text}`, toolCodePreview: true })
+    lines.push({
+      id: genId('tool-preview'), kind: 'tool', text: `  ${text}`,
+      toolCodePreview: true, toolCodePreviewTruncate: !expanded,
+    })
   }
 
   const remaining = total - shown.length
@@ -375,6 +438,8 @@ export interface OutputLine {
   preStyled?: boolean
   /** Tool line containing pre-styled source code from a streamed write call. */
   toolCodePreview?: boolean
+  /** Collapsed source rows truncate to the available width; expansion wraps in full. */
+  toolCodePreviewTruncate?: boolean
   /** Tool line that is one row of a rendered diff; added/removed rows get
    *  their own fill inside the card. */
   /** Width-aware compact command budget; expanded cards have no row limit. */

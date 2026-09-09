@@ -10,7 +10,6 @@ export interface PromptSnapshot {
   session: Pick<AppState, 'model' | 'cwd' | 'sessionTokens'>
   config?: ConfigInfo
   active: boolean
-  caretVisible: boolean
   planning: boolean
   logMode: boolean
   dashboardUrl: string | null
@@ -31,7 +30,6 @@ export function promptFromSnapshot(input: PromptSnapshot): PromptVMInput {
     cursorLine: editor.cursorLine,
     cursorCol: editor.cursorCol,
     active: input.active,
-    caretVisible: input.caretVisible,
     model: session.model,
     provider: providerDisplayName(
       config?.availableModels.find(model => model.model === session.model && model.provider === (config?.provider ?? ''))

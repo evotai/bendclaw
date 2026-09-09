@@ -15,6 +15,9 @@ import {
 import { buildPromptBlocks, type PromptVMInput } from '../src/term/viewmodel/prompt.js'
 import { wrapTextByWidth } from '../src/term/viewmodel/width.js'
 import { blocksToLines } from '../src/term/viewmodel/types.js'
+import { TermRenderer } from '../src/term/renderer.js'
+import { ScreenHarness } from './helpers/screen.js'
+import { CURSOR_MARKER } from '../src/term/render-frame.js'
 
 function promptInput(text: string, cursorCol: number, columns = 20): PromptVMInput {
   return {
@@ -22,7 +25,6 @@ function promptInput(text: string, cursorCol: number, columns = 20): PromptVMInp
     cursorLine: 0,
     cursorCol,
     active: true,
-    caretVisible: true,
     completion: null,
     ghostHint: '',
     columns,
@@ -137,12 +139,48 @@ describe('grapheme-safe prompt layout', () => {
     expect(chunks.map(chunk => text.slice(chunk.start, chunk.end))).toEqual(['a', family, 'b'])
   })
 
+  test('native cursor tracks Chinese leading cells without painting a fake background', async () => {
+    const level = chalk.level
+    chalk.level = 3
+    const screen = new ScreenHarness(20, 24)
+    const renderer = new TermRenderer({ stdout: screen.stdout })
+    const text = 'hah你好啊'
+    let cursorCol = 4
+    const paint = async () => {
+      renderer.requestRender()
+      await Bun.sleep(25)
+      await screen.settle()
+    }
+    renderer.init()
+    renderer.setRenderCallback(() => blocksToLines(buildPromptBlocks(promptInput(text, cursorCol))))
+    try {
+      for (const position of [4, 3, 2, 4, 5]) {
+        cursorCol = position
+        await paint()
+        const buffer = screen.terminal.buffer.active
+        const row = buffer.getLine(buffer.cursorY + buffer.baseY)
+        const x = buffer.cursorX
+        const width = position < 3 ? 1 : 2
+        expect(row?.getCell(x)?.getChars()).toBe(text[position])
+        expect(row?.getCell(x)?.getWidth()).toBe(width)
+        // Cells contain normal text; the terminal draws its cursor overlay.
+        for (let col = 0; col < screen.columns; col++) {
+          expect(row?.getCell(col)?.isBgDefault()).toBe(true)
+        }
+        expect(row?.translateToString(true)).toBe(text)
+      }
+    } finally {
+      renderer.destroy()
+      screen.terminal.dispose()
+      chalk.level = level
+    }
+  })
+
   test('renders the complete grapheme under the cursor', () => {
     chalk.level = 3
     const emoji = '👩🏽‍💻'
     const rendered = blocksToLines(buildPromptBlocks(promptInput(`${emoji}x`, 0))).join('\n')
-    // The cursor block covers the whole grapheme rather than splitting it into
-    // its component code points.
-    expect(rendered).toContain(`\x1b[38;2;26;29;36m${emoji}\x1b[39m`)
+    expect(rendered).toContain(`${CURSOR_MARKER}${emoji}x`)
+    expect(rendered).not.toContain('\x1b[48;2;154;230;92m')
   })
 })

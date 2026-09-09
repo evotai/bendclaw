@@ -164,7 +164,6 @@ import { campaignContent, refreshCampaigns } from './app/campaigns.js'
 import type { OverlayState } from './app/overlay-state.js'
 import { ResourceScope } from './resource-scope.js'
 import { RenderWakeup } from './render-wakeup.js'
-import { CaretBlink } from './caret-blink.js'
 import { errorText } from '../render/format.js'
 import { TerminalTitle } from './title.js'
 import {
@@ -213,7 +212,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // The composer paints its own caret, so the idle blink is ours to drive.
   const resources = new ResourceScope()
   const backgroundCleanup = new ResourceScope()
-  const caretBlink = new CaretBlink({ onChange: () => renderer.requestRender() })
   // Armed by buildFrame only while visible text or its lifecycle needs a wakeup.
   const adSlotWakeup = new RenderWakeup(() => renderer.requestRender())
 
@@ -1179,7 +1177,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       session: appState,
       config: configInfo,
       active: overlay.kind === 'none',
-      caretVisible: caretBlink.visible,
       planning,
       logMode: logMode !== null,
       dashboardUrl: serverState?.address ?? null,
@@ -1283,7 +1280,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
     // An overlay owns the screen, so hold the caret solid rather than
     // animating behind a modal.
-    caretBlink.setEnabled(overlay.kind === 'none')
 
     const blocks: ViewBlock[] = []
 
@@ -2177,7 +2173,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   }
 
   function handleKeyInner(event: KeyEvent) {
-    caretBlink.bump()
 
     // Mouse dragging creates a native terminal selection outside our editor
     // state. Most keypresses repaint the whole live region to release it. A
@@ -3854,7 +3849,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     resources.dispose()
     authWatcher?.dispose()
     authWatcher = null
-    caretBlink.dispose()
     gitInfo.dispose()
     updateMgr.cleanup()
     if (exitHintTimer) clearTimeout(exitHintTimer)

@@ -806,16 +806,63 @@ describe('TermRenderer', () => {
       renderer.destroy()
     })
 
-    test('cursor marker parks the hardware cursor but keeps it hidden', async () => {
+    test('a modal hides the underlying editor cursor but can provide its own', async () => {
+      const { renderer, stdout } = createRenderer()
+      let modal = ['modal']
+      renderer.init()
+      renderer.setRenderCallback(() => ({ lines: [`ab${CURSOR_MARKER}cd`], overlay: { lines: modal } }))
+      try {
+        await renderFrame(renderer)
+        expect(stdout.output).not.toContain('\x1b[?25h')
+        expect(stdout.output).not.toContain(CURSOR_MARKER)
+        stdout.clear()
+        modal = [`name ${CURSOR_MARKER}text`]
+        await renderFrame(renderer)
+        expect(stdout.output).toContain('\x1b[?25h')
+        expect(stdout.output).not.toContain(CURSOR_MARKER)
+      } finally {
+        renderer.destroy()
+      }
+    })
+
+    test('all internal markers are stripped and only an addressable visible cursor is shown', async () => {
+      const { renderer, stdout } = createRenderer()
+      stdout.rows = 4
+      stdout.columns = 20
+      let lines = [`old${CURSOR_MARKER}`, 'history', 'history', 'history', `中文${CURSOR_MARKER}`, `last${CURSOR_MARKER}`]
+      renderer.init()
+      renderer.setRenderCallback(() => lines)
+      try {
+        await renderFrame(renderer)
+        expect(stdout.output).not.toContain(CURSOR_MARKER)
+        expect(stdout.output).toContain('\x1b[5G')
+        expect(stdout.output).toContain('\x1b[?25h')
+        stdout.clear()
+        lines = ['x'.repeat(20) + CURSOR_MARKER]
+        await renderFrame(renderer)
+        expect(stdout.output).not.toContain(CURSOR_MARKER)
+        expect(stdout.output).not.toContain('\x1b[?25h')
+        expect(stdout.output).toContain('\x1b[?25l')
+      } finally {
+        renderer.destroy()
+      }
+    })
+
+    test('cursor marker positions and shows the terminal-owned cursor', async () => {
       const { renderer, stdout } = createRenderer()
       renderer.init()
       renderer.setRenderCallback(() => [`ab${CURSOR_MARKER}cd`])
       stdout.clear()
       await renderFrame(renderer)
 
-      // The column tracks the caret for input methods, but the prompt paints
-      // the visible caret itself.
       expect(stdout.output).toContain('\x1b[3G')
+      expect(stdout.output).toContain('\x1b[?25h')
+      // Never override user-selected cursor shape or color.
+      expect(stdout.output).not.toMatch(/\x1b\[\d* q/)
+      expect(stdout.output).not.toContain('\x1b]12;')
+      stdout.clear()
+      renderer.setRenderCallback(() => ['unfocused'])
+      await renderFrame(renderer)
       expect(stdout.output).toContain('\x1b[?25l')
       expect(stdout.output).not.toContain('\x1b[?25h')
       renderer.destroy()

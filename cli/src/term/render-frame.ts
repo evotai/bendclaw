@@ -20,5 +20,5 @@ export interface RenderFrame {
   overlay?: RenderOverlay
 }
 
-/** Zero-width cursor hint for IME. Interpreted and stripped by the backend. */
+/** Zero-width native cursor/IME position. Interpreted and stripped by the backend. */
 export const CURSOR_MARKER = '\x1b_pi:c\x07'

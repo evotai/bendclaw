@@ -1,6 +1,7 @@
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { blocksToLines, styledLineToAnsi } from './types.js'
 import type { AskState } from '../ask.js'
+import { CURSOR_MARKER } from '../render-frame.js'
 import { line, block, plain, dim, bold, colored, inverse, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 
 const CHECKBOX_ON = '☒'
@@ -110,17 +111,17 @@ export function buildAskBlocks(state: AskState, _columns: number): ViewBlock[] {
     if (otherText) {
       const cursor = ui.otherCursor ?? otherText.length
       const before = otherText.slice(0, cursor)
-      const atCursor = otherText[cursor] ?? ' '
-      const after = otherText.slice(cursor + 1)
+      const after = otherText.slice(cursor)
       if (before) otherSpans.push(plain(before))
-      otherSpans.push(inverse(atCursor))
+      otherSpans.push(plain(CURSOR_MARKER))
       if (after) otherSpans.push(plain(after))
     } else {
-      otherSpans.push(inverse(' '), dim('Type something.'))
+      otherSpans.push(plain(CURSOR_MARKER), dim('Type something.'))
     }
   } else {
     otherSpans.push(otherSelected ? colored(otherText || 'Type something.', 'green') : dim(otherText || 'Type something.'))
   }
+  if (otherSelected) otherSpans.push(plain(' '))
   result.push(line(...(otherSelected ? appendTick(otherSpans) : otherSpans)), line(plain('')))
   result.push(line(dim(isMulti
     ? '↑↓ navigate · ←→ switch tab · enter select · esc cancel'

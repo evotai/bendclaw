@@ -3,7 +3,7 @@ import type { OutputLine, ToolCardMembership, ToolCardState } from '../../render
 import stringWidth from 'string-width'
 import { line, block, plain, dim, bold, colored, ansi, type ViewBlock, type StyledLine, type StyledSpan } from './types.js'
 import { spansWidth, wrapTextByWidth, truncateToWidth } from './width.js'
-import { wrapTextWithAnsi } from '../../render/wrap.js'
+import { truncateAnsiToWidth, wrapTextWithAnsi } from '../../render/wrap.js'
 import { BOX_DRAWING_RE } from '../../markdown/primitives.js'
 import { getTheme } from '../../render/theme/index.js'
 import stripAnsi from 'strip-ansi'
@@ -221,7 +221,7 @@ export function buildOutputBlocks(lines: OutputLine[], context: OutputContext | 
           break
         }
         blocks.push(ol.toolCodePreview
-          ? buildToolCodePreviewBlock(ol.text, wrapColumns)
+          ? buildToolCodePreviewBlock(ol.text, wrapColumns, ol.toolCodePreviewTruncate)
           : buildToolBlock(ol.text, wrapColumns, ol.commandMaxRows))
         break
 
@@ -314,7 +314,22 @@ function paintToolCard(
   if (card.last) blocks[blocks.length - 1]!.lines.push(panelRow([], columns, bg))
 }
 
-function buildToolCodePreviewBlock(text: string, columns?: number): ViewBlock {
+function buildToolCodePreviewBlock(text: string, columns?: number, truncate = false): ViewBlock {
+  if (truncate) {
+    const width = Math.max(1, columns ?? 80)
+    const clipped = truncateAnsiToWidth(text, width)
+    if (clipped !== text) {
+      const hint = ' (ctrl+o to expand)'
+      // Keep some source visible in narrow panes; an ellipsis alone still
+      // signals clipping when the full keyboard hint would consume the row.
+      const showHint = width >= hint.length + 12
+      return block([line(
+        plain(showHint ? truncateAnsiToWidth(clipped, width - hint.length) : clipped),
+        ...(showHint ? [dim(hint)] : []),
+      )])
+    }
+    return block([line(plain(text))])
+  }
   return block(wrapToolLines(text, columns).map(part => line(plain(part))))
 }
 

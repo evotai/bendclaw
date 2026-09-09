@@ -18,7 +18,6 @@ function defaultInput(overrides: Partial<PromptVMInput> = {}): PromptVMInput {
     cursorLine: 0,
     cursorCol: 0,
     active: true,
-    caretVisible: true,
     completion: null,
     ghostHint: '',
     columns: 80,
@@ -94,10 +93,9 @@ describe('prompt editor', () => {
     const plain = stripAnsi(ansi).replaceAll(CURSOR_MARKER, '')
     expect(plain).toContain(`╭${'─'.repeat(78)}╮`)
     expect(plain).toContain(`╰${'─'.repeat(78)}╯`)
-    expect(plain).toContain('▍')
+    expect(plain).not.toContain('▍')
     expect(plain).toContain('Enter a coding task or / for commands')
-    // The end-of-line caret carries the cursor hue, not inverse video.
-    expect(ansi).toContain(chalk.bold(chalk.hex('#9ae65c')('▍')))
+    expect(ansi).toContain(CURSOR_MARKER)
   })
 
   test('uses the theme-aware EVOT brand color for both input borders', () => {
@@ -145,9 +143,9 @@ describe('prompt editor', () => {
     // At 20 columns the frame degrades, so text gets all 20: a 20-character
     // draft fills the row exactly and the caret has to wrap.
     const ansi = render(defaultInput({ columns: 20, lines: ['a'.repeat(20)], cursorCol: 20, placeholder: false }))
-    const rows = stripAnsi(ansi).replaceAll(CURSOR_MARKER, '').split('\n')
-      .filter(row => /^a+$/.test(row) || row === '▍')
-    expect(rows).toEqual(['a'.repeat(20), '▍'])
+    const rows = stripAnsi(ansi).split('\n')
+    expect(rows).toContain('a'.repeat(20))
+    expect(rows[rows.indexOf('a'.repeat(20)) + 1]).toBe(CURSOR_MARKER)
   })
 
   test('limits long input to 30 percent of terminal rows and follows the cursor', () => {
@@ -172,60 +170,35 @@ describe('prompt editor', () => {
     expect(plain).not.toContain('row 10')
   })
 
-  test('places the caret before the ghost hint without inserting a blank cell', () => {
-    const input = defaultInput({ lines: ['/mo'], cursorCol: 3, placeholder: false, ghostHint: 'del  [<name>]' })
-    const ansi = render(input)
-    // Cursor is at end of line, so the thin bar precedes the ghost suffix with
-    // no blank cell between them: `/mo▍del  [<name>]`.
-    expect(stripAnsi(ansi).replaceAll(CURSOR_MARKER, '')).toContain('/mo▍del  [<name>]')
-    expect(ansi).toContain(chalk.bold(chalk.hex('#9ae65c')('▍')))
+  test('places the cursor before the ghost without adding a display cell', () => {
+    const ansi = render(defaultInput({ lines: ['/ha'], cursorCol: 3, placeholder: false, ghostHint: 'rden  [plan changes arch <subject>]' }))
+    expect(stripAnsi(ansi)).toContain(`/ha${CURSOR_MARKER}rden`)
+    expect(stripAnsi(ansi).replaceAll(CURSOR_MARKER, '')).toContain('/harden')
+    expect(ansi).not.toContain('▍')
+    expect(ansi).not.toContain('\x1b[48;2;154;230;92m')
   })
 
-  test('renders a caret at end of line without a ghost hint', () => {
-    const ansi = render(defaultInput({ lines: ['/mo'], cursorCol: 3, placeholder: false }))
-    expect(stripAnsi(ansi).replaceAll(CURSOR_MARKER, '')).toContain('/mo▍')
+  test('marks start, middle and end of Unicode input without changing glyph styles', () => {
+    for (const text of ['输入框', 'abc', 'a👩‍💻e\u0301中']) {
+      const boundaries = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
+        .map(segment => segment.index).concat(text.length)
+      for (const cursorCol of boundaries) {
+        const ansi = render(defaultInput({ lines: [text], cursorCol, placeholder: false }))
+        expect(stripAnsi(ansi)).toContain(text.slice(0, cursorCol) + CURSOR_MARKER + text.slice(cursorCol))
+        expect(ansi).not.toContain('\x1b[48;2;154;230;92m')
+        expect(ansi).not.toContain('▍')
+      }
+    }
   })
 
-  test('blanks the end-of-line caret on the dark half of the blink cycle', () => {
-    const input = { lines: ['/mo'], cursorCol: 3, placeholder: false }
-    const off = render(defaultInput({ ...input, caretVisible: false }))
-    const plain = stripAnsi(off).replaceAll(CURSOR_MARKER, '')
-    expect(plain).not.toContain('▍')
-    expect(off).not.toContain(chalk.bold(chalk.hex('#9ae65c')('▍')))
-    // A space still claims the caret column, so the row keeps its width.
-    const onRow = renderPlain(defaultInput({ ...input, caretVisible: true }))
-      .split('\n').find(row => row.includes('▍'))
-    const offRow = plain.split('\n').find(row => row.includes('/mo'))
-    expect(offRow).toBeDefined()
-    expect(offRow?.length).toBe(onRow?.length)
-  })
-
-  test('blanks the placeholder caret while the hint stays put', () => {
-    const hint = 'Enter a coding task or / for commands'
-    const off = renderPlain(defaultInput({ caretVisible: false }))
-    expect(off).not.toContain('▍')
-    const offRow = off.split('\n').find(row => row.includes(hint))
-    const onRow = renderPlain(defaultInput()).split('\n').find(row => row.includes(hint))
-    expect(offRow).toBeDefined()
-    expect(offRow?.indexOf(hint)).toBe(onRow?.indexOf(hint) ?? -1)
-    expect(offRow?.length).toBe(onRow?.length)
-  })
-
-  test('keeps the on-character cursor block solid across the blink cycle', () => {
-    const input = { lines: ['/model '], cursorCol: 6, placeholder: false }
-    const on = render(defaultInput({ ...input, caretVisible: true }))
-    const off = render(defaultInput({ ...input, caretVisible: false }))
-    expect(off).toContain('\x1b[48;2;154;230;92m')
-    expect(off).toBe(on)
-  })
-
-  test('highlights the character under the cursor when it is not at end of line', () => {
+  test('marks the character boundary without highlighting it', () => {
     const input = defaultInput({ lines: ['/model '], cursorCol: 6, placeholder: false, ghostHint: '[<name>]' })
     const ansi = render(input)
     // The cursor sits on the trailing space, which becomes a block; the text
     // stays contiguous rather than being split by an inserted bar.
     expect(stripAnsi(ansi).replaceAll(CURSOR_MARKER, '')).toContain('/model [<name>]')
-    expect(ansi).toContain('\x1b[48;2;154;230;92m')
+    expect(ansi).not.toContain('\x1b[48;2;154;230;92m')
+    expect(stripAnsi(ansi)).toContain(`/model${CURSOR_MARKER} [<name>]`)
   })
 
   test('renders a five-row completion viewport with descriptions and position', () => {
@@ -306,7 +279,7 @@ describe('prompt frame', () => {
     // shrinks back before content has to give anything up. Measured on the
     // caret row: centring puts blank rows above it.
     const gutterAt = (columns: number) => {
-      const row = frameLines(defaultInput({ columns })).map(stripAnsi).find(line => line.includes('▍'))
+      const row = frameLines(defaultInput({ columns })).map(stripAnsi).find(line => line.includes(CURSOR_MARKER))
       return /^│( *)/.exec(row!)![1]!.length
     }
     expect(gutterAt(40)).toBe(1)
@@ -338,9 +311,9 @@ describe('prompt frame', () => {
 
   test('gives the full width back to content once degraded', () => {
     // No rails below the threshold, so no gutter either: the caret leads.
-    const row = renderPlain(defaultInput({ columns: 29 })).replaceAll(CURSOR_MARKER, '')
-      .split('\n').find(line => line.includes('▍'))
-    expect(row!.startsWith('▍')).toBe(true)
+    const row = stripAnsi(render(defaultInput({ columns: 29 })))
+      .split('\n').find(line => line.includes(CURSOR_MARKER))
+    expect(row!.startsWith(CURSOR_MARKER)).toBe(true)
   })
 
   test('keeps a blank-row floor under a short draft', () => {
@@ -399,8 +372,8 @@ describe('prompt frame', () => {
   test('adds no bare blank rows when the frame degrades', () => {
     // The blanks only read as composer space between rails; without them they
     // are indistinguishable from stray whitespace.
-    const rows = renderPlain(defaultInput({ columns: 29 })).replaceAll(CURSOR_MARKER, '').split('\n')
-    const caretIndex = rows.findIndex(row => row.includes('▍'))
+    const rows = stripAnsi(render(defaultInput({ columns: 29 }))).split('\n')
+    const caretIndex = rows.findIndex(row => row.includes(CURSOR_MARKER))
     expect(rows[caretIndex + 1]).toBe('─'.repeat(29))
   })
 
@@ -463,7 +436,7 @@ describe('prompt frame', () => {
     for (const glyph of ['╭', '╮', '╰', '╯', '│']) {
       expect(plain.filter(row => row.startsWith(glyph))).toEqual([])
     }
-    expect(plain.some(row => row.includes('▍'))).toBe(true)
+    expect(render(defaultInput({ rows: 5 }))).toContain(CURSOR_MARKER)
   })
 
   test('keeps the border down to the height where it still pays', () => {
@@ -535,8 +508,8 @@ describe('prompt frame', () => {
 
   test('hides the caret entirely while unfocused', () => {
     const draft = { lines: ['draft'], cursorCol: 5, placeholder: false }
-    expect(renderPlain(defaultInput({ ...draft, active: true }))).toContain('▍')
-    expect(renderPlain(defaultInput({ ...draft, active: false }))).not.toContain('▍')
+    expect(render(defaultInput({ ...draft, active: true }))).toContain(CURSOR_MARKER)
+    expect(render(defaultInput({ ...draft, active: false }))).not.toContain(CURSOR_MARKER)
   })
 
   test('shares the label slot between mode and scroll overflow', () => {

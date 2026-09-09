@@ -5,7 +5,7 @@ import { SELECTOR_OWNER } from '../app/selector-identity.js'
 import stringWidth from 'string-width'
 import { wrapTextWithAnsi } from '../../render/wrap.js'
 import { CURSOR_MARKER } from '../render-frame.js'
-import { line, block, plain, dim, bold, colored, inverse, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
+import { line, block, plain, dim, bold, colored, blocksToLines, styledLineToAnsi, type ViewBlock, type StyledSpan, type StyledLine } from './types.js'
 import { finiteSize, spansWidth, truncateSpansToWidth, truncateToWidth } from './width.js'
 import { PREVIEW_SECTION_PREFIX, SELECTOR_VIEWPORT, type SelectorItem, type SelectorState } from '../selector.js'
 import { HINT_SEPARATOR, formatChord, type Hint } from '../design/key-hints.js'
@@ -207,7 +207,7 @@ function buildModelSearchLine(query: string, width: number, active: boolean): St
     plain('> '),
     plain(visibleQuery),
     plain(CURSOR_MARKER),
-    inverse(' '),
+    plain(' '),
     plain(' '.repeat(padding)),
   )
 }
@@ -275,14 +275,13 @@ export function buildSelectorBlocks(
       lines.push(line(
         colored('Filter  ', 'cyan'),
         plain(state.query),
-        ...(filterFocused ? [plain(CURSOR_MARKER), colored('▌', 'cyan')] : []),
+        ...(filterFocused ? [plain(CURSOR_MARKER)] : []),
       ))
     } else if (filterFocused) {
       lines.push(line(
         colored('Filter  ', 'cyan'),
         plain(CURSOR_MARKER),
-        colored('▌', 'cyan'),
-        dim(` ${PLACEHOLDER_HINT}`),
+        dim(PLACEHOLDER_HINT),
       ))
     } else {
       // Nothing typed yet: the filter line doubles as the discoverability hint,

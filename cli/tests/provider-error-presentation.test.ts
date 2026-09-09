@@ -19,6 +19,23 @@ test('provider failure vocabulary is reusable without terminal-specific output',
   expect(providerFailurePresentation({ kind: 'busy', error: 'tls' }).label).toBe('Service busy')
 })
 
+test('input validation numbers are not mistaken for HTTP status codes', () => {
+  const error = 'HTTP 400: invalid_request_error: Image has 256 total pixels (16x16), which is below the minimum of 512 pixels.'
+  const copy = providerFailurePresentation({ error })
+  expect(copy.kind).toBe('invalid-request')
+  expect(copy.label).toBe('Invalid request')
+  expect(copy.guidance).toContain('attachments')
+  expect(copy.guidance).toContain('Retrying unchanged will not help')
+  for (const detail of ['minimum of 512 pixels', 'image width 503', 'max 429 tokens', 'size 401 bytes']) {
+    expect(providerFailurePresentation({ error: detail }).kind).toBe('unknown')
+  }
+  for (const message of ['HTTP 503 unavailable', 'HTTP/1.1 502 Bad Gateway', 'status=504', 'status_code: 500', '503 overloaded']) {
+    expect(providerFailurePresentation({ error: message }).kind).toBe('busy')
+  }
+  expect(providerFailurePresentation({ error: 'HTTP 400: connection parameter invalid' }).kind).toBe('invalid-request')
+  expect(providerFailurePresentation({ error: 'HTTP 502: invalid_request_error' }).kind).toBe('busy')
+})
+
 test('TLS retries keep cumulative elapsed time across the long-wait transition', () => {
   let state = setRetryWait(createSpinnerState(), 2000, 1, 10, 1000, 'tls handshake eof')
   expect(stripAnsi(formatSpinnerLine(state, 1000))).toContain('Connection interrupted · retrying in 2s')
